@@ -369,24 +369,28 @@ function fitTo(min, max) {
   state.fitted = true;
 }
 
-// The overlay frames what matters (spawns and points) rather than the whole image. With
-// rotate=auto it stays upright, or turns a quarter when that fills the panel clearly better;
-// arbitrary angles left maps reading at a slant.
-function frameOverlay() {
+// Frame what matters (spawns and points) rather than the whole image, which is mostly empty.
+// The main view stays upright and clear of the HUD columns and scoreboard. The overlay with
+// rotate=auto stays upright, or turns a quarter when that fills the panel clearly better.
+function frameMap() {
   const pts = [];
   for (const p of state.spawns?.points || []) pts.push(p.pos);
   for (const o of state.snaps.at(-1)?.objectives || []) if (o.pos) pts.push(o.pos);
   if (pts.length < 3) return false;
   const r = canvas.getBoundingClientRect(), v = state.view, pad = 600;
+  const side = !OVERLAY && r.width > 800 ? 236 : 0, top = OVERLAY ? 0 : 130;
+  const w = r.width - 2 * side, h = r.height - top;
   // Centre and scale for a rotation, measuring the points along the rotated axes.
   const fit = rot => {
     const c = Math.cos(rot), sn = Math.sin(rot);
     const us = pts.map(p => p[0] * c - p[1] * sn), vs = pts.map(p => p[0] * sn + p[1] * c);
     const u0 = Math.min(...us) - pad, u1 = Math.max(...us) + pad, v0 = Math.min(...vs) - pad, v1 = Math.max(...vs) + pad;
     const uc = (u0 + u1) / 2, vc = (v0 + v1) / 2;
-    return { rot, cx: uc * c + vc * sn, cy: -uc * sn + vc * c, scale: Math.min(r.width / (u1 - u0), r.height / (v1 - v0)) * 0.96 };
+    const scale = Math.min(w / (u1 - u0), h / (v1 - v0)) * 0.96;
+    // Shift so the points sit in the middle of the free area below the scoreboard.
+    return { rot, cx: uc * c + vc * sn, cy: -uc * sn + vc * c + top / 2 / scale, scale };
   };
-  const want = OPT.get("rotate") ?? "auto";
+  const want = OVERLAY ? (OPT.get("rotate") ?? "auto") : "0";
   let best;
   if (want === "auto") {
     const upright = fit(0), turned = fit(Math.PI / 2);
@@ -1147,7 +1151,7 @@ function draw() {
   const f = frameAt(tick);
   if (f) {
     // Frame once the map's spawn points are in (or known to be missing).
-    if (OVERLAY && !state.framed && state.mapData) frameOverlay();
+    if (!state.framed && state.mapData) frameMap();
     lastPlayers = f.players;
     // Dead players are reported where they died (no position if before we connected).
     const target = state.follow != null && f.players.find(p => p.id === state.follow);
