@@ -1198,7 +1198,7 @@ function card(p) {
   setStyle(el.children[0], "clipPath", `inset(0px ${(100 - f * 100).toFixed(1)}% 0px 0px)`);
   setHTML(el.children[1], ICONS[p.class] ? `<img src="/icons/${p.class}.svg" alt="${p.class}">` : CLASS[p.class] || "?");
   setText2(el.querySelector(".nm b"), p.name);
-  const sub = [p.ping != null && `${p.ping} ms`, p.class === "medic" && `${p.uber ?? 0}% über`].filter(Boolean).join(" · ");
+  const sub = p.ping != null ? `${p.ping} ms` : "";
   setHTML(el.querySelector(".nm small"), `${p.ubered ? `<span class="tag">${UBER_LABEL[p.ubered] || "ÜBER"}</span>` : ""}${sub}`);
   setText2(el.children[3], p.alive ? String(p.hp) : "DEAD");
   return el;
