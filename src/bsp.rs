@@ -3,7 +3,7 @@
 //! Control points, pickups and nearby spawns frame the playable area, which keeps
 //! the 3D skybox out of the picture.
 
-use anyhow::{Result, bail};
+use anyhow::{Result, anyhow, bail};
 use serde_json::{Value, json};
 
 const LUMP_ENTITIES: usize = 0;
@@ -21,37 +21,53 @@ const LUMP_TEXDATA_STRING_TABLE: usize = 44;
 // sky2d, sky, trigger, nodraw, hint, skip
 const SKIP_FLAGS: i32 = 0x2 | 0x4 | 0x40 | 0x80 | 0x100 | 0x200;
 const PAD: f32 = 1536.0;
+// Same as the download limit for a BSP.
+const MAX_LUMP: usize = 512 << 20;
 
 type Vec3 = [f32; 3];
 
-fn u16_at(b: &[u8], o: usize) -> u16 {
-    u16::from_le_bytes([b[o], b[o + 1]])
+// Maps come from fastdl and can be broken, so every read is checked: a panic would take down
+// the request and poison the lock around map loading.
+fn bytes<const N: usize>(b: &[u8], o: usize) -> Result<[u8; N]> {
+    o.checked_add(N).and_then(|end| b.get(o..end)).and_then(|s| s.try_into().ok()).ok_or_else(|| anyhow!("BSP truncated at {o}"))
 }
-fn i16_at(b: &[u8], o: usize) -> i16 {
-    u16_at(b, o) as i16
+fn u16_at(b: &[u8], o: usize) -> Result<u16> {
+    Ok(u16::from_le_bytes(bytes(b, o)?))
 }
-fn i32_at(b: &[u8], o: usize) -> i32 {
-    i32::from_le_bytes(b[o..o + 4].try_into().unwrap())
+fn i16_at(b: &[u8], o: usize) -> Result<i16> {
+    Ok(i16::from_le_bytes(bytes(b, o)?))
 }
-fn f32_at(b: &[u8], o: usize) -> f32 {
-    f32::from_le_bytes(b[o..o + 4].try_into().unwrap())
+fn i32_at(b: &[u8], o: usize) -> Result<i32> {
+    Ok(i32::from_le_bytes(bytes(b, o)?))
+}
+fn f32_at(b: &[u8], o: usize) -> Result<f32> {
+    Ok(f32::from_le_bytes(bytes(b, o)?))
+}
+/// An offset, count or index stored as an i32; negative ones are an error.
+fn index_at(b: &[u8], o: usize) -> Result<usize> {
+    let v = i32_at(b, o)?;
+    usize::try_from(v).map_err(|_| anyhow!("negative index {v} at {o}"))
 }
 
 fn lump(data: &[u8], index: usize) -> Result<Vec<u8>> {
     let h = 8 + 16 * index;
-    let (ofs, len) = (i32_at(data, h) as usize, i32_at(data, h + 4) as usize);
+    let (ofs, len) = (index_at(data, h)?, index_at(data, h + 4)?);
     let Some(raw) = data.get(ofs..ofs + len) else { bail!("lump {index} out of range") };
     if !raw.starts_with(b"LZMA") {
         return Ok(raw.to_vec());
     }
     // Valve's LZMA lump header: id, actual size, packed size, 5 property bytes.
-    let actual = u64::from(i32_at(raw, 4) as u32);
-    let mut alone = raw[12..17].to_vec();
-    alone.extend_from_slice(&actual.to_le_bytes());
+    let actual = u32::from_le_bytes(bytes(raw, 4)?) as usize;
+    if actual > MAX_LUMP {
+        bail!("lump {index}: {actual} bytes unpacked");
+    }
+    let props: [u8; 5] = bytes(raw, 12)?;
+    let mut alone = props.to_vec();
+    alone.extend_from_slice(&(actual as u64).to_le_bytes());
     alone.extend_from_slice(&raw[17..]);
-    let mut out = Vec::with_capacity(actual as usize);
-    lzma_rs::lzma_decompress(&mut &alone[..], &mut out).map_err(|e| anyhow::anyhow!("lump {index}: {e:?}"))?;
-    out.truncate(actual as usize);
+    let mut out = Vec::with_capacity(actual);
+    lzma_rs::lzma_decompress(&mut &alone[..], &mut out).map_err(|e| anyhow!("lump {index}: {e:?}"))?;
+    out.truncate(actual);
     Ok(out)
 }
 
@@ -136,17 +152,24 @@ pub fn spawns(data: &[u8]) -> Result<Value> {
     for e in &ents {
         match get(e, "classname").as_deref() {
             Some("func_respawnroom") => {
-                let Some(m) = get(e, "model").and_then(|m| m.strip_prefix('*')?.parse::<usize>().ok()) else { continue };
+                let Some(m) = get(e, "model").and_then(|m| m.strip_prefix('*')?.parse::<u16>().ok()) else { continue };
+                let m = usize::from(m);
                 if (m + 1) * 48 > models.len() {
                     continue;
                 }
                 let origin = vec3(get(e, "origin").as_deref()).unwrap_or([0.0; 3]);
-                let corner = |o: usize| [0, 1, 2].map(|i| f32_at(&models, m * 48 + o + i * 4) + origin[i]);
+                let corner = |o: usize| -> Result<Vec3> {
+                    let mut c = origin;
+                    for (i, v) in c.iter_mut().enumerate() {
+                        *v += f32_at(&models, m * 48 + o + i * 4)?;
+                    }
+                    Ok(c)
+                };
                 rooms.push(json!({
                     "name": get(e, "targetname").unwrap_or_default(),
                     "team": team(get(e, "TeamNum").as_deref()),
-                    "min": corner(0).map(r1),
-                    "max": corner(12).map(r1),
+                    "min": corner(0)?.map(r1),
+                    "max": corner(12)?.map(r1),
                     "disabled": get(e, "StartDisabled").as_deref() == Some("1"),
                 }));
             }
@@ -175,14 +198,16 @@ fn texture_names(data: &[u8]) -> Result<Vec<String>> {
     let table = lump(data, LUMP_TEXDATA_STRING_TABLE)?;
     let strings = lump(data, LUMP_TEXDATA_STRING_DATA)?;
     let texdata = lump(data, LUMP_TEXDATA)?;
-    Ok((0..texdata.len() / 32)
+    (0..texdata.len() / 32)
         .map(|i| {
-            let id = i32_at(&texdata, i * 32 + 12) as usize;
-            let start = table.get(id * 4..id * 4 + 4).map_or(0, |_| i32_at(&table, id * 4) as usize);
-            let end = strings[start..].iter().position(|&c| c == 0).map_or(strings.len(), |n| start + n);
-            String::from_utf8_lossy(&strings[start..end]).to_lowercase()
+            let id = index_at(&texdata, i * 32 + 12)?;
+            // A name missing from the tables is only used to skip tool textures, so it is left empty.
+            let start = index_at(&table, id * 4).unwrap_or(0);
+            let s = strings.get(start..).unwrap_or_default();
+            let s = &s[..s.iter().position(|&c| c == 0).unwrap_or(s.len())];
+            Ok(String::from_utf8_lossy(s).to_lowercase())
         })
-        .collect())
+        .collect()
 }
 
 fn r1(v: f32) -> f64 {
@@ -206,33 +231,33 @@ pub fn geometry(data: &[u8]) -> Result<Value> {
     let bounds = playable_bounds(data)?;
 
     // Only the world model: brush entities (doors, triggers, func_brush) are separate models.
-    let (first, count) = (i32_at(&models, 40) as usize, i32_at(&models, 44) as usize);
-    let vertex = |i: usize| -> Vec3 { [f32_at(&verts, i * 12), f32_at(&verts, i * 12 + 4), f32_at(&verts, i * 12 + 8)] };
+    let (first, count) = (index_at(&models, 40)?, index_at(&models, 44)?);
+    let vertex = |i: usize| -> Result<Vec3> { Ok([f32_at(&verts, i * 12)?, f32_at(&verts, i * 12 + 4)?, f32_at(&verts, i * 12 + 8)?]) };
 
     let mut floors: Vec<(f32, Value)> = Vec::new();
     let mut walls = Vec::new();
     for f in first..first + count {
         let o = f * 56;
-        let (plane, side) = (u16_at(&faces, o) as usize, faces[o + 2]);
-        let (first_edge, num_edges, tex) = (i32_at(&faces, o + 4) as usize, i16_at(&faces, o + 8) as usize, i16_at(&faces, o + 10));
+        let (plane, [side]) = (usize::from(u16_at(&faces, o)?), bytes(&faces, o + 2)?);
+        let (first_edge, num_edges, tex) = (index_at(&faces, o + 4)?, usize::from(u16_at(&faces, o + 8)?), i16_at(&faces, o + 10)?);
         if tex < 0 {
             continue;
         }
-        let (flags, tdata) = (i32_at(&texinfo, tex as usize * 72 + 64), i32_at(&texinfo, tex as usize * 72 + 68));
+        let (flags, tdata) = (i32_at(&texinfo, tex as usize * 72 + 64)?, i32_at(&texinfo, tex as usize * 72 + 68)?);
         if flags & SKIP_FLAGS != 0 || names.get(tdata as usize).is_some_and(|n| n.starts_with("tools/")) {
             continue;
         }
-        let mut nz = f32_at(&planes, plane * 20 + 8);
+        let mut nz = f32_at(&planes, plane * 20 + 8)?;
         if side != 0 {
             nz = -nz;
         }
         let pts: Vec<Vec3> = (first_edge..first_edge + num_edges)
             .map(|e| {
-                let se = i32_at(&surfedges, e * 4);
+                let se = i32_at(&surfedges, e * 4)?;
                 let eo = se.unsigned_abs() as usize * 4;
-                vertex(if se >= 0 { u16_at(&edges, eo) } else { u16_at(&edges, eo + 2) } as usize)
+                vertex(usize::from(if se >= 0 { u16_at(&edges, eo)? } else { u16_at(&edges, eo + 2)? }))
             })
-            .collect();
+            .collect::<Result<_>>()?;
         if pts.len() < 3 {
             continue;
         }
@@ -245,9 +270,10 @@ pub fn geometry(data: &[u8]) -> Result<Value> {
             let p: Vec<f64> = pts.iter().flat_map(|p| [r1(p[0]), r1(p[1])]).collect();
             floors.push((centre[2], json!({"z": r1(centre[2]), "p": p})));
         } else if nz.abs() < 0.3 {
-            let key = |p: &&Vec3| (p[0], p[1]);
-            let lo = pts.iter().min_by(|a, b| key(a).partial_cmp(&key(b)).unwrap()).unwrap();
-            let hi = pts.iter().max_by(|a, b| key(a).partial_cmp(&key(b)).unwrap()).unwrap();
+            // total_cmp: a broken map can have NaN coordinates.
+            let key = |a: &&Vec3, b: &&Vec3| a[0].total_cmp(&b[0]).then(a[1].total_cmp(&b[1]));
+            let lo = pts.iter().min_by(key).unwrap();
+            let hi = pts.iter().max_by(key).unwrap();
             if (lo[0] - hi[0]).powi(2) + (lo[1] - hi[1]).powi(2) > 4.0 {
                 let top = pts.iter().map(|p| p[2]).fold(f32::MIN, f32::max);
                 walls.push(json!({"z": r1(top), "p": [r1(lo[0]), r1(lo[1]), r1(hi[0]), r1(hi[1])]}));
@@ -274,6 +300,73 @@ mod tests {
     #[test]
     fn rejects_non_bsp() {
         assert!(geometry(b"not a map").is_err());
+    }
+
+    /// A VBSP header (64 lumps) with every lump empty.
+    fn empty_bsp() -> Vec<u8> {
+        let mut b = b"VBSP".to_vec();
+        b.extend_from_slice(&20i32.to_le_bytes());
+        b.resize(8 + 64 * 16 + 4, 0);
+        b
+    }
+
+    fn set_i32(b: &mut [u8], o: usize, v: i32) {
+        b[o..o + 4].copy_from_slice(&v.to_le_bytes());
+    }
+
+    // Broken maps must be an error, not a panic: a panic while serving `/map/NAME` used to
+    // poison the lock around map loading and break every later map request.
+    #[test]
+    fn truncated_header_is_an_error() {
+        assert!(geometry(b"VBSP").is_err());
+        assert!(geometry(&empty_bsp()[..100]).is_err());
+    }
+
+    #[test]
+    fn empty_lumps_are_an_error() {
+        assert!(geometry(&empty_bsp()).is_err());
+    }
+
+    #[test]
+    fn lump_out_of_range_is_an_error() {
+        for (ofs, len) in [(-1, 4), (4, -1), (i32::MAX, i32::MAX), (1000, 1_000_000)] {
+            let mut b = empty_bsp();
+            set_i32(&mut b, 8 + 16 * LUMP_MODELS, ofs);
+            set_i32(&mut b, 8 + 16 * LUMP_MODELS + 4, len);
+            assert!(geometry(&b).is_err(), "ofs {ofs} len {len}");
+        }
+    }
+
+    #[test]
+    fn lzma_lump_with_huge_size_is_an_error() {
+        let mut b = empty_bsp();
+        let ofs = b.len();
+        b.extend_from_slice(b"LZMA");
+        b.extend_from_slice(&u32::MAX.to_le_bytes());
+        b.extend_from_slice(&[0; 9]);
+        set_i32(&mut b, 8 + 16 * LUMP_PLANES, ofs as i32);
+        set_i32(&mut b, 8 + 16 * LUMP_PLANES + 4, 17);
+        assert!(geometry(&b).is_err());
+    }
+
+    #[test]
+    fn process_truncated_or_corrupted_is_not_a_panic() {
+        let Some(data) = process() else { return };
+        for n in [9, 500, 1036, data.len() / 3, data.len() / 2, data.len() - 1] {
+            let _ = geometry(&data[..n]);
+        }
+        for index in [LUMP_PLANES, LUMP_TEXDATA, LUMP_VERTEXES, LUMP_TEXINFO, LUMP_FACES, LUMP_EDGES, LUMP_SURFEDGES, LUMP_MODELS] {
+            let h = 8 + 16 * index;
+            let (ofs, len) = (index_at(&data, h).unwrap(), index_at(&data, h + 4).unwrap());
+            // Too short, and the contents overwritten (out of range indices, NaN coordinates).
+            let mut b = data.clone();
+            set_i32(&mut b, h + 4, (len / 2) as i32);
+            let _ = geometry(&b);
+            let mut b = data.clone();
+            let start = ofs + if b[ofs..].starts_with(b"LZMA") { 17 } else { 0 };
+            b[start..(start + 4096).min(ofs + len)].fill(0xFF);
+            let _ = geometry(&b);
+        }
     }
 
     #[test]

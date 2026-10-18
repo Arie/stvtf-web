@@ -12,7 +12,7 @@ use std::net::{TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 use std::sync::mpsc::{Receiver, RecvTimeoutError, SyncSender, TrySendError, sync_channel};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 use stvmap::watch::{self, Watch};
 
@@ -158,7 +158,8 @@ fn serve(mut s: TcpStream, hub: &SharedHub, cache: &Path, maps: &Mutex<()>) -> R
         },
         p if p.starts_with("/map/") => {
             let result = {
-                let _one_at_a_time = maps.lock().unwrap();
+                // Guards nothing, so a panic in an earlier request (poisoning it) does not matter.
+                let _one_at_a_time = maps.lock().unwrap_or_else(PoisonError::into_inner);
                 map_geometry(cache, &p[5..])
             };
             match result {
