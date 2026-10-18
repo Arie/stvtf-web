@@ -136,7 +136,8 @@
   #feed .ev .who { overflow: hidden; text-overflow: ellipsis; }
   #feed .ev.minor { background: transparent; color: var(--dim); font-size: 12px; }
   #feed .ev.feign { opacity: .5; }
-  #feed .ev.big { justify-content: center; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; padding: 5px 7px; color: #fff; }
+  /* Round flow rows: team-coloured, bold, aligned like the rest and free to wrap. */
+  #feed .ev.big { font-weight: 700; padding: 5px 7px; color: #fff; white-space: normal; }
   #feed .ev.big.red { background: color-mix(in srgb, var(--red) 55%, #000); }
   #feed .ev.big.blue { background: color-mix(in srgb, var(--blue) 55%, #000); }
   #feed .ev.big.none { background: #2c3036; }
