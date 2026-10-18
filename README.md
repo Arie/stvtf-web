@@ -26,7 +26,8 @@ that fills the panel clearly better.
 
 It shows the map, players as team dots with class icon, view direction and health ring,
 an X where a player died until they respawn, übers, heal beams, sentries, projectiles,
-shots and explosions, control points with capture progress, and the active spawn rooms.
+shots and explosions, control points (squares filling left to right while captured) and
+the active spawn rooms.
 
 Query options, e.g. `/overlay?names=1&score=1&panel=0.6`:
 
@@ -55,7 +56,8 @@ Query options, e.g. `/overlay?names=1&score=1&panel=0.6`:
 - Projectiles; buildings labelled like the engineer HUD (S1-S3, MS, D1-D3, T1-T3, a ring on
   teleporter exits, faint while under construction, SAPPED); a sentry's turret turns with
   its aim, a dashed line marks its target while attacking and each shot draws a tracer; control
-  points with owner and cap progress; the payload cart.
+  points as squares like the TF2 HUD (owner colour, filled left to right while being
+  captured); the payload cart.
 - Events at their tick: hitscan shot tracers, explosions, damage numbers, kills
   (marker plus a line from the attacker), spawns, ubers, captures and round banners.
 - A TF2-style scoreboard at the top: team scores, the round timer (SETUP, ROUND OVER,
