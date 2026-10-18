@@ -1011,8 +1011,8 @@ function drawHealBeams(players, byId) {
 }
 
 function drawPlayers(players) {
-  const placed = [], alive = [];
-  // The followed player is drawn last, on top, so their name always shows.
+  const alive = [];
+  // The followed player is drawn last, so their dot and name are on top.
   players = [...players].sort((a, b) => (a.id === state.follow) - (b.id === state.follow));
   for (const p of players) {
     if (p.team !== "red" && p.team !== "blue") continue;
@@ -1076,14 +1076,9 @@ function drawPlayers(players) {
     if (!OVERLAY || OPT.get("names") === "1") {
       const size = OVERLAY ? Math.round(Math.max(11, rad * 0.95)) : Math.round(12 * uiScale());
       ctx.font = `700 ${size}px system-ui`; ctx.textBaseline = "top"; ctx.textAlign = "center";
-      const label = p.name.slice(0, OVERLAY ? 12 : 18), ly = y + rad + 4, w = ctx.measureText(label).width;
-      const box = [x - w / 2 - 2, ly, x + w / 2 + 2, ly + size + 2];
-      // In a crowd only the names that fit are drawn; the followed player always gets one.
-      if (p.id === state.follow || !placed.some(b => box[0] < b[2] && b[0] < box[2] && box[1] < b[3] && b[1] < box[3])) {
-        placed.push(box);
-        ctx.lineWidth = 3; ctx.strokeStyle = "#0b0c0e"; ctx.strokeText(label, x, ly);
-        ctx.fillStyle = "#e8e8e8"; ctx.fillText(label, x, ly);
-      }
+      const label = p.name.slice(0, OVERLAY ? 12 : 18), ly = y + rad + 4;
+      ctx.lineWidth = 3; ctx.strokeStyle = "#0b0c0e"; ctx.strokeText(label, x, ly);
+      ctx.fillStyle = "#e8e8e8"; ctx.fillText(label, x, ly);
     }
   }
   ctx.globalAlpha = 1;
