@@ -1032,7 +1032,7 @@ function drawPlayers(players) {
     ring(0, frac, frac > 0.5 ? "#9fd27f" : frac > 0.25 ? "#e0c040" : "#e05a40");
     // Overheal laps the green ring in blue, full at the medigun cap: +50%, rounded down to 5.
     const over = Math.min(1, (p.hp - max) / (Math.floor(max * 1.5 / 5) * 5 - max || 1));
-    if (over > 0) ring(0, over, "#7fc7d2");
+    if (over > 0) ring(0, over, "#1f4fe0");
   }
   for (const { p, x, y, rad, cloaked } of alive) {
     ctx.globalAlpha = cloaked ? 0.35 : 1;
