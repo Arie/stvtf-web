@@ -95,6 +95,8 @@
   .sb-timer b { font-size: 26px; font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; letter-spacing: .02em; }
   .sb-timer span { position: absolute; left: 0; right: 0; top: 3px; text-align: center; font-size: 9px; font-weight: 800; letter-spacing: .14em; color: #ffd166; line-height: 1; }
   .sb-timer.low b { color: #ff6b5a; }
+  .sb-timer i { position: absolute; left: 0; right: 0; bottom: 3px; text-align: center; font-style: normal; font-size: 9px;
+    font-weight: 800; letter-spacing: .1em; line-height: 1; color: #ffffffb3; font-variant-numeric: tabular-nums; }
   .cps { display: flex; gap: 6px; }
   /* Square like TF2's HUD; a capture fills it left to right. */
   .cp { --own: #8a8a8a; --cap: transparent; --p: 0%; position: relative; width: 30px; height: 30px; border-radius: 4px;
@@ -164,7 +166,7 @@
     <div id="scoreboard" hidden>
       <div class="sb-row">
         <div class="sb-team blue"><span class="sb-name">BLU</span><b id="score-blue">0</b><i id="timer-blue" class="sb-sub"></i></div>
-        <div class="sb-timer"><span id="round-label"></span><b id="timer-main"></b></div>
+        <div class="sb-timer"><span id="round-label"></span><b id="timer-main"></b><i id="timer-map"></i></div>
         <div class="sb-team red"><b id="score-red">0</b><span class="sb-name">RED</span><i id="timer-red" class="sb-sub"></i></div>
       </div>
       <div class="cps" id="cps"></div>
@@ -1116,7 +1118,11 @@ function renderScoreboard(snap, tick) {
   const left = t => t.paused ? t.remaining : t.remaining - Math.max(0, tick - snap.tick) * MS_PER_TICK / 1000;
   const main = timers.find(t => t.team === "none") || (timers.length === 1 ? timers[0] : null);
   const byTeam = team => timers.find(t => t.team === team && t !== main);
-  setText("timer-main", main ? clock(left(main)) : "");
+  // Like TF2's HUD: the round timer when one is active, else the map's mp_timelimit; with
+  // both, the map time goes underneath.
+  const mapLeft = snap.time_left == null ? null : snap.time_left - Math.max(0, tick - snap.tick) * MS_PER_TICK / 1000;
+  setText("timer-main", main ? clock(left(main)) : mapLeft != null ? clock(mapLeft) : "");
+  setText("timer-map", main && mapLeft != null ? `MAP ${clock(mapLeft)}` : "");
   // Events are stamped with time into the round, which (unlike the round timer) never jumps.
   const into = snap.round_time == null ? null : snap.round_time + (snap.round === "running" ? Math.max(0, tick - snap.tick) * MS_PER_TICK / 1000 : 0);
   state.clock = into == null ? "" : `${Math.floor(into / 60)}:${String(Math.floor(into % 60)).padStart(2, "0")}`;
@@ -1125,7 +1131,8 @@ function renderScoreboard(snap, tick) {
   const label = main?.setup ? "SETUP" : ROUND_LABEL[snap.round] ?? "";
   // A paused round timer is not a paused game (KotH, no match started): it just stands still.
   setText("round-label", label || (main && !main.paused && left(main) <= 0 ? "OVERTIME" : ""));
-  $("timer-main").parentElement.classList.toggle("low", !!main && !main.paused && left(main) <= 30);
+  const shown = main && !main.paused ? left(main) : !main ? mapLeft : null;
+  $("timer-main").parentElement.classList.toggle("low", shown != null && shown <= 30);
 }
 function renderPoints(snap) {
   const html = (snap.objectives || []).filter(o => o.kind === "control_point").map(o => {
