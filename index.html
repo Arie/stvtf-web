@@ -978,7 +978,7 @@ function drawHealBeams(players, byId) {
 }
 
 function drawPlayers(players) {
-  const placed = [];
+  const placed = [], alive = [];
   // The followed player is drawn last, on top, so their name always shows.
   players = [...players].sort((a, b) => (a.id === state.follow) - (b.id === state.follow));
   for (const p of players) {
@@ -996,14 +996,29 @@ function drawPlayers(players) {
       continue;
     }
     const [x, y] = toScreen(p.pos[0], p.pos[1]);
-    const rad = OVERLAY ? overlayUnit() : px(26, 8);
-    const col = TEAM[p.team];
-    const cloaked = p.conds?.includes("Stealthed");
+    alive.push({ p, x, y, rad: OVERLAY ? overlayUnit() : px(26, 8), col: TEAM[p.team], cloaked: p.conds?.includes("Stealthed") });
+  }
+  // Push stacked players apart on screen until their class icons no longer overlap.
+  for (let iter = 0; iter < 4; iter++) {
+    for (let i = 0; i < alive.length; i++) for (let j = i + 1; j < alive.length; j++) {
+      const A = alive[i], B = alive[j], min = (A.rad + B.rad) * 0.85;
+      let dx = B.x - A.x, dy = B.y - A.y, d = Math.hypot(dx, dy);
+      if (d >= min) continue;
+      if (d < 0.01) { const t = (A.p.id * 2.4 + B.p.id) % (Math.PI * 2); dx = Math.cos(t); dy = Math.sin(t); d = 1; }
+      const k = (min - d) / 2 / d;
+      A.x -= dx * k; A.y -= dy * k; B.x += dx * k; B.y += dy * k;
+    }
+  }
+  // In passes, so in a clump every class icon sits on top of the other players' discs.
+  for (const { p, x, y, rad, col, cloaked } of alive) {
     ctx.globalAlpha = cloaked ? 0.35 : 1;
     const a = screenAngle(p.yaw);
     ctx.beginPath(); ctx.moveTo(x, y);
     ctx.arc(x, y, rad * 2.6, a - 0.35, a + 0.35); ctx.closePath();
     ctx.fillStyle = col + "40"; ctx.fill();
+  }
+  for (const { p, x, y, rad, col, cloaked } of alive) {
+    ctx.globalAlpha = cloaked ? 0.35 : 1;
     if (p.ubered) drawUberRing(p, x, y, rad, col);
     ctx.beginPath(); ctx.arc(x, y, rad, 0, Math.PI * 2);
     ctx.fillStyle = col; ctx.fill();
@@ -1018,6 +1033,9 @@ function drawPlayers(players) {
     // Overheal laps the green ring in blue, full at the medigun cap: +50%, rounded down to 5.
     const over = Math.min(1, (p.hp - max) / (Math.floor(max * 1.5 / 5) * 5 - max || 1));
     if (over > 0) ring(0, over, "#7fc7d2");
+  }
+  for (const { p, x, y, rad, cloaked } of alive) {
+    ctx.globalAlpha = cloaked ? 0.35 : 1;
     const img = icon(p.class);
     if (img) {
       const s = rad * (OVERLAY ? 1.65 : 1.5);
@@ -1030,6 +1048,9 @@ function drawPlayers(players) {
     if (p.id === state.follow) {
       ctx.beginPath(); ctx.arc(x, y, rad + 7, 0, Math.PI * 2); ctx.strokeStyle = "#fff"; ctx.lineWidth = 2; ctx.stroke();
     }
+  }
+  for (const { p, x, y, rad, cloaked } of alive) {
+    ctx.globalAlpha = cloaked ? 0.35 : 1;
     if (!OVERLAY || OPT.get("names") === "1") {
       const size = OVERLAY ? Math.round(Math.max(11, rad * 0.95)) : Math.round(12 * uiScale());
       ctx.font = `700 ${size}px system-ui`; ctx.textBaseline = "top"; ctx.textAlign = "center";
@@ -1042,8 +1063,8 @@ function drawPlayers(players) {
         ctx.fillStyle = "#e8e8e8"; ctx.fillText(label, x, ly);
       }
     }
-    ctx.globalAlpha = 1;
   }
+  ctx.globalAlpha = 1;
 }
 
 function drawEffects(byId) {
