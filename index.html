@@ -415,6 +415,7 @@ function frameMap() {
     best = fit((Number(want) || 0) * Math.PI / 180);
   }
   Object.assign(v, { rot: best.rot, cx: best.cx, cy: best.cy, scale: best.scale });
+  state.full = { cx: best.cx, cy: best.cy, scale: best.scale };
   state.fitted = state.framed = true;
   return true;
 }
@@ -1181,6 +1182,33 @@ function frame() {
   requestAnimationFrame(frame);
 }
 
+// The overlay zooms to where the living players are, easing so the camera glides: never wider
+// than the full framing, never tighter than MIN_SPAN units, back to the full map when nobody lives.
+const MIN_SPAN = 2600, ACTION_PAD = 500;
+let lastFrame = performance.now();
+function followAction(players) {
+  const now = performance.now(), dt = Math.min(0.1, (now - lastFrame) / 1000);
+  lastFrame = now;
+  const v = state.view, full = state.full;
+  if (!full) return;
+  const r = canvas.getBoundingClientRect(), c = Math.cos(v.rot), sn = Math.sin(v.rot);
+  const alive = players.filter(p => p.alive && p.pos && (p.team === "red" || p.team === "blue"));
+  let target = full;
+  if (alive.length) {
+    // Along the rotated axes, like the framing, so the box matches the panel.
+    const us = alive.map(p => p.pos[0] * c - p.pos[1] * sn), vs = alive.map(p => p.pos[0] * sn + p.pos[1] * c);
+    let u0 = Math.min(...us) - ACTION_PAD, u1 = Math.max(...us) + ACTION_PAD, v0 = Math.min(...vs) - ACTION_PAD, v1 = Math.max(...vs) + ACTION_PAD;
+    const grow = (a, b) => { const m = (a + b) / 2, half = Math.max((b - a) / 2, MIN_SPAN / 2); return [m - half, m + half]; };
+    [u0, u1] = grow(u0, u1); [v0, v1] = grow(v0, v1);
+    const scale = Math.max(full.scale, Math.min(r.width / (u1 - u0), r.height / (v1 - v0)) * 0.96);
+    const uc = (u0 + u1) / 2, vc = (v0 + v1) / 2;
+    target = { cx: uc * c + vc * sn, cy: -uc * sn + vc * c, scale };
+  }
+  const k = 1 - Math.exp(-dt / 0.9);
+  v.cx += (target.cx - v.cx) * k; v.cy += (target.cy - v.cy) * k;
+  v.scale *= Math.pow(target.scale / v.scale, k);
+}
+
 function draw() {
   const r = canvas.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
   if (canvas.width !== Math.round(r.width * dpr) || canvas.height !== Math.round(r.height * dpr)) {
@@ -1192,6 +1220,7 @@ function draw() {
   if (f) {
     // Frame once the map's spawn points are in (or known to be missing).
     if (!state.framed && state.mapData) frameMap();
+    if (OVERLAY && state.framed && OPT.get("zoom") !== "map") followAction(f.players);
     lastPlayers = f.players;
     // Dead players are reported where they died (no position if before we connected).
     const target = state.follow != null && f.players.find(p => p.id === state.follow);

@@ -22,7 +22,8 @@ server holds the slot for 300 s), a second one exits at once.
 broadcasts: add it to OBS as a Browser source of any size (for example 480x480 or
 560x315). The page is transparent apart from a rounded panel; it has no controls and
 frames itself around the spawns and points of the map, upright or turned a quarter when
-that fills the panel clearly better.
+that fills the panel clearly better, and then glides in on the area where the living
+players are.
 
 It shows the map, players as team dots with class icon, view direction and health ring,
 an X where a player died until they respawn, übers, heal beams, sentries, projectiles,
@@ -36,6 +37,7 @@ Query options, e.g. `/overlay?names=1&score=1&panel=0.6`:
 | `names=1` | player names under the dots |
 | `score=1` | a small scoreboard (scores, round timer, points) at the top |
 | `panel=0..1` | opacity of the panel background (default 0.82; 0 for none) |
+| `zoom=map` | keep the whole map in view instead of zooming to where the players are |
 | `rotate=auto\|<degrees>` | map rotation (default `auto`: upright or a quarter turn) |
 | `ui=<factor>` | scale all markers (default 1; marker size already follows the panel size) |
 | `dot=<px>` | fixed player dot radius instead |
