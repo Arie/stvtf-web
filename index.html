@@ -539,6 +539,9 @@ canvas.addEventListener("wheel", e => {
   const wx = v.cx + mx / v.scale, wy = v.cy - my / v.scale;
   v.scale *= Math.exp(-e.deltaY * 0.0015);
   v.cx = wx - mx / v.scale; v.cy = wy + my / v.scale;
+  // No further out than the whole map, framed as at the start.
+  const full = state.full;
+  if (full && v.scale <= full.scale) Object.assign(v, { scale: full.scale, cx: full.cx, cy: viewCy(full.cy, full.scale) });
 }, { passive: false });
 
 // ---------- interpolation
