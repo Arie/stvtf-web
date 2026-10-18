@@ -1,0 +1,26 @@
+# cargo-deny: checks the dependencies for security advisories, licences that are not
+# allowed, duplicate or banned crates, and sources other than crates.io.
+# https://embarkstudios.github.io/cargo-deny/
+
+[graph]
+all-features = true
+
+[advisories]
+# Unmaintained crates and yanked versions are reported too (as errors by default).
+yanked = "deny"
+
+[licenses]
+allow = ["MIT", "Apache-2.0", "BSD-3-Clause", "ISC", "Unicode-3.0", "Zlib", "0BSD", "Unlicense", "CDLA-Permissive-2.0"]
+confidence-threshold = 0.9
+# The two local crates are not published, so they are not held to the list above.
+private = { ignore = true }
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+# `stvmap = { path = "../stvmap" }` has no version and counts as a wildcard otherwise.
+allow-wildcard-paths = true
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"

@@ -1,0 +1,104 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+  # Weekly, so new security advisories for the dependencies show up without a push.
+  schedule:
+    - cron: "0 6 * * 1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  # Warnings are allowed locally but fail CI.
+  RUSTFLAGS: -D warnings
+  RUSTDOCFLAGS: -D warnings
+
+# Cargo.toml depends on stvmap as `../stvmap`, so both repositories are checked out
+# side by side: $GITHUB_WORKSPACE/stvmap-web and $GITHUB_WORKSPACE/stvmap.
+defaults:
+  run:
+    working-directory: stvmap-web
+
+jobs:
+  fmt:
+    name: rustfmt
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          path: stvmap-web
+      - run: rustup toolchain install
+      - run: cargo fmt --check
+
+  clippy:
+    name: clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          path: stvmap-web
+      - uses: actions/checkout@v7
+        with:
+          repository: Arie/stvmap
+          path: stvmap
+          ssh-key: ${{ secrets.STVMAP_DEPLOY_KEY }}
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: stvmap-web
+      - run: cargo clippy --all-targets --locked
+      - run: cargo doc --no-deps --locked
+
+  test:
+    name: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          path: stvmap-web
+      - uses: actions/checkout@v7
+        with:
+          repository: Arie/stvmap
+          path: stvmap
+          ssh-key: ${{ secrets.STVMAP_DEPLOY_KEY }}
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: stvmap-web
+      # The BSP tests skip themselves without this map; CI always runs them.
+      - uses: actions/cache@v6
+        with:
+          path: stvmap-web/cache/cp_process_f12.bsp
+          key: bsp-cp_process_f12
+      - name: Download test map
+        run: |
+          mkdir -p cache
+          [ -f cache/cp_process_f12.bsp ] || curl -fsSL -o cache/cp_process_f12.bsp https://fastdl.serveme.tf/maps/cp_process_f12.bsp
+      - run: cargo test --locked
+
+  deny:
+    name: cargo-deny
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          path: stvmap-web
+      - uses: actions/checkout@v7
+        with:
+          repository: Arie/stvmap
+          path: stvmap
+          ssh-key: ${{ secrets.STVMAP_DEPLOY_KEY }}
+      - run: rustup toolchain install
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deny
+      - run: cargo deny --locked check

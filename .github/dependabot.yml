@@ -1,0 +1,11 @@
+# Cargo dependencies are not covered: Dependabot cannot resolve the private `../stvmap`
+# path dependency. cargo-deny in CI reports advisories for them instead.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]

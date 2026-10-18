@@ -1,0 +1,6 @@
+#!/bin/sh
+# Runs the same checks as CI before each commit.
+# Enable once per clone with: git config core.hooksPath .githooks
+set -e
+cargo fmt --check || { echo "pre-commit: run 'cargo fmt' to fix formatting"; exit 1; }
+cargo clippy --all-targets --quiet -- -D warnings

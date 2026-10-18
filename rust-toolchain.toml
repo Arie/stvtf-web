@@ -1,0 +1,5 @@
+# Everyone (and CI) builds with the same compiler, so clippy and rustfmt agree.
+# Bump it deliberately and fix any new lints in the same commit.
+[toolchain]
+channel = "1.93.1"
+components = ["rustfmt", "clippy"]

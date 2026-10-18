@@ -1,0 +1,1177 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>stvmap</title>
+<link rel="stylesheet" href="/killicons.css">
+<style>
+  :root {
+    --bg: #15171a; --panel: #1e2125; --line: #2c3036; --text: #d8dadd; --dim: #8a9099;
+    --red: #d0453f; --blue: #4f8fc0; --red-soft: #d0453f33; --blue-soft: #4f8fc033;
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
+    font: 13px/1.35 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  body { display: grid; grid-template-rows: auto 1fr; }
+  header { display: flex; gap: 18px; align-items: center; padding: 8px 14px;
+    border-bottom: 1px solid var(--line); background: var(--panel); flex-wrap: wrap; }
+  header b { font-size: 15px; }
+  header .dim { color: var(--dim); }
+  header label { color: var(--dim); display: flex; gap: 6px; align-items: center; }
+  #status.ok { color: #7cc47f; } #status.bad { color: #e0a040; }
+  main { display: grid; grid-template-columns: 1fr 330px; min-height: 0; }
+  #stage { position: relative; min-height: 0; overflow: hidden; }
+  canvas { position: absolute; inset: 0; width: 100%; height: 100%; cursor: grab; }
+  canvas:active { cursor: grabbing; }
+  #banner { position: absolute; top: 14px; left: 50%; transform: translateX(-50%);
+    padding: 6px 16px; border-radius: 4px; background: #000a; font-weight: 600; font-size: 15px;
+    opacity: 0; transition: opacity .4s; pointer-events: none; }
+  aside { border-left: 1px solid var(--line); background: var(--panel); display: flex;
+    flex-direction: column; min-height: 0; }
+  aside section { padding: 8px 10px; border-bottom: 1px solid var(--line); }
+  aside h3 { margin: 0 0 6px; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--dim); }
+  /* Spectator HUD over the map: BLU down the left edge, RED down the right, like TF2. */
+  .hud { position: absolute; top: 50%; transform: translateY(-50%); display: flex; flex-direction: column;
+    gap: 3px; width: 218px; pointer-events: none; z-index: 2;
+    font-family: "TF2 Build", "Oswald", "Roboto Condensed", "Arial Narrow", system-ui, sans-serif; }
+  #hud-blue { left: 10px; } #hud-red { right: 10px; }
+  .card { --team: var(--blue); position: relative; height: 34px; display: grid; align-items: center;
+    grid-template-columns: 34px 1fr auto; background: #0b0c0ecc; overflow: hidden; }
+  #hud-red .card, #hud-red .charge { --team: var(--red); }
+  /* Fills stay full width and are revealed with clip-path, so the über stripes (a fixed
+     24px tile) never stretch when health or charge changes. */
+  .card .fill { position: absolute; inset: 0; clip-path: inset(0 100% 0 0); transition: clip-path .25s linear;
+    background: linear-gradient(90deg, color-mix(in srgb, var(--team) 70%, #000), color-mix(in srgb, var(--team) 45%, #000)); }
+  .card > :not(.fill) { position: relative; }
+  .card .ci { width: 34px; height: 34px; padding: 5px; background: var(--team); display: grid; place-items: center; font-weight: 800; }
+  .card .ci img { width: 24px; height: 24px; }
+  .card .nm { padding: 0 6px; min-width: 0; line-height: 1.05; }
+  .card .nm b { display: block; font-weight: 600; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #fff; text-shadow: 0 1px 2px #000; }
+  .card .nm small { font-size: 10px; color: #ffffffa0; letter-spacing: .02em; }
+  .card .hp { padding: 0 8px; font-size: 22px; font-weight: 800; color: #fff; text-shadow: 0 2px 0 #000a; font-variant-numeric: tabular-nums; }
+  .card.over .hp { color: #9ff0ff; }
+  .card.low .hp { color: #ff6b5a; animation: pulse .7s infinite alternate; }
+  .card.dead { filter: grayscale(1) brightness(.55); }
+  .card.dead .hp { font-size: 12px; font-weight: 600; letter-spacing: .08em; }
+  .card .tag { margin-right: 5px; padding: 0 4px; font-size: 9px; font-weight: 800;
+    letter-spacing: .08em; color: #000; background: #fff; border-radius: 2px; }
+  .card.ub { box-shadow: inset 0 0 0 2px #fff8, 0 0 12px var(--team); }
+  .card.ub .fill { --stripe: color-mix(in srgb, var(--team) 80%, #fff);
+    background: linear-gradient(135deg, var(--stripe) 25%, var(--team) 25% 50%, var(--stripe) 50% 75%, var(--team) 75%) 0 0 / 24px 24px;
+    animation: stripes 1s linear infinite; }
+  .charge { --team: var(--blue); position: relative; height: 26px; margin-top: 4px; background: #0b0c0ecc;
+    display: flex; align-items: center; gap: 6px; padding: 0 8px; overflow: hidden; }
+  .charge .bar { position: absolute; inset: 0; clip-path: inset(0 100% 0 0); transition: clip-path .3s linear;
+    background: color-mix(in srgb, var(--team) 55%, #000); }
+  .charge .segs { position: absolute; inset: 0; }
+  .charge .seg { position: absolute; top: 0; bottom: 0; width: 2px; background: #0b0c0e; }
+  .charge > span { position: relative; font-size: 11px; font-weight: 700; letter-spacing: .06em; color: #fff; text-transform: uppercase;
+    text-shadow: 0 0 3px #000, 0 1px 2px #000; }
+  .charge.releasing > span { background: #000b; padding: 1px 5px; border-radius: 2px; }
+  .charge .pct { margin-left: auto; font-size: 15px; font-variant-numeric: tabular-nums; }
+  .charge.ready .bar { background: linear-gradient(90deg, var(--team), color-mix(in srgb, var(--team) 60%, #fff)); animation: pulse 1s infinite alternate; }
+  .charge.releasing { box-shadow: 0 0 14px var(--team); }
+  .charge.releasing .bar { background: linear-gradient(135deg, #fff 25%, var(--team) 25% 50%, #fff 50% 75%, var(--team) 75%) 0 0 / 24px 24px;
+    animation: stripes .6s linear infinite; }
+  .charge.dead { filter: grayscale(1) brightness(.55); }
+  .card { cursor: pointer; pointer-events: auto; }
+  .card:hover { filter: brightness(1.25); }
+  .card.followed { box-shadow: inset 0 0 0 2px #fff; }
+  #scoreboard { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); z-index: 3;
+    display: flex; flex-direction: column; align-items: center; gap: 6px; pointer-events: none;
+    font-family: "TF2 Build", "Oswald", "Roboto Condensed", "Arial Narrow", system-ui, sans-serif; }
+  .sb-row { display: flex; align-items: stretch; filter: drop-shadow(0 2px 6px #000a); }
+  .sb-team { position: relative; display: flex; align-items: center; gap: 10px; padding: 0 14px; height: 48px; color: #fff; }
+  .sb-team.blue { background: linear-gradient(180deg, color-mix(in srgb, var(--blue) 85%, #fff), var(--blue)); border-radius: 6px 0 0 6px; }
+  .sb-team.red { background: linear-gradient(180deg, color-mix(in srgb, var(--red) 85%, #fff), var(--red)); border-radius: 0 6px 6px 0; }
+  .sb-team b { font-size: 34px; font-weight: 800; line-height: 1; min-width: 1.2ch; text-align: center; text-shadow: 0 2px 0 #0006; font-variant-numeric: tabular-nums; }
+  .sb-name { font-size: 12px; font-weight: 800; letter-spacing: .12em; opacity: .85; }
+  .sb-sub { position: absolute; top: 100%; left: 0; right: 0; text-align: center; font-style: normal; font-size: 12px; font-weight: 700;
+    background: #000a; padding: 1px 0; font-variant-numeric: tabular-nums; }
+  .sb-sub:empty { display: none; }
+  .sb-timer { position: relative; display: grid; place-items: center; width: 104px; background: #14161acc; color: #fff; }
+  .sb-timer b { font-size: 26px; font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; letter-spacing: .02em; }
+  .sb-timer span { position: absolute; left: 0; right: 0; top: 3px; text-align: center; font-size: 9px; font-weight: 800; letter-spacing: .14em; color: #ffd166; line-height: 1; }
+  .sb-timer.low b { color: #ff6b5a; }
+  .cps { display: flex; gap: 6px; }
+  /* Square like TF2's HUD; a capture fills it left to right. */
+  .cp { --own: #8a8a8a; --cap: transparent; --p: 0%; position: relative; width: 30px; height: 30px; border-radius: 4px;
+    background: linear-gradient(90deg, var(--cap) var(--p), var(--own) var(--p)); box-shadow: 0 0 0 2px #000c, 0 2px 6px #0008;
+    display: grid; place-items: center; color: #fff; font-size: 13px; font-weight: 800; text-shadow: 0 1px 2px #000; }
+  .cp.locked { filter: grayscale(.7) brightness(.7); }
+  .cp.locked::after { content: "🔒"; position: absolute; right: -6px; bottom: -6px; font-size: 11px; }
+  .cp.capping { box-shadow: 0 0 0 2px #fff, 0 0 12px var(--cap); }
+  #follow { position: absolute; bottom: 14px; left: 50%; transform: translateX(-50%); z-index: 3; display: flex; align-items: center; gap: 8px;
+    padding: 5px 6px 5px 12px; background: #0b0c0ee6; border-radius: 16px; color: var(--dim); }
+  #follow b { color: #fff; }
+  #follow button, #bgtoggle button { border: 0; font: inherit; cursor: pointer; }
+  #follow button { width: 22px; height: 22px; border-radius: 50%; background: #ffffff1a; color: #fff; }
+  #bgtoggle { position: absolute; right: 12px; bottom: 12px; z-index: 3; display: flex; padding: 2px; border-radius: 6px; background: #0b0c0ee6; }
+  #bgtoggle button { padding: 4px 10px; border-radius: 4px; background: transparent; color: var(--dim); font-size: 12px; }
+  #bgtoggle button.on { background: #ffffff1f; color: #fff; }
+  /* Broadcast overlay (/overlay): only the map, on a transparent page for OBS. */
+  html.overlay, html.overlay body { background: transparent; }
+  html.overlay body { display: block; }
+  html.overlay header, html.overlay aside, html.overlay .hud, html.overlay #follow, html.overlay #bgtoggle,
+  html.overlay #empty, html.overlay #banner { display: none !important; }
+  html.overlay main { display: block; height: 100%; }
+  html.overlay #stage { position: fixed; inset: 0; border-radius: 14px; background: rgb(11 12 14 / var(--overlay-opacity, .82));
+    box-shadow: inset 0 0 0 1px #ffffff1f; }
+  html.overlay canvas { cursor: default; pointer-events: none; }
+  html.overlay #scoreboard { top: 6px; transform: translateX(-50%) scale(.62); transform-origin: top center; }
+  @keyframes pulse { from { opacity: 1; } to { opacity: .55; } }
+  /* Moving exactly one 24px tile per cycle loops seamlessly. */
+  @keyframes stripes { from { background-position: 0 0; } to { background-position: 24px 0; } }
+  @media (max-width: 800px) { .hud { width: 150px; } .card .nm small, .card .tag { display: none; } }
+  #feed, #chat { overflow-y: auto; flex: 1; min-height: 80px; }
+  #feed div, #chat div { padding: 2px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .t-red { color: var(--red); } .t-blue { color: var(--blue); }
+  #feed div.ev { display: flex; align-items: center; gap: 5px; padding: 3px 7px; margin: 0 0 2px; border-radius: 3px;
+    background: #0b0c0e8c; white-space: nowrap; overflow: hidden; }
+  #feed .ev time { color: var(--dim); font-size: 10px; font-variant-numeric: tabular-nums; min-width: 30px; }
+  #feed .ev .who { overflow: hidden; text-overflow: ellipsis; }
+  #feed .ev.minor { background: transparent; color: var(--dim); font-size: 12px; }
+  #feed .ev.feign { opacity: .5; }
+  #feed .ev.big { justify-content: center; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; padding: 5px 7px; color: #fff; }
+  #feed .ev.big.red { background: color-mix(in srgb, var(--red) 55%, #000); }
+  #feed .ev.big.blue { background: color-mix(in srgb, var(--blue) 55%, #000); }
+  #feed .ev.big.none { background: #2c3036; }
+  #feed .ev.hot.red { background: color-mix(in srgb, var(--red) 30%, #0b0c0e); }
+  #feed .ev.hot.blue { background: color-mix(in srgb, var(--blue) 30%, #0b0c0e); }
+  #feed .killicon { zoom: .6; margin: 0 2px; flex: none; }
+  #feed .crit { filter: drop-shadow(0 0 3px #ff4b3a); }
+  .chip { flex: none; padding: 0 4px; border-radius: 2px; font-size: 9px; font-weight: 800; letter-spacing: .06em; color: #000; background: #ddd; }
+  .chip.dom { background: #ff6b5a; } .chip.rev { background: #ffd166; } .chip.air { background: #9ff0ff; } .chip.drop { background: #fff; }
+  .w { color: var(--dim); font-size: 11px; }
+  #empty { position: absolute; inset: 0; display: grid; place-items: center; color: var(--dim); pointer-events: none; }
+  @media (max-width: 800px) { main { grid-template-columns: 1fr; grid-template-rows: 60vh auto; } }
+</style>
+</head>
+<body>
+<header>
+  <b id="map">connecting…</b>
+  <span id="status" class="bad">waiting for data</span>
+</header>
+<main>
+  <div id="stage">
+    <canvas id="c"></canvas>
+    <div id="empty">waiting for SourceTV (data arrives tv_delay behind the game)…</div>
+    <div id="banner"></div>
+    <div class="hud" id="hud-blue"></div>
+    <div class="hud" id="hud-red"></div>
+    <div id="scoreboard" hidden>
+      <div class="sb-row">
+        <div class="sb-team blue"><span class="sb-name">BLU</span><b id="score-blue">0</b><i id="timer-blue" class="sb-sub"></i></div>
+        <div class="sb-timer"><span id="round-label"></span><b id="timer-main"></b></div>
+        <div class="sb-team red"><b id="score-red">0</b><span class="sb-name">RED</span><i id="timer-red" class="sb-sub"></i></div>
+      </div>
+      <div class="cps" id="cps"></div>
+    </div>
+    <div id="follow" hidden><span>Following <b id="follow-name"></b></span><button id="follow-stop" title="Stop following (Esc)">✕</button></div>
+    <div id="bgtoggle" hidden><button data-bg="overview" class="on">Overview</button><button data-bg="geometry">Geometry</button></div>
+  </div>
+  <aside>
+    <section style="display:flex;flex-direction:column;flex:1.4;min-height:0"><div id="feed"></div></section>
+    <section style="display:flex;flex-direction:column;flex:1;min-height:0"><h3>Chat</h3><div id="chat"></div></section>
+  </aside>
+</main>
+<script>
+"use strict";
+const MS_PER_TICK = 15;
+const BUFFER_TICKS = 10;
+const TEAM = { red: "#d0453f", blue: "#4f8fc0", none: "#9a9a9a", spectator: "#9a9a9a" };
+const CLASS = { scout: "Sc", soldier: "So", pyro: "Py", demoman: "De", heavy: "He", engineer: "En", medic: "Me", sniper: "Sn", spy: "Sp", unknown: "?" };
+// logs.tf order, as on serveme; same-class players by name so rows don't swap between snapshots.
+const CLASS_ORDER = ["scout", "soldier", "pyro", "demoman", "heavy", "engineer", "medic", "sniper", "spy", "unknown"];
+const classRank = c => { const i = CLASS_ORDER.indexOf(c); return i < 0 ? CLASS_ORDER.length : i; };
+const byClass = (a, b) => classRank(a.class) - classRank(b.class) || a.name.localeCompare(b.name, undefined, { sensitivity: "base" }) || a.id - b.id;
+
+const ICONS = {};
+for (const c of CLASS_ORDER) { if (c !== "unknown") { ICONS[c] = new Image(); ICONS[c].src = `/icons/${c}.svg`; } }
+const icon = c => ICONS[c]?.complete && ICONS[c].naturalWidth ? ICONS[c] : null;
+
+// /overlay: a fixed, transparent minimap for broadcasts. Options in the query string:
+// names=1, score=1, panel=0..1 (background opacity), rotate=auto|<degrees>, dot=<px>.
+const OVERLAY = location.pathname.startsWith("/overlay");
+const OPT = new URLSearchParams(location.search);
+if (OVERLAY) {
+  document.documentElement.classList.add("overlay");
+  if (OPT.has("panel")) document.documentElement.style.setProperty("--overlay-opacity", OPT.get("panel"));
+}
+// Marker size in the overlay follows the panel, so a corner minimap in a 1080p stream (~400px)
+// stays readable: player dot radius ~12px there. ui=<factor> scales it, dot=<px> fixes it.
+function overlayUnit() {
+  if (OPT.has("dot")) return Number(OPT.get("dot")) || 12;
+  const r = canvas.getBoundingClientRect();
+  return Math.max(9, Math.min(20, Math.min(r.width, r.height) / 33)) * (Number(OPT.get("ui")) || 1);
+}
+
+const canvas = document.getElementById("c");
+const ctx = canvas.getContext("2d");
+const $ = id => document.getElementById(id);
+
+const state = {
+  map: null, snaps: [], events: [], effects: [], players: new Map(),
+  tickOffset: null, lastTick: 0, geometry: null, geoCanvas: null, overview: null,
+  view: { cx: 0, cy: 0, scale: 0.08, rot: 0 }, fitted: false, bg: "overview", follow: null,
+};
+
+// ---------- tick clock: server tick at a local instant, smoothed over snapshot arrivals
+function nowTick() {
+  return state.tickOffset == null ? 0 : performance.now() / MS_PER_TICK + state.tickOffset;
+}
+function observeTick(tick) {
+  const est = tick - performance.now() / MS_PER_TICK;
+  if (state.tickOffset == null || Math.abs(est - state.tickOffset) > 40) state.tickOffset = est;
+  else state.tickOffset = Math.max(state.tickOffset * 0.97 + est * 0.03, state.tickOffset - 0.5);
+}
+function renderTick() { return nowTick() - BUFFER_TICKS; }
+
+// ---------- incoming stream
+const es = new EventSource("/events");
+es.onmessage = e => handle(JSON.parse(e.data));
+es.onerror = () => setStatus("stream lost, retrying", false);
+
+function setStatus(text, ok) { const s = $("status"); s.textContent = text; s.className = ok ? "ok" : "bad"; }
+
+function handle(m) {
+  switch (m.type) {
+    case "server":
+      if (m.map !== state.map) {
+        if (state.map) feedEvent({ type: "map", map: m.map }, () => null);
+        loadMap(m.map);
+      }
+      resetMatch();
+      break;
+    case "status":
+      if (m.state === "map_change") { resetMatch(); setStatus("map changing", false); }
+      else if (m.state === "full") setStatus("live", true);
+      else if (m.state === "disconnected" || m.state === "connect_failed") setStatus(m.state + ": " + (m.reason || ""), false);
+      else setStatus(m.state, false);
+      break;
+    case "snapshot":
+      if (m.tick < state.lastTick - 200) resetMatch();
+      state.lastTick = m.tick;
+      if ($("status").textContent !== "live") setStatus("live", true);
+      observeTick(m.tick);
+      state.snaps.push(m);
+      if (state.snaps.length > 60) state.snaps.shift();
+      for (const p of m.players) state.players.set(p.id, p);
+      $("empty").style.display = "none";
+      break;
+    case "world":
+      break;
+    default:
+      state.events.push(m);
+  }
+}
+
+// A map change (or a signon restart) starts from nothing: drop everything from the old map.
+function resetMatch() {
+  state.snaps = []; state.events = []; state.effects = []; state.tickOffset = null; state.lastTick = 0;
+  state.players.clear(); lastPlayers = []; state.clock = ""; lastScores = null; spawnSeen = {};
+  if (state.follow != null) setFollow(null);
+  $("hud-blue").replaceChildren(); $("hud-red").replaceChildren(); hudNodes.clear(); $("cps").innerHTML = "";
+  $("scoreboard").hidden = true;
+}
+
+// ---------- map backgrounds
+let boundaries = null;
+async function demostfBoundaries() {
+  if (!boundaries) {
+    try { boundaries = await (await fetch("https://maps.demos.tf/boundaries.json")).json(); }
+    catch { boundaries = {}; }
+  }
+  return boundaries;
+}
+// demos.tf's own lookup: exact name, then names with version suffixes trimmed.
+function demostfAlias(map, known) {
+  const trim = m => { while (m.lastIndexOf("_") > m.indexOf("_")) m = m.slice(0, m.lastIndexOf("_")); return m; };
+  if (map.startsWith("cp_gullywash_f") && !map.startsWith("cp_gullywash_final")) return "cp_gullywash_f6";
+  if (known[map]) return map;
+  const t = trim(map);
+  if (known[t]) return t;
+  for (const k of Object.keys(known)) if (trim(k) === map) return k;
+  for (const k of Object.keys(known)) if (trim(k) === t) return k;
+  return null;
+}
+
+async function loadMap(map) {
+  state.map = map; state.geometry = null; state.geoCanvas = null; state.overview = null; state.fitted = false; state.framed = false;
+  state.spawns = null; state.mapData = false;
+  $("map").textContent = map;
+  const known = await demostfBoundaries();
+  const alias = demostfAlias(map, known);
+  if (alias) {
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => {
+      state.overview = { img: OVERLAY ? withoutBlack(img) : img, b: known[alias] };
+      $("bgtoggle").hidden = false;
+      if (!state.fitted) fitTo(known[alias].boundary_min, known[alias].boundary_max);
+    };
+    img.src = `https://maps.demos.tf/images/${alias}.webp`;
+  }
+  $("bgtoggle").hidden = true;
+  try {
+    const g = await (await fetch(`/map/${map}`)).json();
+    if (state.map !== map) return;
+    state.geometry = g;
+    state.spawns = g.spawns || null;
+    state.geoCanvas = renderGeometry(g);
+    if (!state.fitted && g.bounds) fitTo({ x: g.bounds[0][0], y: g.bounds[0][1] }, { x: g.bounds[1][0], y: g.bounds[1][1] });
+  } catch (e) { console.warn("no geometry", e); }
+  if (state.map === map) state.mapData = true;
+}
+
+function renderGeometry(g) {
+  const [lo, hi] = g.bounds;
+  const res = 4; // world units per pixel
+  const w = Math.ceil((hi[0] - lo[0]) / res), h = Math.ceil((hi[1] - lo[1]) / res);
+  const oc = document.createElement("canvas"); oc.width = w; oc.height = h;
+  const c = oc.getContext("2d");
+  const zs = g.floors.map(f => f.z);
+  const zlo = zs.length ? zs[Math.floor(zs.length * 0.02)] : 0, zhi = zs.length ? zs[Math.floor(zs.length * 0.98)] : 1;
+  // Roofs hide what is under them; keep floors up to a little above the highest pickup/point level.
+  const cut = hi[2] - 1536 + 400;
+  const X = x => (x - lo[0]) / res, Y = y => (hi[1] - y) / res;
+  for (const f of g.floors) {
+    if (f.z > cut) continue;
+    const t = Math.max(0, Math.min(1, (f.z - zlo) / (zhi - zlo || 1)));
+    const l = 16 + t * 30;
+    c.fillStyle = `hsl(210 8% ${l}%)`;
+    c.beginPath();
+    for (let i = 0; i < f.p.length; i += 2) (i ? c.lineTo : c.moveTo).call(c, X(f.p[i]), Y(f.p[i + 1]));
+    c.closePath(); c.fill();
+  }
+  c.strokeStyle = "#0b0c0e"; c.lineWidth = 1.2;
+  c.beginPath();
+  for (const wl of g.walls) {
+    if (wl.z - 64 > cut) continue;
+    c.moveTo(X(wl.p[0]), Y(wl.p[1])); c.lineTo(X(wl.p[2]), Y(wl.p[3]));
+  }
+  c.stroke();
+  return { canvas: oc, lo, hi };
+}
+
+// ---------- view
+function fitTo(min, max) {
+  const r = canvas.getBoundingClientRect(), v = state.view;
+  v.cx = (min.x + max.x) / 2; v.cy = (min.y + max.y) / 2;
+  // The box's extent once rotated into the view.
+  const c = Math.abs(Math.cos(v.rot)), s = Math.abs(Math.sin(v.rot));
+  const w = max.x - min.x, h = max.y - min.y, rw = w * c + h * s, rh = w * s + h * c;
+  // Keep the map clear of the HUD columns on both sides.
+  const hud = !OVERLAY && r.width > 800 ? 2 * 236 : 0;
+  v.scale = Math.min((r.width - hud) / rw, r.height / rh) * (OVERLAY ? 0.96 : 0.95);
+  state.fitted = true;
+}
+
+// The overlay frames what matters (spawns and points) rather than the whole image. With
+// rotate=auto it stays upright, or turns a quarter when that fills the panel clearly better;
+// arbitrary angles left maps reading at a slant.
+function frameOverlay() {
+  const pts = [];
+  for (const p of state.spawns?.points || []) pts.push(p.pos);
+  for (const o of state.snaps.at(-1)?.objectives || []) if (o.pos) pts.push(o.pos);
+  if (pts.length < 3) return false;
+  const r = canvas.getBoundingClientRect(), v = state.view, pad = 600;
+  // Centre and scale for a rotation, measuring the points along the rotated axes.
+  const fit = rot => {
+    const c = Math.cos(rot), sn = Math.sin(rot);
+    const us = pts.map(p => p[0] * c - p[1] * sn), vs = pts.map(p => p[0] * sn + p[1] * c);
+    const u0 = Math.min(...us) - pad, u1 = Math.max(...us) + pad, v0 = Math.min(...vs) - pad, v1 = Math.max(...vs) + pad;
+    const uc = (u0 + u1) / 2, vc = (v0 + v1) / 2;
+    return { rot, cx: uc * c + vc * sn, cy: -uc * sn + vc * c, scale: Math.min(r.width / (u1 - u0), r.height / (v1 - v0)) * 0.96 };
+  };
+  const want = OPT.get("rotate") ?? "auto";
+  let best;
+  if (want === "auto") {
+    const upright = fit(0), turned = fit(Math.PI / 2);
+    best = turned.scale > upright.scale * 1.1 ? turned : upright;
+  } else {
+    best = fit((Number(want) || 0) * Math.PI / 180);
+  }
+  Object.assign(v, { rot: best.rot, cx: best.cx, cy: best.cy, scale: best.scale });
+  state.fitted = state.framed = true;
+  return true;
+}
+// The view can be rotated (the overlay turns a map so its long axis fits the panel).
+function toScreen(x, y) {
+  const r = canvas.getBoundingClientRect(), v = state.view;
+  const dx = x - v.cx, dy = y - v.cy, c = Math.cos(v.rot), s = Math.sin(v.rot);
+  return [(dx * c - dy * s) * v.scale + r.width / 2, -(dx * s + dy * c) * v.scale + r.height / 2];
+}
+// A world yaw (degrees, counter-clockwise from +x) as a canvas angle.
+function screenAngle(deg) { return -(deg * Math.PI / 180 + state.view.rot); }
+let drag = null, lastPlayers = [];
+canvas.addEventListener("mousedown", e => drag = { x: e.clientX, y: e.clientY, cx: state.view.cx, cy: state.view.cy, moved: false });
+window.addEventListener("mouseup", e => {
+  if (drag && !drag.moved) followAt(e.clientX, e.clientY);
+  drag = null;
+});
+window.addEventListener("mousemove", e => {
+  if (!drag) return;
+  if (!drag.moved && Math.hypot(e.clientX - drag.x, e.clientY - drag.y) < 4) return;
+  if (!drag.moved) { drag.moved = true; setFollow(null); }
+  state.view.cx = drag.cx - (e.clientX - drag.x) / state.view.scale;
+  state.view.cy = drag.cy + (e.clientY - drag.y) / state.view.scale;
+});
+window.addEventListener("keydown", e => { if (e.key === "Escape") setFollow(null); });
+
+// Click a dot on the map or a card in the HUD to keep that player centred.
+function setFollow(id) {
+  state.follow = id != null && id !== state.follow ? id : null;
+  const p = lastPlayers.find(p => p.id === state.follow);
+  $("follow").hidden = !p;
+  if (p) $("follow-name").textContent = p.name;
+  lastPanel = 0;
+}
+function followAt(cx, cy) {
+  const r = canvas.getBoundingClientRect();
+  let best = null, bestD = 18;
+  for (const p of lastPlayers) {
+    if (!p.alive) continue;
+    const [x, y] = toScreen(p.pos[0], p.pos[1]);
+    const d = Math.hypot(x - (cx - r.left), y - (cy - r.top));
+    if (d < bestD) { best = p; bestD = d; }
+  }
+  if (best) setFollow(best.id);
+}
+for (const id of ["hud-blue", "hud-red"]) {
+  $(id).addEventListener("click", e => {
+    const c = e.target.closest(".card");
+    if (c) setFollow(Number(c.dataset.id));
+  });
+}
+$("follow-stop").addEventListener("click", () => setFollow(null));
+for (const b of document.querySelectorAll("#bgtoggle button")) {
+  b.addEventListener("click", () => {
+    state.bg = b.dataset.bg;
+    for (const o of document.querySelectorAll("#bgtoggle button")) o.classList.toggle("on", o === b);
+  });
+}
+canvas.addEventListener("wheel", e => {
+  e.preventDefault();
+  const r = canvas.getBoundingClientRect(), v = state.view;
+  const mx = e.clientX - r.left - r.width / 2, my = e.clientY - r.top - r.height / 2;
+  const wx = v.cx + mx / v.scale, wy = v.cy - my / v.scale;
+  v.scale *= Math.exp(-e.deltaY * 0.0015);
+  v.cx = wx - mx / v.scale; v.cy = wy + my / v.scale;
+}, { passive: false });
+
+// ---------- interpolation
+function lerpAngle(a, b, t) { let d = ((b - a + 540) % 360) - 180; return a + d * t; }
+function frameAt(tick) {
+  const s = state.snaps;
+  if (!s.length) return null;
+  let i = s.findIndex(x => x.tick > tick);
+  if (i === -1) { const l = s[s.length - 1]; return { snap: l, players: l.players, projectiles: l.projectiles }; }
+  if (i === 0) return { snap: s[0], players: s[0].players, projectiles: s[0].projectiles };
+  const a = s[i - 1], b = s[i], t = (tick - a.tick) / (b.tick - a.tick);
+  const prev = new Map(a.players.map(p => [p.id, p]));
+  const players = b.players.map(p => {
+    const q = prev.get(p.id);
+    if (!q || !q.alive || !p.alive) return t < 0.5 && q ? q : p;
+    return { ...p,
+      pos: [0, 1, 2].map(k => q.pos[k] + (p.pos[k] - q.pos[k]) * t),
+      yaw: lerpAngle(q.yaw, p.yaw, t), hp: t < 0.5 ? q.hp : p.hp };
+  });
+  // Projectiles: lerp the ones in both snapshots, keep their heading from the movement;
+  // new ones appear where they were first seen.
+  const before = new Map(a.projectiles.map(p => [p.id, p]));
+  const projectiles = b.projectiles.map(p => {
+    const q = before.get(p.id);
+    if (!q) return p;
+    const dx = p.pos[0] - q.pos[0], dy = p.pos[1] - q.pos[1];
+    return { ...p, pos: [0, 1, 2].map(k => q.pos[k] + (p.pos[k] - q.pos[k]) * t),
+      heading: Math.hypot(dx, dy) > 4 ? Math.atan2(dy, dx) * 180 / Math.PI : null };
+  });
+  return { snap: t < 0.5 ? a : b, players, projectiles };
+}
+
+// ---------- events become effects when playback reaches their tick
+function fireEvents(tick, byId) {
+  const due = [];
+  state.events = state.events.filter(ev => (ev.tick <= tick ? (due.push(ev), false) : true));
+  const now = performance.now();
+  for (const ev of due) {
+    const p = id => byId.get(id) || state.players.get(id);
+    switch (ev.type) {
+      case "shot": state.effects.push({ kind: "shot", ev, team: p(ev.player)?.team, t0: now, life: 260 }); break;
+      case "explosion": state.effects.push({ kind: "boom", ev, t0: now, life: 450 }); break;
+      case "sentry_shot": {
+        const snap = state.snaps.at(-1);
+        const sentry = snap?.buildings.find(b => b.id === ev.sentry);
+        if (sentry) state.effects.push({ kind: "sentryshot", from: sentry.pos, aim: sentry.aim, team: sentry.team, target: ev.target, t0: now, life: 180 });
+        break;
+      }
+      case "damage": {
+        const v = p(ev.victim);
+        if (v?.pos) state.effects.push({ kind: "dmg", pos: v.pos, ev, t0: now, life: 900 });
+        break;
+      }
+      case "kill": {
+        if (!ev.feign) state.effects.push({ kind: "kill", ev, team: p(ev.victim)?.team, t0: now, life: 3000 });
+        feedEvent(ev, p);
+        break;
+      }
+      case "spawn":
+        state.effects.push({ kind: "spawn", pos: ev.pos, team: ev.team, t0: now, life: 700 });
+        noteSpawn(ev);
+        break;
+      case "uber": {
+        const m = p(ev.medic);
+        if (m) state.effects.push({ kind: "uber", id: ev.medic, team: m.team, t0: now, life: 1500 });
+        feedEvent(ev, p);
+        break;
+      }
+      case "point_captured": banner(`${teamName(ev.team)} captured ${pointName(ev)}`, ev.team); feedEvent(ev, p); break;
+      case "round_win": banner(`${teamName(ev.team)} wins the round`, ev.team); feedEvent(ev, p); break;
+      case "round_start": banner("Round start", "none"); feedEvent(ev, p); break;
+      case "chat": chat(ev, p); break;
+      default: feedEvent(ev, p);
+    }
+  }
+}
+
+function esc(s) { return String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
+function who(pl) { return pl ? `<span class="t-${pl.team}">${esc(pl.name)}</span>` : "world"; }
+// Kill icons from tf2-icons, named like the weapons in server logs and kill events.
+const KILLICONS = new Set();
+fetch("/killicons.css").then(r => r.text()).then(css => {
+  for (const m of css.matchAll(/\.killicon-([A-Za-z0-9_]+)\s*\{/g)) KILLICONS.add(m[1]);
+});
+function weaponIcon(ev) {
+  const w = ev.weapon || "";
+  const pick = [ev.headshot && `${w}_headshot`, ev.headshot && "headshot", ev.backstab && `${w}_backstab`, ev.backstab && "backstab", w]
+    .find(n => n && KILLICONS.has(n));
+  const crit = ev.crit ? " crit" : "";
+  return pick ? `<span class="killicon killicon-${pick}${crit}" title="${esc(w)}"></span>` : `<span class="w">${esc(w)}</span>`;
+}
+const BUILDING = { sentry: "Sentry", dispenser: "Dispenser", teleporter: "Teleporter", sapper: "Sapper" };
+const BANNER = { buff_banner: "Buff Banner", battalions_backup: "Battalion's Backup", concheror: "Concheror" };
+const PROJECTILE_WEAPON = /rocket|quake_rl|directhit|liberty|blackbox|airstrike|mangler|dumpster|pipe|bomb|loch|cannon|resistance|huntsman|arrow|crossbow|flare|detonator|scorch/;
+const teamName = t => t === "red" ? "RED" : t === "blue" ? "BLU" : "";
+const pointName = ev => ev.name && !ev.name.startsWith("#") ? ev.name : "point " + (ev.point + 1);
+const chip = (cls, text) => `<span class="chip ${cls}">${text}</span>`;
+let lastScores = null;
+
+// One row per event, newest on top, stamped with the round clock.
+function feedEvent(ev, p) {
+  const name = id => id != null ? `<span class="who">${who(p(id))}</span>` : "";
+  let cls = "", html = null;
+  switch (ev.type) {
+    case "kill": {
+      const a = ev.attacker != null && ev.attacker !== ev.victim ? p(ev.attacker) : null;
+      const tags = [ev.dominated && chip("dom", "DOMINATING"), ev.revenge && chip("rev", "REVENGE"),
+        ev.airborne && PROJECTILE_WEAPON.test(ev.weapon || "") && chip("air", "AIRSHOT"), ev.feign && chip("", "FEIGN")].filter(Boolean).join("");
+      cls = ev.feign ? "feign" : "";
+      html = `${a ? name(ev.attacker) : ""}${ev.assister != null ? "+" + name(ev.assister) : ""}${weaponIcon(ev)}${name(ev.victim)}${tags}`;
+      break;
+    }
+    case "uber": {
+      const m = p(ev.medic);
+      cls = `hot ${m?.team || ""}`;
+      html = `${name(ev.medic)}${chip("", "ÜBER")}<span class="w">${esc(MEDIGUN_NAME[ev.medigun] || "")}</span>${ev.target != null ? " → " + name(ev.target) : ""}`;
+      break;
+    }
+    case "uber_ready": cls = "minor"; html = `${name(ev.medic)} <span>${esc(MEDIGUN_NAME[ev.medigun] || "Über")} ready</span>`; break;
+    case "medic_death":
+      if (!ev.drop) return;
+      cls = `hot ${p(ev.attacker)?.team || ""}`;
+      html = `${name(ev.attacker)}${chip("drop", "DROP")}${name(ev.medic)}<span class="w">died with full über</span>`;
+      break;
+    case "capture_blocked": html = `${name(ev.blocker)}<span class="w">defended ${esc(pointName(ev))}</span>`; break;
+    case "building_destroyed":
+      html = `${ev.attacker != null ? name(ev.attacker) : ""}<span class="w">destroyed</span>${name(ev.owner)}<span class="w">'s ${BUILDING[ev.object] || ev.object}</span>`;
+      break;
+    case "reflect": html = `${name(ev.player)}<span class="w">reflected</span>${ev.owner != null ? name(ev.owner) + "<span class=\"w\">'s projectile</span>" : ""}`; break;
+    case "banner": cls = "minor"; html = `${name(ev.player)} <span>deployed the ${BANNER[ev.kind] || "banner"}</span>`; break;
+    case "point_captured": cls = `big ${ev.team}`; html = `${teamName(ev.team)} captured ${esc(pointName(ev))}`; break;
+    case "round_start": cls = "big none"; html = "Round start"; break;
+    case "round_win": cls = `big ${ev.team}`; html = `${teamName(ev.team)} wins the round${lastScores ? ` · BLU ${lastScores.blue} – ${lastScores.red} RED` : ""}`; break;
+    case "scores": lastScores = ev; if (ev.game_over) { cls = "big none"; html = `Match over · BLU ${ev.blue} – ${ev.red} RED`; } break;
+    case "stalemate": cls = "big none"; html = "Stalemate"; break;
+    case "overtime": cls = "big none"; html = "Overtime"; break;
+    case "game_over": cls = "big none"; html = "Game over"; break;
+    case "map": cls = "big none"; html = `Map change → ${esc(ev.map)}`; break;
+    case "player_leave": cls = "minor"; html = `<span class="who">${esc(ev.name || "")}</span> <span>left</span>`; break;
+    case "team_change":
+      if (ev.disconnect || (ev.team !== "red" && ev.team !== "blue") || ev.old_team === "red" || ev.old_team === "blue") return;
+      cls = "minor"; html = `${name(ev.player)} <span>joined ${teamName(ev.team)}</span>`;
+      break;
+  }
+  if (html == null) return;
+  const d = document.createElement("div");
+  d.className = `ev ${cls}`;
+  d.innerHTML = `${state.clock ? `<time>${state.clock}</time>` : ""}${html}`;
+  prepend($("feed"), d);
+}
+function chat(ev, p) {
+  const d = document.createElement("div");
+  const pl = ev.player != null ? p(ev.player) : null;
+  d.innerHTML = `${pl ? who(pl) : `<span class="w">${esc(ev.name || "console")}</span>`}: ${esc(ev.text)}`;
+  prepend($("chat"), d);
+}
+function prepend(box, el) { box.prepend(el); while (box.children.length > 60) box.lastChild.remove(); }
+let bannerTimer;
+function banner(text, team) {
+  const b = $("banner"); b.textContent = text; b.style.color = TEAM[team] || "#fff"; b.style.opacity = 1;
+  clearTimeout(bannerTimer); bannerTimer = setTimeout(() => b.style.opacity = 0, 3500);
+}
+
+// ---------- drawing
+function px(units, min) { return Math.max(min, units * state.view.scale); }
+
+// The overview images have an opaque black surround; on a rotated, transparent overlay that
+// would show as a tilted black box, so make the near-black pixels transparent.
+function withoutBlack(img) {
+  const c = document.createElement("canvas");
+  c.width = img.naturalWidth; c.height = img.naturalHeight;
+  const g = c.getContext("2d");
+  g.drawImage(img, 0, 0);
+  try {
+    const d = g.getImageData(0, 0, c.width, c.height), px = d.data;
+    for (let i = 0; i < px.length; i += 4) {
+      const lum = Math.max(px[i], px[i + 1], px[i + 2]);
+      if (lum < 14) px[i + 3] = 0; else if (lum < 28) px[i + 3] = Math.round(255 * (lum - 14) / 14);
+    }
+    g.putImageData(d, 0, 0);
+  } catch { return img; }
+  return c;
+}
+
+// An image covering a world rectangle, turned with the view.
+function drawWorldImage(img, minX, minY, maxX, maxY, alpha) {
+  const [cx, cy] = toScreen((minX + maxX) / 2, (minY + maxY) / 2);
+  const w = (maxX - minX) * state.view.scale, h = (maxY - minY) * state.view.scale;
+  ctx.save(); ctx.translate(cx, cy); ctx.rotate(-state.view.rot); ctx.globalAlpha = alpha;
+  ctx.drawImage(img, -w / 2, -h / 2, w, h);
+  ctx.restore();
+}
+function drawBackground(r) {
+  if (OVERLAY) ctx.clearRect(0, 0, r.width, r.height);
+  else { ctx.fillStyle = "#101214"; ctx.fillRect(0, 0, r.width, r.height); }
+  if (state.bg === "overview" && state.overview) {
+    const { img, b } = state.overview;
+    drawWorldImage(img, b.boundary_min.x, b.boundary_min.y, b.boundary_max.x, b.boundary_max.y, OVERLAY ? 0.95 : 0.85);
+  } else if (state.geoCanvas) {
+    const { canvas: oc, lo, hi } = state.geoCanvas;
+    drawWorldImage(oc, lo[0], lo[1], hi[0], hi[1], 1);
+  }
+}
+
+function drawObjectives(snap, tick) {
+  for (const o of snap.objectives || []) {
+    const [x, y] = toScreen(o.pos[0], o.pos[1]);
+    if (o.kind === "cart") {
+      ctx.fillStyle = "#e8c547"; ctx.strokeStyle = "#000"; const s = px(40, 9);
+      ctx.fillRect(x - s / 2, y - s / 2, s, s); ctx.strokeRect(x - s / 2, y - s / 2, s, s);
+      continue;
+    }
+    // Points are squares like TF2's HUD, so they never read as players: the owner's colour,
+    // filled left to right in the capping team's colour while a capture is under way.
+    const u = OVERLAY ? overlayUnit() : 0;
+    const half = OVERLAY ? u * 1.2 : px(110, 11);
+    const x0 = x - half, y0 = y - half, side = half * 2, corner = Math.max(2, half * 0.18);
+    // Advance between snapshots at the rate stvmap extrapolates from the cap times and cappers.
+    const progress = Math.max(0, Math.min(1, o.cap_progress + (o.cap_rate || 0) * Math.max(0, tick - snap.tick) * MS_PER_TICK / 1000));
+    const capping = o.capping_team !== "none" && progress > 0;
+    ctx.save();
+    ctx.beginPath(); ctx.roundRect(x0, y0, side, side, corner);
+    ctx.fillStyle = (TEAM[o.owner] || TEAM.none) + (OVERLAY ? "e6" : "99"); ctx.fill();
+    if (capping) {
+      ctx.save(); ctx.clip();
+      ctx.fillStyle = TEAM[o.capping_team]; ctx.fillRect(x0, y0, side * progress, side);
+      ctx.restore();
+    }
+    if (o.locked) { ctx.fillStyle = "#0b0c0e99"; ctx.fill(); }
+    ctx.lineWidth = OVERLAY ? Math.max(2, u * 0.18) : 2;
+    ctx.strokeStyle = capping ? "#fff" : "#0b0c0e"; ctx.stroke();
+    ctx.fillStyle = "#fff"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.font = `800 ${Math.round(OVERLAY ? u * 1.3 : Math.max(12, half * 0.9))}px system-ui`;
+    ctx.lineWidth = 3; ctx.strokeStyle = "#0b0c0e"; ctx.strokeText(String(o.index + 1), x, y + 1);
+    ctx.fillText(String(o.index + 1), x, y + 1);
+    ctx.restore();
+  }
+}
+
+// S1-S3 / D1-D3 / T1-T3 like the engineer's HUD (MS for a mini-sentry); the sentry's aim
+// sticks out, a teleporter exit gets a ring, and buildings under construction are faint.
+function drawBuildings(snap) {
+  for (const b of snap.buildings || []) {
+    const [x, y] = toScreen(b.pos[0], b.pos[1]), s = OVERLAY ? overlayUnit() * 1.9 : px(44, 18);
+    const label = b.kind === "sentry" && b.mini ? "MS" : (b.kind[0] || "?").toUpperCase() + (b.level || 1);
+    ctx.save();
+    if (b.building) ctx.globalAlpha = 0.55;
+    if (b.kind === "sentry") {
+      const target = b.attacking && b.target != null ? lastPlayers.find(p => p.id === b.target && p.alive && p.pos) : null;
+      if (target) {
+        const [tx, ty] = toScreen(target.pos[0], target.pos[1]);
+        ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(tx, ty);
+        ctx.setLineDash([6, 5]); ctx.strokeStyle = (TEAM[b.team] || "#fff") + "aa"; ctx.lineWidth = 1.5; ctx.stroke(); ctx.setLineDash([]);
+      }
+      const a = screenAngle(b.aim ?? b.yaw ?? 0);
+      ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + Math.cos(a) * s * 1.2, y + Math.sin(a) * s * 1.2);
+      ctx.strokeStyle = "#fff"; ctx.lineWidth = 3; ctx.stroke();
+    }
+    ctx.fillStyle = TEAM[b.team] || TEAM.none;
+    ctx.beginPath(); ctx.roundRect(x - s / 2, y - s / 2, s, s, 3); ctx.fill();
+    ctx.lineWidth = b.sapped ? 2.5 : 1.5; ctx.strokeStyle = b.sapped ? "#fff" : "#000"; ctx.stroke();
+    if (b.kind === "teleporter" && b.entrance === false) {
+      ctx.beginPath(); ctx.arc(x, y, s * 0.72, 0, Math.PI * 2); ctx.strokeStyle = TEAM[b.team] || "#fff"; ctx.lineWidth = 2; ctx.stroke();
+    }
+    ctx.fillStyle = "#fff"; ctx.font = `800 ${Math.round(Math.max(9, s * 0.5))}px system-ui`;
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillText(label, x, y + 0.5);
+    if (b.sapped) { ctx.fillStyle = "#fff"; ctx.font = "800 9px system-ui"; ctx.fillText("SAPPED", x, y + s / 2 + 7); }
+    ctx.restore();
+  }
+}
+
+function drawProjectiles(list) {
+  const now = performance.now();
+  for (const p of list || []) {
+    const [x, y] = toScreen(p.pos[0], p.pos[1]);
+    const col = TEAM[p.team] || "#ccc";
+    // Rockets and arrows face their flight (the networked yaw is exact); grenades tumble.
+    const deg = p.kind === "Rocket" || p.kind.endsWith("Arrow") ? p.yaw : p.heading ?? p.yaw ?? 0;
+    const a = screenAngle(deg);
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.lineJoin = "round";
+    ctx.strokeStyle = "#000"; ctx.lineWidth = 1.2;
+    if (p.crit) { ctx.shadowColor = col; ctx.shadowBlur = 10; }
+    switch (p.kind) {
+      case "Rocket": {
+        ctx.rotate(a);
+        const l = px(26, 12), w = l * 0.32;
+        const trail = ctx.createLinearGradient(-l * 3.2, 0, -l * 0.5, 0);
+        trail.addColorStop(0, "#ffffff00"); trail.addColorStop(1, "#ffd9a0aa");
+        ctx.fillStyle = trail; ctx.fillRect(-l * 3.2, -w * 0.35, l * 2.7, w * 0.7);
+        ctx.beginPath(); ctx.moveTo(l * 0.6, 0); ctx.lineTo(-l * 0.5, -w); ctx.lineTo(-l * 0.5, w); ctx.closePath();
+        ctx.fillStyle = p.crit ? "#fff" : col; ctx.fill(); ctx.stroke();
+        break;
+      }
+      case "Pipe": case "LooseCannon": {
+        const r = px(9, 4.5);
+        ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2);
+        ctx.fillStyle = p.crit ? "#fff" : col; ctx.fill(); ctx.stroke();
+        ctx.beginPath(); ctx.arc(0, 0, r * 0.45, 0, Math.PI * 2); ctx.fillStyle = "#0008"; ctx.fill();
+        break;
+      }
+      case "Sticky": {
+        const r = px(10, 6);
+        ctx.beginPath();
+        for (let i = 0; i < 16; i++) {
+          const rr = i % 2 ? r * 0.55 : r * 1.15, t = i / 16 * Math.PI * 2;
+          (i ? ctx.lineTo : ctx.moveTo).call(ctx, Math.cos(t) * rr, Math.sin(t) * rr);
+        }
+        ctx.closePath(); ctx.fillStyle = p.crit ? "#fff" : col; ctx.fill(); ctx.stroke();
+        ctx.beginPath(); ctx.arc(0, 0, r * 0.25, 0, Math.PI * 2); ctx.fillStyle = "#fff"; ctx.fill();
+        break;
+      }
+      case "Arrow": case "HealingArrow": {
+        ctx.rotate(a);
+        const l = px(34, 18);
+        ctx.beginPath(); ctx.moveTo(-l * 0.6, 0); ctx.lineTo(l * 0.4, 0);
+        ctx.strokeStyle = "#000"; ctx.lineWidth = 3.5; ctx.stroke();
+        ctx.strokeStyle = col; ctx.lineWidth = 2; ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(l * 0.6, 0); ctx.lineTo(l * 0.3, -l * 0.16); ctx.lineTo(l * 0.3, l * 0.16); ctx.closePath();
+        ctx.fillStyle = "#fff"; ctx.fill(); ctx.strokeStyle = "#000"; ctx.lineWidth = 1; ctx.stroke();
+        if (p.kind === "HealingArrow") {
+          ctx.rotate(-a); ctx.fillStyle = "#7dff8a";
+          ctx.fillRect(-l * 0.32, -1.5, l * 0.3, 3); ctx.fillRect(-l * 0.32 + l * 0.15 - 1.5, -l * 0.15, 3, l * 0.3);
+        }
+        break;
+      }
+      case "Flare": case "Fireball": {
+        ctx.beginPath(); ctx.arc(0, 0, px(9, 3.5), 0, Math.PI * 2);
+        ctx.fillStyle = "#ffb347"; ctx.shadowColor = "#ff7a00"; ctx.shadowBlur = 12; ctx.fill();
+        break;
+      }
+      case "EnergyBall": case "EnergyRing": case "ShortCircuitOrb": {
+        ctx.beginPath(); ctx.arc(0, 0, px(12, 4.5), 0, Math.PI * 2);
+        ctx.strokeStyle = col; ctx.lineWidth = 3; ctx.shadowColor = col; ctx.shadowBlur = 12; ctx.stroke();
+        break;
+      }
+      case "Jarate": case "MadMilk": case "GasPasser": case "Cleaver": {
+        const r = px(9, 4);
+        ctx.rotate(Math.PI / 4); ctx.fillStyle = p.kind === "Jarate" ? "#ffe14a" : p.kind === "MadMilk" ? "#f4f4f4" : p.kind === "GasPasser" ? "#ff9a3c" : "#bbb";
+        ctx.fillRect(-r, -r, r * 2, r * 2); ctx.strokeRect(-r, -r, r * 2, r * 2);
+        break;
+      }
+      default: {
+        ctx.beginPath(); ctx.arc(0, 0, px(8, 3), 0, Math.PI * 2);
+        ctx.fillStyle = col; ctx.fill(); ctx.stroke();
+      }
+    }
+    ctx.restore();
+  }
+}
+
+// ---------- spawn rooms: which are in use
+// A spawn point tied to a control point is enabled for its team while that team owns the
+// point (TF2's rule); untied ones always are. Of the enabled rooms a team spawns in the most
+// forward one: the one farthest from its main spawn (the room with the most spawn points).
+// Once a team has been seen spawning since the last change of ownership, that room wins.
+let spawnSeen = {}, ownersKey = "", ownersChanged = 0;
+const inRoom = (r, p) => p[0] >= r.min[0] && p[0] <= r.max[0] && p[1] >= r.min[1] && p[1] <= r.max[1] && p[2] >= r.min[2] - 64 && p[2] <= r.max[2] + 64;
+const centre = r => [(r.min[0] + r.max[0]) / 2, (r.min[1] + r.max[1]) / 2];
+function noteSpawn(ev) {
+  const rooms = state.spawns?.rooms || [];
+  const i = ev.pos ? rooms.findIndex(r => r.team === ev.team && inRoom(r, ev.pos)) : -1;
+  if (i >= 0) spawnSeen[ev.team] = { room: i, at: performance.now() };
+}
+function activeRooms(snap) {
+  const s = state.spawns;
+  if (!s) return new Set();
+  const owner = {};
+  for (const o of snap.objectives || []) if (o.kind === "control_point") owner[o.index] = o.owner;
+  const key = JSON.stringify(owner);
+  if (key !== ownersKey) { ownersKey = key; ownersChanged = performance.now(); }
+  const live = s.points.filter(p => !p.disabled && (p.point == null || owner[p.point] === undefined || owner[p.point] === p.team));
+  const active = new Set();
+  for (const team of ["red", "blue"]) {
+    const seen = spawnSeen[team];
+    if (seen && seen.at >= ownersChanged) { active.add(seen.room); continue; }
+    const rooms = s.rooms.map((r, i) => ({ r, i, n: s.points.filter(p => p.team === team && inRoom(r, p.pos)).length })).filter(x => x.r.team === team);
+    const main = rooms.reduce((a, b) => (b.n > (a?.n ?? -1) ? b : a), null);
+    if (!main) continue;
+    const enabled = rooms.filter(x => !x.r.disabled && live.some(p => p.team === team && inRoom(x.r, p.pos)));
+    const far = x => Math.hypot(centre(x.r)[0] - centre(main.r)[0], centre(x.r)[1] - centre(main.r)[1]);
+    const pick = enabled.reduce((a, b) => (!a || far(b) > far(a) ? b : a), null);
+    if (pick) active.add(pick.i);
+  }
+  return active;
+}
+function drawSpawnRooms(snap) {
+  const rooms = state.spawns?.rooms;
+  if (!rooms?.length) return;
+  const active = activeRooms(snap);
+  rooms.forEach((r, i) => {
+    if (OVERLAY && !active.has(i)) return;
+    const corners = [[r.min[0], r.min[1]], [r.max[0], r.min[1]], [r.max[0], r.max[1]], [r.min[0], r.max[1]]].map(([x, y]) => toScreen(x, y));
+    const col = TEAM[r.team] || "#999";
+    ctx.save();
+    ctx.beginPath(); corners.forEach(([x, y], k) => (k ? ctx.lineTo(x, y) : ctx.moveTo(x, y))); ctx.closePath();
+    if (active.has(i)) {
+      ctx.fillStyle = col + "2e"; ctx.fill();
+      ctx.strokeStyle = col; ctx.lineWidth = OVERLAY ? 1.5 : 2; ctx.stroke();
+      const top = corners.reduce((a, b) => (b[1] < a[1] || (b[1] === a[1] && b[0] < a[0]) ? b : a));
+      if (!OVERLAY && Math.hypot(corners[1][0] - corners[0][0], corners[1][1] - corners[0][1]) > 40) {
+        ctx.fillStyle = col; ctx.font = "800 10px system-ui"; ctx.textAlign = "left"; ctx.textBaseline = "top";
+        ctx.fillText("SPAWN", top[0] + 4, top[1] + 3);
+      }
+    } else {
+      ctx.setLineDash([4, 4]); ctx.strokeStyle = col + "66"; ctx.lineWidth = 1; ctx.stroke();
+    }
+    ctx.restore();
+  });
+}
+
+// Each charge looks different: über a solid team glow, kritz crackling, quick-fix
+// pulsing rings, vaccinator a shield with its resistance.
+function drawUberRing(p, x, y, rad, col) {
+  const t = performance.now() / 1000;
+  ctx.save();
+  if (p.ubered === "uber") {
+    ctx.beginPath(); ctx.arc(x, y, rad + 7, 0, Math.PI * 2);
+    ctx.fillStyle = col + "90"; ctx.shadowColor = col; ctx.shadowBlur = 18; ctx.fill();
+  } else if (p.ubered === "kritz") {
+    ctx.beginPath();
+    for (let i = 0; i <= 24; i++) {
+      const a = i / 24 * Math.PI * 2 + t * 3, r = rad + 6 + (i % 2 ? 4 : -1) + Math.sin(t * 20 + i) * 1.5;
+      (i ? ctx.lineTo : ctx.moveTo).call(ctx, x + Math.cos(a) * r, y + Math.sin(a) * r);
+    }
+    ctx.strokeStyle = "#fff"; ctx.shadowColor = col; ctx.shadowBlur = 10; ctx.lineWidth = 2; ctx.stroke();
+  } else if (p.ubered === "quickfix") {
+    for (let i = 0; i < 2; i++) {
+      const k = (t * 1.2 + i / 2) % 1;
+      ctx.beginPath(); ctx.arc(x, y, rad + 4 + k * 16, 0, Math.PI * 2);
+      ctx.strokeStyle = col; ctx.globalAlpha = 1 - k; ctx.lineWidth = 3; ctx.stroke();
+    }
+  } else {
+    ctx.beginPath(); ctx.arc(x, y, rad + 7, -Math.PI * 0.8, -Math.PI * 0.2);
+    ctx.strokeStyle = "#fff"; ctx.lineWidth = 4; ctx.shadowColor = col; ctx.shadowBlur = 12; ctx.stroke();
+    ctx.shadowBlur = 0; ctx.font = "bold 10px system-ui"; ctx.textAlign = "center"; ctx.textBaseline = "bottom";
+    ctx.fillStyle = "#fff"; ctx.fillText(p.ubered.split("_")[1].toUpperCase(), x, y - rad - 9);
+  }
+  ctx.restore();
+}
+
+function drawHealBeams(players, byId) {
+  for (const m of players) {
+    const g = m.medigun;
+    if (!m.alive || !g || g.target == null) continue;
+    const t = byId.get(g.target);
+    if (!t || !t.alive) continue;
+    const [x0, y0] = toScreen(m.pos[0], m.pos[1]), [x1, y1] = toScreen(t.pos[0], t.pos[1]);
+    ctx.save();
+    ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1);
+    ctx.strokeStyle = TEAM[m.team]; ctx.globalAlpha = g.releasing ? 0.95 : 0.6;
+    ctx.lineWidth = g.releasing ? 6 : 3; ctx.lineCap = "round";
+    if (g.releasing) { ctx.shadowColor = TEAM[m.team]; ctx.shadowBlur = 14; }
+    ctx.setLineDash([10, 6]); ctx.lineDashOffset = -performance.now() / 25;
+    ctx.stroke();
+    ctx.restore();
+  }
+}
+
+function drawPlayers(players) {
+  for (const p of players) {
+    if (p.team !== "red" && p.team !== "blue") continue;
+    if (!p.alive) {
+      // The overlay keeps an X where each dead player fell until they respawn, like a CS radar.
+      if (OVERLAY && p.pos) {
+        const [x, y] = toScreen(p.pos[0], p.pos[1]), s = overlayUnit() * 0.6;
+        ctx.save(); ctx.globalAlpha = 0.75; ctx.lineCap = "round";
+        ctx.strokeStyle = "#000"; ctx.lineWidth = 5;
+        ctx.beginPath(); ctx.moveTo(x - s, y - s); ctx.lineTo(x + s, y + s); ctx.moveTo(x + s, y - s); ctx.lineTo(x - s, y + s); ctx.stroke();
+        ctx.strokeStyle = TEAM[p.team]; ctx.lineWidth = 2.5; ctx.stroke();
+        ctx.restore();
+      }
+      continue;
+    }
+    const [x, y] = toScreen(p.pos[0], p.pos[1]);
+    const rad = OVERLAY ? overlayUnit() : px(26, 8);
+    const col = TEAM[p.team];
+    const cloaked = p.conds?.includes("Stealthed");
+    ctx.globalAlpha = cloaked ? 0.35 : 1;
+    const a = screenAngle(p.yaw);
+    ctx.beginPath(); ctx.moveTo(x, y);
+    ctx.arc(x, y, rad * 2.6, a - 0.35, a + 0.35); ctx.closePath();
+    ctx.fillStyle = col + "40"; ctx.fill();
+    if (p.ubered) drawUberRing(p, x, y, rad, col);
+    ctx.beginPath(); ctx.arc(x, y, rad, 0, Math.PI * 2);
+    ctx.fillStyle = col; ctx.fill();
+    ctx.lineWidth = OVERLAY ? Math.max(1.5, rad * 0.16) : 1.5; ctx.strokeStyle = "#000"; ctx.stroke();
+    const frac = Math.max(0, Math.min(1.5, p.hp / (p.max_hp || 1)));
+    ctx.beginPath(); ctx.arc(x, y, rad + 2.5, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * Math.min(1, frac));
+    ctx.lineWidth = OVERLAY ? Math.max(2.5, rad * 0.26) : 2.5; ctx.strokeStyle = frac > 1 ? "#7fc7d2" : frac > 0.5 ? "#9fd27f" : frac > 0.25 ? "#e0c040" : "#e05a40"; ctx.stroke();
+    const img = icon(p.class);
+    if (img) {
+      const s = rad * (OVERLAY ? 1.65 : 1.5);
+      ctx.drawImage(img, x - s / 2, y - s / 2, s, s);
+    } else {
+      ctx.fillStyle = "#fff"; ctx.font = `bold ${Math.round(Math.max(9, rad * 0.9))}px system-ui`;
+      ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.fillText(CLASS[p.class] || "?", x, y + 0.5);
+    }
+    if (p.id === state.follow) {
+      ctx.beginPath(); ctx.arc(x, y, rad + 7, 0, Math.PI * 2); ctx.strokeStyle = "#fff"; ctx.lineWidth = 2; ctx.stroke();
+    }
+    if (!OVERLAY || OPT.get("names") === "1") {
+      ctx.font = OVERLAY ? `700 ${Math.round(Math.max(11, rad * 0.95))}px system-ui` : "11px system-ui"; ctx.fillStyle = "#e8e8e8"; ctx.textBaseline = "top";
+      ctx.textAlign = "center";
+      const label = p.name.slice(0, OVERLAY ? 12 : 18), ly = y + rad + (OVERLAY ? 4 : 5);
+      if (OVERLAY) { ctx.lineWidth = 3; ctx.strokeStyle = "#0b0c0e"; ctx.strokeText(label, x, ly); }
+      ctx.fillText(label, x, ly);
+    }
+    ctx.globalAlpha = 1;
+  }
+}
+
+function drawEffects(byId) {
+  const now = performance.now();
+  state.effects = state.effects.filter(e => now - e.t0 < e.life);
+  for (const e of state.effects) {
+    const k = (now - e.t0) / e.life;
+    ctx.globalAlpha = 1 - k;
+    if (e.kind === "shot") {
+      const [x, y] = toScreen(e.ev.origin[0], e.ev.origin[1]);
+      const a = screenAngle(e.ev.yaw), len = 900 * Math.cos(e.ev.pitch * Math.PI / 180) * state.view.scale;
+      ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + Math.cos(a) * len, y + Math.sin(a) * len);
+      ctx.strokeStyle = e.team === "red" ? "#ffb3a8" : e.team === "blue" ? "#b3dcff" : "#ffe9a8"; ctx.lineWidth = 1.2; ctx.stroke();
+    } else if (e.kind === "sentryshot") {
+      const [x, y] = toScreen(e.from[0], e.from[1]);
+      const t = byId.get(e.target);
+      let [tx, ty] = [0, 0];
+      if (t?.pos) [tx, ty] = toScreen(t.pos[0], t.pos[1]);
+      else { const a = screenAngle(e.aim || 0); [tx, ty] = [x + Math.cos(a) * 1100 * state.view.scale, y + Math.sin(a) * 1100 * state.view.scale]; }
+      ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(tx, ty);
+      ctx.strokeStyle = "#ffe9a8"; ctx.lineWidth = 1.5; ctx.stroke();
+      ctx.beginPath(); ctx.arc(x, y, px(14, 5), 0, Math.PI * 2); ctx.fillStyle = "#ffd36a"; ctx.fill();
+    } else if (e.kind === "boom") {
+      const [x, y] = toScreen(e.ev.origin[0], e.ev.origin[1]);
+      ctx.beginPath(); ctx.arc(x, y, px(146, 6) * (0.35 + 0.65 * k), 0, Math.PI * 2);
+      ctx.fillStyle = "#ffa04040"; ctx.fill(); ctx.strokeStyle = "#ffb050"; ctx.lineWidth = 2; ctx.stroke();
+    } else if (e.kind === "dmg" && !OVERLAY) {
+      const pos = byId.get(e.ev.victim)?.pos || e.pos;
+      if (!pos) continue;
+      const [x, y] = toScreen(pos[0], pos[1]);
+      ctx.font = `bold ${e.ev.crit ? 15 : 12}px system-ui`; ctx.textAlign = "center"; ctx.textBaseline = "bottom";
+      ctx.fillStyle = e.ev.crit ? "#7dff6a" : e.ev.minicrit ? "#ffd04a" : "#ff5a4a";
+      ctx.strokeStyle = "#000"; ctx.lineWidth = 3;
+      const ty = y - px(26, 8) - 4 - k * 22;
+      ctx.strokeText("-" + e.ev.amount, x, ty); ctx.fillText("-" + e.ev.amount, x, ty);
+    } else if (e.kind === "kill" && !OVERLAY) {
+      const v = e.ev.victim_pos;
+      if (!v) continue;
+      const [x, y] = toScreen(v[0], v[1]), s = 7;
+      if (e.ev.attacker_pos && e.ev.attacker !== e.ev.victim) {
+        const [ax, ay] = toScreen(e.ev.attacker_pos[0], e.ev.attacker_pos[1]);
+        ctx.setLineDash([4, 4]); ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(x, y);
+        ctx.strokeStyle = "#fff8"; ctx.lineWidth = 1; ctx.stroke(); ctx.setLineDash([]);
+      }
+      ctx.strokeStyle = TEAM[e.team] || "#fff"; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.moveTo(x - s, y - s); ctx.lineTo(x + s, y + s); ctx.moveTo(x + s, y - s); ctx.lineTo(x - s, y + s); ctx.stroke();
+    } else if (e.kind === "spawn" && e.pos) {
+      const [x, y] = toScreen(e.pos[0], e.pos[1]);
+      ctx.beginPath(); ctx.arc(x, y, px(26, 8) + k * 18, 0, Math.PI * 2); ctx.strokeStyle = TEAM[e.team] || "#fff"; ctx.lineWidth = 2; ctx.stroke();
+    } else if (e.kind === "uber") {
+      const m = byId.get(e.id); if (!m?.pos) continue;
+      const [x, y] = toScreen(m.pos[0], m.pos[1]);
+      ctx.beginPath(); ctx.arc(x, y, px(26, 8) + 6 + k * 50, 0, Math.PI * 2); ctx.strokeStyle = TEAM[e.team]; ctx.lineWidth = 4; ctx.stroke();
+    }
+  }
+  ctx.globalAlpha = 1;
+}
+
+// ---------- HUD and header, refreshed a few times per second
+const UBER_LABEL = { uber: "ÜBER", kritz: "KRITZ", quickfix: "QUICK-FIX", vaccinator_bullet: "VACC · BULLET", vaccinator_blast: "VACC · BLAST", vaccinator_fire: "VACC · FIRE" };
+const MEDIGUN_NAME = { medigun: "Medi Gun", kritzkrieg: "Kritzkrieg", quickfix: "Quick-Fix", vaccinator: "Vaccinator" };
+
+// Cards and meters are kept and updated in place: rebuilding them would restart their
+// animations (the über stripes) several times a second.
+const hudNodes = new Map();
+function node(key, html) {
+  let el = hudNodes.get(key);
+  if (!el) {
+    const t = document.createElement("template");
+    t.innerHTML = html.trim();
+    el = t.content.firstElementChild;
+    hudNodes.set(key, el);
+  }
+  return el;
+}
+function setHTML(el, html) { if (el.innerHTML !== html) el.innerHTML = html; }
+function setClass(el, cls) { if (el.className !== cls) el.className = cls; }
+function setStyle(el, prop, value) { if (el.style[prop] !== value) el.style[prop] = value; }
+
+function card(p) {
+  const el = node(`p${p.id}`, `<div class="card"><div class="fill"></div><span class="ci"></span><div class="nm"><b></b><small></small></div><div class="hp"></div></div>`);
+  const f = p.alive ? Math.max(0, Math.min(1, p.hp / (p.max_hp || 1))) : 0;
+  if (el.dataset.id !== String(p.id)) el.dataset.id = p.id;
+  setClass(el, ["card", p.id === state.follow && "followed", !p.alive && "dead", p.alive && p.hp > p.max_hp && "over", p.alive && f < 0.35 && "low", p.ubered && "ub"].filter(Boolean).join(" "));
+  setStyle(el.children[0], "clipPath", `inset(0px ${(100 - f * 100).toFixed(1)}% 0px 0px)`);
+  setHTML(el.children[1], ICONS[p.class] ? `<img src="/icons/${p.class}.svg" alt="${p.class}">` : CLASS[p.class] || "?");
+  setText2(el.querySelector(".nm b"), p.name);
+  const sub = [p.ping != null && `${p.ping} ms`, p.class === "medic" && `${p.uber ?? 0}% über`].filter(Boolean).join(" · ");
+  setHTML(el.querySelector(".nm small"), `${p.ubered ? `<span class="tag">${UBER_LABEL[p.ubered] || "ÜBER"}</span>` : ""}${sub}`);
+  setText2(el.children[3], p.alive ? String(p.hp) : "DEAD");
+  return el;
+}
+function chargeMeter(p) {
+  const el = node(`c${p.id}`, `<div class="charge"><div class="bar"></div><i class="segs"></i><span></span><span style="opacity:.75"></span><span class="pct"></span></div>`);
+  const g = p.medigun || { kind: "medigun" };
+  const pct = Math.round(p.uber ?? 0);
+  setClass(el, ["charge", !p.alive && "dead", g.releasing && "releasing", !g.releasing && pct >= 100 && "ready"].filter(Boolean).join(" "));
+  setStyle(el.children[0], "clipPath", `inset(0px ${100 - pct}% 0px 0px)`);
+  // The Vaccinator charges in four 25% pips; the others in one bar.
+  setHTML(el.children[1], g.kind === "vaccinator" ? [25, 50, 75].map(x => `<i class="seg" style="left:${x}%"></i>`).join("") : "");
+  setText2(el.children[2], g.releasing ? "ACTIVE" : pct >= 100 ? "READY" : "ÜBERCHARGE");
+  setText2(el.children[3], (MEDIGUN_NAME[g.kind] || g.kind) + (g.kind === "vaccinator" && g.resist ? ` · ${g.resist}` : ""));
+  setText2(el.children[4], `${pct}%`);
+  return el;
+}
+function setText2(el, text) { if (el.textContent !== text) el.textContent = text; }
+function placeChildren(box, nodes) {
+  // Only touch the DOM order when it changed: moving a node restarts its animations too.
+  const same = box.children.length === nodes.length && nodes.every((n, i) => box.children[i] === n);
+  if (!same) box.replaceChildren(...nodes);
+}
+
+let lastPanel = 0;
+function updatePanel(players, snap) {
+  const now = performance.now();
+  if (now - lastPanel < 250) return;
+  lastPanel = now;
+  for (const team of ["blue", "red"]) {
+    const list = players.filter(p => p.team === team).sort(byClass);
+    placeChildren($("hud-" + team), [...list.map(card), ...list.filter(p => p.class === "medic").map(chargeMeter)]);
+  }
+  renderPoints(snap);
+}
+
+// ---------- TF2-style scoreboard: team scores, round timer, control points
+const ROUND_LABEL = { pregame: "WARMUP", preround: "GET READY", team_win: "ROUND OVER", stalemate: "STALEMATE", game_over: "GAME OVER", bonus: "BONUS", between_rounds: "", restart: "", running: "" };
+function clock(secs) {
+  const s = Math.max(0, Math.ceil(secs));
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+}
+function setText(id, text) { const el = $(id); if (el.textContent !== text) el.textContent = text; }
+function renderScoreboard(snap, tick) {
+  $("scoreboard").hidden = OVERLAY && OPT.get("score") !== "1";
+  setText("score-blue", String(snap.score?.blue ?? 0));
+  setText("score-red", String(snap.score?.red ?? 0));
+  const timers = snap.timers || [];
+  const left = t => t.paused ? t.remaining : t.remaining - Math.max(0, tick - snap.tick) * MS_PER_TICK / 1000;
+  const main = timers.find(t => t.team === "none") || (timers.length === 1 ? timers[0] : null);
+  const byTeam = team => timers.find(t => t.team === team && t !== main);
+  setText("timer-main", main ? clock(left(main)) : "");
+  // Events are stamped with time into the round, which (unlike the round timer) never jumps.
+  const into = snap.round_time == null ? null : snap.round_time + (snap.round === "running" ? Math.max(0, tick - snap.tick) * MS_PER_TICK / 1000 : 0);
+  state.clock = into == null ? "" : `${Math.floor(into / 60)}:${String(Math.floor(into % 60)).padStart(2, "0")}`;
+  setText("timer-blue", byTeam("blue") ? clock(left(byTeam("blue"))) : "");
+  setText("timer-red", byTeam("red") ? clock(left(byTeam("red"))) : "");
+  const label = main?.setup ? "SETUP" : ROUND_LABEL[snap.round] ?? "";
+  // A paused round timer is not a paused game (KotH, no match started): it just stands still.
+  setText("round-label", label || (main && !main.paused && left(main) <= 0 ? "OVERTIME" : ""));
+  $("timer-main").parentElement.classList.toggle("low", !!main && !main.paused && left(main) <= 30);
+}
+function renderPoints(snap) {
+  const html = (snap.objectives || []).filter(o => o.kind === "control_point").map(o => {
+    const capping = o.capping_team !== "none" && o.cap_progress > 0;
+    const style = `--own:${TEAM[o.owner] || "#8a8a8a"};--cap:${capping ? TEAM[o.capping_team] : "transparent"};--p:${Math.round((capping ? o.cap_progress : 0) * 100)}%`;
+    return `<div class="cp${o.locked ? " locked" : ""}${capping ? " capping" : ""}" style="${style}">${o.index + 1}</div>`;
+  }).join("");
+  if ($("cps").innerHTML !== html) $("cps").innerHTML = html;
+}
+
+function frame() {
+  try { draw(); } catch (e) { console.error(e); }
+  requestAnimationFrame(frame);
+}
+
+function draw() {
+  const r = canvas.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
+  if (canvas.width !== Math.round(r.width * dpr) || canvas.height !== Math.round(r.height * dpr)) {
+    canvas.width = Math.round(r.width * dpr); canvas.height = Math.round(r.height * dpr);
+  }
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const tick = renderTick();
+  const f = frameAt(tick);
+  if (f) {
+    // Frame once the map's spawn points are in (or known to be missing).
+    if (OVERLAY && !state.framed && state.mapData) frameOverlay();
+    lastPlayers = f.players;
+    // Dead players are reported where they died (no position if before we connected).
+    const target = state.follow != null && f.players.find(p => p.id === state.follow);
+    if (target && target.pos) {
+      state.view.cx += (target.pos[0] - state.view.cx) * 0.18;
+      state.view.cy += (target.pos[1] - state.view.cy) * 0.18;
+    }
+    renderScoreboard(f.snap, tick);
+  }
+  drawBackground(r);
+  if (f) {
+    const byId = new Map(f.players.map(p => [p.id, p]));
+    fireEvents(tick, byId);
+    drawSpawnRooms(f.snap);
+    drawObjectives(f.snap, tick);
+    drawBuildings(f.snap);
+    drawProjectiles(f.projectiles);
+    drawEffects(byId);
+    drawHealBeams(f.players, byId);
+    drawPlayers(f.players);
+    updatePanel(f.players, f.snap);
+  }
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
