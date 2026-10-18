@@ -144,6 +144,7 @@
     background: #0b0c0e8c; white-space: nowrap; overflow: hidden; }
   #feed .ev time { color: var(--dim); font-size: 10px; font-variant-numeric: tabular-nums; min-width: 30px; }
   #feed .ev .who { overflow: hidden; text-overflow: ellipsis; }
+  #feed .who[data-id] { cursor: pointer; } #feed .who[data-id]:hover { text-decoration: underline; }
   #feed .ev.minor { background: transparent; color: var(--dim); font-size: 12px; }
   #feed .ev.feign { opacity: .5; }
   /* Round flow rows: team-coloured, bold, aligned like the rest and free to wrap. */
@@ -509,6 +510,10 @@ for (const id of ["hud-blue", "hud-red"]) {
 }
 $("follow-stop").addEventListener("click", () => setFollow(null));
 $("autozoom").addEventListener("click", () => setAutoZoom(true));
+$("feed").addEventListener("click", e => {
+  const id = Number(e.target.closest(".who[data-id]")?.dataset.id);
+  if (!OVERLAY && Number.isFinite(id) && id !== state.follow) setFollow(id);
+});
 
 function setSidebar(show) {
   document.documentElement.classList.toggle("noside", !show);
@@ -635,7 +640,7 @@ let lastScores = null;
 // One row per event, newest on top, stamped with the round clock.
 function feedEvent(ev, p) {
   // Players who have since left are no longer known by id.
-  const name = id => (id == null ? "" : `<span class="who">${p(id) ? who(p(id)) : '<span class="w">?</span>'}</span>`);
+  const name = id => (id == null ? "" : p(id) ? `<span class="who" data-id="${Number(id)}">${who(p(id))}</span>` : '<span class="who"><span class="w">?</span></span>');
   let cls = "", html = null;
   switch (ev.type) {
     case "kill": {
