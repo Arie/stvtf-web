@@ -581,6 +581,7 @@ function fireEvents(tick, byId) {
     switch (ev.type) {
       case "shot": state.effects.push({ kind: "shot", ev, team: p(ev.player)?.team, t0: now, life: 260 }); break;
       case "explosion": state.effects.push({ kind: "boom", ev, t0: now, life: 450 }); break;
+      case "airblast": state.effects.push({ kind: "airblast", id: ev.player, t0: now, life: 350 }); break;
       case "sentry_shot": {
         const snap = state.snaps.at(-1);
         const sentry = snap?.buildings.find(b => b.id === ev.sentry);
@@ -1057,6 +1058,8 @@ function drawPlayers(players) {
     const over = Math.min(1, (p.hp - max) / (Math.floor(max * 1.5 / 5) * 5 - max || 1));
     if (over > 0) ring(0, over, "#1f4fe0");
   }
+  // Flames over the dots, so they show in a fight, but under the class icons.
+  for (const { p, x, y, rad } of alive) if (p.flames) drawFlames(p, x, y, rad, screenAngle(p.yaw));
   for (const { p, x, y, rad, cloaked } of alive) {
     ctx.globalAlpha = cloaked ? 0.35 : 1;
     const img = icon(p.class);
@@ -1083,6 +1086,18 @@ function drawPlayers(players) {
     }
   }
   ctx.globalAlpha = 1;
+}
+
+// A firing flamethrower: a flickering cone about as long as the flames reach. Crit flames take
+// the team's colour, and burn brighter while they hit someone.
+function drawFlames(p, x, y, rad, a) {
+  const t = performance.now() / 1000, len = Math.max(350 * state.view.scale, rad * (OVERLAY ? 4 : 3)) * (0.92 + 0.08 * Math.sin(t * 23 + p.id));
+  const hot = p.flames.crit ? (p.team === "red" ? "255,90,60" : "90,160,255") : "255,150,40";
+  const g = ctx.createRadialGradient(x, y, rad + 3, x, y, len);
+  g.addColorStop(0, `rgba(${hot},${p.flames.hit ? 0.85 : 0.6})`);
+  g.addColorStop(1, `rgba(${hot},0)`);
+  ctx.beginPath(); ctx.arc(x, y, rad + 3, a + 0.3, a - 0.3, true); ctx.arc(x, y, len, a - 0.3, a + 0.3); ctx.closePath();
+  ctx.fillStyle = g; ctx.fill();
 }
 
 function drawEffects(byId) {
@@ -1132,6 +1147,15 @@ function drawEffects(byId) {
     } else if (e.kind === "spawn" && e.pos) {
       const [x, y] = toScreen(e.pos[0], e.pos[1]);
       ctx.beginPath(); ctx.arc(x, y, px(26, 8) + k * 18, 0, Math.PI * 2); ctx.strokeStyle = TEAM[e.team] || "#fff"; ctx.lineWidth = 2; ctx.stroke();
+    } else if (e.kind === "airblast") {
+      // A puff of air widening out in front of the pyro.
+      const pl = byId.get(e.id); if (!pl?.pos) continue;
+      const [x, y] = toScreen(pl.pos[0], pl.pos[1]), a = screenAngle(pl.yaw);
+      const rad = OVERLAY ? overlayUnit() : px(26, 8), r = Math.max((40 + 220 * k) * state.view.scale, rad * (1.4 + 2 * k));
+      ctx.beginPath(); ctx.arc(x, y, rad + 3, a + 0.7, a - 0.7, true); ctx.arc(x, y, r, a - 0.7, a + 0.7); ctx.closePath();
+      ctx.fillStyle = "#e8f4ff30"; ctx.fill();
+      ctx.beginPath(); ctx.arc(x, y, r, a - 0.7, a + 0.7);
+      ctx.strokeStyle = "#e8f4ff"; ctx.lineWidth = Math.max(3, rad * 0.35); ctx.lineCap = "round"; ctx.stroke(); ctx.lineCap = "butt";
     } else if (e.kind === "uber") {
       const m = byId.get(e.id); if (!m?.pos) continue;
       const [x, y] = toScreen(m.pos[0], m.pos[1]);
