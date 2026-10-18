@@ -1204,9 +1204,23 @@ function followAction(players) {
     const uc = (u0 + u1) / 2, vc = (v0 + v1) / 2;
     target = { cx: uc * c + vc * sn, cy: -uc * sn + vc * c, scale };
   }
-  const k = 1 - Math.exp(-dt / 0.9);
-  v.cx += (target.cx - v.cx) * k; v.cy += (target.cy - v.cy) * k;
-  v.scale *= Math.pow(target.scale / v.scale, k);
+  // A critically damped spring keeps the camera's speed continuous, so a jumping target (a
+  // death, a spawn, a teleport) bends its path instead of jolting it. Zooming out to keep
+  // everyone in view is quicker than zooming in.
+  const cam = (state.cam ??= { vx: 0, vy: 0, vz: 0 });
+  [v.cx, cam.vx] = smoothDamp(v.cx, target.cx, cam.vx, 1.1, dt);
+  [v.cy, cam.vy] = smoothDamp(v.cy, target.cy, cam.vy, 1.1, dt);
+  let z = Math.log(v.scale);
+  [z, cam.vz] = smoothDamp(z, Math.log(target.scale), cam.vz, target.scale < v.scale ? 0.8 : 2.2, dt);
+  v.scale = Math.exp(z);
+}
+
+// Unity-style SmoothDamp: moves `x` toward `to` with velocity `vel`, settling in about `time` s.
+function smoothDamp(x, to, vel, time, dt) {
+  const w = 2 / time, e = w * dt, decay = 1 / (1 + e + 0.48 * e * e + 0.235 * e * e * e);
+  const change = x - to, temp = (vel + w * change) * dt;
+  const v = (vel - w * temp) * decay;
+  return [to + (change + temp) * decay, v];
 }
 
 function draw() {
