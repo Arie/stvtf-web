@@ -128,7 +128,9 @@
   @keyframes stripes { from { background-position: 0 0; } to { background-position: 24px 0; } }
   @media (max-width: 800px) { .hud { width: 150px; } .card .nm small, .card .tag { display: none; } }
   #feed, #chat { overflow-y: auto; flex: 1; min-height: 80px; }
-  #feed div, #chat div { padding: 2px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #feed div { padding: 2px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #chat div { padding: 2px 0; overflow-wrap: anywhere; }
+  #chat .notice { color: var(--dim); }
   .t-red { color: var(--red); } .t-blue { color: var(--blue); }
   #feed div.ev { display: flex; align-items: center; gap: 5px; padding: 3px 7px; margin: 0 0 2px; border-radius: 3px;
     background: #0b0c0e8c; white-space: nowrap; overflow: hidden; }
@@ -632,7 +634,13 @@ function feedEvent(ev, p) {
 function chat(ev, p) {
   const d = document.createElement("div");
   const pl = ev.player != null ? p(ev.player) : null;
-  d.innerHTML = `${pl ? who(pl) : `<span class="w">${esc(ev.name || "console")}</span>`}: ${esc(ev.text)}`;
+  if (pl || ev.name) {
+    d.innerHTML = `${pl ? who(pl) : `<span class="w">${esc(ev.name)}</span>`}: ${esc(ev.text)}`;
+  } else {
+    // Server messages (plugins, rcon say) as notices; `say` from the console adds its own prefix.
+    d.className = "notice";
+    d.textContent = String(ev.text ?? "").replace(/^Console: /, "");
+  }
   prepend($("chat"), d);
 }
 function prepend(box, el) { box.prepend(el); while (box.children.length > 60) box.lastChild.remove(); }
