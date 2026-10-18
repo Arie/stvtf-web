@@ -19,7 +19,7 @@
   body { display: grid; grid-template-rows: 1fr; }
   #title { display: flex; gap: 10px; align-items: baseline; padding: 10px 12px; border-bottom: 1px solid var(--line); }
   #title b { font-size: 15px; }
-  .hud, #scoreboard, #follow, #bgtoggle, aside { zoom: var(--s); }
+  .hud, #scoreboard, #follow, #bgtoggle, #autozoom, aside { zoom: var(--s); }
   #status.ok { color: #7cc47f; } #status.bad { color: #e0a040; }
   main { display: grid; grid-template-columns: 1fr auto; min-height: 0; }
   #stage { position: relative; min-height: 0; overflow: hidden; }
@@ -110,6 +110,8 @@
   #follow b { color: #fff; }
   #follow button, #bgtoggle button { border: 0; font: inherit; cursor: pointer; }
   #follow button { width: 22px; height: 22px; border-radius: 50%; background: #ffffff1a; color: #fff; }
+  #autozoom { position: absolute; right: 12px; bottom: 52px; z-index: 3; padding: 5px 10px; border: 0; border-radius: 6px;
+    background: #0b0c0ee6; color: #fff; font: inherit; font-size: 12px; cursor: pointer; }
   #bgtoggle { position: absolute; right: 12px; bottom: 12px; z-index: 3; display: flex; padding: 2px; border-radius: 6px; background: #0b0c0ee6; }
   #bgtoggle button { padding: 4px 10px; border-radius: 4px; background: transparent; color: var(--dim); font-size: 12px; }
   #bgtoggle button.on { background: #ffffff1f; color: #fff; }
@@ -172,6 +174,7 @@
       <div class="cps" id="cps"></div>
     </div>
     <div id="follow" hidden><span>Following <b id="follow-name"></b></span><button id="follow-stop" title="Stop following (Esc)">✕</button></div>
+    <button id="autozoom" hidden>Auto zoom</button>
     <div id="bgtoggle" hidden><button data-bg="overview" class="on">Overview</button><button data-bg="geometry">Geometry</button></div>
   </div>
   <aside>
@@ -224,7 +227,9 @@ const $ = id => document.getElementById(id);
 const state = {
   map: null, snaps: [], events: [], effects: [], players: new Map(),
   tickOffset: null, lastTick: 0, geometry: null, geoCanvas: null, overview: null,
-  view: { cx: 0, cy: 0, scale: 0.08, rot: 0 }, fitted: false, bg: "overview", follow: null,
+  view: { cx: 0, cy: 0, scale: 0.08, rot: 0 }, fitted: false,
+  // Auto zoom on the fight; the main view turns it off when panned or zoomed by hand.
+  autoZoom: !OVERLAY || OPT.get("zoom") !== "map", bg: "overview", follow: null,
 };
 
 // ---------- tick clock: server tick at a local instant, smoothed over snapshot arrivals
@@ -388,14 +393,23 @@ function fitTo(min, max) {
 // Frame what matters (spawns and points) rather than the whole image, which is mostly empty.
 // The main view stays upright and clear of the HUD columns and scoreboard. The overlay with
 // rotate=auto stays upright, or turns a quarter when that fills the panel clearly better.
+// The part of the canvas the map has to itself: the main view keeps clear of the HUD columns
+// and the scoreboard; the overlay uses its whole panel. Framings are centred in it.
+function viewArea() {
+  const r = canvas.getBoundingClientRect();
+  const side = !OVERLAY && r.width > 800 ? 268 * uiScale() : 0, top = OVERLAY ? 0 : 140 * uiScale();
+  return { w: r.width - 2 * side, h: r.height - top, top };
+}
+// Framings are kept as the world point at the centre of the free area; the view centre sits
+// below it by half the scoreboard (the main view is never rotated, the overlay has no top).
+const viewCy = (focusCy, scale) => focusCy + viewArea().top / 2 / scale;
+
 function frameMap() {
   const pts = [];
   for (const p of state.spawns?.points || []) pts.push(p.pos);
   for (const o of state.snaps.at(-1)?.objectives || []) if (o.pos) pts.push(o.pos);
   if (pts.length < 3) return false;
-  const r = canvas.getBoundingClientRect(), v = state.view, pad = 600;
-  const side = !OVERLAY && r.width > 800 ? 268 * uiScale() : 0, top = OVERLAY ? 0 : 140 * uiScale();
-  const w = r.width - 2 * side, h = r.height - top;
+  const v = state.view, pad = 600, { w, h } = viewArea();
   // Centre and scale for a rotation, measuring the points along the rotated axes.
   const fit = rot => {
     const c = Math.cos(rot), sn = Math.sin(rot);
@@ -403,8 +417,7 @@ function frameMap() {
     const u0 = Math.min(...us) - pad, u1 = Math.max(...us) + pad, v0 = Math.min(...vs) - pad, v1 = Math.max(...vs) + pad;
     const uc = (u0 + u1) / 2, vc = (v0 + v1) / 2;
     const scale = Math.min(w / (u1 - u0), h / (v1 - v0)) * 0.96;
-    // Shift so the points sit in the middle of the free area below the scoreboard.
-    return { rot, cx: uc * c + vc * sn, cy: -uc * sn + vc * c + top / 2 / scale, scale };
+    return { rot, cx: uc * c + vc * sn, cy: -uc * sn + vc * c, scale };
   };
   const want = OVERLAY ? (OPT.get("rotate") ?? "auto") : "0";
   let best;
@@ -414,7 +427,7 @@ function frameMap() {
   } else {
     best = fit((Number(want) || 0) * Math.PI / 180);
   }
-  Object.assign(v, { rot: best.rot, cx: best.cx, cy: best.cy, scale: best.scale });
+  Object.assign(v, { rot: best.rot, cx: best.cx, cy: viewCy(best.cy, best.scale), scale: best.scale });
   state.full = { cx: best.cx, cy: best.cy, scale: best.scale };
   state.camTarget = null;
   state.fitted = state.framed = true;
@@ -437,11 +450,18 @@ window.addEventListener("mouseup", e => {
 window.addEventListener("mousemove", e => {
   if (!drag) return;
   if (!drag.moved && Math.hypot(e.clientX - drag.x, e.clientY - drag.y) < 4) return;
-  if (!drag.moved) { drag.moved = true; setFollow(null); }
+  if (!drag.moved) { drag.moved = true; setFollow(null); setAutoZoom(false); }
   state.view.cx = drag.cx - (e.clientX - drag.x) / state.view.scale;
   state.view.cy = drag.cy + (e.clientY - drag.y) / state.view.scale;
 });
 window.addEventListener("keydown", e => { if (e.key === "Escape") setFollow(null); });
+
+function setAutoZoom(on) {
+  if (OVERLAY || state.autoZoom === on) return;
+  state.autoZoom = on;
+  state.camTarget = null; state.cam = null;
+  $("autozoom").hidden = on;
+}
 
 // Click a dot on the map or a card in the HUD to keep that player centred.
 function setFollow(id) {
@@ -469,6 +489,7 @@ for (const id of ["hud-blue", "hud-red"]) {
   });
 }
 $("follow-stop").addEventListener("click", () => setFollow(null));
+$("autozoom").addEventListener("click", () => setAutoZoom(true));
 for (const b of document.querySelectorAll("#bgtoggle button")) {
   b.addEventListener("click", () => {
     state.bg = b.dataset.bg;
@@ -477,6 +498,7 @@ for (const b of document.querySelectorAll("#bgtoggle button")) {
 }
 canvas.addEventListener("wheel", e => {
   e.preventDefault();
+  setAutoZoom(false);
   const r = canvas.getBoundingClientRect(), v = state.view;
   const mx = e.clientX - r.left - r.width / 2, my = e.clientY - r.top - r.height / 2;
   const wx = v.cx + mx / v.scale, wy = v.cy - my / v.scale;
@@ -1185,7 +1207,7 @@ function frame() {
   requestAnimationFrame(frame);
 }
 
-// The overlay frames the fight: clumps of players first. A player on their own joins the
+// Auto zoom frames the fight: clumps of players first. A player on their own joins the
 // framing only after STRAGGLE_MS (a respawn usually rejoins by then) and is then brought in
 // slowly. The camera holds its framing until the fight leaves it or tightens a lot, and
 // glides: never wider than the full framing, never tighter than MIN_SPAN units.
@@ -1212,7 +1234,7 @@ function followAction(players) {
   lastFrame = now;
   const v = state.view, full = state.full;
   if (!full) return;
-  const r = canvas.getBoundingClientRect(), c = Math.cos(v.rot), sn = Math.sin(v.rot);
+  const { w, h } = viewArea(), c = Math.cos(v.rot), sn = Math.sin(v.rot);
   const toUV = p => [p[0] * c - p[1] * sn, p[0] * sn + p[1] * c];
   const alive = players.filter(p => p.alive && p.pos && (p.team === "red" || p.team === "blue"));
   const fight = alive.length ? fightingPlayers(alive) : [];
@@ -1228,7 +1250,7 @@ function followAction(players) {
     let v0 = Math.min(...uv.map(p => p[1])) - ACTION_PAD, v1 = Math.max(...uv.map(p => p[1])) + ACTION_PAD;
     const grow = (a, b) => { const m = (a + b) / 2, half = Math.max((b - a) / 2, MIN_SPAN / 2); return [m - half, m + half]; };
     [u0, u1] = grow(u0, u1); [v0, v1] = grow(v0, v1);
-    const scale = Math.max(full.scale, Math.min(r.width / (u1 - u0), r.height / (v1 - v0)) * 0.96);
+    const scale = Math.max(full.scale, Math.min(w / (u1 - u0), h / (v1 - v0)) * 0.96);
     const uc = (u0 + u1) / 2, vc = (v0 + v1) / 2;
     wanted = { cx: uc * c + vc * sn, cy: -uc * sn + vc * c, scale };
   }
@@ -1237,7 +1259,7 @@ function followAction(players) {
   const hold = state.camTarget;
   let keep = false;
   if (hold) {
-    const [hu, hv] = toUV([hold.cx, hold.cy]), halfW = r.width / 2 / hold.scale, halfH = r.height / 2 / hold.scale;
+    const [hu, hv] = toUV([hold.cx, hold.cy]), halfW = w / 2 / hold.scale, halfH = h / 2 / hold.scale;
     const inView = p => { const [pu, pv] = toUV(p.pos); return Math.abs(pu - hu) < halfW * 0.8 && Math.abs(pv - hv) < halfH * 0.8; };
     const [wu, wv] = toUV([wanted.cx, wanted.cy]);
     const shifted = Math.abs(wu - hu) > halfW * 0.5 || Math.abs(wv - hv) > halfH * 0.5;
@@ -1251,12 +1273,15 @@ function followAction(players) {
   // A critically damped spring keeps the camera's speed continuous; zooming out (someone is
   // about to leave the frame) is quicker than zooming in.
   const cam = (state.cam ??= { vx: 0, vy: 0, vz: 0 }), pan = target.slow ? 3.5 : 1.6;
+  const focusCy = v.cy - viewArea().top / 2 / v.scale;
+  let fy;
   [v.cx, cam.vx] = smoothDamp(v.cx, target.cx, cam.vx, pan, dt);
-  [v.cy, cam.vy] = smoothDamp(v.cy, target.cy, cam.vy, pan, dt);
+  [fy, cam.vy] = smoothDamp(focusCy, target.cy, cam.vy, pan, dt);
   let z = Math.log(v.scale);
   const zoomOut = target.slow ? 3.5 : 1.4;
   [z, cam.vz] = smoothDamp(z, Math.log(target.scale), cam.vz, target.scale < v.scale ? zoomOut : 3, dt);
   v.scale = Math.exp(z);
+  v.cy = viewCy(fy, v.scale);
 }
 
 // Unity-style SmoothDamp: moves `x` toward `to` with velocity `vel`, settling in about `time` s.
@@ -1278,7 +1303,7 @@ function draw() {
   if (f) {
     // Frame once the map's spawn points are in (or known to be missing).
     if (!state.framed && state.mapData) frameMap();
-    if (OVERLAY && state.framed && OPT.get("zoom") !== "map") followAction(f.players);
+    if (state.framed && state.autoZoom && state.follow == null) followAction(f.players);
     lastPlayers = f.players;
     // Dead players are reported where they died (no position if before we connected).
     const target = state.follow != null && f.players.find(p => p.id === state.follow);

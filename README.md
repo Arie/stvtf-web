@@ -13,6 +13,9 @@ cargo build --release
 Then open `http://127.0.0.1:8080/`. `--replay` plays a saved `stvmap connect`
 output at its recorded speed, which is handy when working on the page.
 
+The map zooms to where the players are fighting. Dragging or scrolling takes over
+the camera; the "Auto zoom" button hands it back.
+
 Stop it with Ctrl-C: the first one disconnects from SourceTV cleanly (otherwise the
 server holds the slot for 300 s), a second one exits at once.
 
