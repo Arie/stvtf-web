@@ -137,7 +137,7 @@ fn subscribe(hub: &SharedHub) -> Receiver<Arc<str>> {
 
 fn replay(hub: &SharedHub, path: &Path) -> Result<()> {
     loop {
-        let mut last: Option<u64> = None;
+        let (mut last, mut timed): (Option<u64>, bool) = (None, false);
         for line in BufReader::new(std::fs::File::open(path)?).lines() {
             let v: Value = serde_json::from_str(&line?)?;
             // Live output has wall-clock `time`; offline output (`stvmap replay`) only ticks.
@@ -148,8 +148,13 @@ fn replay(hub: &SharedHub, path: &Path) -> Result<()> {
                     std::thread::sleep(Duration::from_millis(t.saturating_sub(prev).min(1000)));
                 }
                 last = Some(t);
+                timed = true;
             }
             publish(hub, &v);
+        }
+        // Without any, the loop would replay the file as fast as it can, forever.
+        if !timed {
+            bail!("{}: no line has a time or tick", path.display());
         }
     }
 }
@@ -381,6 +386,16 @@ mod tests {
         assert!(Connection::open(&COUNT).is_none());
         drop(open);
         assert!(Connection::open(&COUNT).is_some());
+    }
+
+    #[test]
+    fn replay_without_times_stops() {
+        let path = std::env::temp_dir().join(format!("stvmap-web-replay-{}.jsonl", std::process::id()));
+        for contents in ["", "{\"type\":\"status\"}\n"] {
+            std::fs::write(&path, contents).unwrap();
+            assert!(replay(&SharedHub::default(), &path).is_err(), "{contents:?}");
+        }
+        std::fs::remove_file(&path).unwrap();
     }
 
     #[test]
