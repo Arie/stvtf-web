@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>stvmap</title>
+<style>
+  :root { --bg: #15171a; --panel: #1e2125; --line: #2c3036; --text: #d8dadd; --dim: #8a9099; --blue: #4f8fc0; --bad: #e0a040; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
+    font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  body { display: grid; place-items: center; padding: 16px; }
+  main { width: min(560px, 100%); }
+  h1 { margin: 0 0 4px; font-size: 22px; }
+  p { margin: 0 0 16px; color: var(--dim); }
+  form { display: flex; gap: 8px; }
+  input { flex: 1; min-width: 0; padding: 10px 12px; border: 1px solid var(--line); border-radius: 6px;
+    background: var(--panel); color: var(--text); font: inherit; }
+  input:focus { outline: 2px solid var(--blue); outline-offset: -1px; }
+  button { padding: 10px 18px; border: 0; border-radius: 6px; background: var(--blue); color: #fff; font: inherit; font-weight: 600; cursor: pointer; }
+  .error { margin-top: 12px; color: var(--bad); }
+  .error:empty { display: none; }
+  code { color: var(--text); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Watch a match</h1>
+  <p>Paste the server's SourceTV connect string, like <code>connect host:27020; password "tv"</code>.</p>
+  <form method="post" action="/watch">
+    <input name="connect" placeholder='connect host:27020; password "tv"' autofocus required autocomplete="off" spellcheck="false">
+    <button>Watch</button>
+  </form>
+  <div class="error">{error}</div>
+</main>
+</body>
+</html>

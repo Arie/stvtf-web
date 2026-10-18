@@ -207,7 +207,7 @@ const icon = c => ICONS[c]?.complete && ICONS[c].naturalWidth ? ICONS[c] : null;
 
 // /overlay: a fixed, transparent minimap for broadcasts. Options in the query string:
 // names=1, score=1, panel=0..1 (background opacity), rotate=auto|<degrees>, dot=<px>.
-const OVERLAY = location.pathname.startsWith("/overlay");
+const OVERLAY = /\/overlay\/?$/.test(location.pathname);
 const OPT = new URLSearchParams(location.search);
 if (OVERLAY) {
   document.documentElement.classList.add("overlay");
@@ -252,7 +252,8 @@ function observeTick(tick) {
 function renderTick() { return nowTick() - BUFFER_TICKS; }
 
 // ---------- incoming stream
-const es = new EventSource("/events");
+// Relative, so a match at /w/<id>/ (and its /w/<id>/overlay) reads its own events.
+const es = new EventSource("events");
 es.onmessage = e => handle(JSON.parse(e.data));
 es.onerror = () => setStatus("stream lost, retrying", false);
 

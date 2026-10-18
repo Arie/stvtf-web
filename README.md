@@ -1,31 +1,39 @@
 # stvmap-web
 
 A live top-down view of a TF2 match in the browser. It links
-[stvmap](../stvmap) as a library: one SourceTV connection per process, fanned out
+[stvmap](../stvmap) as a library: one SourceTV connection per match, fanned out
 to any number of browsers over Server-Sent Events.
 
 ```
 cargo build --release
+./target/release/stvmap-web [--public] [--max-matches 20] [--listen 127.0.0.1:8080] [--hz 20] [--cache DIR]
 ./target/release/stvmap-web HOST:TVPORT [--password tv] [--listen 127.0.0.1:8080] [--hz 20] [--cache DIR]
 ./target/release/stvmap-web --replay FILE.jsonl [--listen 127.0.0.1:8080]
 ```
 
-Run without a server and it asks for one. It takes a connect string as serveme.tf shows it
-(`connect HOST:PORT; password "tv"`), `HOST:PORT tv`, `HOST; password tv` or just `HOST`, and
-the same as arguments. Without a port it uses 27020; given a game port, it tries game port + 5.
+Without a server, open `http://127.0.0.1:8080/` and paste a SourceTV connect string (or paste
+it into the terminal). Each match gets its own link, `/w/<id>/` with its overlay at
+`/w/<id>/overlay`; the same server asked for again joins the match already being watched.
+A match nobody has watched for 3 minutes is disconnected. `--max-matches` caps how many are
+watched at once, and `--public`, for a server that strangers can use, refuses private and
+internal addresses.
 
-Then open `http://127.0.0.1:8080/`. `--replay` plays a saved `stvmap connect`
-output at its recorded speed, which is handy when working on the page.
+The connect string can be as serveme.tf shows it (`connect HOST:PORT; password "tv"`),
+`HOST:PORT tv`, `HOST; password tv` or just `HOST`. Without a port it uses 27020; given a
+game port, it tries game port + 5.
+
+Given a server, it watches just that match at `http://127.0.0.1:8080/`. `--replay` plays a
+saved `stvmap connect` output at its recorded speed, which is handy when working on the page.
 
 The map zooms to where the players are fighting. Dragging or scrolling takes over
 the camera; the "Auto zoom" button hands it back.
 
-Stop it with Ctrl-C: the first one disconnects from SourceTV cleanly (otherwise the
+Stop it with Ctrl-C: the first one disconnects every match from SourceTV cleanly (otherwise the
 server holds the slot for 300 s), a second one exits at once.
 
 ## Broadcast overlay
 
-`http://127.0.0.1:8080/overlay` is a minimap for streams, like the live radar in CS
+`/overlay` (or `/w/<id>/overlay`) is a minimap for streams, like the live radar in CS
 broadcasts: add it to OBS as a Browser source of any size (for example 480x480 or
 560x315). The page is transparent apart from a rounded panel; it has no controls and
 frames itself around the spawns and points of the map, upright like the main view, and

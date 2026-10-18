@@ -1,12 +1,15 @@
 //! Live top-down web viewer for a TF2 match, fed by stvmap.
 //!
-//! One `SourceTV` connection per process, fanned out to every browser over
-//! Server-Sent Events. Map geometry comes from the map's BSP on fastdl.
+//! Given a server, one `SourceTV` connection fanned out to every browser over Server-Sent
+//! Events; without one, a page to start watching any server, each match at its own link.
+//! Map geometry comes from the map's BSP on fastdl.
 
 mod bsp;
+mod sessions;
 
 use anyhow::{Context, Result, anyhow, bail};
 use serde_json::Value;
+use sessions::{Sessions, Viewer};
 use std::collections::{HashMap, VecDeque};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
@@ -21,10 +24,14 @@ const USAGE: &str = "\
 stvmap-web: live top-down viewer of a TF2 match in the browser
 
   stvmap-web HOST:TVPORT [--password tv] [--listen 127.0.0.1:8080] [--hz 20] [--cache DIR]
-  stvmap-web HOST[:PORT] [tv] / 'connect HOST:PORT; password \"tv\"'   (or paste one when asked)
+  stvmap-web HOST[:PORT] [tv] / 'connect HOST:PORT; password \"tv\"'
+  stvmap-web [--public] [--max-matches 20]   (watch any server: paste a connect string on the page)
   stvmap-web --replay FILE.jsonl [--listen 127.0.0.1:8080]   (stvmap output, at game speed)";
 
 const INDEX: &str = include_str!("../index.html");
+const LANDING: &str = include_str!("../landing.html");
+/// How long a match nobody watches keeps its `SourceTV` connection.
+const LINGER: Duration = Duration::from_secs(180);
 const ICONS: [(&str, &[u8]); 9] = [
     ("scout", include_bytes!("../icons/scout.svg")),
     ("soldier", include_bytes!("../icons/soldier.svg")),
@@ -218,13 +225,26 @@ fn respond(s: &mut TcpStream, status: &str, ctype: &str, body: &[u8]) -> std::io
     s.write_all(body)
 }
 
-fn serve(mut s: TcpStream, hub: &SharedHub, cache: &Path, maps: &Mutex<()>) -> Result<()> {
+/// What the server watches: one match at `/`, or any number at `/w/<id>/`.
+enum Matches {
+    One(SharedHub),
+    Many(Sessions),
+}
+
+struct App {
+    matches: Matches,
+    cache: PathBuf,
+    maps: Mutex<()>,
+}
+
+fn serve(mut s: TcpStream, app: &App) -> Result<()> {
     // A client that sends nothing, or stops reading `/events`, does not keep its thread forever.
     s.set_read_timeout(Some(Duration::from_secs(10)))?;
     s.set_write_timeout(Some(Duration::from_secs(30)))?;
     let mut reader = BufReader::new(s.try_clone()?.take(MAX_REQUEST));
     let mut request = String::new();
     reader.read_line(&mut request)?;
+    let mut length = 0;
     loop {
         let mut header = String::new();
         if reader.read_line(&mut header)? == 0 {
@@ -233,36 +253,61 @@ fn serve(mut s: TcpStream, hub: &SharedHub, cache: &Path, maps: &Mutex<()>) -> R
         if header == "\r\n" {
             break;
         }
+        if let Some((name, value)) = header.split_once(':')
+            && name.eq_ignore_ascii_case("content-length")
+        {
+            length = value.trim().parse().unwrap_or(0);
+        }
     }
+    let method = request.split_whitespace().next().unwrap_or("GET");
     let target = request.split_whitespace().nth(1).unwrap_or("/");
     let path = target.split('?').next().unwrap_or("/");
-    match path {
-        "/" | "/index.html" | "/overlay" => respond(&mut s, "200 OK", "text/html; charset=utf-8", INDEX.as_bytes())?,
-        "/events" => {
-            write!(
-                s,
-                "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nCache-Control: no-cache\r\nX-Content-Type-Options: nosniff\r\n\r\n"
-            )?;
-            let rx = subscribe(hub);
-            loop {
-                match rx.recv_timeout(Duration::from_secs(15)) {
-                    Ok(line) => write!(s, "data: {line}\n\n")?,
-                    Err(RecvTimeoutError::Timeout) => write!(s, ": keepalive\n\n")?,
-                    Err(RecvTimeoutError::Disconnected) => return Ok(()),
-                }
+    let html = "text/html; charset=utf-8";
+    match (&app.matches, path) {
+        (Matches::One(_), "/" | "/index.html" | "/overlay") => respond(&mut s, "200 OK", html, INDEX.as_bytes())?,
+        (Matches::One(hub), "/events") => stream(&mut s, hub)?,
+        (Matches::Many(_), "/") if method == "GET" => respond(&mut s, "200 OK", html, &landing(""))?,
+        (Matches::Many(sessions), "/watch") if method == "POST" => {
+            let mut body = vec![0; length.min(MAX_REQUEST as usize)];
+            reader.read_exact(&mut body)?;
+            let form = String::from_utf8_lossy(&body);
+            let line = form.split('&').find_map(|kv| kv.strip_prefix("connect=")).map(form_decode).unwrap_or_default();
+            match sessions.open(&line, None) {
+                Ok(m) => write!(s, "HTTP/1.1 303 See Other\r\nLocation: /w/{}/\r\nContent-Length: 0\r\nConnection: close\r\n\r\n", m.id)?,
+                Err(e) => respond(&mut s, "400 Bad Request", html, &landing(&e.to_string()))?,
             }
         }
-        "/killicons.css" => respond(&mut s, "200 OK", "text/css", include_bytes!("../killicons/killicons.css"))?,
-        "/killicons.webp" => respond(&mut s, "200 OK", "image/webp", include_bytes!("../killicons/killicons.webp"))?,
-        p if p.starts_with("/icons/") => match ICONS.iter().find(|(name, _)| p[7..].strip_suffix(".svg") == Some(name)) {
+        (Matches::Many(sessions), p) if p.starts_with("/w/") => {
+            let (id, rest) = p[3..].split_once('/').unwrap_or((&p[3..], ""));
+            match (sessions.get(id), rest) {
+                (None, _) => respond(
+                    &mut s,
+                    "404 Not Found",
+                    html,
+                    &landing("That match is no longer being watched; paste its connect string to watch it again."),
+                )?,
+                (Some(_), "") if !p.ends_with('/') => {
+                    write!(s, "HTTP/1.1 308 Permanent Redirect\r\nLocation: {p}/\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")?;
+                }
+                (Some(_), "" | "overlay") => respond(&mut s, "200 OK", html, INDEX.as_bytes())?,
+                (Some(m), "events") => {
+                    let _viewer = Viewer::new(m.clone());
+                    stream(&mut s, &m.hub)?;
+                }
+                _ => respond(&mut s, "404 Not Found", "text/plain", b"not found")?,
+            }
+        }
+        (_, "/killicons.css") => respond(&mut s, "200 OK", "text/css", include_bytes!("../killicons/killicons.css"))?,
+        (_, "/killicons.webp") => respond(&mut s, "200 OK", "image/webp", include_bytes!("../killicons/killicons.webp"))?,
+        (_, p) if p.starts_with("/icons/") => match ICONS.iter().find(|(name, _)| p[7..].strip_suffix(".svg") == Some(name)) {
             Some((_, svg)) => respond(&mut s, "200 OK", "image/svg+xml", svg)?,
             None => respond(&mut s, "404 Not Found", "text/plain", b"not found")?,
         },
-        p if p.starts_with("/map/") => {
+        (_, p) if p.starts_with("/map/") => {
             let result = {
                 // Guards nothing, so a panic in an earlier request (poisoning it) does not matter.
-                let _one_at_a_time = maps.lock().unwrap_or_else(PoisonError::into_inner);
-                map_geometry(cache, &p[5..])
+                let _one_at_a_time = app.maps.lock().unwrap_or_else(PoisonError::into_inner);
+                map_geometry(&app.cache, &p[5..])
             };
             match result {
                 Ok(body) => respond(&mut s, "200 OK", "application/json", &body)?,
@@ -274,7 +319,47 @@ fn serve(mut s: TcpStream, hub: &SharedHub, cache: &Path, maps: &Mutex<()>) -> R
     Ok(())
 }
 
-const FLAGS: [&str; 5] = ["password", "listen", "hz", "cache", "replay"];
+/// A match's events to one browser, until it goes away.
+fn stream(s: &mut TcpStream, hub: &SharedHub) -> Result<()> {
+    write!(s, "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nCache-Control: no-cache\r\nX-Content-Type-Options: nosniff\r\n\r\n")?;
+    let rx = subscribe(hub);
+    loop {
+        match rx.recv_timeout(Duration::from_secs(15)) {
+            Ok(line) => write!(s, "data: {line}\n\n")?,
+            Err(RecvTimeoutError::Timeout) => write!(s, ": keepalive\n\n")?,
+            Err(RecvTimeoutError::Disconnected) => return Ok(()),
+        }
+    }
+}
+
+/// The start page, with an error from the last attempt if there was one.
+fn landing(error: &str) -> Vec<u8> {
+    let escaped = error.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;");
+    LANDING.replace("{error}", &escaped).into_bytes()
+}
+
+/// A form value: `+` is a space and `%XX` a byte.
+fn form_decode(v: &str) -> String {
+    let mut out = Vec::with_capacity(v.len());
+    let mut bytes = v.bytes();
+    while let Some(b) = bytes.next() {
+        match b {
+            b'+' => out.push(b' '),
+            b'%' => {
+                let hex: Vec<u8> = bytes.by_ref().take(2).collect();
+                match std::str::from_utf8(&hex).ok().and_then(|h| u8::from_str_radix(h, 16).ok()) {
+                    Some(byte) => out.push(byte),
+                    None => out.extend_from_slice(&hex),
+                }
+            }
+            _ => out.push(b),
+        }
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
+const FLAGS: [&str; 6] = ["password", "listen", "hz", "cache", "replay", "max-matches"];
+const SWITCHES: [&str; 1] = ["public"];
 
 /// Positional arguments and `--name value` options; a mistyped option is an error rather than
 /// silently falling back to its default.
@@ -286,6 +371,9 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<(Vec<String>, Ha
             Some(name) if FLAGS.contains(&name) => {
                 let value = it.next().ok_or_else(|| anyhow!("--{name} needs a value"))?;
                 flags.insert(name.to_string(), value);
+            }
+            Some(name) if SWITCHES.contains(&name) => {
+                flags.insert(name.to_string(), String::new());
             }
             Some(name) => bail!("unknown option --{name}\n\n{USAGE}"),
             None => positional.push(a),
@@ -349,55 +437,91 @@ fn main() -> Result<()> {
     let (positional, flags) = parse_args(std::env::args().skip(1))?;
     let get = |k: &str| flags.get(k).map(String::as_str);
     let listen = get("listen").unwrap_or("127.0.0.1:8080").to_string();
-    let cache = Arc::new(PathBuf::from(get("cache").unwrap_or("cache")));
-    let hub: SharedHub = Arc::default();
+    let hz = get("hz").map(|hz| hz.parse().with_context(|| format!("--hz {hz}: not a number"))).transpose()?.unwrap_or(20.0);
+    watch::stop_on_ctrl_c(&STOP)?;
 
-    if let Some(file) = get("replay") {
-        let (hub, file) = (hub.clone(), PathBuf::from(file));
+    let matches = if let Some(file) = get("replay") {
+        let (hub, file) = (SharedHub::default(), PathBuf::from(file));
+        let replayed = hub.clone();
         std::thread::spawn(move || {
-            if let Err(e) = replay(&hub, &file) {
+            if let Err(e) = replay(&replayed, &file) {
                 eprintln!("replay: {e}");
             }
         });
-    } else {
-        let line = if positional.is_empty() {
-            eprint!("Paste the SourceTV connect string (connect HOST:PORT; password \"...\"): ");
-            let mut line = String::new();
-            std::io::stdin().read_line(&mut line)?;
-            line
-        } else {
-            positional.join(" ")
-        };
-        let Some((target, password)) = parse_connect(&line) else {
+        Matches::One(hub)
+    } else if !positional.is_empty() {
+        let Some((target, password)) = parse_connect(&positional.join(" ")) else {
             eprintln!("{USAGE}");
             std::process::exit(2);
         };
         let mut w = Watch::new(&target, get("password").or(password.as_deref()).unwrap_or("tv"));
-        w.snapshot_hz = get("hz").map(|hz| hz.parse().with_context(|| format!("--hz {hz}: not a number"))).transpose()?.unwrap_or(20.0);
-        watch::stop_on_ctrl_c(&STOP)?;
-        let hub = hub.clone();
+        w.snapshot_hz = hz;
+        let hub = SharedHub::default();
+        let watched = hub.clone();
         std::thread::spawn(move || {
-            let result = watch::watch(&w, &STOP, &mut |v| publish(&hub, &v));
+            let result = watch::watch(&w, &STOP, &mut |v| publish(&watched, &v));
             if let Err(e) = &result {
-                publish(&hub, &serde_json::json!({"type": "status", "state": "gave_up", "reason": e.to_string()}));
+                publish(&watched, &serde_json::json!({"type": "status", "state": "gave_up", "reason": e.to_string()}));
                 eprintln!("stvmap-web: {e}");
             }
             if STOP.load(Ordering::Relaxed) {
                 std::process::exit(0);
             }
         });
+        Matches::One(hub)
+    } else {
+        let max =
+            get("max-matches").map(|n| n.parse().with_context(|| format!("--max-matches {n}: not a number"))).transpose()?.unwrap_or(20);
+        Matches::Many(Sessions::new(flags.contains_key("public"), max, hz))
+    };
+    let app = Arc::new(App { matches, cache: PathBuf::from(get("cache").unwrap_or("cache")), maps: Mutex::new(()) });
+
+    if let Matches::Many(_) = app.matches {
+        // Stop idle matches, and on Ctrl-C disconnect them all cleanly before exiting.
+        let reaper = app.clone();
+        std::thread::spawn(move || {
+            let Matches::Many(sessions) = &reaper.matches else { return };
+            loop {
+                if STOP.load(Ordering::Relaxed) {
+                    sessions.stop_all();
+                    std::process::exit(0);
+                }
+                sessions.reap(LINGER);
+                std::thread::sleep(Duration::from_millis(250));
+            }
+        });
+        // A connect string pasted here works like one pasted on the page.
+        let console = app.clone();
+        let url = format!("http://{listen}");
+        std::thread::spawn(move || {
+            let Matches::Many(sessions) = &console.matches else { return };
+            let stdin = std::io::stdin();
+            loop {
+                eprint!("Paste a SourceTV connect string (connect HOST:PORT; password \"...\"), or open {url}/ : ");
+                let mut line = String::new();
+                if stdin.read_line(&mut line).unwrap_or(0) == 0 {
+                    return;
+                }
+                if line.trim().is_empty() {
+                    continue;
+                }
+                match sessions.open(&line, None) {
+                    Ok(m) => eprintln!("watching: {url}/w/{}/  (overlay: {url}/w/{}/overlay)", m.id, m.id),
+                    Err(e) => eprintln!("{e}"),
+                }
+            }
+        });
     }
 
     let listener = TcpListener::bind(&listen)?;
     eprintln!("stvmap-web: http://{listen}/");
-    let maps = Arc::new(Mutex::new(()));
     for conn in listener.incoming() {
         let Ok(s) = conn else { continue };
         let Some(open) = Connection::open(&OPEN) else { continue };
-        let (hub, cache, maps) = (hub.clone(), cache.clone(), maps.clone());
+        let app = app.clone();
         std::thread::spawn(move || {
             let _open = open;
-            let _ = serve(s, &hub, &cache, &maps);
+            let _ = serve(s, &app);
         });
     }
     Ok(())
@@ -424,16 +548,62 @@ mod tests {
         assert_eq!(parse_connect("  \n"), None);
     }
 
+    fn app(matches: Matches) -> App {
+        App { matches, cache: PathBuf::from("unused"), maps: Mutex::new(()) }
+    }
+
     /// Runs `serve` on one connection, with `send` written by the client; returns serve's result and the response.
-    fn request(send: &[u8]) -> (Result<()>, String) {
+    fn request_to(app: &App, send: &[u8]) -> (Result<()>, String) {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let mut client = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
         let (server, _) = listener.accept().unwrap();
         client.write_all(send).unwrap();
-        let result = serve(server, &SharedHub::default(), Path::new("unused"), &Mutex::new(()));
+        let result = serve(server, app);
         let mut response = String::new();
         let _ = client.read_to_string(&mut response);
         (result, response)
+    }
+
+    fn request(send: &[u8]) -> (Result<()>, String) {
+        request_to(&app(Matches::One(SharedHub::default())), send)
+    }
+
+    fn post_watch(app: &App, connect: &str) -> String {
+        let body = format!("connect={connect}");
+        let send = format!("POST /watch HTTP/1.1\r\nHost: x\r\nContent-Length: {}\r\n\r\n{body}", body.len());
+        request_to(app, send.as_bytes()).1
+    }
+
+    #[test]
+    fn many_matches_start_from_a_connect_string() {
+        let app = app(Matches::Many(Sessions::new(false, 4, 20.0)));
+        assert!(request_to(&app, b"GET / HTTP/1.1\r\n\r\n").1.contains("<form"));
+        let response = post_watch(&app, "connect+192.0.2.1%3A27020%3B+password+%22tv%22");
+        assert!(response.starts_with("HTTP/1.1 303"), "{response}");
+        let location = response.lines().find_map(|l| l.strip_prefix("Location: ")).unwrap().to_string();
+        assert!(location.starts_with("/w/") && location.ends_with('/'), "{location}");
+        assert_eq!(post_watch(&app, "192.0.2.1:27020+tv").lines().find_map(|l| l.strip_prefix("Location: ")), Some(location.as_str()));
+        let page = request_to(&app, format!("GET {location} HTTP/1.1\r\n\r\n").as_bytes()).1;
+        assert!(page.starts_with("HTTP/1.1 200") && page.contains("EventSource"), "{page}");
+        let bare = request_to(&app, format!("GET {} HTTP/1.1\r\n\r\n", location.trim_end_matches('/')).as_bytes()).1;
+        assert!(bare.starts_with("HTTP/1.1 308"), "{bare}");
+        assert!(request_to(&app, b"GET /w/nope/ HTTP/1.1\r\n\r\n").1.starts_with("HTTP/1.1 404"));
+        if let Matches::Many(s) = &app.matches {
+            s.stop_all();
+        }
+    }
+
+    #[test]
+    fn a_public_server_refuses_internal_addresses() {
+        let app = app(Matches::Many(Sessions::new(true, 4, 20.0)));
+        let response = post_watch(&app, "192.168.1.12%3A27020+tv");
+        assert!(response.starts_with("HTTP/1.1 400") && response.contains("not a public address"), "{response}");
+    }
+
+    #[test]
+    fn form_values_are_decoded() {
+        assert_eq!(form_decode("connect+a%3A1%3B+password+%22p%26w%22"), "connect a:1; password \"p&w\"");
+        assert_eq!(form_decode("bad%zz"), "badzz");
     }
 
     #[test]
