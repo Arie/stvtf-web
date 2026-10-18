@@ -21,6 +21,7 @@ const USAGE: &str = "\
 stvmap-web: live top-down viewer of a TF2 match in the browser
 
   stvmap-web HOST:TVPORT [--password tv] [--listen 127.0.0.1:8080] [--hz 20] [--cache DIR]
+  stvmap-web 'connect HOST:TVPORT; password \"tv\"'   (a console connect string, or paste one when asked)
   stvmap-web --replay FILE.jsonl [--listen 127.0.0.1:8080]   (stvmap output, at game speed)";
 
 const INDEX: &str = include_str!("../index.html");
@@ -287,6 +288,15 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<(Vec<String>, Ha
     Ok((positional, flags))
 }
 
+/// `HOST:PORT`, or a console connect string like `connect HOST:PORT; password "tv"`.
+fn parse_connect(line: &str) -> Option<(String, Option<String>)> {
+    let mut parts = line.trim().split(';').map(str::trim);
+    let first = parts.next()?;
+    let target = first.strip_prefix("connect").map_or(first, str::trim).trim_matches('"');
+    let password = parts.find_map(|p| p.strip_prefix("password")).map(|p| p.trim().trim_matches('"').to_string());
+    (!target.is_empty()).then(|| (target.to_string(), password))
+}
+
 /// Counts an open connection in `count` until dropped.
 struct Connection(&'static AtomicUsize);
 
@@ -328,11 +338,19 @@ fn main() -> Result<()> {
             }
         });
     } else {
-        let Some(target) = positional.first() else {
+        let line = if positional.is_empty() {
+            eprint!("Paste the SourceTV connect string (connect HOST:PORT; password \"...\"): ");
+            let mut line = String::new();
+            std::io::stdin().read_line(&mut line)?;
+            line
+        } else {
+            positional.join(" ")
+        };
+        let Some((target, password)) = parse_connect(&line) else {
             eprintln!("{USAGE}");
             std::process::exit(2);
         };
-        let mut w = Watch::new(target, get("password").unwrap_or("tv"));
+        let mut w = Watch::new(&target, get("password").or(password.as_deref()).unwrap_or("tv"));
         w.snapshot_hz = get("hz").map(|hz| hz.parse().with_context(|| format!("--hz {hz}: not a number"))).transpose()?.unwrap_or(20.0);
         watch::stop_on_ctrl_c(&STOP)?;
         let hub = hub.clone();
@@ -366,6 +384,18 @@ fn main() -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn parses_connect_strings() {
+        let some = |t: &str, p: Option<&str>| Some((t.to_string(), p.map(str::to_string)));
+        assert_eq!(parse_connect("chi1.serveme.tf:27305"), some("chi1.serveme.tf:27305", None));
+        assert_eq!(
+            parse_connect("connect chi1.serveme.tf:27305; password \"Floofy Goat\"\n"),
+            some("chi1.serveme.tf:27305", Some("Floofy Goat"))
+        );
+        assert_eq!(parse_connect("connect 1.2.3.4:27020;password tv"), some("1.2.3.4:27020", Some("tv")));
+        assert_eq!(parse_connect("  \n"), None);
+    }
 
     /// Runs `serve` on one connection, with `send` written by the client; returns serve's result and the response.
     fn request(send: &[u8]) -> (Result<()>, String) {

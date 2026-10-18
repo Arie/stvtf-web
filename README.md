@@ -10,6 +10,9 @@ cargo build --release
 ./target/release/stvmap-web --replay FILE.jsonl [--listen 127.0.0.1:8080]
 ```
 
+Run without a server and it asks for the SourceTV connect string, as serveme.tf shows it
+(`connect HOST:PORT; password "tv"`); the same string also works as the argument.
+
 Then open `http://127.0.0.1:8080/`. `--replay` plays a saved `stvmap connect`
 output at its recorded speed, which is handy when working on the page.
 
