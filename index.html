@@ -225,7 +225,8 @@ function overlayUnit() {
 function uiScale() { return OVERLAY ? 1 : Math.max(0.75, Math.min(2.5, innerHeight / 1080)); }
 function applyScale() { document.documentElement.style.setProperty("--s", uiScale()); }
 applyScale();
-addEventListener("resize", () => { applyScale(); state.framed = false; });
+// A resize (or hiding the events) only refits the whole-map framing; auto zoom glides to it.
+addEventListener("resize", () => { applyScale(); if (state.framed) frameMap(true); });
 
 const canvas = document.getElementById("c");
 const ctx = canvas.getContext("2d");
@@ -424,7 +425,7 @@ function viewArea() {
 // below it by half the scoreboard (the main view is never rotated, the overlay has no top).
 const viewCy = (focusCy, scale) => focusCy + viewArea().top / 2 / scale;
 
-function frameMap() {
+function frameMap(keepView = false) {
   const pts = [];
   for (const p of state.spawns?.points || []) pts.push(p.pos);
   for (const o of state.snaps.at(-1)?.objectives || []) if (o.pos) pts.push(o.pos);
@@ -447,7 +448,7 @@ function frameMap() {
   } else {
     best = fit((Number(want) || 0) * Math.PI / 180);
   }
-  Object.assign(v, { rot: best.rot, cx: best.cx, cy: viewCy(best.cy, best.scale), scale: best.scale });
+  if (!keepView || best.rot !== v.rot) Object.assign(v, { rot: best.rot, cx: best.cx, cy: viewCy(best.cy, best.scale), scale: best.scale });
   state.full = { cx: best.cx, cy: best.cy, scale: best.scale };
   state.camTarget = null;
   state.fitted = state.framed = true;
