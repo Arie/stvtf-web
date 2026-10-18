@@ -5,9 +5,9 @@
 
 mod bsp;
 
-use anyhow::{Result, anyhow, bail};
+use anyhow::{Context, Result, anyhow, bail};
 use serde_json::Value;
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
@@ -268,6 +268,26 @@ fn serve(mut s: TcpStream, hub: &SharedHub, cache: &Path, maps: &Mutex<()>) -> R
     Ok(())
 }
 
+const FLAGS: [&str; 5] = ["password", "listen", "hz", "cache", "replay"];
+
+/// Positional arguments and `--name value` options; a mistyped option is an error rather than
+/// silently falling back to its default.
+fn parse_args(args: impl IntoIterator<Item = String>) -> Result<(Vec<String>, HashMap<String, String>)> {
+    let (mut positional, mut flags) = (Vec::new(), HashMap::new());
+    let mut it = args.into_iter();
+    while let Some(a) = it.next() {
+        match a.strip_prefix("--") {
+            Some(name) if FLAGS.contains(&name) => {
+                let value = it.next().ok_or_else(|| anyhow!("--{name} needs a value"))?;
+                flags.insert(name.to_string(), value);
+            }
+            Some(name) => bail!("unknown option --{name}\n\n{USAGE}"),
+            None => positional.push(a),
+        }
+    }
+    Ok((positional, flags))
+}
+
 /// Counts an open connection in `count` until dropped.
 struct Connection(&'static AtomicUsize);
 
@@ -287,17 +307,11 @@ impl Drop for Connection {
 fn main() -> Result<()> {
     static STOP: AtomicBool = AtomicBool::new(false);
     static OPEN: AtomicUsize = AtomicUsize::new(0);
-    let mut positional = Vec::new();
-    let mut flags = std::collections::HashMap::new();
-    let mut it = std::env::args().skip(1);
-    while let Some(a) = it.next() {
-        match a.strip_prefix("--") {
-            Some(name) => {
-                flags.insert(name.to_string(), it.next().ok_or_else(|| anyhow!("--{name} needs a value"))?);
-            }
-            None => positional.push(a),
-        }
+    if std::env::args().skip(1).any(|a| a == "--help" || a == "-h") {
+        println!("{USAGE}");
+        return Ok(());
     }
+    let (positional, flags) = parse_args(std::env::args().skip(1))?;
     let get = |k: &str| flags.get(k).map(String::as_str);
     let listen = get("listen").unwrap_or("127.0.0.1:8080").to_string();
     let cache = Arc::new(PathBuf::from(get("cache").unwrap_or("cache")));
@@ -316,7 +330,7 @@ fn main() -> Result<()> {
             std::process::exit(2);
         };
         let mut w = Watch::new(target, get("password").unwrap_or("tv"));
-        w.snapshot_hz = get("hz").map(str::parse).transpose()?.unwrap_or(20.0);
+        w.snapshot_hz = get("hz").map(|hz| hz.parse().with_context(|| format!("--hz {hz}: not a number"))).transpose()?.unwrap_or(20.0);
         watch::stop_on_ctrl_c(&STOP)?;
         let hub = hub.clone();
         std::thread::spawn(move || {
@@ -386,6 +400,24 @@ mod tests {
         assert!(Connection::open(&COUNT).is_none());
         drop(open);
         assert!(Connection::open(&COUNT).is_some());
+    }
+
+    fn args(a: &[&str]) -> Result<(Vec<String>, HashMap<String, String>)> {
+        parse_args(a.iter().map(ToString::to_string))
+    }
+
+    #[test]
+    fn parses_options() {
+        let (positional, flags) = args(&["host:27020", "--listen", "0.0.0.0:80", "--hz", "10"]).unwrap();
+        assert_eq!(positional, ["host:27020"]);
+        assert_eq!(flags["listen"], "0.0.0.0:80");
+        assert_eq!(flags["hz"], "10");
+    }
+
+    #[test]
+    fn unknown_or_incomplete_options_are_errors() {
+        assert!(args(&["host:27020", "--lisen", "0.0.0.0:80"]).is_err());
+        assert!(args(&["host:27020", "--listen"]).is_err());
     }
 
     #[test]
