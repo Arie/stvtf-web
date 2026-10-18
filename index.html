@@ -765,7 +765,9 @@ function drawBuildings(snap) {
 }
 
 function drawProjectiles(list) {
-  const now = performance.now();
+  // The overlay sizes projectiles from its panel like the players, a little larger than their
+  // usual minimum, so they read at minimap scale.
+  const size = (units, min) => (OVERLAY ? (min * overlayUnit()) / 9 : px(units, min));
   for (const p of list || []) {
     const [x, y] = toScreen(p.pos[0], p.pos[1]);
     const col = TEAM[p.team] || "#ccc";
@@ -780,7 +782,7 @@ function drawProjectiles(list) {
     switch (p.kind) {
       case "Rocket": {
         ctx.rotate(a);
-        const l = px(26, 12), w = l * 0.32;
+        const l = size(26, 12), w = l * 0.32;
         const trail = ctx.createLinearGradient(-l * 3.2, 0, -l * 0.5, 0);
         trail.addColorStop(0, "#ffffff00"); trail.addColorStop(1, "#ffd9a0aa");
         ctx.fillStyle = trail; ctx.fillRect(-l * 3.2, -w * 0.35, l * 2.7, w * 0.7);
@@ -789,14 +791,14 @@ function drawProjectiles(list) {
         break;
       }
       case "Pipe": case "LooseCannon": {
-        const r = px(9, 4.5);
+        const r = size(9, 4.5);
         ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2);
         ctx.fillStyle = p.crit ? "#fff" : col; ctx.fill(); ctx.stroke();
         ctx.beginPath(); ctx.arc(0, 0, r * 0.45, 0, Math.PI * 2); ctx.fillStyle = "#0008"; ctx.fill();
         break;
       }
       case "Sticky": {
-        const r = px(10, 6);
+        const r = size(10, 6);
         ctx.beginPath();
         for (let i = 0; i < 16; i++) {
           const rr = i % 2 ? r * 0.55 : r * 1.15, t = i / 16 * Math.PI * 2;
@@ -808,7 +810,7 @@ function drawProjectiles(list) {
       }
       case "Arrow": case "HealingArrow": {
         ctx.rotate(a);
-        const l = px(34, 18);
+        const l = size(34, 18);
         ctx.beginPath(); ctx.moveTo(-l * 0.6, 0); ctx.lineTo(l * 0.4, 0);
         ctx.strokeStyle = "#000"; ctx.lineWidth = 3.5; ctx.stroke();
         ctx.strokeStyle = col; ctx.lineWidth = 2; ctx.stroke();
@@ -821,23 +823,23 @@ function drawProjectiles(list) {
         break;
       }
       case "Flare": case "Fireball": {
-        ctx.beginPath(); ctx.arc(0, 0, px(9, 3.5), 0, Math.PI * 2);
+        ctx.beginPath(); ctx.arc(0, 0, size(9, 3.5), 0, Math.PI * 2);
         ctx.fillStyle = "#ffb347"; ctx.shadowColor = "#ff7a00"; ctx.shadowBlur = 12; ctx.fill();
         break;
       }
       case "EnergyBall": case "EnergyRing": case "ShortCircuitOrb": {
-        ctx.beginPath(); ctx.arc(0, 0, px(12, 4.5), 0, Math.PI * 2);
+        ctx.beginPath(); ctx.arc(0, 0, size(12, 4.5), 0, Math.PI * 2);
         ctx.strokeStyle = col; ctx.lineWidth = 3; ctx.shadowColor = col; ctx.shadowBlur = 12; ctx.stroke();
         break;
       }
       case "Jarate": case "MadMilk": case "GasPasser": case "Cleaver": {
-        const r = px(9, 4);
+        const r = size(9, 4);
         ctx.rotate(Math.PI / 4); ctx.fillStyle = p.kind === "Jarate" ? "#ffe14a" : p.kind === "MadMilk" ? "#f4f4f4" : p.kind === "GasPasser" ? "#ff9a3c" : "#bbb";
         ctx.fillRect(-r, -r, r * 2, r * 2); ctx.strokeRect(-r, -r, r * 2, r * 2);
         break;
       }
       default: {
-        ctx.beginPath(); ctx.arc(0, 0, px(8, 3), 0, Math.PI * 2);
+        ctx.beginPath(); ctx.arc(0, 0, size(8, 3), 0, Math.PI * 2);
         ctx.fillStyle = col; ctx.fill(); ctx.stroke();
       }
     }
@@ -1037,7 +1039,7 @@ function drawEffects(byId) {
       ctx.beginPath(); ctx.arc(x, y, px(14, 5), 0, Math.PI * 2); ctx.fillStyle = "#ffd36a"; ctx.fill();
     } else if (e.kind === "boom") {
       const [x, y] = toScreen(e.ev.origin[0], e.ev.origin[1]);
-      ctx.beginPath(); ctx.arc(x, y, px(146, 6) * (0.35 + 0.65 * k), 0, Math.PI * 2);
+      ctx.beginPath(); ctx.arc(x, y, Math.max(px(146, 6), OVERLAY ? overlayUnit() * 1.2 : 0) * (0.35 + 0.65 * k), 0, Math.PI * 2);
       ctx.fillStyle = "#ffa04040"; ctx.fill(); ctx.strokeStyle = "#ffb050"; ctx.lineWidth = 2; ctx.stroke();
     } else if (e.kind === "dmg" && !OVERLAY) {
       const pos = byId.get(e.ev.victim)?.pos || e.pos;
@@ -1293,10 +1295,12 @@ function draw() {
     drawSpawnRooms(f.snap);
     drawObjectives(f.snap, tick);
     drawBuildings(f.snap);
-    drawProjectiles(f.projectiles);
+    // Above the players in the overlay, where a dot would otherwise cover them.
+    if (!OVERLAY) drawProjectiles(f.projectiles);
     drawEffects(byId);
     drawHealBeams(f.players, byId);
     drawPlayers(f.players);
+    if (OVERLAY) drawProjectiles(f.projectiles);
     updatePanel(f.players, f.snap);
   }
 }
