@@ -58,7 +58,7 @@ struct Hub {
 }
 
 const HISTORY: usize = 1000;
-const FEED: [&str; 18] = [
+const FEED: [&str; 17] = [
     "kill",
     "uber",
     "uber_ready",
