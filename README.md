@@ -79,7 +79,7 @@ Query options, e.g. `/overlay?names=1&score=1&panel=0.6`:
 - With a demos.tf overview available, a corner switch flips between it and the map geometry.
 - Side panel: an event feed stamped with the time into the round (kills with DOMINATING, REVENGE,
   AIRSHOT and FEIGN tags, übers deployed and ready, dropped übers, captures and blocks,
-  destroyed buildings, reflects, banners, round start/win with the score, stalemate,
+  destroyed buildings, banners, round start/win with the score, stalemate,
   overtime, match end, joins and leaves, map changes) and chat.
 - The server keeps the feed and chat of the current map (up to 1000 events), so a page
   opened or reloaded mid-match starts with them.

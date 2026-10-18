@@ -65,7 +65,6 @@ const FEED: [&str; 18] = [
     "medic_death",
     "capture_blocked",
     "building_destroyed",
-    "reflect",
     "banner",
     "point_captured",
     "round_start",

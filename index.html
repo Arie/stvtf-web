@@ -633,7 +633,6 @@ function feedEvent(ev, p) {
     case "building_destroyed":
       html = `${ev.attacker != null ? name(ev.attacker) : ""}<span class="w">destroyed</span>${name(ev.owner)}<span class="w">'s ${BUILDING[ev.object] || esc(ev.object)}</span>`;
       break;
-    case "reflect": html = `${name(ev.player)}<span class="w">reflected</span>${ev.owner != null ? name(ev.owner) + "<span class=\"w\">'s projectile</span>" : ""}`; break;
     case "banner": cls = "minor"; html = `${name(ev.player)} <span>deployed the ${BANNER[ev.kind] || "banner"}</span>`; break;
     case "point_captured": cls = `big ${ev.team}`; html = `${teamName(ev.team)} captured ${esc(pointName(ev))}`; break;
     case "round_start": cls = "big none"; html = "Round start"; break;
