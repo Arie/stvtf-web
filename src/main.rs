@@ -35,6 +35,7 @@ const ICONS: [(&str, &[u8]); 9] = [
     ("spy", include_bytes!("../icons/spy.svg")),
 ];
 const FASTDL: &str = "https://fastdl.serveme.tf/maps/";
+const MAX_BSP: u64 = 512 << 20;
 
 /// The latest match state for browsers that join late, and a queue per browser.
 #[derive(Default)]
@@ -111,11 +112,22 @@ fn map_geometry(cache: &Path, name: &str) -> Result<Vec<u8>> {
         d
     } else {
         let mut d = Vec::new();
-        ureq::get(&format!("{FASTDL}{name}.bsp")).call()?.into_reader().take(512 << 20).read_to_end(&mut d)?;
+        // One byte over the limit tells a map that is too big from one that just fits.
+        ureq::get(&format!("{FASTDL}{name}.bsp")).call()?.into_reader().take(MAX_BSP + 1).read_to_end(&mut d)?;
+        if d.len() as u64 > MAX_BSP {
+            bail!("{name}.bsp is over {} MiB", MAX_BSP >> 20);
+        }
         std::fs::write(&bsp_path, &d)?;
         d
     };
-    let body = bsp::geometry(&data)?.to_string().into_bytes();
+    let body = match bsp::geometry(&data) {
+        Ok(g) => g.to_string().into_bytes(),
+        Err(e) => {
+            // A broken download would otherwise fail every request for this map; the next one fetches it again.
+            let _ = std::fs::remove_file(&bsp_path);
+            return Err(e);
+        }
+    };
     std::fs::write(&json, &body)?;
     Ok(body)
 }
@@ -229,4 +241,21 @@ fn main() -> Result<()> {
         });
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn broken_cached_bsp_is_removed() {
+        let cache = std::env::temp_dir().join(format!("stvmap-web-test-{}", std::process::id()));
+        std::fs::create_dir_all(&cache).unwrap();
+        let bsp = cache.join("broken.bsp");
+        std::fs::write(&bsp, b"VBSP\0\0\0\0").unwrap();
+        assert!(map_geometry(&cache, "broken").is_err());
+        // So the next request downloads it again instead of failing on it forever.
+        assert!(!bsp.exists());
+        std::fs::remove_dir_all(&cache).unwrap();
+    }
 }
