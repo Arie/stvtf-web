@@ -293,7 +293,11 @@ struct Connection(&'static AtomicUsize);
 
 impl Connection {
     fn open(count: &'static AtomicUsize) -> Option<Self> {
-        count.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |n| (n < MAX_CONNECTIONS).then_some(n + 1)).ok()?;
+        // fetch_update is deprecated and its replacement still unstable on our toolchain.
+        if count.fetch_add(1, Ordering::Relaxed) >= MAX_CONNECTIONS {
+            count.fetch_sub(1, Ordering::Relaxed);
+            return None;
+        }
         Some(Connection(count))
     }
 }
