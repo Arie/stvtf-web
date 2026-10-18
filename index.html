@@ -131,6 +131,7 @@
   #feed div { padding: 2px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   #chat div { padding: 2px 0; overflow-wrap: anywhere; }
   #chat .notice { color: var(--dim); }
+  #chat time { display: inline-block; min-width: 30px; color: var(--dim); font-size: 10px; font-variant-numeric: tabular-nums; }
   .t-red { color: var(--red); } .t-blue { color: var(--blue); }
   #feed div.ev { display: flex; align-items: center; gap: 5px; padding: 3px 7px; margin: 0 0 2px; border-radius: 3px;
     background: #0b0c0e8c; white-space: nowrap; overflow: hidden; }
@@ -634,12 +635,14 @@ function feedEvent(ev, p) {
 function chat(ev, p) {
   const d = document.createElement("div");
   const pl = ev.player != null ? p(ev.player) : null;
+  const stamp = ev.at != null ? mmss(ev.at) : state.clock;
+  const time = stamp ? `<time>${stamp}</time>` : "";
   if (pl || ev.name) {
-    d.innerHTML = `${pl ? who(pl) : `<span class="w">${esc(ev.name)}</span>`}: ${esc(ev.text)}`;
+    d.innerHTML = `${time}${pl ? who(pl) : `<span class="w">${esc(ev.name)}</span>`}: ${esc(ev.text)}`;
   } else {
     // Server messages (plugins, rcon say) as notices; `say` from the console adds its own prefix.
     d.className = "notice";
-    d.textContent = String(ev.text ?? "").replace(/^Console: /, "");
+    d.innerHTML = time + esc(String(ev.text ?? "").replace(/^Console: /, ""));
   }
   prepend($("chat"), d);
 }
