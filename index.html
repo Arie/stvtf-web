@@ -19,7 +19,7 @@
   body { display: grid; grid-template-rows: 1fr; }
   #title { display: flex; gap: 10px; align-items: baseline; padding: 10px 12px; border-bottom: 1px solid var(--line); }
   #title b { font-size: 15px; }
-  .hud, #scoreboard, #follow, #bgtoggle, #autozoom, aside { zoom: var(--s); }
+  .hud, #scoreboard, #follow, #bgtoggle, #autozoom, #sidetoggle, aside { zoom: var(--s); }
   #status.ok { color: #7cc47f; } #status.bad { color: #e0a040; }
   #age { color: var(--dim); margin-left: auto; }
   main { display: grid; grid-template-columns: 1fr auto; min-height: 0; }
@@ -111,6 +111,10 @@
   #follow b { color: #fff; }
   #follow button, #bgtoggle button { border: 0; font: inherit; cursor: pointer; }
   #follow button { width: 22px; height: 22px; border-radius: 50%; background: #ffffff1a; color: #fff; }
+  html.noside aside { display: none; }
+  html.noside main { grid-template-columns: 1fr; }
+  #sidetoggle { position: absolute; right: 12px; top: 12px; z-index: 3; padding: 5px 10px; border: 0; border-radius: 6px;
+    background: #0b0c0ee6; color: #fff; font: inherit; font-size: 12px; cursor: pointer; }
   #autozoom { position: absolute; right: 12px; bottom: 52px; z-index: 3; padding: 5px 10px; border: 0; border-radius: 6px;
     background: #0b0c0ee6; color: #fff; font: inherit; font-size: 12px; cursor: pointer; }
   #bgtoggle { position: absolute; right: 12px; bottom: 12px; z-index: 3; display: flex; padding: 2px; border-radius: 6px; background: #0b0c0ee6; }
@@ -119,7 +123,7 @@
   /* Broadcast overlay (/overlay): only the map, on a transparent page for OBS. */
   html.overlay, html.overlay body { background: transparent; }
   html.overlay body { display: block; }
-  html.overlay header, html.overlay aside, html.overlay .hud, html.overlay #follow, html.overlay #bgtoggle,
+  html.overlay header, html.overlay aside, html.overlay .hud, html.overlay #follow, html.overlay #bgtoggle, html.overlay #sidetoggle,
   html.overlay #empty, html.overlay #banner { display: none !important; }
   html.overlay main { display: block; height: 100%; }
   html.overlay #stage { position: fixed; inset: 0; border-radius: 14px; background: rgb(11 12 14 / var(--overlay-opacity, .82));
@@ -176,6 +180,7 @@
     </div>
     <div id="follow" hidden><span>Following <b id="follow-name"></b></span><button id="follow-stop" title="Stop following (Esc)">✕</button></div>
     <button id="autozoom" hidden>Auto zoom</button>
+    <button id="sidetoggle" title="Show or hide events and chat">Hide events ›</button>
     <div id="bgtoggle" hidden><button data-bg="overview" class="on">Overview</button><button data-bg="geometry">Geometry</button></div>
   </div>
   <aside>
@@ -251,11 +256,6 @@ es.onerror = () => setStatus("stream lost, retrying", false);
 
 function setStatus(text, ok) { const s = $("status"); s.textContent = text; s.className = ok ? "ok" : "bad"; }
 
-function handle(m) {
-  // Feed events from before the page opened: straight into the feed and chat, no map effects.
-  if (m.history) {
-    const p = id => state.players.get(id);
-    if (m.type === "chat") chat(m, p);
 // When the stream goes quiet (the match ended, or the page was opened afterwards), say how long ago
 // the last data came in.
 setInterval(() => {
@@ -265,6 +265,11 @@ setInterval(() => {
   if (age >= 5 && $("status").textContent === "live") setStatus("no data", false);
 }, 1000);
 
+function handle(m) {
+  // Feed events from before the page opened: straight into the feed and chat, no map effects.
+  if (m.history) {
+    const p = id => state.players.get(id);
+    if (m.type === "chat") chat(m, p);
     else killiconsLoaded.finally(() => feedEvent(m, p));
     return;
   }
@@ -282,18 +287,18 @@ setInterval(() => {
       else if (m.state === "disconnected" || m.state === "connect_failed") setStatus(m.state + ": " + (m.reason || ""), false);
       else setStatus(m.state, false);
       break;
-    case "snapshot":
-      if (m.tick < state.lastTick - 200) resetMatch();
-      state.lastTick = m.tick;
-      if ($("status").textContent !== "live") setStatus("live", true);
-      observeTick(m.tick);
     case "data_age":
       state.lastData = performance.now() - m.ms;
       break;
+    case "snapshot":
+      if (m.tick < state.lastTick - 200) resetMatch();
+      state.lastTick = m.tick;
+      state.lastData = performance.now();
+      if ($("status").textContent !== "live") setStatus("live", true);
+      observeTick(m.tick);
       state.snaps.push(m);
       if (state.snaps.length > 60) state.snaps.shift();
       for (const p of m.players) state.players.set(p.id, p);
-      state.lastData = performance.now();
       $("empty").style.display = "none";
       break;
     case "world":
@@ -504,6 +509,15 @@ for (const id of ["hud-blue", "hud-red"]) {
 }
 $("follow-stop").addEventListener("click", () => setFollow(null));
 $("autozoom").addEventListener("click", () => setAutoZoom(true));
+
+function setSidebar(show) {
+  document.documentElement.classList.toggle("noside", !show);
+  $("sidetoggle").textContent = show ? "Hide events ›" : "‹ Events";
+  try { localStorage.setItem("sidebar", show ? "1" : "0"); } catch {}
+  dispatchEvent(new Event("resize"));
+}
+$("sidetoggle").addEventListener("click", () => setSidebar(document.documentElement.classList.contains("noside")));
+try { if (!OVERLAY && localStorage.getItem("sidebar") === "0") setSidebar(false); } catch {}
 for (const b of document.querySelectorAll("#bgtoggle button")) {
   b.addEventListener("click", () => {
     state.bg = b.dataset.bg;
