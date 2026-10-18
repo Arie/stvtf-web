@@ -11,7 +11,7 @@ use std::collections::VecDeque;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::mpsc::{Receiver, RecvTimeoutError, SyncSender, TrySendError, sync_channel};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
@@ -37,6 +37,10 @@ const ICONS: [(&str, &[u8]); 9] = [
 ];
 const FASTDL: &str = "https://fastdl.serveme.tf/maps/";
 const MAX_BSP: u64 = 512 << 20;
+/// Request line and headers together; the pages send far less.
+const MAX_REQUEST: u64 = 16 << 10;
+/// Open connections, browsers on `/events` included; more are closed straight away.
+const MAX_CONNECTIONS: usize = 512;
 
 /// The latest match state for browsers that join late, and a queue per browser.
 #[derive(Default)]
@@ -186,17 +190,27 @@ fn map_geometry(cache: &Path, name: &str) -> Result<Vec<u8>> {
 }
 
 fn respond(s: &mut TcpStream, status: &str, ctype: &str, body: &[u8]) -> std::io::Result<()> {
-    write!(s, "HTTP/1.1 {status}\r\nContent-Type: {ctype}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", body.len())?;
+    write!(
+        s,
+        "HTTP/1.1 {status}\r\nContent-Type: {ctype}\r\nContent-Length: {}\r\nX-Content-Type-Options: nosniff\r\nConnection: close\r\n\r\n",
+        body.len()
+    )?;
     s.write_all(body)
 }
 
 fn serve(mut s: TcpStream, hub: &SharedHub, cache: &Path, maps: &Mutex<()>) -> Result<()> {
-    let mut reader = BufReader::new(s.try_clone()?);
+    // A client that sends nothing, or stops reading `/events`, does not keep its thread forever.
+    s.set_read_timeout(Some(Duration::from_secs(10)))?;
+    s.set_write_timeout(Some(Duration::from_secs(30)))?;
+    let mut reader = BufReader::new(s.try_clone()?.take(MAX_REQUEST));
     let mut request = String::new();
     reader.read_line(&mut request)?;
     loop {
         let mut header = String::new();
-        if reader.read_line(&mut header)? == 0 || header == "\r\n" {
+        if reader.read_line(&mut header)? == 0 {
+            bail!("request incomplete or over {MAX_REQUEST} bytes");
+        }
+        if header == "\r\n" {
             break;
         }
     }
@@ -205,7 +219,10 @@ fn serve(mut s: TcpStream, hub: &SharedHub, cache: &Path, maps: &Mutex<()>) -> R
     match path {
         "/" | "/index.html" | "/overlay" => respond(&mut s, "200 OK", "text/html; charset=utf-8", INDEX.as_bytes())?,
         "/events" => {
-            write!(s, "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nCache-Control: no-cache\r\n\r\n")?;
+            write!(
+                s,
+                "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nCache-Control: no-cache\r\nX-Content-Type-Options: nosniff\r\n\r\n"
+            )?;
             let rx = subscribe(hub);
             loop {
                 match rx.recv_timeout(Duration::from_secs(15)) {
@@ -237,8 +254,25 @@ fn serve(mut s: TcpStream, hub: &SharedHub, cache: &Path, maps: &Mutex<()>) -> R
     Ok(())
 }
 
+/// Counts an open connection in `count` until dropped.
+struct Connection(&'static AtomicUsize);
+
+impl Connection {
+    fn open(count: &'static AtomicUsize) -> Option<Self> {
+        count.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |n| (n < MAX_CONNECTIONS).then_some(n + 1)).ok()?;
+        Some(Connection(count))
+    }
+}
+
+impl Drop for Connection {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::Relaxed);
+    }
+}
+
 fn main() -> Result<()> {
     static STOP: AtomicBool = AtomicBool::new(false);
+    static OPEN: AtomicUsize = AtomicUsize::new(0);
     let mut positional = Vec::new();
     let mut flags = std::collections::HashMap::new();
     let mut it = std::env::args().skip(1);
@@ -277,7 +311,7 @@ fn main() -> Result<()> {
                 publish(&hub, &serde_json::json!({"type": "status", "state": "gave_up", "reason": e.to_string()}));
                 eprintln!("stvmap-web: {e}");
             }
-            if STOP.load(std::sync::atomic::Ordering::Relaxed) {
+            if STOP.load(Ordering::Relaxed) {
                 std::process::exit(0);
             }
         });
@@ -288,8 +322,10 @@ fn main() -> Result<()> {
     let maps = Arc::new(Mutex::new(()));
     for conn in listener.incoming() {
         let Ok(s) = conn else { continue };
+        let Some(open) = Connection::open(&OPEN) else { continue };
         let (hub, cache, maps) = (hub.clone(), cache.clone(), maps.clone());
         std::thread::spawn(move || {
+            let _open = open;
             let _ = serve(s, &hub, &cache, &maps);
         });
     }
@@ -299,6 +335,44 @@ fn main() -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Runs `serve` on one connection, with `send` written by the client; returns serve's result and the response.
+    fn request(send: &[u8]) -> (Result<()>, String) {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let mut client = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+        let (server, _) = listener.accept().unwrap();
+        client.write_all(send).unwrap();
+        let result = serve(server, &SharedHub::default(), Path::new("unused"), &Mutex::new(()));
+        let mut response = String::new();
+        let _ = client.read_to_string(&mut response);
+        (result, response)
+    }
+
+    #[test]
+    fn serves_the_page_with_nosniff() {
+        let (result, response) = request(b"GET / HTTP/1.1\r\nHost: x\r\n\r\n");
+        result.unwrap();
+        assert!(response.starts_with("HTTP/1.1 200 OK\r\n"), "{response:.100}");
+        assert!(response.contains("\r\nX-Content-Type-Options: nosniff\r\n"));
+    }
+
+    #[test]
+    fn endless_header_is_cut_off() {
+        let mut send = b"GET / HTTP/1.1\r\nX-Long: ".to_vec();
+        send.resize(64 << 10, b'a');
+        let (result, response) = request(&send);
+        assert!(result.is_err());
+        assert!(response.is_empty());
+    }
+
+    #[test]
+    fn connections_are_capped() {
+        static COUNT: AtomicUsize = AtomicUsize::new(0);
+        let open: Vec<_> = (0..MAX_CONNECTIONS).map(|_| Connection::open(&COUNT).unwrap()).collect();
+        assert!(Connection::open(&COUNT).is_none());
+        drop(open);
+        assert!(Connection::open(&COUNT).is_some());
+    }
 
     #[test]
     fn broken_cached_bsp_is_removed() {
