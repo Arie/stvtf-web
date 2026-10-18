@@ -174,7 +174,7 @@ fn map_geometry(cache: &Path, name: &str) -> Result<Vec<u8>> {
         if d.len() as u64 > MAX_BSP {
             bail!("{name}.bsp is over {} MiB", MAX_BSP >> 20);
         }
-        std::fs::write(&bsp_path, &d)?;
+        write_atomic(&bsp_path, &d)?;
         d
     };
     let body = match bsp::geometry(&data) {
@@ -185,8 +185,17 @@ fn map_geometry(cache: &Path, name: &str) -> Result<Vec<u8>> {
             return Err(e);
         }
     };
-    std::fs::write(&json, &body)?;
+    write_atomic(&json, &body)?;
     Ok(body)
+}
+
+/// Writes through a temporary file and a rename: a cached file that can be read is complete,
+/// even after a crash halfway through writing it.
+fn write_atomic(path: &Path, data: &[u8]) -> std::io::Result<()> {
+    let mut tmp = path.as_os_str().to_owned();
+    tmp.push(".tmp");
+    std::fs::write(&tmp, data)?;
+    std::fs::rename(&tmp, path)
 }
 
 fn respond(s: &mut TcpStream, status: &str, ctype: &str, body: &[u8]) -> std::io::Result<()> {
@@ -372,6 +381,18 @@ mod tests {
         assert!(Connection::open(&COUNT).is_none());
         drop(open);
         assert!(Connection::open(&COUNT).is_some());
+    }
+
+    #[test]
+    fn write_atomic_replaces_the_file() {
+        let dir = std::env::temp_dir().join(format!("stvmap-web-atomic-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("m.v2.json");
+        std::fs::write(&path, b"old, longer contents").unwrap();
+        write_atomic(&path, b"new").unwrap();
+        assert_eq!(std::fs::read(&path).unwrap(), b"new");
+        assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 1, "no temporary file left");
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
