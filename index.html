@@ -14,43 +14,43 @@
   [hidden] { display: none !important; }
   html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
     font: 13px/1.35 system-ui, -apple-system, "Segoe UI", sans-serif; }
-  body { display: grid; grid-template-rows: auto 1fr; }
-  header { display: flex; gap: 18px; align-items: center; padding: 8px 14px;
-    border-bottom: 1px solid var(--line); background: var(--panel); flex-wrap: wrap; }
-  header b { font-size: 15px; }
-  header .dim { color: var(--dim); }
-  header label { color: var(--dim); display: flex; gap: 6px; align-items: center; }
+  /* Laid out for 1080p streams; --s scales the HUD, panel and markers with the window height. */
+  :root { --s: 1; }
+  body { display: grid; grid-template-rows: 1fr; }
+  #title { display: flex; gap: 10px; align-items: baseline; padding: 10px 12px; border-bottom: 1px solid var(--line); }
+  #title b { font-size: 15px; }
+  .hud, #scoreboard, #follow, #bgtoggle, aside { zoom: var(--s); }
   #status.ok { color: #7cc47f; } #status.bad { color: #e0a040; }
-  main { display: grid; grid-template-columns: 1fr 330px; min-height: 0; }
+  main { display: grid; grid-template-columns: 1fr auto; min-height: 0; }
   #stage { position: relative; min-height: 0; overflow: hidden; }
   canvas { position: absolute; inset: 0; width: 100%; height: 100%; cursor: grab; }
   canvas:active { cursor: grabbing; }
   #banner { position: absolute; top: 14px; left: 50%; transform: translateX(-50%);
     padding: 6px 16px; border-radius: 4px; background: #000a; font-weight: 600; font-size: 15px;
     opacity: 0; transition: opacity .4s; pointer-events: none; }
-  aside { border-left: 1px solid var(--line); background: var(--panel); display: flex;
+  aside { width: 380px; border-left: 1px solid var(--line); background: var(--panel); display: flex;
     flex-direction: column; min-height: 0; }
   aside section { padding: 8px 10px; border-bottom: 1px solid var(--line); }
   aside h3 { margin: 0 0 6px; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--dim); }
   /* Spectator HUD over the map: BLU down the left edge, RED down the right, like TF2. */
   .hud { position: absolute; top: 50%; transform: translateY(-50%); display: flex; flex-direction: column;
-    gap: 3px; width: 218px; pointer-events: none; z-index: 2;
+    gap: 3px; width: 250px; pointer-events: none; z-index: 2;
     font-family: "TF2 Build", "Oswald", "Roboto Condensed", "Arial Narrow", system-ui, sans-serif; }
   #hud-blue { left: 10px; } #hud-red { right: 10px; }
-  .card { --team: var(--blue); position: relative; height: 34px; display: grid; align-items: center;
-    grid-template-columns: 34px 1fr auto; background: #0b0c0ecc; overflow: hidden; }
+  .card { --team: var(--blue); position: relative; height: 40px; display: grid; align-items: center;
+    grid-template-columns: 40px 1fr auto; background: #0b0c0ecc; overflow: hidden; }
   #hud-red .card, #hud-red .charge { --team: var(--red); }
   /* Fills stay full width and are revealed with clip-path, so the über stripes (a fixed
      24px tile) never stretch when health or charge changes. */
   .card .fill { position: absolute; inset: 0; clip-path: inset(0 100% 0 0); transition: clip-path .25s linear;
     background: linear-gradient(90deg, color-mix(in srgb, var(--team) 70%, #000), color-mix(in srgb, var(--team) 45%, #000)); }
   .card > :not(.fill) { position: relative; }
-  .card .ci { width: 34px; height: 34px; padding: 5px; background: var(--team); display: grid; place-items: center; font-weight: 800; }
-  .card .ci img { width: 24px; height: 24px; }
+  .card .ci { width: 40px; height: 40px; padding: 6px; background: var(--team); display: grid; place-items: center; font-weight: 800; }
+  .card .ci img { width: 28px; height: 28px; }
   .card .nm { padding: 0 6px; min-width: 0; line-height: 1.05; }
-  .card .nm b { display: block; font-weight: 600; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #fff; text-shadow: 0 1px 2px #000; }
-  .card .nm small { font-size: 10px; color: #ffffffa0; letter-spacing: .02em; }
-  .card .hp { padding: 0 8px; font-size: 22px; font-weight: 800; color: #fff; text-shadow: 0 2px 0 #000a; font-variant-numeric: tabular-nums; }
+  .card .nm b { display: block; font-weight: 600; font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #fff; text-shadow: 0 1px 2px #000; }
+  .card .nm small { font-size: 11px; color: #ffffffa0; letter-spacing: .02em; }
+  .card .hp { padding: 0 9px; font-size: 26px; font-weight: 800; color: #fff; text-shadow: 0 2px 0 #000a; font-variant-numeric: tabular-nums; }
   .card.over .hp { color: #9ff0ff; }
   .card.low .hp { color: #ff6b5a; animation: pulse .7s infinite alternate; }
   .card.dead { filter: grayscale(1) brightness(.55); }
@@ -61,16 +61,16 @@
   .card.ub .fill { --stripe: color-mix(in srgb, var(--team) 80%, #fff);
     background: linear-gradient(135deg, var(--stripe) 25%, var(--team) 25% 50%, var(--stripe) 50% 75%, var(--team) 75%) 0 0 / 24px 24px;
     animation: stripes 1s linear infinite; }
-  .charge { --team: var(--blue); position: relative; height: 26px; margin-top: 4px; background: #0b0c0ecc;
+  .charge { --team: var(--blue); position: relative; height: 30px; margin-top: 4px; background: #0b0c0ecc;
     display: flex; align-items: center; gap: 6px; padding: 0 8px; overflow: hidden; }
   .charge .bar { position: absolute; inset: 0; clip-path: inset(0 100% 0 0); transition: clip-path .3s linear;
     background: color-mix(in srgb, var(--team) 55%, #000); }
   .charge .segs { position: absolute; inset: 0; }
   .charge .seg { position: absolute; top: 0; bottom: 0; width: 2px; background: #0b0c0e; }
-  .charge > span { position: relative; font-size: 11px; font-weight: 700; letter-spacing: .06em; color: #fff; text-transform: uppercase;
+  .charge > span { position: relative; font-size: 12px; font-weight: 700; letter-spacing: .06em; color: #fff; text-transform: uppercase;
     text-shadow: 0 0 3px #000, 0 1px 2px #000; }
   .charge.releasing > span { background: #000b; padding: 1px 5px; border-radius: 2px; }
-  .charge .pct { margin-left: auto; font-size: 15px; font-variant-numeric: tabular-nums; }
+  .charge .pct { margin-left: auto; font-size: 17px; font-variant-numeric: tabular-nums; }
   .charge.ready .bar { background: linear-gradient(90deg, var(--team), color-mix(in srgb, var(--team) 60%, #fff)); animation: pulse 1s infinite alternate; }
   .charge.releasing { box-shadow: 0 0 14px var(--team); }
   .charge.releasing .bar { background: linear-gradient(135deg, #fff 25%, var(--team) 25% 50%, #fff 50% 75%, var(--team) 75%) 0 0 / 24px 24px;
@@ -83,23 +83,23 @@
     display: flex; flex-direction: column; align-items: center; gap: 6px; pointer-events: none;
     font-family: "TF2 Build", "Oswald", "Roboto Condensed", "Arial Narrow", system-ui, sans-serif; }
   .sb-row { display: flex; align-items: stretch; filter: drop-shadow(0 2px 6px #000a); }
-  .sb-team { position: relative; display: flex; align-items: center; gap: 10px; padding: 0 14px; height: 48px; color: #fff; }
+  .sb-team { position: relative; display: flex; align-items: center; gap: 10px; padding: 0 16px; height: 54px; color: #fff; }
   .sb-team.blue { background: linear-gradient(180deg, color-mix(in srgb, var(--blue) 85%, #fff), var(--blue)); border-radius: 6px 0 0 6px; }
   .sb-team.red { background: linear-gradient(180deg, color-mix(in srgb, var(--red) 85%, #fff), var(--red)); border-radius: 0 6px 6px 0; }
-  .sb-team b { font-size: 34px; font-weight: 800; line-height: 1; min-width: 1.2ch; text-align: center; text-shadow: 0 2px 0 #0006; font-variant-numeric: tabular-nums; }
+  .sb-team b { font-size: 38px; font-weight: 800; line-height: 1; min-width: 1.2ch; text-align: center; text-shadow: 0 2px 0 #0006; font-variant-numeric: tabular-nums; }
   .sb-name { font-size: 12px; font-weight: 800; letter-spacing: .12em; opacity: .85; }
   .sb-sub { position: absolute; top: 100%; left: 0; right: 0; text-align: center; font-style: normal; font-size: 12px; font-weight: 700;
     background: #000a; padding: 1px 0; font-variant-numeric: tabular-nums; }
   .sb-sub:empty { display: none; }
-  .sb-timer { position: relative; display: grid; place-items: center; width: 104px; background: #14161acc; color: #fff; }
-  .sb-timer b { font-size: 26px; font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; letter-spacing: .02em; }
+  .sb-timer { position: relative; display: grid; place-items: center; width: 120px; background: #14161acc; color: #fff; }
+  .sb-timer b { font-size: 30px; font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; letter-spacing: .02em; }
   .sb-timer span { position: absolute; left: 0; right: 0; top: 3px; text-align: center; font-size: 9px; font-weight: 800; letter-spacing: .14em; color: #ffd166; line-height: 1; }
   .sb-timer.low b { color: #ff6b5a; }
   .sb-timer i { position: absolute; left: 0; right: 0; bottom: 3px; text-align: center; font-style: normal; font-size: 9px;
     font-weight: 800; letter-spacing: .1em; line-height: 1; color: #ffffffb3; font-variant-numeric: tabular-nums; }
   .cps { display: flex; gap: 6px; }
   /* Square like TF2's HUD; a capture fills it left to right. */
-  .cp { --own: #8a8a8a; --cap: transparent; --p: 0%; position: relative; width: 30px; height: 30px; border-radius: 4px;
+  .cp { --own: #8a8a8a; --cap: transparent; --p: 0%; position: relative; width: 34px; height: 34px; border-radius: 4px;
     background: linear-gradient(90deg, var(--cap) var(--p), var(--own) var(--p)); box-shadow: 0 0 0 2px #000c, 0 2px 6px #0008;
     display: grid; place-items: center; color: #fff; font-size: 13px; font-weight: 800; text-shadow: 0 1px 2px #000; }
   .cp.locked { filter: grayscale(.7) brightness(.7); }
@@ -153,10 +153,6 @@
 </style>
 </head>
 <body>
-<header>
-  <b id="map">connecting…</b>
-  <span id="status" class="bad">waiting for data</span>
-</header>
 <main>
   <div id="stage">
     <canvas id="c"></canvas>
@@ -176,6 +172,7 @@
     <div id="bgtoggle" hidden><button data-bg="overview" class="on">Overview</button><button data-bg="geometry">Geometry</button></div>
   </div>
   <aside>
+    <div id="title"><b id="map">connecting…</b><span id="status" class="bad">waiting for data</span></div>
     <section style="display:flex;flex-direction:column;flex:1.4;min-height:0"><div id="feed"></div></section>
     <section style="display:flex;flex-direction:column;flex:1;min-height:0"><h3>Chat</h3><div id="chat"></div></section>
   </aside>
@@ -210,6 +207,12 @@ function overlayUnit() {
   const r = canvas.getBoundingClientRect();
   return Math.max(9, Math.min(20, Math.min(r.width, r.height) / 33)) * (Number(OPT.get("ui")) || 1);
 }
+
+// 1080p is the design size; 4K gets the same layout at twice the size.
+function uiScale() { return OVERLAY ? 1 : Math.max(0.75, Math.min(2.5, innerHeight / 1080)); }
+function applyScale() { document.documentElement.style.setProperty("--s", uiScale()); }
+applyScale();
+addEventListener("resize", () => { applyScale(); state.framed = false; });
 
 const canvas = document.getElementById("c");
 const ctx = canvas.getContext("2d");
@@ -374,7 +377,7 @@ function fitTo(min, max) {
   const c = Math.abs(Math.cos(v.rot)), s = Math.abs(Math.sin(v.rot));
   const w = max.x - min.x, h = max.y - min.y, rw = w * c + h * s, rh = w * s + h * c;
   // Keep the map clear of the HUD columns on both sides.
-  const hud = !OVERLAY && r.width > 800 ? 2 * 236 : 0;
+  const hud = !OVERLAY && r.width > 800 ? 2 * 268 * uiScale() : 0;
   v.scale = Math.min((r.width - hud) / rw, r.height / rh) * (OVERLAY ? 0.96 : 0.95);
   state.fitted = true;
 }
@@ -388,7 +391,7 @@ function frameMap() {
   for (const o of state.snaps.at(-1)?.objectives || []) if (o.pos) pts.push(o.pos);
   if (pts.length < 3) return false;
   const r = canvas.getBoundingClientRect(), v = state.view, pad = 600;
-  const side = !OVERLAY && r.width > 800 ? 236 : 0, top = OVERLAY ? 0 : 130;
+  const side = !OVERLAY && r.width > 800 ? 268 * uiScale() : 0, top = OVERLAY ? 0 : 140 * uiScale();
   const w = r.width - 2 * side, h = r.height - top;
   // Centre and scale for a rotation, measuring the points along the rotated axes.
   const fit = rot => {
@@ -445,7 +448,7 @@ function setFollow(id) {
 }
 function followAt(cx, cy) {
   const r = canvas.getBoundingClientRect();
-  let best = null, bestD = 18;
+  let best = null, bestD = 18 * uiScale();
   for (const p of lastPlayers) {
     if (!p.alive) continue;
     const [x, y] = toScreen(p.pos[0], p.pos[1]);
@@ -640,7 +643,7 @@ function banner(text, team) {
 }
 
 // ---------- drawing
-function px(units, min) { return Math.max(min, units * state.view.scale); }
+function px(units, min) { return Math.max(min * uiScale(), units * state.view.scale); }
 
 // The overview images have an opaque black surround; on a rotated, transparent overlay that
 // would show as a tilted black box, so make the near-black pixels transparent.
@@ -708,7 +711,7 @@ function drawObjectives(snap, tick) {
     ctx.lineWidth = OVERLAY ? Math.max(2, u * 0.18) : 2;
     ctx.strokeStyle = capping ? "#fff" : "#0b0c0e"; ctx.stroke();
     ctx.fillStyle = "#fff"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
-    ctx.font = `800 ${Math.round(OVERLAY ? u * 1.3 : Math.max(12, half * 0.9))}px system-ui`;
+    ctx.font = `800 ${Math.round(OVERLAY ? u * 1.3 : Math.max(12 * uiScale(), half * 0.9))}px system-ui`;
     ctx.lineWidth = 3; ctx.strokeStyle = "#0b0c0e"; ctx.strokeText(String(o.index + 1), x, y + 1);
     ctx.fillText(String(o.index + 1), x, y + 1);
     ctx.restore();
@@ -743,7 +746,7 @@ function drawBuildings(snap) {
     ctx.fillStyle = "#fff"; ctx.font = `800 ${Math.round(Math.max(9, s * 0.5))}px system-ui`;
     ctx.textAlign = "center"; ctx.textBaseline = "middle";
     ctx.fillText(label, x, y + 0.5);
-    if (b.sapped) { ctx.fillStyle = "#fff"; ctx.font = "800 9px system-ui"; ctx.fillText("SAPPED", x, y + s / 2 + 7); }
+    if (b.sapped) { ctx.fillStyle = "#fff"; ctx.font = `800 ${Math.round(9 * uiScale())}px system-ui`; ctx.fillText("SAPPED", x, y + s / 2 + 7); }
     ctx.restore();
   }
 }
@@ -879,7 +882,7 @@ function drawSpawnRooms(snap) {
       ctx.strokeStyle = col; ctx.lineWidth = OVERLAY ? 1.5 : 2; ctx.stroke();
       const top = corners.reduce((a, b) => (b[1] < a[1] || (b[1] === a[1] && b[0] < a[0]) ? b : a));
       if (!OVERLAY && Math.hypot(corners[1][0] - corners[0][0], corners[1][1] - corners[0][1]) > 40) {
-        ctx.fillStyle = col; ctx.font = "800 10px system-ui"; ctx.textAlign = "left"; ctx.textBaseline = "top";
+        ctx.fillStyle = col; ctx.font = `800 ${Math.round(10 * uiScale())}px system-ui`; ctx.textAlign = "left"; ctx.textBaseline = "top";
         ctx.fillText("SPAWN", top[0] + 4, top[1] + 3);
       }
     } else {
@@ -913,7 +916,7 @@ function drawUberRing(p, x, y, rad, col) {
   } else {
     ctx.beginPath(); ctx.arc(x, y, rad + 7, -Math.PI * 0.8, -Math.PI * 0.2);
     ctx.strokeStyle = "#fff"; ctx.lineWidth = 4; ctx.shadowColor = col; ctx.shadowBlur = 12; ctx.stroke();
-    ctx.shadowBlur = 0; ctx.font = "bold 10px system-ui"; ctx.textAlign = "center"; ctx.textBaseline = "bottom";
+    ctx.shadowBlur = 0; ctx.font = `bold ${Math.round(10 * uiScale())}px system-ui`; ctx.textAlign = "center"; ctx.textBaseline = "bottom";
     ctx.fillStyle = "#fff"; ctx.fillText(p.ubered.split("_")[1].toUpperCase(), x, y - rad - 9);
   }
   ctx.restore();
@@ -938,6 +941,9 @@ function drawHealBeams(players, byId) {
 }
 
 function drawPlayers(players) {
+  const placed = [];
+  // The followed player is drawn last, on top, so their name always shows.
+  players = [...players].sort((a, b) => (a.id === state.follow) - (b.id === state.follow));
   for (const p of players) {
     if (p.team !== "red" && p.team !== "blue") continue;
     if (!p.alive) {
@@ -981,11 +987,16 @@ function drawPlayers(players) {
       ctx.beginPath(); ctx.arc(x, y, rad + 7, 0, Math.PI * 2); ctx.strokeStyle = "#fff"; ctx.lineWidth = 2; ctx.stroke();
     }
     if (!OVERLAY || OPT.get("names") === "1") {
-      ctx.font = OVERLAY ? `700 ${Math.round(Math.max(11, rad * 0.95))}px system-ui` : "11px system-ui"; ctx.fillStyle = "#e8e8e8"; ctx.textBaseline = "top";
-      ctx.textAlign = "center";
-      const label = p.name.slice(0, OVERLAY ? 12 : 18), ly = y + rad + (OVERLAY ? 4 : 5);
-      if (OVERLAY) { ctx.lineWidth = 3; ctx.strokeStyle = "#0b0c0e"; ctx.strokeText(label, x, ly); }
-      ctx.fillText(label, x, ly);
+      const size = OVERLAY ? Math.round(Math.max(11, rad * 0.95)) : Math.round(12 * uiScale());
+      ctx.font = `700 ${size}px system-ui`; ctx.textBaseline = "top"; ctx.textAlign = "center";
+      const label = p.name.slice(0, OVERLAY ? 12 : 18), ly = y + rad + 4, w = ctx.measureText(label).width;
+      const box = [x - w / 2 - 2, ly, x + w / 2 + 2, ly + size + 2];
+      // In a crowd only the names that fit are drawn; the followed player always gets one.
+      if (p.id === state.follow || !placed.some(b => box[0] < b[2] && b[0] < box[2] && box[1] < b[3] && b[1] < box[3])) {
+        placed.push(box);
+        ctx.lineWidth = 3; ctx.strokeStyle = "#0b0c0e"; ctx.strokeText(label, x, ly);
+        ctx.fillStyle = "#e8e8e8"; ctx.fillText(label, x, ly);
+      }
     }
     ctx.globalAlpha = 1;
   }
@@ -1019,7 +1030,7 @@ function drawEffects(byId) {
       const pos = byId.get(e.ev.victim)?.pos || e.pos;
       if (!pos) continue;
       const [x, y] = toScreen(pos[0], pos[1]);
-      ctx.font = `bold ${e.ev.crit ? 15 : 12}px system-ui`; ctx.textAlign = "center"; ctx.textBaseline = "bottom";
+      ctx.font = `bold ${Math.round((e.ev.crit ? 15 : 12) * uiScale())}px system-ui`; ctx.textAlign = "center"; ctx.textBaseline = "bottom";
       ctx.fillStyle = e.ev.crit ? "#7dff6a" : e.ev.minicrit ? "#ffd04a" : "#ff5a4a";
       ctx.strokeStyle = "#000"; ctx.lineWidth = 3;
       const ty = y - px(26, 8) - 4 - k * 22;
