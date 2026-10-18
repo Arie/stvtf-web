@@ -557,7 +557,7 @@ function fireEvents(tick, byId) {
 }
 
 function esc(s) { return String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
-function who(pl) { return pl ? `<span class="t-${pl.team}">${esc(pl.name)}</span>` : "world"; }
+function who(pl) { return pl ? `<span class="t-${esc(pl.team)}">${esc(pl.name)}</span>` : "world"; }
 // Kill icons from tf2-icons, named like the weapons in server logs and kill events.
 const KILLICONS = new Set();
 const killiconsLoaded = fetch("/killicons.css").then(r => r.text()).then(css => {
@@ -606,7 +606,7 @@ function feedEvent(ev, p) {
       break;
     case "capture_blocked": html = `${name(ev.blocker)}<span class="w">defended ${esc(pointName(ev))}</span>`; break;
     case "building_destroyed":
-      html = `${ev.attacker != null ? name(ev.attacker) : ""}<span class="w">destroyed</span>${name(ev.owner)}<span class="w">'s ${BUILDING[ev.object] || ev.object}</span>`;
+      html = `${ev.attacker != null ? name(ev.attacker) : ""}<span class="w">destroyed</span>${name(ev.owner)}<span class="w">'s ${BUILDING[ev.object] || esc(ev.object)}</span>`;
       break;
     case "reflect": html = `${name(ev.player)}<span class="w">reflected</span>${ev.owner != null ? name(ev.owner) + "<span class=\"w\">'s projectile</span>" : ""}`; break;
     case "banner": cls = "minor"; html = `${name(ev.player)} <span>deployed the ${BANNER[ev.kind] || "banner"}</span>`; break;
