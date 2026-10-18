@@ -714,6 +714,7 @@ function banner(text, team) {
 
 // ---------- drawing
 function px(units, min) { return Math.max(min * uiScale(), units * state.view.scale); }
+const playerRad = () => (OVERLAY ? overlayUnit() : px(30, 11));
 
 // The overview images have an opaque black surround; on a rotated, transparent overlay that
 // would show as a tilted black box, so make the near-black pixels transparent.
@@ -1031,7 +1032,7 @@ function drawPlayers(players) {
       continue;
     }
     const [x, y] = toScreen(p.pos[0], p.pos[1]);
-    alive.push({ p, x, y, rad: OVERLAY ? overlayUnit() : px(26, 8), col: TEAM[p.team], cloaked: p.conds?.includes("Stealthed") });
+    alive.push({ p, x, y, rad: playerRad(), col: TEAM[p.team], cloaked: p.conds?.includes("Stealthed") });
   }
   // In passes, so in a clump every class icon sits on top of the other players' discs.
   for (const { p, x, y, rad, col, cloaked } of alive) {
@@ -1064,7 +1065,7 @@ function drawPlayers(players) {
     ctx.globalAlpha = cloaked ? 0.35 : 1;
     const img = icon(p.class);
     if (img) {
-      const s = rad * (OVERLAY ? 1.65 : 1.5);
+      const s = rad * 1.65;
       ctx.drawImage(img, x - s / 2, y - s / 2, s, s);
     } else {
       ctx.fillStyle = "#fff"; ctx.font = `bold ${Math.round(Math.max(9, rad * 0.9))}px system-ui`;
@@ -1131,7 +1132,7 @@ function drawEffects(byId) {
       ctx.font = `bold ${Math.round((e.ev.crit ? 15 : 12) * uiScale())}px system-ui`; ctx.textAlign = "center"; ctx.textBaseline = "bottom";
       ctx.fillStyle = e.ev.crit ? "#7dff6a" : e.ev.minicrit ? "#ffd04a" : "#ff5a4a";
       ctx.strokeStyle = "#000"; ctx.lineWidth = 3;
-      const ty = y - px(26, 8) - 4 - k * 22;
+      const ty = y - playerRad() - 4 - k * 22;
       ctx.strokeText("-" + e.ev.amount, x, ty); ctx.fillText("-" + e.ev.amount, x, ty);
     } else if (e.kind === "kill" && !OVERLAY) {
       const v = e.ev.victim_pos;
@@ -1146,12 +1147,12 @@ function drawEffects(byId) {
       ctx.beginPath(); ctx.moveTo(x - s, y - s); ctx.lineTo(x + s, y + s); ctx.moveTo(x + s, y - s); ctx.lineTo(x - s, y + s); ctx.stroke();
     } else if (e.kind === "spawn" && e.pos) {
       const [x, y] = toScreen(e.pos[0], e.pos[1]);
-      ctx.beginPath(); ctx.arc(x, y, px(26, 8) + k * 18, 0, Math.PI * 2); ctx.strokeStyle = TEAM[e.team] || "#fff"; ctx.lineWidth = 2; ctx.stroke();
+      ctx.beginPath(); ctx.arc(x, y, playerRad() + k * 18, 0, Math.PI * 2); ctx.strokeStyle = TEAM[e.team] || "#fff"; ctx.lineWidth = 2; ctx.stroke();
     } else if (e.kind === "airblast") {
       // A puff of air widening out in front of the pyro.
       const pl = byId.get(e.id); if (!pl?.pos) continue;
       const [x, y] = toScreen(pl.pos[0], pl.pos[1]), a = screenAngle(pl.yaw);
-      const rad = OVERLAY ? overlayUnit() : px(26, 8), r = Math.max((40 + 220 * k) * state.view.scale, rad * (1.4 + 2 * k));
+      const rad = playerRad(), r = Math.max((40 + 220 * k) * state.view.scale, rad * (1.4 + 2 * k));
       ctx.beginPath(); ctx.arc(x, y, rad + 3, a + 0.7, a - 0.7, true); ctx.arc(x, y, r, a - 0.7, a + 0.7); ctx.closePath();
       ctx.fillStyle = "#e8f4ff30"; ctx.fill();
       ctx.beginPath(); ctx.arc(x, y, r, a - 0.7, a + 0.7);
@@ -1159,7 +1160,7 @@ function drawEffects(byId) {
     } else if (e.kind === "uber") {
       const m = byId.get(e.id); if (!m?.pos) continue;
       const [x, y] = toScreen(m.pos[0], m.pos[1]);
-      ctx.beginPath(); ctx.arc(x, y, px(26, 8) + 6 + k * 50, 0, Math.PI * 2); ctx.strokeStyle = TEAM[e.team]; ctx.lineWidth = 4; ctx.stroke();
+      ctx.beginPath(); ctx.arc(x, y, playerRad() + 6 + k * 50, 0, Math.PI * 2); ctx.strokeStyle = TEAM[e.team]; ctx.lineWidth = 4; ctx.stroke();
     }
   }
   ctx.globalAlpha = 1;
