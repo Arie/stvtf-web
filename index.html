@@ -1008,9 +1008,16 @@ function drawPlayers(players) {
     ctx.beginPath(); ctx.arc(x, y, rad, 0, Math.PI * 2);
     ctx.fillStyle = col; ctx.fill();
     ctx.lineWidth = OVERLAY ? Math.max(1.5, rad * 0.16) : 1.5; ctx.strokeStyle = "#000"; ctx.stroke();
-    const frac = Math.max(0, Math.min(1.5, p.hp / (p.max_hp || 1)));
-    ctx.beginPath(); ctx.arc(x, y, rad + 2.5, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * Math.min(1, frac));
-    ctx.lineWidth = OVERLAY ? Math.max(2.5, rad * 0.26) : 2.5; ctx.strokeStyle = frac > 1 ? "#7fc7d2" : frac > 0.5 ? "#9fd27f" : frac > 0.25 ? "#e0c040" : "#e05a40"; ctx.stroke();
+    const max = p.max_hp || 1, frac = Math.max(0, Math.min(1, p.hp / max));
+    const ring = (from, to, color) => {
+      ctx.beginPath(); ctx.arc(x, y, rad + 2.5, -Math.PI / 2 + Math.PI * 2 * from, -Math.PI / 2 + Math.PI * 2 * to);
+      ctx.strokeStyle = color; ctx.stroke();
+    };
+    ctx.lineWidth = OVERLAY ? Math.max(2.5, rad * 0.26) : 2.5;
+    ring(0, frac, frac > 0.5 ? "#9fd27f" : frac > 0.25 ? "#e0c040" : "#e05a40");
+    // Overheal laps the green ring in blue, full at the medigun cap: +50%, rounded down to 5.
+    const over = Math.min(1, (p.hp - max) / (Math.floor(max * 1.5 / 5) * 5 - max || 1));
+    if (over > 0) ring(0, over, "#7fc7d2");
     const img = icon(p.class);
     if (img) {
       const s = rad * (OVERLAY ? 1.65 : 1.5);
