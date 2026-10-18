@@ -438,7 +438,7 @@ function frameMap() {
     const scale = Math.min(w / (u1 - u0), h / (v1 - v0)) * 0.96;
     return { rot, cx: uc * c + vc * sn, cy: -uc * sn + vc * c, scale };
   };
-  const want = OVERLAY ? (OPT.get("rotate") ?? "auto") : "0";
+  const want = OVERLAY ? (OPT.get("rotate") ?? "0") : "0";
   let best;
   if (want === "auto") {
     const upright = fit(0), turned = fit(Math.PI / 2);
