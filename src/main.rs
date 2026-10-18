@@ -7,6 +7,7 @@ mod bsp;
 
 use anyhow::{Result, anyhow, bail};
 use serde_json::Value;
+use std::collections::VecDeque;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
@@ -45,7 +46,34 @@ struct Hub {
     world: Option<Arc<str>>,
     snapshot: Option<Arc<str>>,
     clients: Vec<SyncSender<Arc<str>>>,
+    map: Option<String>,
+    /// Feed events of the current map, so a page opened late still shows kills and chat.
+    history: VecDeque<Arc<str>>,
+    /// Tick and round time of the latest snapshot, to stamp events with time into the round.
+    round_clock: Option<(u64, f64)>,
 }
+
+const HISTORY: usize = 1000;
+const FEED: [&str; 18] = [
+    "kill",
+    "uber",
+    "uber_ready",
+    "medic_death",
+    "capture_blocked",
+    "building_destroyed",
+    "reflect",
+    "banner",
+    "point_captured",
+    "round_start",
+    "round_win",
+    "scores",
+    "stalemate",
+    "overtime",
+    "game_over",
+    "player_leave",
+    "team_change",
+    "chat",
+];
 
 type SharedHub = Arc<Mutex<Hub>>;
 
@@ -56,12 +84,36 @@ fn publish(hub: &SharedHub, v: &Value) {
         Some("status") => {
             if v["state"] == "map_change" {
                 h.snapshot = None;
+                h.history.clear();
             }
             h.status = Some(line.clone());
         }
-        Some("server") => (h.server, h.snapshot) = (Some(line.clone()), None),
+        Some("server") => {
+            // Signon restarts announce the same map again; only a new map starts a new history.
+            let map = v["map"].as_str().map(str::to_string);
+            if map != h.map {
+                h.history.clear();
+                h.map = map;
+            }
+            (h.server, h.snapshot, h.round_clock) = (Some(line.clone()), None, None);
+        }
         Some("world") => h.world = Some(line.clone()),
-        Some("snapshot") => h.snapshot = Some(line.clone()),
+        Some("snapshot") => {
+            h.round_clock = v["tick"].as_u64().zip(v["round_time"].as_f64());
+            h.snapshot = Some(line.clone());
+        }
+        Some(t) if FEED.contains(&t) => {
+            let mut past = v.clone();
+            past["history"] = true.into();
+            if let (Some((tick, time)), Some(at)) = (h.round_clock, v["tick"].as_u64()) {
+                let seconds = time + (at as f64 - tick as f64) * 0.015;
+                past["at"] = ((seconds * 10.0).round() / 10.0).max(0.0).into();
+            }
+            if h.history.len() == HISTORY {
+                h.history.pop_front();
+            }
+            h.history.push_back(past.to_string().into());
+        }
         _ => {}
     }
     // A browser that cannot keep up is dropped; it reconnects and resyncs from the latest state.
@@ -71,7 +123,8 @@ fn publish(hub: &SharedHub, v: &Value) {
 fn subscribe(hub: &SharedHub) -> Receiver<Arc<str>> {
     let (tx, rx) = sync_channel(4096);
     let mut h = hub.lock().unwrap();
-    for line in [&h.status, &h.server, &h.world, &h.snapshot].into_iter().flatten() {
+    // The snapshot goes before the history so the page knows the players' names.
+    for line in [&h.status, &h.server, &h.world, &h.snapshot].into_iter().flatten().chain(&h.history) {
         let _ = tx.try_send(line.clone());
     }
     h.clients.push(tx);

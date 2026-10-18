@@ -76,6 +76,8 @@ Query options, e.g. `/overlay?names=1&score=1&panel=0.6`:
   AIRSHOT and FEIGN tags, übers deployed and ready, dropped übers, captures and blocks,
   destroyed buildings, reflects, banners, round start/win with the score, stalemate,
   overtime, match end, joins and leaves, map changes) and chat.
+- The server keeps the feed and chat of the current map (up to 1000 events), so a page
+  opened or reloaded mid-match starts with them.
 - A map change clears the HUD, scoreboard, followed player and everything else from the old map.
 
 Snapshots are interpolated and events are fired when playback reaches their tick,

@@ -239,6 +239,13 @@ es.onerror = () => setStatus("stream lost, retrying", false);
 function setStatus(text, ok) { const s = $("status"); s.textContent = text; s.className = ok ? "ok" : "bad"; }
 
 function handle(m) {
+  // Feed events from before the page opened: straight into the feed and chat, no map effects.
+  if (m.history) {
+    const p = id => state.players.get(id);
+    if (m.type === "chat") chat(m, p);
+    else killiconsLoaded.finally(() => feedEvent(m, p));
+    return;
+  }
   switch (m.type) {
     case "server":
       if (m.map !== state.map) {
@@ -547,7 +554,7 @@ function esc(s) { return String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;"
 function who(pl) { return pl ? `<span class="t-${pl.team}">${esc(pl.name)}</span>` : "world"; }
 // Kill icons from tf2-icons, named like the weapons in server logs and kill events.
 const KILLICONS = new Set();
-fetch("/killicons.css").then(r => r.text()).then(css => {
+const killiconsLoaded = fetch("/killicons.css").then(r => r.text()).then(css => {
   for (const m of css.matchAll(/\.killicon-([A-Za-z0-9_]+)\s*\{/g)) KILLICONS.add(m[1]);
 });
 function weaponIcon(ev) {
@@ -567,7 +574,8 @@ let lastScores = null;
 
 // One row per event, newest on top, stamped with the round clock.
 function feedEvent(ev, p) {
-  const name = id => id != null ? `<span class="who">${who(p(id))}</span>` : "";
+  // Players who have since left are no longer known by id.
+  const name = id => (id == null ? "" : `<span class="who">${p(id) ? who(p(id)) : '<span class="w">?</span>'}</span>`);
   let cls = "", html = null;
   switch (ev.type) {
     case "kill": {
@@ -613,7 +621,8 @@ function feedEvent(ev, p) {
   if (html == null) return;
   const d = document.createElement("div");
   d.className = `ev ${cls}`;
-  d.innerHTML = `${state.clock ? `<time>${state.clock}</time>` : ""}${html}`;
+  const stamp = ev.at != null ? mmss(ev.at) : state.clock;
+  d.innerHTML = `${stamp ? `<time>${stamp}</time>` : ""}${html}`;
   prepend($("feed"), d);
 }
 function chat(ev, p) {
@@ -1109,6 +1118,7 @@ function clock(secs) {
   const s = Math.max(0, Math.ceil(secs));
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 }
+function mmss(secs) { return `${Math.floor(secs / 60)}:${String(Math.floor(secs % 60)).padStart(2, "0")}`; }
 function setText(id, text) { const el = $(id); if (el.textContent !== text) el.textContent = text; }
 function renderScoreboard(snap, tick) {
   $("scoreboard").hidden = OVERLAY && OPT.get("score") !== "1";
@@ -1125,7 +1135,7 @@ function renderScoreboard(snap, tick) {
   setText("timer-map", main && mapLeft != null ? `MAP ${clock(mapLeft)}` : "");
   // Events are stamped with time into the round, which (unlike the round timer) never jumps.
   const into = snap.round_time == null ? null : snap.round_time + (snap.round === "running" ? Math.max(0, tick - snap.tick) * MS_PER_TICK / 1000 : 0);
-  state.clock = into == null ? "" : `${Math.floor(into / 60)}:${String(Math.floor(into % 60)).padStart(2, "0")}`;
+  state.clock = into == null ? "" : mmss(into);
   setText("timer-blue", byTeam("blue") ? clock(left(byTeam("blue"))) : "");
   setText("timer-red", byTeam("red") ? clock(left(byTeam("red"))) : "");
   const label = main?.setup ? "SETUP" : ROUND_LABEL[snap.round] ?? "";
