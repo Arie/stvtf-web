@@ -14,7 +14,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::mpsc::{Receiver, RecvTimeoutError, SyncSender, TrySendError, sync_channel};
 use std::sync::{Arc, Mutex, PoisonError};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use stvmap::watch::{self, Watch};
 
 const USAGE: &str = "\
@@ -56,6 +56,8 @@ struct Hub {
     history: VecDeque<Arc<str>>,
     /// Tick and round time of the latest snapshot, to stamp events with time into the round.
     round_clock: Option<(u64, f64)>,
+    /// When the latest snapshot came in, so a page opened after the stream stopped can say so.
+    snapshot_at: Option<Instant>,
 }
 
 const HISTORY: usize = 1000;
@@ -105,6 +107,7 @@ fn publish(hub: &SharedHub, v: &Value) {
         Some("snapshot") => {
             h.round_clock = v["tick"].as_u64().zip(v["round_time"].as_f64());
             h.snapshot = Some(line.clone());
+            h.snapshot_at = Some(Instant::now());
         }
         Some(t) if FEED.contains(&t) => {
             let mut past = v.clone();
@@ -130,6 +133,9 @@ fn subscribe(hub: &SharedHub) -> Receiver<Arc<str>> {
     // The snapshot goes before the history so the page knows the players' names.
     for line in [&h.status, &h.server, &h.world, &h.snapshot].into_iter().flatten().chain(&h.history) {
         let _ = tx.try_send(line.clone());
+    }
+    if let Some(at) = h.snapshot_at {
+        let _ = tx.try_send(serde_json::json!({"type": "data_age", "ms": at.elapsed().as_millis() as u64}).to_string().into());
     }
     h.clients.push(tx);
     rx

@@ -21,6 +21,7 @@
   #title b { font-size: 15px; }
   .hud, #scoreboard, #follow, #bgtoggle, #autozoom, aside { zoom: var(--s); }
   #status.ok { color: #7cc47f; } #status.bad { color: #e0a040; }
+  #age { color: var(--dim); margin-left: auto; }
   main { display: grid; grid-template-columns: 1fr auto; min-height: 0; }
   #stage { position: relative; min-height: 0; overflow: hidden; }
   canvas { position: absolute; inset: 0; width: 100%; height: 100%; cursor: grab; }
@@ -178,7 +179,7 @@
     <div id="bgtoggle" hidden><button data-bg="overview" class="on">Overview</button><button data-bg="geometry">Geometry</button></div>
   </div>
   <aside>
-    <div id="title"><b id="map">connecting…</b><span id="status" class="bad">waiting for data</span></div>
+    <div id="title"><b id="map">connecting…</b><span id="status" class="bad">waiting for data</span><span id="age"></span></div>
     <section style="display:flex;flex-direction:column;flex:1.4;min-height:0"><div id="feed"></div></section>
     <section style="display:flex;flex-direction:column;flex:1;min-height:0"><h3>Chat</h3><div id="chat"></div></section>
   </aside>
@@ -255,6 +256,15 @@ function handle(m) {
   if (m.history) {
     const p = id => state.players.get(id);
     if (m.type === "chat") chat(m, p);
+// When the stream goes quiet (the match ended, or the page was opened afterwards), say how long ago
+// the last data came in.
+setInterval(() => {
+  const age = state.lastData == null ? 0 : (performance.now() - state.lastData) / 1000;
+  const t = age < 60 ? `${Math.floor(age)}s` : age < 3600 ? `${Math.floor(age / 60)}m ${Math.floor(age % 60)}s` : `${Math.floor(age / 3600)}h ${Math.floor(age / 60 % 60)}m`;
+  $("age").textContent = age < 5 ? "" : `last data ${t} ago`;
+  if (age >= 5 && $("status").textContent === "live") setStatus("no data", false);
+}, 1000);
+
     else killiconsLoaded.finally(() => feedEvent(m, p));
     return;
   }
@@ -277,9 +287,13 @@ function handle(m) {
       state.lastTick = m.tick;
       if ($("status").textContent !== "live") setStatus("live", true);
       observeTick(m.tick);
+    case "data_age":
+      state.lastData = performance.now() - m.ms;
+      break;
       state.snaps.push(m);
       if (state.snaps.length > 60) state.snaps.shift();
       for (const p of m.players) state.players.set(p.id, p);
+      state.lastData = performance.now();
       $("empty").style.display = "none";
       break;
     case "world":
