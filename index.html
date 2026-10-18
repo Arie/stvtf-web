@@ -998,17 +998,6 @@ function drawPlayers(players) {
     const [x, y] = toScreen(p.pos[0], p.pos[1]);
     alive.push({ p, x, y, rad: OVERLAY ? overlayUnit() : px(26, 8), col: TEAM[p.team], cloaked: p.conds?.includes("Stealthed") });
   }
-  // Push stacked players apart on screen until their class icons no longer overlap.
-  for (let iter = 0; iter < 4; iter++) {
-    for (let i = 0; i < alive.length; i++) for (let j = i + 1; j < alive.length; j++) {
-      const A = alive[i], B = alive[j], min = (A.rad + B.rad) * 0.85;
-      let dx = B.x - A.x, dy = B.y - A.y, d = Math.hypot(dx, dy);
-      if (d >= min) continue;
-      if (d < 0.01) { const t = (A.p.id * 2.4 + B.p.id) % (Math.PI * 2); dx = Math.cos(t); dy = Math.sin(t); d = 1; }
-      const k = (min - d) / 2 / d;
-      A.x -= dx * k; A.y -= dy * k; B.x += dx * k; B.y += dy * k;
-    }
-  }
   // In passes, so in a clump every class icon sits on top of the other players' discs.
   for (const { p, x, y, rad, col, cloaked } of alive) {
     ctx.globalAlpha = cloaked ? 0.35 : 1;
