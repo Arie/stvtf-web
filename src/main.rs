@@ -21,7 +21,7 @@ const USAGE: &str = "\
 stvmap-web: live top-down viewer of a TF2 match in the browser
 
   stvmap-web HOST:TVPORT [--password tv] [--listen 127.0.0.1:8080] [--hz 20] [--cache DIR]
-  stvmap-web 'connect HOST:TVPORT; password \"tv\"'   (a console connect string, or paste one when asked)
+  stvmap-web HOST[:PORT] [tv] / 'connect HOST:PORT; password \"tv\"'   (or paste one when asked)
   stvmap-web --replay FILE.jsonl [--listen 127.0.0.1:8080]   (stvmap output, at game speed)";
 
 const INDEX: &str = include_str!("../index.html");
@@ -294,13 +294,29 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<(Vec<String>, Ha
     Ok((positional, flags))
 }
 
-/// `HOST:PORT`, or a console connect string like `connect HOST:PORT; password "tv"`.
+/// Liberal in what it takes: `connect HOST:PORT; password "tv"`, `HOST:PORT tv`, `HOST; password tv`
+/// or just `HOST`. Without a port, `SourceTV`'s default 27020; quotes and `connect` are optional.
 fn parse_connect(line: &str) -> Option<(String, Option<String>)> {
-    let mut parts = line.trim().split(';').map(str::trim);
-    let first = parts.next()?;
-    let target = first.strip_prefix("connect").map_or(first, str::trim).trim_matches('"');
-    let password = parts.find_map(|p| p.strip_prefix("password")).map(|p| p.trim().trim_matches('"').to_string());
-    (!target.is_empty()).then(|| (target.to_string(), password))
+    let mut line = line.trim();
+    if line.get(..8).is_some_and(|c| c.eq_ignore_ascii_case("connect ")) {
+        line = line[8..].trim_start();
+    }
+    let unquote = |s: &str| s.trim().trim_matches('"').to_string();
+    let mut parts = line.split(';');
+    let first = parts.next()?.trim();
+    let (host, rest) = first.split_once(char::is_whitespace).unwrap_or((first, ""));
+    let mut password = Some(unquote(rest.trim().strip_prefix("password").unwrap_or(rest)));
+    for p in parts {
+        if let Some(pw) = p.trim().strip_prefix("password") {
+            password = Some(unquote(pw));
+        }
+    }
+    let host = host.trim_matches('"');
+    if host.is_empty() {
+        return None;
+    }
+    let target = if host.contains(':') { host.to_string() } else { format!("{host}:27020") };
+    Some((target, password.filter(|p| !p.is_empty())))
 }
 
 /// Counts an open connection in `count` until dropped.
@@ -394,12 +410,17 @@ mod tests {
     #[test]
     fn parses_connect_strings() {
         let some = |t: &str, p: Option<&str>| Some((t.to_string(), p.map(str::to_string)));
-        assert_eq!(parse_connect("chi1.serveme.tf:27305"), some("chi1.serveme.tf:27305", None));
-        assert_eq!(
-            parse_connect("connect chi1.serveme.tf:27305; password \"Floofy Goat\"\n"),
-            some("chi1.serveme.tf:27305", Some("Floofy Goat"))
-        );
-        assert_eq!(parse_connect("connect 1.2.3.4:27020;password tv"), some("1.2.3.4:27020", Some("tv")));
+        let tv = |t: &str| some(t, Some("tv"));
+        assert_eq!(parse_connect("connect 1.2.3.4:27015; password \"tv\""), tv("1.2.3.4:27015"));
+        assert_eq!(parse_connect("CONNECT 1.2.3.4:27015;password tv\n"), tv("1.2.3.4:27015"));
+        assert_eq!(parse_connect("1.2.3.4:27015 tv"), tv("1.2.3.4:27015"));
+        assert_eq!(parse_connect("1.2.3.4; password tv"), tv("1.2.3.4:27020"));
+        assert_eq!(parse_connect("bolus.fakkelbrigade.eu tv"), tv("bolus.fakkelbrigade.eu:27020"));
+        assert_eq!(parse_connect("bolus.fakkelbrigade.eu:27015 tv"), tv("bolus.fakkelbrigade.eu:27015"));
+        assert_eq!(parse_connect("bolus.fakkelbrigade.eu:27015; password tv"), tv("bolus.fakkelbrigade.eu:27015"));
+        assert_eq!(parse_connect("1.2.3.4:27015 password tv"), tv("1.2.3.4:27015"));
+        assert_eq!(parse_connect("connect 1.2.3.4:27020; password \"Floofy Goat\""), some("1.2.3.4:27020", Some("Floofy Goat")));
+        assert_eq!(parse_connect("1.2.3.4:27020"), some("1.2.3.4:27020", None));
         assert_eq!(parse_connect("  \n"), None);
     }
 
