@@ -297,6 +297,10 @@ fn serve(mut s: TcpStream, app: &App) -> Result<()> {
                 _ => respond(&mut s, "404 Not Found", "text/plain", b"not found")?,
             }
         }
+        (_, "/fonts/RobotoCondensed-Regular.ttf") => {
+            respond_cached(&mut s, "font/ttf", include_bytes!("../fonts/RobotoCondensed-Regular.ttf"))?;
+        }
+        (_, "/fonts/RobotoCondensed-Bold.ttf") => respond_cached(&mut s, "font/ttf", include_bytes!("../fonts/RobotoCondensed-Bold.ttf"))?,
         (_, "/killicons.css") => respond(&mut s, "200 OK", "text/css", include_bytes!("../killicons/killicons.css"))?,
         (_, "/killicons.webp") => respond(&mut s, "200 OK", "image/webp", include_bytes!("../killicons/killicons.webp"))?,
         (_, p) if p.starts_with("/icons/") => match ICONS.iter().find(|(name, _)| p[7..].strip_suffix(".svg") == Some(name)) {
@@ -317,6 +321,16 @@ fn serve(mut s: TcpStream, app: &App) -> Result<()> {
         _ => respond(&mut s, "404 Not Found", "text/plain", b"not found")?,
     }
     Ok(())
+}
+
+/// A file that never changes for a given build, so the browser keeps it for a day.
+fn respond_cached(s: &mut TcpStream, ctype: &str, body: &[u8]) -> std::io::Result<()> {
+    write!(
+        s,
+        "HTTP/1.1 200 OK\r\nContent-Type: {ctype}\r\nContent-Length: {}\r\nCache-Control: max-age=86400\r\nX-Content-Type-Options: nosniff\r\nConnection: close\r\n\r\n",
+        body.len()
+    )?;
+    s.write_all(body)
 }
 
 /// A match's events to one browser, until it goes away.
