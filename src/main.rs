@@ -35,6 +35,7 @@ stvmap-web: live top-down viewer of a TF2 match in the browser
 const INDEX: &str = include_str!("../index.html");
 const LANDING: &str = include_str!("../landing.html");
 /// How long a match nobody watches keeps its `SourceTV` connection.
+const WARM: &str = include_str!("../maps.txt");
 const LINGER: Duration = Duration::from_secs(180);
 const ICONS: [(&str, &[u8]); 9] = [
     ("scout", include_bytes!("../icons/scout.svg")),
@@ -223,6 +224,8 @@ fn map_geometry(cache: &Path, name: &str) -> Result<Vec<u8>> {
         }
     };
     write_atomic(&json, &body)?;
+    // Only a bump of the suffix needs the BSP again, and the most played maps add up to GBs.
+    let _ = std::fs::remove_file(&bsp_path);
     Ok(body)
 }
 
@@ -627,6 +630,15 @@ fn main() -> Result<()> {
                 std::thread::sleep(Duration::from_millis(250));
             }
         });
+        let warm = app.clone();
+        std::thread::spawn(move || {
+            for name in WARM.lines().filter(|l| !l.is_empty() && !l.starts_with('#')) {
+                let _one_at_a_time = warm.maps.lock().unwrap_or_else(PoisonError::into_inner);
+                if let Err(e) = map_geometry(&warm.cache, name) {
+                    eprintln!("stvmap-web: {name}: {e}");
+                }
+            }
+        });
         if console_prompt {
             let (console, url) = (app.clone(), format!("http://{listen}{}", app.base));
             std::thread::spawn(move || prompt(&console, &url));
@@ -812,6 +824,13 @@ mod tests {
         assert_eq!(std::fs::read(&path).unwrap(), b"new");
         assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 1, "no temporary file left");
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn warm_maps_are_valid_names() {
+        let names: Vec<&str> = WARM.lines().filter(|l| !l.is_empty() && !l.starts_with('#')).collect();
+        assert!(names.len() > 10);
+        assert!(names.iter().all(|n| n.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')), "{names:?}");
     }
 
     #[test]

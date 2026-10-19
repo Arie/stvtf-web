@@ -1,0 +1,37 @@
+# Built when a hub starts, so their first viewer does not wait for the download: the most
+# played maps on serveme.tf (all regions, 180 days to 2026-10-19), most played first.
+cp_process_f12
+cp_sunshine
+cp_snakewater_final1
+koth_product_final
+cp_gullywash_f9
+cp_metalworks_f7
+koth_bagel_rc12
+pl_vigil_rc10
+pl_upward_f12
+cp_granary_pro_rc17a3
+ultiduo_baloo_v2
+koth_ashville_final2
+koth_bagel_rc13
+koth_proot_b5b
+koth_ashville_final1
+cp_steel_f12
+koth_bagel_rc11
+pl_swiftwater_final1
+cp_sultry_b8a
+mge_chillypunch_final4_fix2
+cp_subbase_b3a
+koth_warmtic_f10
+cp_passage_b1a
+pl_eruption_b16
+mge_league_v3
+koth_clearcut_b18
+cp_reckoner
+cp_metalworks_f5
+koth_cascade_rc1a
+ulti_fira_b2a
+ctf_ballin_skyfall
+mge_worldchampionship_v5
+mge_training_v8_beta4b
+pl_upward
+mge_league_v4

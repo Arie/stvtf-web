@@ -30,6 +30,10 @@ set), and on start picks the matches up again under the same links, with their f
 a restart or deploy is then a pause of a second or two for the people watching. SIGTERM, like
 Ctrl-C, disconnects every match cleanly first.
 
+With any number of matches, it builds the geometry of the maps in `maps.txt` (the most played
+on serveme.tf) when it starts, so their first viewer does not wait for the BSP download; other
+maps are built on first view. Only the geometry stays in the cache, not the BSP.
+
 `--demo MATCH.jsonl[.gz]` adds a fixed match at `/w/demo/`: a saved `stvmap` output played on
 a loop, to show the viewer off without a live game. It needs no token, is never disconnected,
 does not count towards `--max-matches` and holds still while nobody is watching.
