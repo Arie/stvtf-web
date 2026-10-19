@@ -184,6 +184,10 @@ CC-BY-NC-SA-4.0 (`icons/LICENCE`), taken unmodified from the
 [demos.tf frontend](https://codeberg.org/demostf/frontend), except the heavy's ammo
 belt, which is our own.
 
+The match at `/w/demo/` is the koth_product decider of the ETF2L Season 51 Premiership upper
+bracket final, MANDEM vs D M ([etf2l.org/matches/91982](https://etf2l.org/matches/91982/)),
+from ETF2L's STV demo.
+
 The HUD font is Roboto Condensed by Christian Robertson, Apache License 2.0 (`fonts/LICENSE`).
 
 Kill icons (`killicons/`) are TF2's own kill feed icons plus those from
