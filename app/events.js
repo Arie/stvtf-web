@@ -22,7 +22,7 @@ export function fireEvents(tick, byId) {
     switch (ev.type) {
       case "shot": state.effects.push({ kind: "shot", ev, team: p(ev.player)?.team, t0: now - lagMs(ev), life: 260 }); break;
       case "explosion":
-        state.effects.push({ kind: "boom", ev, t0: now - lagMs(ev), life: 350 });
+        state.effects.push({ kind: "boom", ev, t0: now - lagMs(ev), life: 250 });
         if (layerOn("marks") && !stale(ev, MARK_LIFE_MS) && ev.origin) addScorch(ev.origin, now - lagMs(ev));
         break;
       case "airblast": state.effects.push({ kind: "airblast", id: ev.player, t0: now - lagMs(ev), life: 350 }); break;
@@ -94,7 +94,6 @@ export function fireEvents(tick, byId) {
         });
         if (best < 0) break;
         state.packsTaken.set(best, now + PACK_RESPAWN_MS);
-        state.effects.push({ kind: "packflash", pos: packs[best].pos, t0: now - lagMs(ev), life: 600 });
         break;
       }
       case "capture_broken": {
