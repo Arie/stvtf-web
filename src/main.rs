@@ -1138,7 +1138,7 @@ mod tests {
         }
         // The stylesheet's own links are relative to where it is served.
         let css = std::str::from_utf8(APP[0].2).unwrap();
-        for link in css.split("url(\"").skip(1).map(|r| r.split('"').next().unwrap()) {
+        for link in css.split("url(\"").skip(1).map(|r| r.split('"').next().unwrap()).filter(|l| !l.starts_with("data:")) {
             let mut path: Vec<&str> = vec!["app", v];
             for part in link.split('/') {
                 if part == ".." {
