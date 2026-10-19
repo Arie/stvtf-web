@@ -273,6 +273,7 @@ const $ = id => document.getElementById(id);
 const state = {
   map: null, snaps: [], events: [], effects: [], players: new Map(),
   tickOffset: null, lastTick: 0, geometry: null, geoCanvas: null, overview: null,
+  marks: [], trails: [], packsTaken: new Map(),
   view: { cx: 0, cy: 0, scale: 0.08, rot: 0 }, fitted: false,
   // Auto zoom on the fight; the main view turns it off when panned or zoomed by hand.
   autoZoom: !OVERLAY || OPT.get("zoom") !== "map", bg: "overview", follow: null,
@@ -410,7 +411,7 @@ function handle(m) {
 
 // A map change (or a signon restart) starts from nothing: drop everything from the old map.
 function resetMatch(keepFollow = false) {
-  state.snaps = []; state.events = []; state.effects = []; state.tickOffset = null; state.lastTick = 0;
+  state.snaps = []; state.events = []; state.effects = []; state.marks = []; state.trails = []; state.packsTaken.clear(); state.tickOffset = null; state.lastTick = 0;
   state.players.clear(); lastPlayers = []; state.clock = ""; lastScores = null; spawnSeen = {};
   if (state.follow != null && !keepFollow) setFollow(null);
   $("hud-blue").replaceChildren(); $("hud-red").replaceChildren(); hudNodes.clear(); $("cps").innerHTML = "";
@@ -710,7 +711,13 @@ function frameAt(tick) {
 }
 
 // ---------- events become effects when playback reaches their tick
+// Detail lines can be a while behind (a hidden tab holds the page back): late ones are dropped.
+const MARK_LIFE_MS = 60000, MARK_CAP = 2000, PACK_REACH = 128, PACK_RESPAWN_MS = 10000;
+let eventTick = 0;
+const lagMs = ev => Math.max(0, (eventTick - ev.tick) * MS_PER_TICK);
+const stale = (ev, ms) => lagMs(ev) > ms;
 function fireEvents(tick, byId) {
+  eventTick = tick;
   const due = [];
   state.events = state.events.filter(ev => (ev.tick <= tick ? (due.push(ev), false) : true));
   const now = performance.now();
@@ -744,6 +751,50 @@ function fireEvents(tick, byId) {
         const m = p(ev.medic);
         if (m) state.effects.push({ kind: "uber", id: ev.medic, team: m.team, t0: now, life: 1500 });
         feedEvent(ev, p);
+        break;
+      }
+      case "heal":
+        if (layerOn("heals") && !stale(ev, 1500) && p(ev.patient)?.pos) state.effects.push({ kind: "heal", id: ev.patient, ev, t0: now - lagMs(ev), life: 900 });
+        break;
+      case "impact":
+        if (layerOn("hits") && !stale(ev, 600) && ev.pos) state.effects.push({ kind: "hit", ev, t0: now - lagMs(ev), life: ev.kind === "blood" ? 450 : 250 });
+        break;
+      case "mark":
+        if (layerOn("marks") && !stale(ev, MARK_LIFE_MS) && ev.pos) {
+          state.marks.push({ pos: ev.pos, t0: now - lagMs(ev) });
+          if (state.marks.length > MARK_CAP) state.marks.splice(0, state.marks.length - MARK_CAP);
+        }
+        break;
+      case "blast_jump": {
+        if (!layerOn("jumps") || stale(ev, 1500)) break;
+        const open = state.trails.find(t => t.id === ev.player && !t.end);
+        if (ev.phase === "start") {
+          if (open) open.end = now;
+          const pl = p(ev.player);
+          state.trails.push({ id: ev.player, team: pl?.team, t0: now, end: null, z0: pl?.pos?.[2] ?? 0, pts: [] });
+          if (state.trails.length > 80) state.trails.shift();
+        } else if (open) open.end = now;
+        break;
+      }
+      case "pickup": {
+        if (!layerOn("pickups") || stale(ev, 1500)) break;
+        const pl = p(ev.player), packs = state.geometry?.packs;
+        if (!pl?.pos || !packs) break;
+        let best = -1, bd = PACK_REACH;
+        packs.forEach((k, i) => {
+          if (k.kind !== ev.item) return;
+          const d = Math.hypot(k.pos[0] - pl.pos[0], k.pos[1] - pl.pos[1], (k.pos[2] - pl.pos[2]) * 0.5);
+          if (d < bd) { bd = d; best = i; }
+        });
+        if (best < 0) break;
+        state.packsTaken.set(best, now + PACK_RESPAWN_MS);
+        state.effects.push({ kind: "packflash", pos: packs[best].pos, t0: now, life: 600 });
+        break;
+      }
+      case "capture_broken": {
+        if (!layerOn("points") || stale(ev, 1500)) break;
+        const o = state.snaps.at(-1)?.objectives?.find(o => o.kind === "control_point" && o.index === ev.point);
+        if (o) state.effects.push({ kind: "capbreak", pos: o.pos, t0: now, life: 800 });
         break;
       }
       case "point_captured": banner(`${teamName(ev.team)} captured ${pointName(ev)}`, ev.team); feedEvent(ev, p); break;
@@ -944,6 +995,117 @@ function drawObjectives(snap, tick) {
     ctx.fillText(String(o.index + 1), x, y + 1);
     ctx.restore();
   }
+}
+
+// Capture areas: an outline in the owner's colour, filled left to right (in the world's x) by the capture.
+function drawCapAreas(snap, tick) {
+  const areas = state.geometry?.cap_areas;
+  if (!areas?.length) return;
+  const cps = new Map((snap.objectives || []).filter(o => o.kind === "control_point").map(o => [o.index, o]));
+  for (const a of areas) {
+    const o = cps.get(a.point);
+    const owner = TEAM[o?.owner] || TEAM.none;
+    const progress = o ? Math.max(0, Math.min(1, o.cap_progress + (o.cap_rate || 0) * Math.max(0, tick - snap.tick) * MS_PER_TICK / 1000)) : 0;
+    const rect = (x0, x1) => {
+      ctx.beginPath();
+      [[x0, a.min[1]], [x1, a.min[1]], [x1, a.max[1]], [x0, a.max[1]]].forEach(([x, y], i) => { const [sx, sy] = toScreen(x, y); (i ? ctx.lineTo : ctx.moveTo).call(ctx, sx, sy); });
+      ctx.closePath();
+    };
+    ctx.save();
+    if (o && o.capping_team !== "none" && progress > 0) {
+      rect(a.min[0], a.min[0] + (a.max[0] - a.min[0]) * progress);
+      ctx.fillStyle = TEAM[o.capping_team] + "59"; ctx.fill();
+    }
+    rect(a.min[0], a.max[0]);
+    ctx.strokeStyle = owner + "99"; ctx.lineWidth = OVERLAY ? 1.5 : 2; ctx.stroke();
+    ctx.restore();
+  }
+}
+
+// "2 BLU · 1 RED" under each point square.
+function drawOnPoint(snap) {
+  for (const o of snap.objectives || []) {
+    if (o.kind !== "control_point" || !o.on_point) continue;
+    const parts = [["blue", o.on_point.blue, "BLU"], ["red", o.on_point.red, "RED"]].filter(x => x[1] > 0);
+    if (!parts.length) continue;
+    const [x, y] = toScreen(o.pos[0], o.pos[1]), half = px(110, 11);
+    ctx.save();
+    ctx.font = `800 ${Math.round(11 * uiScale())}px system-ui`; ctx.textAlign = "left"; ctx.textBaseline = "top"; ctx.lineWidth = 3;
+    const texts = parts.map(([t, n, l]) => [`${n} ${l}`, TEAM[t]]);
+    const sep = " · ", gap = ctx.measureText(sep).width;
+    let cx = x - (texts.reduce((s, t) => s + ctx.measureText(t[0]).width, 0) + gap * (texts.length - 1)) / 2;
+    texts.forEach(([t, col], i) => {
+      if (i) { ctx.fillStyle = "#fff"; ctx.strokeText(sep, cx, y + half + 3); ctx.fillText(sep, cx, y + half + 3); cx += gap; }
+      ctx.strokeStyle = "#0b0c0e"; ctx.strokeText(t, cx, y + half + 3); ctx.fillStyle = col; ctx.fillText(t, cx, y + half + 3);
+      cx += ctx.measureText(t).width;
+    });
+    ctx.restore();
+  }
+}
+
+function drawMarks() {
+  const now = performance.now();
+  while (state.marks.length && now - state.marks[0].t0 >= MARK_LIFE_MS) state.marks.shift();
+  const r = Math.max(1.5, px(7, 1.5));
+  ctx.save();
+  for (const m of state.marks) {
+    const [x, y] = toScreen(m.pos[0], m.pos[1]);
+    ctx.globalAlpha = 0.75 * (1 - (now - m.t0) / MARK_LIFE_MS);
+    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fillStyle = "#14110f"; ctx.fill();
+  }
+  ctx.restore();
+}
+
+// Packs that were just taken, greyed until they respawn.
+function drawTakenPacks() {
+  const packs = state.geometry?.packs, now = performance.now();
+  if (!packs) return;
+  for (const [i, until] of state.packsTaken) {
+    if (now >= until) { state.packsTaken.delete(i); continue; }
+    const k = packs[i], [x, y] = toScreen(k.pos[0], k.pos[1]);
+    const s = px(k.size === "small" ? 22 : k.size === "medium" ? 30 : 40, 5);
+    ctx.save();
+    ctx.globalAlpha = 0.6; ctx.fillStyle = "#6b6f75"; ctx.strokeStyle = "#0b0c0e"; ctx.lineWidth = 1.5;
+    if (k.kind === "health") {
+      const t = s * 0.3;
+      ctx.beginPath();
+      ctx.rect(x - s, y - t, s * 2, t * 2); ctx.rect(x - t, y - s, t * 2, s * 2);
+      ctx.fill();
+    } else {
+      ctx.beginPath(); ctx.roundRect(x - s, y - s * 0.7, s * 2, s * 1.4, s * 0.25); ctx.fill(); ctx.stroke();
+    }
+    ctx.restore();
+  }
+}
+
+// Blast-jump trails from the interpolated positions: green off the ground to yellow at the peak.
+function drawJumpTrails(players) {
+  const now = performance.now(), byId = new Map(players.map(p => [p.id, p]));
+  state.trails = state.trails.filter(t => !t.end || now - t.end < 2000);
+  ctx.save(); ctx.lineCap = "round"; ctx.lineJoin = "round";
+  for (const t of state.trails) {
+    if (!t.end) {
+      const p = byId.get(t.id);
+      if (!p || !p.alive || now - t.t0 > 6000) t.end = now;
+      else {
+        const last = t.pts.at(-1);
+        if (!last || Math.hypot(p.pos[0] - last[0], p.pos[1] - last[1]) > 8) t.pts.push([p.pos[0], p.pos[1], p.pos[2]]);
+        else last[2] = p.pos[2];
+        if (t.pts.length > 400) t.pts.shift();
+      }
+    }
+    if (t.pts.length < 2) continue;
+    const peak = Math.max(1, ...t.pts.map(q => q[2] - t.z0));
+    ctx.globalAlpha = t.end ? 1 - (now - t.end) / 2000 : 1;
+    ctx.lineWidth = Math.max(2, px(14, 2));
+    for (let i = 1; i < t.pts.length; i++) {
+      const a = t.pts[i - 1], b = t.pts[i], h = Math.max(0, Math.min(1, (b[2] - t.z0) / peak));
+      const [ax, ay] = toScreen(a[0], a[1]), [bx, by] = toScreen(b[0], b[1]);
+      ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by);
+      ctx.strokeStyle = `hsl(${Math.round(130 - 70 * h)} 85% 55%)`; ctx.stroke();
+    }
+  }
+  ctx.restore();
 }
 
 // The intelligence as a briefcase in its team's colour (a neutral flag, such as the bball ball,
@@ -1345,6 +1507,32 @@ function drawEffects(byId) {
       ctx.fillStyle = "#e8f4ff30"; ctx.fill();
       ctx.beginPath(); ctx.arc(x, y, r, a - 0.7, a + 0.7);
       ctx.strokeStyle = "#e8f4ff"; ctx.lineWidth = Math.max(3, rad * 0.35); ctx.lineCap = "round"; ctx.stroke(); ctx.lineCap = "butt";
+    } else if (e.kind === "heal") {
+      const pos = byId.get(e.id)?.pos || e.ev.pos;
+      if (!pos) continue;
+      const [x, y] = toScreen(pos[0], pos[1]);
+      ctx.font = `bold ${Math.round(12 * uiScale())}px system-ui`; ctx.textAlign = "center"; ctx.textBaseline = "bottom";
+      ctx.fillStyle = "#6fe08a"; ctx.strokeStyle = "#000"; ctx.lineWidth = 3;
+      const ty = y - playerRad() - 4 - k * 22, tx = x + playerRad() * 0.9, txt = "+" + e.ev.amount;
+      ctx.strokeText(txt, tx, ty); ctx.fillText(txt, tx, ty);
+    } else if (e.kind === "hit") {
+      const [x, y] = toScreen(e.ev.pos[0], e.ev.pos[1]);
+      const seed = Math.abs(Math.round(e.ev.pos[0] * 7 + e.ev.pos[1] * 13)), r = Math.max(5 * uiScale(), px(40, 5));
+      const blood = e.ev.kind === "blood";
+      ctx.strokeStyle = blood ? "#c4302b" : e.ev.kind === "sparks" ? "#ffd36a" : "#e8f4ff"; ctx.fillStyle = ctx.strokeStyle;
+      ctx.lineWidth = 1.5; ctx.lineCap = "round";
+      for (let i = 0; i < (blood ? 6 : 4); i++) {
+        const a = ((seed * (i + 3)) % 628) / 100, d = r * (blood ? 0.4 + k : 0.5 + 1.2 * k);
+        if (blood) { ctx.beginPath(); ctx.arc(x + Math.cos(a) * d, y + Math.sin(a) * d, Math.max(1.5, r * 0.18 * (1 - k)), 0, Math.PI * 2); ctx.fill(); }
+        else { ctx.beginPath(); ctx.moveTo(x + Math.cos(a) * d, y + Math.sin(a) * d); ctx.lineTo(x + Math.cos(a) * (d + r * 0.4), y + Math.sin(a) * (d + r * 0.4)); ctx.stroke(); }
+      }
+      ctx.lineCap = "butt";
+    } else if (e.kind === "packflash") {
+      const [x, y] = toScreen(e.pos[0], e.pos[1]);
+      ctx.beginPath(); ctx.arc(x, y, px(40, 8) * (1 + 1.5 * k), 0, Math.PI * 2); ctx.strokeStyle = "#fff"; ctx.lineWidth = 2.5; ctx.stroke();
+    } else if (e.kind === "capbreak") {
+      const [x, y] = toScreen(e.pos[0], e.pos[1]), half = OVERLAY ? overlayUnit() * 1.2 : px(110, 11);
+      ctx.beginPath(); ctx.arc(x, y, half * (1.1 + 1.2 * k), 0, Math.PI * 2); ctx.strokeStyle = "#ffb050"; ctx.lineWidth = 3; ctx.stroke();
     } else if (e.kind === "uber") {
       const m = byId.get(e.id); if (!m?.pos) continue;
       const [x, y] = toScreen(m.pos[0], m.pos[1]);
@@ -1594,8 +1782,13 @@ function draw() {
     const byId = new Map(f.players.map(p => [p.id, p]));
     fireEvents(tick, byId);
     drawSpawnRooms(f.snap);
+    if (layerOn("caps")) drawCapAreas(f.snap, tick);
     drawObjectives(f.snap, tick);
+    if (layerOn("points") && !OVERLAY) drawOnPoint(f.snap);
     drawBuildings(f.snap);
+    if (layerOn("marks")) drawMarks();
+    if (layerOn("pickups")) drawTakenPacks();
+    if (layerOn("jumps")) drawJumpTrails(f.players);
     // Above the players in the overlay, where a dot would otherwise cover them.
     if (!OVERLAY) drawProjectiles(f.projectiles);
     drawEffects(byId);
