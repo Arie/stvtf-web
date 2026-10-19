@@ -116,7 +116,9 @@ Query options, e.g. `/overlay?names=1&score=1&panel=0.6`:
 - Keys: `h` hides the player HUD and scoreboard, `s` just the scoreboard, `e` the events and
   chat, and `g` switches between the demos.tf overview and the map geometry. The map takes
   the space they leave. `o` switches to the broadcast overlay and back. `?`, or the ? button,
-  lists them.
+  lists them. `k` (or the gear button) opens the overkill layer settings, `x` switches all of them
+  on or off, `j` the jump trails and `l` the loadouts; choices are kept per browser. Layers that
+  need detail lines make the page ask the stream for `?detail=1`.
 - Spawn rooms from the map file: each team's active one in team colour, the rest as dashed
   outlines. A spawn point tied to a control point is enabled while its team owns that point
   (TF2's rule), and a team spawns in its most forward enabled room (farthest from its main

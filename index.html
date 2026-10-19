@@ -119,13 +119,19 @@
   html.noside aside { display: none; }
   html.nohud .hud, html.nohud #scoreboard, html.noscore #scoreboard { display: none; }
   html.noside main { grid-template-columns: 1fr; grid-template-rows: 1fr; }
-  #sidetoggle, #helptoggle, #autozoom { position: absolute; right: 12px; z-index: 3; padding: 5px 10px; border: 0; border-radius: 6px;
+  #sidetoggle, #helptoggle, #settingstoggle, #autozoom { position: absolute; right: 12px; z-index: 3; padding: 5px 10px; border: 0; border-radius: 6px;
     background: #0b0c0ee6; color: #fff; font: inherit; font-size: 12px; cursor: pointer; }
-  #sidetoggle, #helptoggle { top: 12px; font-size: 16px; line-height: 1; padding: 4px 9px; }
+  #sidetoggle, #helptoggle, #settingstoggle { top: 12px; font-size: 16px; line-height: 1; padding: 4px 9px; }
   #helptoggle { right: 46px; }
   #help { position: absolute; top: 44px; right: 12px; z-index: 4; padding: 10px 14px; border-radius: 6px;
     background: #0b0c0ef2; color: var(--text); font-size: 12px; }
   #help table { border-collapse: collapse; }
+  #settingstoggle { right: 80px; }
+  #settings { position: absolute; top: 44px; right: 12px; z-index: 4; padding: 10px 14px; border-radius: 6px;
+    background: #0b0c0ef2; color: var(--text); font-size: 12px; }
+  #settings label { display: flex; gap: 8px; align-items: center; padding: 2px 0; cursor: pointer; }
+  #settings label.master { padding-bottom: 6px; margin-bottom: 4px; border-bottom: 1px solid var(--line); }
+  #settings kbd { margin-left: auto; color: var(--dim); }
   #help td { padding: 2px 0; }
   #help kbd { display: inline-block; min-width: 18px; margin-right: 10px; padding: 1px 5px; border: 1px solid var(--line);
     border-radius: 4px; text-align: center; font: inherit; color: #fff; }
@@ -137,7 +143,7 @@
   html.overlay, html.overlay body { background: transparent; }
   html.overlay body { display: block; }
   html.overlay header, html.overlay aside, html.overlay .hud, html.overlay #follow, html.overlay #bgtoggle, html.overlay #sidetoggle,
-  html.overlay #helptoggle, html.overlay #help,
+  html.overlay #helptoggle, html.overlay #help, html.overlay #settingstoggle, html.overlay #settings,
   html.overlay #empty, html.overlay #banner { display: none !important; }
   html.overlay main { display: block; height: 100%; }
   html.overlay #stage { position: fixed; inset: 0; border-radius: 14px; background: rgb(11 12 14 / var(--overlay-opacity, .82));
@@ -197,12 +203,18 @@
     <button id="autozoom" hidden>Auto zoom</button>
     <button id="sidetoggle" title="Hide events and chat (e)">›</button>
     <button id="helptoggle" title="Keyboard shortcuts (?)">?</button>
+    <button id="settingstoggle" title="Overkill layers (k)">⚙</button>
+    <div id="settings" hidden></div>
     <div id="help" hidden>
       <table>
         <tr><td><kbd>h</kbd></td><td>Hide or show the player HUD and scores</td></tr>
         <tr><td><kbd>s</kbd></td><td>Hide or show just the scores</td></tr>
         <tr><td><kbd>e</kbd></td><td>Hide or show events and chat</td></tr>
         <tr><td><kbd>g</kbd></td><td>Switch between overview and geometry</td></tr>
+        <tr><td><kbd>k</kbd></td><td>Open or close the layer settings</td></tr>
+        <tr><td><kbd>x</kbd></td><td>Switch all overkill layers on or off</td></tr>
+        <tr><td><kbd>j</kbd></td><td>Jump trails</td></tr>
+        <tr><td><kbd>l</kbd></td><td>Loadouts</td></tr>
         <tr><td><kbd>o</kbd></td><td>Switch to the broadcast overlay and back</td></tr>
         <tr><td><kbd>Esc</kbd></td><td>Stop following a player</td></tr>
         <tr><td><kbd>?</kbd></td><td>Show or hide this list</td></tr>
@@ -279,16 +291,65 @@ function renderTick() { return nowTick() - BUFFER_TICKS; }
 
 // ---------- incoming stream
 // Next to the page, so a match at /w/<id>/ (and its /w/<id>/overlay) reads its own events.
-const es = new EventSource(location.pathname.replace(/(overlay|index\.html)?$/, "") + "events");
-es.onmessage = e => handle(JSON.parse(e.data));
+const EVENTS_URL = location.pathname.replace(/(overlay|index\.html)?$/, "") + "events";
 // Every (re)connect starts with the whole feed and chat so far: replace what is shown rather
 // than adding it twice (a deploy or a network blip reconnects).
 let opened = false;
-es.onopen = () => {
-  if (opened) { $("feed").replaceChildren(); $("chat").replaceChildren(); }
-  opened = true;
+let es = null;
+function openStream() {
+  es?.close();
+  const s = es = new EventSource(EVENTS_URL + (detailNeeded() ? "?detail=1" : ""));
+  s.onmessage = e => handle(JSON.parse(e.data));
+  s.onopen = () => {
+    if (opened) { $("feed").replaceChildren(); $("chat").replaceChildren(); }
+    opened = true;
+  };
+  s.onerror = () => setStatus("stream lost, retrying", false);
+}
+
+// Overkill layers; `detail` ones need the hub's high-volume lines (?detail=1). Off by default except caps.
+const LAYERS = {
+  caps: { label: "Capture progress", key: "", def: true, detail: false },
+  heals: { label: "Heal beams", key: "", def: false, detail: true },
+  hits: { label: "Hits and impacts", key: "", def: false, detail: true },
+  marks: { label: "Marks", key: "", def: false, detail: true },
+  jumps: { label: "Jump trails", key: "j", def: false, detail: true },
+  pickups: { label: "Pickups", key: "", def: false, detail: true },
+  points: { label: "Point flow", key: "", def: false, detail: false },
+  flow: { label: "Flow", key: "", def: false, detail: false },
+  loadout: { label: "Loadouts", key: "l", def: false, detail: false },
 };
-es.onerror = () => setStatus("stream lost, retrying", false);
+const layerState = {};
+for (const [name, l] of Object.entries(LAYERS)) {
+  layerState[name] = l.def;
+  try { const v = !OVERLAY && localStorage.getItem("layer." + name); if (v === "1" || v === "0") layerState[name] = v === "1"; } catch {}
+}
+const layerOn = name => layerState[name];
+const detailNeeded = () => Object.entries(LAYERS).some(([n, l]) => l.detail && layerState[n]);
+function setLayer(name, on) {
+  const had = detailNeeded();
+  layerState[name] = on;
+  try { localStorage.setItem("layer." + name, on ? "1" : "0"); } catch {}
+  renderSettings();
+  if (had !== detailNeeded()) openStream();
+}
+function setOverkill(on) {
+  const had = detailNeeded();
+  for (const name of Object.keys(LAYERS)) {
+    layerState[name] = on;
+    try { localStorage.setItem("layer." + name, on ? "1" : "0"); } catch {}
+  }
+  renderSettings();
+  if (had !== detailNeeded()) openStream();
+}
+const overkillOn = () => Object.keys(LAYERS).every(layerOn);
+function renderSettings() {
+  const box = $("settings");
+  if (!box) return;
+  const row = (id, label, key, on, cls) => `<label class="${cls}"><input type="checkbox" data-layer="${id}"${on ? " checked" : ""}>${label}${key ? `<kbd>${key}</kbd>` : ""}</label>`;
+  box.innerHTML = row("*", "Overkill (all)", "x", overkillOn(), "master") +
+    Object.entries(LAYERS).map(([n, l]) => row(n, l.label, l.key, layerState[n], "")).join("");
+}
 
 function setStatus(text, ok) { const s = $("status"); s.textContent = text; s.className = ok ? "ok" : "bad"; }
 
@@ -526,8 +587,12 @@ function toggle(cls) {
 window.addEventListener("keydown", e => {
   if (e.ctrlKey || e.metaKey || e.altKey || e.target.closest?.("input, textarea")) return;
   switch (e.key) {
-    case "Escape": setFollow(null); $("help").hidden = true; break;
+    case "Escape": setFollow(null); $("help").hidden = true; $("settings").hidden = true; break;
     case "?": $("help").hidden = !$("help").hidden; break;
+    case "k": if (!OVERLAY) $("settings").hidden = !$("settings").hidden; break;
+    case "x": if (!OVERLAY) setOverkill(!overkillOn()); break;
+    case "j": if (!OVERLAY) setLayer("jumps", !layerOn("jumps")); break;
+    case "l": if (!OVERLAY) setLayer("loadout", !layerOn("loadout")); break;
     case "h": toggle("nohud"); break;
     case "s": toggle("noscore"); break;
     case "e": setSidebar(document.documentElement.classList.contains("noside")); break;
@@ -572,6 +637,13 @@ for (const id of ["hud-blue", "hud-red"]) {
   });
 }
 $("follow-stop").addEventListener("click", () => setFollow(null));
+$("settingstoggle").addEventListener("click", () => { $("settings").hidden = !$("settings").hidden; });
+$("settings").addEventListener("change", e => {
+  const id = e.target.dataset.layer;
+  if (id === "*") setOverkill(e.target.checked); else if (id) setLayer(id, e.target.checked);
+});
+renderSettings();
+openStream();
 $("helptoggle").addEventListener("click", () => { $("help").hidden = !$("help").hidden; });
 $("autozoom").addEventListener("click", () => setAutoZoom(true));
 $("feed").addEventListener("click", e => {
