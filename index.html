@@ -1118,26 +1118,35 @@ function drawMarks() {
   ctx.restore();
 }
 
-// Packs that were just taken, greyed until they respawn.
-function drawTakenPacks() {
+// Every pack, solid when available and a faint outline while taken.
+function drawPacks() {
   const packs = state.geometry?.packs, now = performance.now();
   if (!packs) return;
-  for (const [i, until] of state.packsTaken) {
-    if (now >= until) { state.packsTaken.delete(i); continue; }
-    const k = packs[i], [x, y] = toScreen(k.pos[0], k.pos[1]);
+  for (const i of state.packsTaken.keys()) if (!packs[i]) state.packsTaken.delete(i);
+  ctx.save();
+  ctx.lineJoin = "round"; ctx.lineWidth = 1.5;
+  packs.forEach((k, i) => {
+    const until = state.packsTaken.get(i);
+    const taken = until !== undefined && now < until;
+    if (until !== undefined && !taken) state.packsTaken.delete(i);
+    const [x, y] = toScreen(k.pos[0], k.pos[1]);
     const s = px(k.size === "small" ? 22 : k.size === "medium" ? 30 : 40, 5);
-    ctx.save();
-    ctx.globalAlpha = 0.6; ctx.fillStyle = "#6b6f75"; ctx.strokeStyle = "#0b0c0e"; ctx.lineWidth = 1.5;
+    ctx.globalAlpha = taken ? 0.6 : 1;
+    ctx.strokeStyle = taken ? "#f2f0e6" : "#0b0c0e"; ctx.fillStyle = k.kind === "health" ? "#f2f0e6" : "#8a8f5a";
+    ctx.beginPath();
     if (k.kind === "health") {
       const t = s * 0.3;
-      ctx.beginPath();
-      ctx.rect(x - s, y - t, s * 2, t * 2); ctx.rect(x - t, y - s, t * 2, s * 2);
-      ctx.fill();
+      ctx.moveTo(x - t, y - s); ctx.lineTo(x + t, y - s); ctx.lineTo(x + t, y - t); ctx.lineTo(x + s, y - t);
+      ctx.lineTo(x + s, y + t); ctx.lineTo(x + t, y + t); ctx.lineTo(x + t, y + s); ctx.lineTo(x - t, y + s);
+      ctx.lineTo(x - t, y + t); ctx.lineTo(x - s, y + t); ctx.lineTo(x - s, y - t); ctx.lineTo(x - t, y - t);
+      ctx.closePath();
     } else {
-      ctx.beginPath(); ctx.roundRect(x - s, y - s * 0.7, s * 2, s * 1.4, s * 0.25); ctx.fill(); ctx.stroke();
+      ctx.roundRect(x - s, y - s * 0.7, s * 2, s * 1.4, s * 0.25);
     }
-    ctx.restore();
-  }
+    if (!taken) ctx.fill();
+    ctx.stroke();
+  });
+  ctx.restore();
 }
 
 // Blast-jump trails from the interpolated positions: green off the ground to yellow at the peak.
@@ -1870,7 +1879,7 @@ function draw() {
     if (layerOn("points") && !OVERLAY) drawOnPoint(f.snap);
     drawBuildings(f.snap);
     if (layerOn("marks")) drawMarks();
-    if (layerOn("pickups")) drawTakenPacks();
+    if (layerOn("pickups")) drawPacks();
     if (layerOn("jumps")) drawJumpTrails(f.players);
     // Above the players in the overlay, where a dot would otherwise cover them.
     if (!OVERLAY) drawProjectiles(f.projectiles);
