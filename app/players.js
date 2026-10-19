@@ -2,10 +2,38 @@ import { TEAM, CLASS, icon, OVERLAY, OPT, overlayUnit, uiScale, ctx, state } fro
 import { layerOn } from "./layers.js";
 import { toScreen, screenAngle, px, playerRad, drawText } from "./view.js";
 
+// Rockets leave a trail of smoke puffs that shrink, darken and fade, and linger after the rocket.
+const PUFF_SPACING = 30, PUFF_LIFE = 800, PUFF_CAP = 500;
+const puffs = [], lastPuff = new Map();
+function drawSmoke(list, size) {
+  const now = performance.now(), seen = new Set();
+  for (const p of list || []) {
+    if (p.kind !== "Rocket") continue;
+    seen.add(p.id);
+    const last = lastPuff.get(p.id);
+    if (!last || Math.hypot(p.pos[0] - last[0], p.pos[1] - last[1]) >= PUFF_SPACING) {
+      puffs.push({ pos: [p.pos[0], p.pos[1]], t0: now });
+      lastPuff.set(p.id, p.pos);
+    }
+  }
+  for (const id of lastPuff.keys()) if (!seen.has(id)) lastPuff.delete(id);
+  while (puffs.length && (now - puffs[0].t0 >= PUFF_LIFE || puffs.length > PUFF_CAP)) puffs.shift();
+  const r0 = size(12, 4);
+  for (const f of puffs) {
+    const k = (now - f.t0) / PUFF_LIFE, g = Math.round(200 - 88 * k);
+    const [x, y] = toScreen(f.pos[0], f.pos[1]);
+    ctx.globalAlpha = 0.5 * (1 - k);
+    ctx.fillStyle = `rgb(${g},${g},${g})`;
+    ctx.beginPath(); ctx.arc(x, y, r0 * (1 - 0.35 * k), 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+}
+
 export function drawProjectiles(list) {
   // The overlay sizes projectiles from its panel like the players, a little larger than their
   // usual minimum, so they read at minimap scale.
   const size = (units, min) => (OVERLAY ? (min * overlayUnit()) / 9 : px(units, min));
+  drawSmoke(list, size);
   for (const p of list || []) {
     const [x, y] = toScreen(p.pos[0], p.pos[1]);
     const col = TEAM[p.team] || "#ccc";
@@ -21,9 +49,9 @@ export function drawProjectiles(list) {
       case "Rocket": {
         ctx.rotate(a);
         const l = size(26, 12), w = l * 0.32;
-        const trail = ctx.createLinearGradient(-l * 3.2, 0, -l * 0.5, 0);
-        trail.addColorStop(0, "#ffffff00"); trail.addColorStop(1, "#ffd9a0aa");
-        ctx.fillStyle = trail; ctx.fillRect(-l * 3.2, -w * 0.35, l * 2.7, w * 0.7);
+        const flame = ctx.createLinearGradient(-l * 1.3, 0, -l * 0.5, 0);
+        flame.addColorStop(0, "#ffb34700"); flame.addColorStop(1, "#ffd9a0cc");
+        ctx.fillStyle = flame; ctx.fillRect(-l * 1.3, -w * 0.4, l * 0.8, w * 0.8);
         ctx.beginPath(); ctx.moveTo(l * 0.6, 0); ctx.lineTo(-l * 0.5, -w); ctx.lineTo(-l * 0.5, w); ctx.closePath();
         ctx.fillStyle = p.crit ? "#fff" : col; ctx.fill(); ctx.stroke();
         break;
@@ -386,7 +414,7 @@ export function drawEffects(byId) {
     } else if (e.kind === "boom") {
       const [x, y] = toScreen(e.ev.origin[0], e.ev.origin[1]);
       // A quick flash, smaller than the blast radius: the crater stays behind as the lasting mark.
-      ctx.beginPath(); ctx.arc(x, y, Math.max(px(65, 4), OVERLAY ? overlayUnit() * 0.8 : 0) * (0.3 + 0.7 * k), 0, Math.PI * 2);
+      ctx.beginPath(); ctx.arc(x, y, Math.max(px(65, 4), OVERLAY ? overlayUnit() * 0.8 : 0) * (0.3 + 0.7 * (1 - (1 - k) ** 3)), 0, Math.PI * 2);
       ctx.fillStyle = "#ffa04028"; ctx.fill(); ctx.strokeStyle = "#ffb050"; ctx.lineWidth = 1.5; ctx.stroke();
     } else if (e.kind === "dmg" && !OVERLAY) {
       const pos = byId.get(e.ev.victim)?.pos || e.pos;

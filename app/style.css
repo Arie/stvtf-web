@@ -229,3 +229,8 @@ html.overlay #scoreboard { top: 6px; transform: translateX(-50%) scale(.62); tra
 #board .bn small { color: var(--dim); font-weight: 700; }
 #board .bc { width: 22px; padding-right: 0; } #board .bc img { width: 18px; height: 18px; vertical-align: middle; }
 #board tr.dead td { opacity: .5; }
+
+/* Killstreaks in the feed: kills within 10 s of each other. */
+#feed .ev.streak { box-shadow: inset 3px 0 0 var(--streak); }
+#feed .ev.s2 { --streak: #f59e0b; } #feed .ev.s3 { --streak: #f97316; } #feed .ev.s4 { --streak: #ef4444; }
+#feed .chip.s2, #feed .chip.s3, #feed .chip.s4 { background: var(--streak); color: #111; }

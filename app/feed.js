@@ -1,4 +1,4 @@
-import { TEAM, $, state } from "./core.js";
+import { MS_PER_TICK, TEAM, $, state } from "./core.js";
 import { MEDIGUN_NAME, mmss } from "./hud.js";
 import { layerOn } from "./layers.js";
 
@@ -42,6 +42,16 @@ const ANNOUNCER = {
 };
 let voteOptions = [];
 
+// Kills by one player within 10 s of each other count as a streak: 2K, 3K, …
+const STREAK_TICKS = 10000 / MS_PER_TICK;
+const streaks = new Map();
+function streak(ev) {
+  const s = streaks.get(ev.attacker), gap = s ? ev.tick - s.tick : -1;
+  const n = gap >= 0 && gap <= STREAK_TICKS ? s.n + 1 : 1;
+  streaks.set(ev.attacker, { tick: ev.tick, n });
+  return n;
+}
+
 // One row per event, newest on top, stamped with the round clock.
 export function feedEvent(ev, p) {
   // Players who have since left are no longer known by id.
@@ -50,9 +60,11 @@ export function feedEvent(ev, p) {
   switch (ev.type) {
     case "kill": {
       const a = ev.attacker != null && ev.attacker !== ev.victim ? p(ev.attacker) : null;
-      const tags = [ev.dominated && chip("dom", "DOMINATING"), ev.revenge && chip("rev", "REVENGE"),
+      const n = a && !ev.feign ? streak(ev) : 0;
+      if (n >= 2) cls += ` streak s${Math.min(n, 4)}`;
+      const tags = [n >= 2 && chip(`s${Math.min(n, 4)}`, `${n}K`), ev.dominated && chip("dom", "DOMINATING"), ev.revenge && chip("rev", "REVENGE"),
         ev.airborne && PROJECTILE_WEAPON.test(ev.weapon || "") && chip("air", "AIRSHOT"), ev.feign && chip("", "FEIGN")].filter(Boolean).join("");
-      cls = ev.feign ? "feign" : "";
+      cls += ev.feign ? " feign" : "";
       html = `${a ? name(ev.attacker) : ""}${ev.assister != null ? "+" + name(ev.assister) : ""}${weaponIcon(ev)}${name(ev.victim)}${tags}`;
       break;
     }
@@ -142,13 +154,23 @@ export function chat(ev, p) {
     d.className = "srvtext";
     d.innerHTML = time + esc(ev.text);
   } else if (pl || ev.name) {
-    d.innerHTML = `${time}${pl ? who(pl) : `<span class="w">${esc(ev.name)}</span>`}: ${esc(ev.text)}`;
+    d.innerHTML = `${time}${pl ? who(pl) : `<span class="w">${esc(ev.name)}</span>`}: ${coloured(ev, pl)}`;
   } else {
     // Server messages (plugins, rcon say) as notices; `say` from the console adds its own prefix.
     d.className = "notice";
-    d.innerHTML = time + esc(String(ev.text ?? "").replace(/^Console: /, ""));
+    d.innerHTML = time + coloured(ev, pl, /^Console: /);
   }
   prepend($("chat"), d);
+}
+// A chat line in the colours its sender gave it (TF2's colour codes, as plugins use them):
+// `team` is the sender's team colour, null the line's own colour.
+function coloured(ev, pl, drop) {
+  if (!ev.parts?.length) return esc(String(ev.text ?? "").replace(drop ?? /$^/, ""));
+  return ev.parts.map(({ c, t }, i) => {
+    const text = esc(i === 0 && drop ? t.replace(drop, "") : t);
+    if (c === "team") return pl ? `<span class="t-${esc(pl.team)}">${text}</span>` : text;
+    return /^[0-9A-F]{6}$/.test(c ?? "") ? `<span style="color:#${c}">${text}</span>` : text;
+  }).join("");
 }
 function prepend(box, el) { box.prepend(el); while (box.children.length > 60) box.lastChild.remove(); }
 let bannerTimer;
