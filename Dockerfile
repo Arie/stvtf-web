@@ -14,4 +14,4 @@ WORKDIR /data
 EXPOSE 8080
 # The token key comes from the environment (STVMAP_TOKEN_KEY); the map cache lives in /data.
 ENTRYPOINT ["stvmap-web", "--listen", "0.0.0.0:8080", "--cache", "/data/cache"]
-CMD ["--public", "--base-path", "/live"]
+CMD ["--public"]
