@@ -373,7 +373,7 @@ async function loadMap(map) {
   }
   $("bgtoggle").hidden = true;
   try {
-    const g = await (await fetch(`map/${map}`)).json();
+    const g = await (await fetch(`map/${encodeURIComponent(map)}`)).json();
     if (state.map !== map) return;
     state.geometry = g;
     state.spawns = g.spawns || null;

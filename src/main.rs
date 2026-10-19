@@ -15,7 +15,7 @@ use serde_json::Value;
 use sessions::{Sessions, Viewer};
 use std::collections::{HashMap, VecDeque};
 use std::io::{BufRead, BufReader, Read, Write};
-use std::net::{TcpListener, TcpStream};
+use std::net::{IpAddr, TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::mpsc::{Receiver, RecvTimeoutError, SyncSender, TrySendError, sync_channel};
@@ -57,6 +57,9 @@ const DAY: Duration = Duration::from_secs(86400);
 const MAX_REQUEST: u64 = 16 << 10;
 /// Open connections, browsers on `/events` included; more are closed straight away.
 const MAX_CONNECTIONS: usize = 512;
+/// Event streams from one address, so a single client cannot take all the connections. A LAN
+/// event or an office behind one address stays well under it.
+const MAX_STREAMS_PER_CLIENT: usize = 32;
 
 /// The latest match state for browsers that join late, and a queue per browser.
 #[derive(Default)]
@@ -212,7 +215,9 @@ fn replay(hub: &SharedHub, path: &Path, play: &dyn Fn() -> bool) -> Result<()> {
     Ok(())
 }
 
-fn map_geometry(cache: &Path, name: &str) -> Result<Vec<u8>> {
+/// Builds a map that is not in the cache yet only when `fetch`: otherwise anyone could have every
+/// map on fastdl downloaded and kept here.
+fn map_geometry(cache: &Path, name: &str, fetch: bool) -> Result<Vec<u8>> {
     if name.is_empty() || !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
         bail!("bad map name");
     }
@@ -221,6 +226,9 @@ fn map_geometry(cache: &Path, name: &str) -> Result<Vec<u8>> {
     let json = cache.join(format!("{name}.v3.json"));
     if let Ok(body) = std::fs::read(&json) {
         return Ok(body);
+    }
+    if !fetch {
+        bail!("no match is on {name}");
     }
     let bsp_path = cache.join(format!("{name}.bsp"));
     let data = if let Ok(d) = std::fs::read(&bsp_path) {
@@ -253,17 +261,22 @@ fn map_geometry(cache: &Path, name: &str) -> Result<Vec<u8>> {
 /// not each load them from demos.tf's own server. The list is fetched again after a day; while
 /// demos.tf is down, what the cache has is served.
 fn overview(cache: &Path, file: &str) -> Result<Vec<u8>> {
-    let remote = match file.strip_suffix(".webp") {
-        _ if file == "boundaries.json" => file.to_string(),
-        Some(map) if !map.is_empty() && map.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') => format!("images/{file}"),
+    let image = match file.strip_suffix(".webp") {
+        _ if file == "boundaries.json" => None,
+        Some(map) if !map.is_empty() && map.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') => Some(map),
         _ => bail!("no such overview"),
     };
+    let remote = if image.is_some() { format!("images/{file}") } else { file.to_string() };
     let dir = cache.join("demostf");
     std::fs::create_dir_all(&dir)?;
     let path = dir.join(file);
     let age = std::fs::metadata(&path).and_then(|m| m.modified()).ok().map(|t| t.elapsed().unwrap_or_default());
-    if age.is_some_and(|a| remote.starts_with("images/") || a < DAY) {
+    if age.is_some_and(|a| image.is_some() || a < DAY) {
         return Ok(std::fs::read(&path)?);
+    }
+    // Only the maps demos.tf has: any other name would be a request to demos.tf every time.
+    if image.is_some_and(|map| !demostf_maps(cache).iter().any(|m| m == map)) {
+        bail!("no such overview");
     }
     let mut body = Vec::new();
     let fetched = ureq::get(&format!("{DEMOSTF}{remote}"))
@@ -278,6 +291,15 @@ fn overview(cache: &Path, file: &str) -> Result<Vec<u8>> {
         Ok(_) => bail!("{file} is over {} MiB", MAX_OVERVIEW >> 20),
         Err(e) => std::fs::read(&path).map_err(|_| e),
     }
+}
+
+/// The maps demos.tf has an overview of, from its `boundaries.json`.
+fn demostf_maps(cache: &Path) -> Vec<String> {
+    overview(cache, "boundaries.json")
+        .ok()
+        .and_then(|b| serde_json::from_slice::<serde_json::Map<String, Value>>(&b).ok())
+        .map(|m| m.into_iter().map(|(k, _)| k).collect())
+        .unwrap_or_default()
 }
 
 /// Writes through a temporary file and a rename: a cached file that can be read is complete,
@@ -313,12 +335,48 @@ struct App {
     base: String,
     /// When set, matches start only from tokens a site in front of us made.
     keys: Option<Arc<token::Keys>>,
+    /// Open event streams by client address.
+    streams: Mutex<HashMap<IpAddr, usize>>,
+}
+
+/// Counts an event stream against its client's limit until dropped.
+struct Stream<'a>(&'a App, IpAddr);
+
+impl Drop for Stream<'_> {
+    fn drop(&mut self) {
+        let mut streams = self.0.streams.lock().unwrap_or_else(PoisonError::into_inner);
+        if let Some(n) = streams.get_mut(&self.1) {
+            *n -= 1;
+            if *n == 0 {
+                streams.remove(&self.1);
+            }
+        }
+    }
 }
 
 impl App {
     /// A page with its links resolved under `base`.
     fn page(&self, html: &str) -> Vec<u8> {
         html.replace(r#"<base href="/">"#, &format!(r#"<base href="{}/">"#, self.base)).into_bytes()
+    }
+
+    /// Whether a match being watched is on `map`: only those maps are fetched and built on request.
+    fn on_map(&self, map: &str) -> bool {
+        match &self.matches {
+            Matches::One(hub) => hub.lock().unwrap_or_else(PoisonError::into_inner).map.as_deref() == Some(map),
+            Matches::Many(sessions) => sessions.on_map(map),
+        }
+    }
+
+    /// A slot for one more event stream from `client`, or None when it has too many open.
+    fn stream_slot(&self, client: IpAddr) -> Option<Stream<'_>> {
+        let mut streams = self.streams.lock().unwrap_or_else(PoisonError::into_inner);
+        let n = streams.entry(client).or_default();
+        if *n >= MAX_STREAMS_PER_CLIENT {
+            return None;
+        }
+        *n += 1;
+        Some(Stream(self, client))
     }
 
     fn redirect(&self, s: &mut TcpStream, status: &str, path: &str) -> std::io::Result<()> {
@@ -333,7 +391,7 @@ fn serve(mut s: TcpStream, app: &App) -> Result<()> {
     let mut reader = BufReader::new(s.try_clone()?.take(MAX_REQUEST));
     let mut request = String::new();
     reader.read_line(&mut request)?;
-    let (mut length, mut gzip) = (0, false);
+    let (mut length, mut gzip, mut forwarded) = (0, false, None);
     loop {
         let mut header = String::new();
         if reader.read_line(&mut header)? == 0 {
@@ -345,11 +403,16 @@ fn serve(mut s: TcpStream, app: &App) -> Result<()> {
         if let Some((name, value)) = header.split_once(':') {
             if name.eq_ignore_ascii_case("content-length") {
                 length = value.trim().parse().unwrap_or(0);
+            } else if name.eq_ignore_ascii_case("x-forwarded-for") {
+                // The proxy in front adds the address it saw last; earlier ones are the client's say-so.
+                forwarded = value.rsplit(',').next().and_then(|a| a.trim().parse::<IpAddr>().ok());
             } else if name.eq_ignore_ascii_case("accept-encoding") {
                 gzip = value.split(',').any(|e| e.split(';').next().is_some_and(|e| e.trim().eq_ignore_ascii_case("gzip")));
             }
         }
     }
+    let peer = s.peer_addr()?.ip();
+    let client = client_key(forwarded.filter(|_| on_our_network(peer)).unwrap_or(peer));
     let method = request.split_whitespace().next().unwrap_or("GET");
     let target = request.split_whitespace().nth(1).unwrap_or("/");
     let (path, query) = target.split_once('?').unwrap_or((target, ""));
@@ -357,7 +420,10 @@ fn serve(mut s: TcpStream, app: &App) -> Result<()> {
     match (&app.matches, path) {
         (_, "/up") => respond(&mut s, "200 OK", "text/plain", b"ok")?,
         (Matches::One(_), "/" | "/index.html" | "/overlay") => respond(&mut s, "200 OK", html, &app.page(INDEX))?,
-        (Matches::One(hub), "/events") => stream(s, hub, gzip)?,
+        (Matches::One(hub), "/events") => match app.stream_slot(client) {
+            Some(_slot) => stream(s, hub, gzip)?,
+            None => too_many_streams(&mut s)?,
+        },
         (Matches::Many(_), "/" | "/watch") if app.keys.is_some() => {
             respond(&mut s, "403 Forbidden", "text/plain", b"Start watching a match from the site that sent you here.")?;
         }
@@ -392,10 +458,13 @@ fn serve(mut s: TcpStream, app: &App) -> Result<()> {
                     app.redirect(&mut s, "308 Permanent Redirect", &format!("{p}/"))?;
                 }
                 (Some(_), "" | "overlay") => respond(&mut s, "200 OK", html, &app.page(INDEX))?,
-                (Some(m), "events") => {
-                    let _viewer = Viewer::new(m.clone());
-                    stream(s, &m.hub, gzip)?;
-                }
+                (Some(m), "events") => match app.stream_slot(client) {
+                    Some(_slot) => {
+                        let _viewer = Viewer::new(m.clone());
+                        stream(s, &m.hub, gzip)?;
+                    }
+                    None => too_many_streams(&mut s)?,
+                },
                 _ => respond(&mut s, "404 Not Found", "text/plain", b"not found")?,
             }
         }
@@ -415,6 +484,26 @@ fn serve(mut s: TcpStream, app: &App) -> Result<()> {
     Ok(())
 }
 
+/// Only a proxy on our own network (kamal-proxy) is believed about who the client is.
+fn on_our_network(ip: IpAddr) -> bool {
+    match ip.to_canonical() {
+        IpAddr::V4(_) => !sessions::is_public(ip.to_canonical()),
+        IpAddr::V6(v6) => v6.is_loopback() || v6.is_unique_local(),
+    }
+}
+
+/// What a client is counted by: its address, or for IPv6 its /64, which one user usually has all of.
+fn client_key(ip: IpAddr) -> IpAddr {
+    match ip.to_canonical() {
+        IpAddr::V6(v6) => IpAddr::V6((v6.to_bits() & !u128::from(u64::MAX)).into()),
+        v4 @ IpAddr::V4(_) => v4,
+    }
+}
+
+fn too_many_streams(s: &mut TcpStream) -> std::io::Result<()> {
+    respond(s, "429 Too Many Requests", "text/plain", b"too many matches open from your address")
+}
+
 /// A map's geometry, or a demos.tf overview, from the cache (fetched and made on a miss).
 fn serve_cached(s: &mut TcpStream, app: &App, p: &str) -> std::io::Result<()> {
     // The locks guard nothing, so a panic in an earlier request (poisoning them) does not matter.
@@ -422,8 +511,10 @@ fn serve_cached(s: &mut TcpStream, app: &App, p: &str) -> std::io::Result<()> {
         let _one_at_a_time = app.overviews.lock().unwrap_or_else(PoisonError::into_inner);
         overview(&app.cache, file)
     } else {
+        let name = &p[5..];
+        let fetch = app.on_map(name);
         let _one_at_a_time = app.maps.lock().unwrap_or_else(PoisonError::into_inner);
-        map_geometry(&app.cache, &p[5..])
+        map_geometry(&app.cache, name, fetch)
     };
     match result {
         Ok(body) if p.starts_with("/map/") => respond(s, "200 OK", "application/json", &body),
@@ -436,15 +527,10 @@ fn serve_cached(s: &mut TcpStream, app: &App, p: &str) -> std::io::Result<()> {
 /// Fetches demos.tf's overviews and builds the most played maps, so their first viewer does not wait.
 fn warm(app: &App) {
     let lock = || app.overviews.lock().unwrap_or_else(PoisonError::into_inner);
-    let list = {
+    let known = {
         let _one_at_a_time = lock();
-        overview(&app.cache, "boundaries.json")
+        demostf_maps(&app.cache)
     };
-    let known: Vec<String> = list
-        .ok()
-        .and_then(|b| serde_json::from_slice::<serde_json::Map<String, Value>>(&b).ok())
-        .map(|m| m.into_iter().map(|(k, _)| k).collect())
-        .unwrap_or_default();
     for map in known {
         let _one_at_a_time = lock();
         if let Err(e) = overview(&app.cache, &format!("{map}.webp")) {
@@ -453,7 +539,7 @@ fn warm(app: &App) {
     }
     for name in WARM.lines().filter(|l| !l.is_empty() && !l.starts_with('#')) {
         let _one_at_a_time = app.maps.lock().unwrap_or_else(PoisonError::into_inner);
-        if let Err(e) = map_geometry(&app.cache, name) {
+        if let Err(e) = map_geometry(&app.cache, name, true) {
             eprintln!("stvmap-web: {name}: {e}");
         }
     }
@@ -703,6 +789,7 @@ fn main() -> Result<()> {
         overviews: Mutex::new(()),
         base,
         keys,
+        streams: Mutex::default(),
     });
 
     if let Matches::Many(_) = app.matches {
@@ -767,7 +854,15 @@ mod tests {
     }
 
     fn app(matches: Matches) -> App {
-        App { matches, cache: PathBuf::from("unused"), maps: Mutex::new(()), overviews: Mutex::new(()), base: String::new(), keys: None }
+        App {
+            matches,
+            cache: PathBuf::from("unused"),
+            maps: Mutex::new(()),
+            overviews: Mutex::new(()),
+            base: String::new(),
+            keys: None,
+            streams: Mutex::default(),
+        }
     }
 
     /// Runs `serve` on one connection, with `send` written by the client; returns serve's result and the response.
@@ -941,7 +1036,49 @@ mod tests {
         std::fs::create_dir_all(cache.join("demostf")).unwrap();
         std::fs::write(cache.join("demostf/cp_test.webp"), b"RIFF").unwrap();
         assert_eq!(overview(&cache, "cp_test.webp").unwrap(), b"RIFF");
+        // A map demos.tf does not list is not asked for (a fresh list is not fetched again).
+        std::fs::write(cache.join("demostf/boundaries.json"), br#"{"cp_test": {}}"#).unwrap();
+        assert_eq!(demostf_maps(&cache), ["cp_test"]);
+        assert!(overview(&cache, "cp_nothere.webp").is_err());
         std::fs::remove_dir_all(&cache).unwrap();
+    }
+
+    #[test]
+    fn only_maps_being_watched_are_built() {
+        let cache = std::env::temp_dir().join(format!("stvmap-web-onmap-{}", std::process::id()));
+        // Not cached and not being watched: an error, without asking fastdl.
+        assert!(map_geometry(&cache, "cp_nothere", false).unwrap_err().to_string().contains("no match"));
+        std::fs::write(cache.join("cp_cached.v3.json"), b"{}").unwrap();
+        assert_eq!(map_geometry(&cache, "cp_cached", false).unwrap(), b"{}");
+        std::fs::remove_dir_all(&cache).unwrap();
+
+        let hub = SharedHub::default();
+        let app = app(Matches::One(hub.clone()));
+        assert!(!app.on_map("cp_process_f12"));
+        publish(&hub, &serde_json::json!({"type": "server", "map": "cp_process_f12"}));
+        assert!(app.on_map("cp_process_f12") && !app.on_map("cp_badlands"));
+    }
+
+    #[test]
+    fn event_streams_are_capped_per_client() {
+        let app = app(Matches::One(SharedHub::default()));
+        let (a, b): (IpAddr, IpAddr) = ("203.0.113.1".parse().unwrap(), "203.0.113.2".parse().unwrap());
+        let open: Vec<_> = (0..MAX_STREAMS_PER_CLIENT).map(|_| app.stream_slot(a).unwrap()).collect();
+        assert!(app.stream_slot(a).is_none());
+        assert!(app.stream_slot(b).is_some(), "other clients still get in");
+        drop(open);
+        assert!(app.stream_slot(a).is_some());
+        assert!(app.streams.lock().unwrap().is_empty(), "closed streams are forgotten");
+    }
+
+    #[test]
+    fn clients_are_told_apart_by_address_or_ipv6_prefix() {
+        let ip = |s: &str| s.parse::<IpAddr>().unwrap();
+        assert!(on_our_network(ip("172.18.0.2")) && on_our_network(ip("::1")) && on_our_network(ip("fd00::1")));
+        assert!(!on_our_network(ip("141.94.96.119")) && !on_our_network(ip("2001:db8::1")) && !on_our_network(ip("::ffff:141.94.96.119")));
+        assert_eq!(client_key(ip("2001:db8:1:2:aaaa::1")), client_key(ip("2001:db8:1:2:bbbb::2")));
+        assert_ne!(client_key(ip("2001:db8:1:2::1")), client_key(ip("2001:db8:1:3::1")));
+        assert_eq!(client_key(ip("::ffff:203.0.113.1")), ip("203.0.113.1"));
     }
 
     #[test]
@@ -957,7 +1094,7 @@ mod tests {
         std::fs::create_dir_all(&cache).unwrap();
         let bsp = cache.join("broken.bsp");
         std::fs::write(&bsp, b"VBSP\0\0\0\0").unwrap();
-        assert!(map_geometry(&cache, "broken").is_err());
+        assert!(map_geometry(&cache, "broken", true).is_err());
         // So the next request downloads it again instead of failing on it forever.
         assert!(!bsp.exists());
         std::fs::remove_dir_all(&cache).unwrap();

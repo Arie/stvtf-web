@@ -3,9 +3,10 @@
 //! process: a deploy's new container picks them up under the same links.
 
 use crate::{SharedHub, parse_connect, publish, token, write_atomic};
+use aes_gcm::aead::OsRng;
+use aes_gcm::aead::rand_core::RngCore;
 use anyhow::{Result, anyhow, bail};
 use std::collections::HashMap;
-use std::hash::{BuildHasher, RandomState};
 use std::net::{IpAddr, SocketAddr, ToSocketAddrs};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -117,6 +118,11 @@ impl Sessions {
 
     pub fn get(&self, id: &str) -> Option<Arc<Session>> {
         self.lock().get(id).cloned()
+    }
+
+    /// Whether any match, the demo included, is on `map`.
+    pub fn on_map(&self, map: &str) -> bool {
+        self.lock().values().any(|s| s.hub.lock().unwrap_or_else(PoisonError::into_inner).map.as_deref() == Some(map))
     }
 
     /// The session for a connect string, joining one already watching that server. An `owner`
@@ -300,14 +306,16 @@ impl Sessions {
     }
 }
 
-/// 128 random bits as hex; the link to a match is all it takes to watch it.
+/// 128 random bits from the OS as hex; the link to a match is all it takes to watch it.
 fn random_id() -> String {
-    let r = || RandomState::new().hash_one(Instant::now());
-    format!("{:016x}{:016x}", r(), r())
+    let mut id = [0u8; 16];
+    OsRng.fill_bytes(&mut id);
+    format!("{:032x}", u128::from_be_bytes(id))
 }
 
-/// Not loopback, private, link-local, carrier-grade NAT (Tailscale), multicast or reserved.
-fn is_public(ip: IpAddr) -> bool {
+/// Not loopback, private, link-local, carrier-grade NAT (Tailscale), IETF protocol
+/// assignments, benchmarking, multicast or reserved.
+pub fn is_public(ip: IpAddr) -> bool {
     match ip {
         IpAddr::V4(v4) => {
             let [a, b, ..] = v4.octets();
@@ -320,7 +328,9 @@ fn is_public(ip: IpAddr) -> bool {
                 || v4.is_multicast()
                 || a == 0
                 || a >= 240
-                || (a == 100 && (64..128).contains(&b)))
+                || (a == 100 && (64..128).contains(&b))
+                || (a, b, v4.octets()[2]) == (192, 0, 0)
+                || (a == 198 && (b == 18 || b == 19)))
         }
         IpAddr::V6(_) => false,
     }
@@ -346,6 +356,9 @@ mod tests {
             "0.0.0.0",
             "255.255.255.255",
             "224.0.0.1",
+            "192.0.0.8",
+            "198.18.0.1",
+            "198.19.255.1",
             "::1",
         ] {
             assert!(!ok(internal), "{internal}");

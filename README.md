@@ -32,7 +32,8 @@ Ctrl-C, disconnects every match cleanly first.
 
 With any number of matches, it fetches the demos.tf overviews and builds the geometry of the
 maps in `maps.txt` (the most played on serveme.tf) when it starts, so their first viewer does not wait for the BSP download; other
-maps are built on first view. Only the geometry stays in the cache, not the BSP.
+maps are built when a match on them is first viewed (and no others, so nobody can fill the cache
+with every map on fastdl). Only the geometry stays in the cache, not the BSP.
 
 `--demo MATCH.jsonl[.gz]` adds a fixed match at `/w/demo/`: a saved `stvmap` output played on
 a loop, to show the viewer off without a live game. It needs no token, is never disconnected,
@@ -40,7 +41,9 @@ does not count towards `--max-matches` and holds still while nobody is watching.
 
 stv.tf runs this way: `config/deploy.yml` is its Kamal config (`kamal deploy -d eu|na|au|sea`),
 one app per region on the serveme.tf web hosts, with `STVMAP_TOKEN_KEY` read from
-`~/.config/stvmap/token.key` (shared with serveme.tf).
+`~/.config/stvmap/token.key` (shared with serveme.tf). It pushes to and pulls from ghcr.io with
+the classic token in `~/.config/stvmap/ghcr.token`, which has only the `write:packages` scope,
+because Kamal leaves the registry login on every host.
 
 `Dockerfile` builds that server, with the directory holding both repositories as context:
 `docker build -f stvmap-web/Dockerfile .` (`Dockerfile.dockerignore` keeps the context to the

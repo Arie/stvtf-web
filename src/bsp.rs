@@ -21,8 +21,9 @@ const LUMP_TEXDATA_STRING_TABLE: usize = 44;
 // sky2d, sky, trigger, nodraw, hint, skip
 const SKIP_FLAGS: i32 = 0x2 | 0x4 | 0x40 | 0x80 | 0x100 | 0x200;
 const PAD: f32 = 1536.0;
-// Same as the download limit for a BSP.
-const MAX_LUMP: usize = 512 << 20;
+// The lumps read here are under 2 MB on real maps; a crafted one could otherwise claim 512 MB
+// unpacked for each, from a few KB of LZMA.
+const MAX_LUMP: usize = 16 << 20;
 
 type Vec3 = [f32; 3];
 
@@ -53,6 +54,9 @@ fn lump(data: &[u8], index: usize) -> Result<Vec<u8>> {
     let h = 8 + 16 * index;
     let (ofs, len) = (index_at(data, h)?, index_at(data, h + 4)?);
     let Some(raw) = data.get(ofs..ofs + len) else { bail!("lump {index} out of range") };
+    if len > MAX_LUMP {
+        bail!("lump {index}: {len} bytes");
+    }
     if !raw.starts_with(b"LZMA") {
         return Ok(raw.to_vec());
     }
@@ -238,10 +242,14 @@ pub fn geometry(data: &[u8]) -> Result<Value> {
     let mut floors: Vec<(f32, Value)> = Vec::new();
     let mut floor_pts = Vec::new();
     let mut walls = Vec::new();
+    // The world's faces each have their own edges; a crafted map could reuse the same ones in
+    // every face and have the loop below build gigabytes of points.
+    let mut edges_left = surfedges.len() / 4;
     for f in first..first + count {
         let o = f * 56;
         let (plane, [side]) = (usize::from(u16_at(&faces, o)?), bytes(&faces, o + 2)?);
         let (first_edge, num_edges, tex) = (index_at(&faces, o + 4)?, usize::from(u16_at(&faces, o + 8)?), i16_at(&faces, o + 10)?);
+        edges_left = edges_left.checked_sub(num_edges).ok_or_else(|| anyhow!("faces use more edges than the map has"))?;
         if tex < 0 {
             continue;
         }
@@ -359,6 +367,33 @@ mod tests {
         set_i32(&mut b, 8 + 16 * LUMP_PLANES, ofs as i32);
         set_i32(&mut b, 8 + 16 * LUMP_PLANES + 4, 17);
         assert!(geometry(&b).is_err());
+    }
+
+    #[test]
+    fn lump_over_the_limit_is_an_error() {
+        let mut b = empty_bsp();
+        let ofs = b.len();
+        b.resize(ofs + MAX_LUMP + 1, 0);
+        set_i32(&mut b, 8 + 16 * LUMP_PLANES, ofs as i32);
+        set_i32(&mut b, 8 + 16 * LUMP_PLANES + 4, (MAX_LUMP + 1) as i32);
+        assert!(lump(&b, LUMP_PLANES).unwrap_err().to_string().contains("bytes"));
+    }
+
+    #[test]
+    fn faces_sharing_edges_are_an_error() {
+        let Some(mut data) = process() else { return };
+        // Every face claims the same 65535 edges; the rewritten lump goes, unpacked, at the end.
+        let mut faces = lump(&data, LUMP_FACES).unwrap();
+        for face in faces.chunks_exact_mut(56) {
+            face[4..8].fill(0);
+            face[8..10].copy_from_slice(&u16::MAX.to_le_bytes());
+        }
+        let h = 8 + 16 * LUMP_FACES;
+        let (ofs, len) = (data.len() as i32, faces.len() as i32);
+        data.extend_from_slice(&faces);
+        set_i32(&mut data, h, ofs);
+        set_i32(&mut data, h + 4, len);
+        assert!(geometry(&data).unwrap_err().to_string().contains("more edges"));
     }
 
     #[test]
