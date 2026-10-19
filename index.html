@@ -849,13 +849,12 @@ const VOICE = [
   ["Help!", "Battle cry", "Cheers", "Jeers", "Positive", "Negative", "Nice shot", "Good job"],
 ];
 const ANNOUNCER = {
-  "Announcer.RoundEnds5minutes": "5 minutes remain", "Announcer.RoundEnds4minutes": "4 minutes remain",
-  "Announcer.RoundEnds3minutes": "3 minutes remain", "Announcer.RoundEnds2minutes": "2 minutes remain",
+  "Announcer.RoundEnds5minutes": "5 minutes remain", "Announcer.RoundEnds2minutes": "2 minutes remain",
   "Announcer.RoundEnds60seconds": "1 minute remains", "Announcer.RoundEnds30seconds": "30 seconds remain",
-  "Announcer.RoundEnds10seconds": "10 seconds remain", "Announcer.RoundEnds5seconds": "5 seconds remain",
-  "Announcer.RoundEnds4seconds": "4 seconds remain", "Announcer.RoundEnds3seconds": "3 seconds remain",
-  "Announcer.RoundEnds2seconds": "2 seconds remain", "Announcer.RoundEnds1seconds": "1 second remains",
-  "Game.YourTeamWon": "Victory", "Game.YourTeamLost": "Defeat", "Game.Stalemate": "Stalemate", "Game.Overtime": "Overtime",
+  "Announcer.RoundEnds20seconds": "20 seconds remain", "Announcer.RoundEnds10seconds": "10 seconds remain",
+  "Announcer.RoundEnds5seconds": "5 seconds remain", "Announcer.RoundEnds4seconds": "4 seconds remain",
+  "Announcer.RoundEnds3seconds": "3 seconds remain", "Announcer.RoundEnds2seconds": "2 seconds remain",
+  "Announcer.RoundEnds1seconds": "1 second remains", "Game.Stalemate": "Stalemate", "Game.Overtime": "Overtime",
 };
 let voteOptions = [];
 
@@ -901,8 +900,9 @@ function feedEvent(ev, p) {
       break;
     }
     case "vote_options":
-      if (!layerOn("flow") || !ev.options?.length) return;
+      if (!ev.options?.length) return;
       voteOptions = ev.options;
+      if (!layerOn("flow")) return;
       cls = "minor"; html = `<span>Vote: ${ev.options.map(esc).join(" / ")}</span>`;
       break;
     case "vote_cast": {
@@ -1623,7 +1623,7 @@ function weaponHtml(p) {
   if (!layerOn("loadout") || !p.alive || !p.weapon) return "";
   if (!itemImages) {
     itemImages = {};
-    fetch("backpack/items.json").then(r => r.json()).then(j => { itemImages = j; lastPanel = 0; }).catch(() => { itemImages = null; });
+    fetch("backpack/items.json").then(r => r.json()).then(j => { itemImages = j; lastPanel = 0; }).catch(() => {});
     return "";
   }
   const img = itemImages[p.weapon.item];
