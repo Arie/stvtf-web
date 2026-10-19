@@ -1280,8 +1280,19 @@ function renderPoints(snap) {
   if ($("cps").innerHTML !== html) $("cps").innerHTML = html;
 }
 
-function frame() {
-  try { draw(); } catch (e) { console.error(e); }
+// At most 60 fps: the data comes 20 times a second, and a 120 or 240 Hz screen would otherwise
+// redraw the whole map 2 to 4 times as often for nothing.
+// A frame is drawn when the next 60 fps slot is nearer than the refresh after it.
+const FRAME_MS = 1000 / 60;
+let lastDraw = -Infinity, lastRefresh = 0, refreshMs = FRAME_MS;
+function frame(now) {
+  const gap = now - lastRefresh;
+  lastRefresh = now;
+  if (gap > 0 && gap < 50) refreshMs += (gap - refreshMs) * 0.1;
+  if (now - lastDraw + refreshMs / 2 >= FRAME_MS) {
+    lastDraw = now;
+    try { draw(); } catch (e) { console.error(e); }
+  }
   requestAnimationFrame(frame);
 }
 
