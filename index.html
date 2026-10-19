@@ -1081,10 +1081,16 @@ function drawPlayers(players) {
   // In passes, so in a clump every class icon sits on top of the other players' discs.
   for (const { p, x, y, rad, col, cloaked } of alive) {
     ctx.globalAlpha = cloaked ? 0.35 : 1;
-    const a = screenAngle(p.yaw);
-    ctx.beginPath(); ctx.moveTo(x, y);
-    ctx.arc(x, y, rad * 2.6, a - 0.35, a + 0.35); ctx.closePath();
-    ctx.fillStyle = col + "40"; ctx.fill();
+    // A pointer on the disc where they look; how wide they see is up to their client.
+    // It starts under the health ring and sticks out well past it.
+    const a = screenAngle(p.yaw), base = rad + 2, tip = rad * 1.75 + 5, half = 0.5;
+    ctx.beginPath();
+    ctx.moveTo(x + Math.cos(a) * tip, y + Math.sin(a) * tip);
+    ctx.lineTo(x + Math.cos(a + half) * base, y + Math.sin(a + half) * base);
+    ctx.lineTo(x + Math.cos(a - half) * base, y + Math.sin(a - half) * base);
+    ctx.closePath();
+    ctx.fillStyle = col; ctx.fill();
+    ctx.lineWidth = OVERLAY ? Math.max(1.5, rad * 0.16) : 1.5; ctx.strokeStyle = "#000"; ctx.stroke();
   }
   for (const { p, x, y, rad, col, cloaked } of alive) {
     ctx.globalAlpha = cloaked ? 0.35 : 1;
