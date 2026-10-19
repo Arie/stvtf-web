@@ -50,7 +50,10 @@
      24px tile) never stretch when health or charge changes. */
   .card .fill { position: absolute; inset: 0; clip-path: inset(0 100% 0 0); transition: clip-path .25s linear;
     background: linear-gradient(90deg, color-mix(in srgb, var(--team) 70%, #000), color-mix(in srgb, var(--team) 45%, #000)); }
-  .card > :not(.fill) { position: relative; }
+  /* Overheal: a brighter wash growing left to right over the health fill, behind the text. */
+  .card .oh { position: absolute; inset: 0; clip-path: inset(0 100% 0 0); transition: clip-path .25s linear; opacity: .38;
+    background: color-mix(in srgb, var(--team) 55%, #fff); }
+  .card > :not(.fill):not(.oh) { position: relative; }
   .card .ci { width: 40px; height: 40px; padding: 6px; background: var(--team); display: grid; place-items: center; font-weight: 800; }
   .card .ci img { width: 28px; height: 28px; }
   .card .nm { padding: 0 6px; min-width: 0; line-height: 1.05; }
@@ -1759,12 +1762,14 @@ function weaponInfo(p) {
   return img ? { img, clip: p.weapon.clip } : null;
 }
 function card(p) {
-  const el = node(`p${p.id}`, `<div class="card"><div class="fill"></div><span class="ci"></span><div class="nm"><b></b><small><span></span><img class="wp" alt="" hidden><span class="clip"></span></small></div><div class="hp"></div></div>`);
+  const el = node(`p${p.id}`, `<div class="card"><div class="fill"></div><div class="oh"></div><span class="ci"></span><div class="nm"><b></b><small><span></span><img class="wp" alt="" hidden><span class="clip"></span></small></div><div class="hp"></div></div>`);
   const f = p.alive ? Math.max(0, Math.min(1, p.hp / (p.max_hp || 1))) : 0;
   if (el.dataset.id !== String(p.id)) el.dataset.id = p.id;
   setClass(el, ["card", p.id === state.follow && "followed", !p.alive && "dead", p.alive && p.hp > p.max_hp && "over", p.alive && f < 0.35 && "low", p.ubered && "ub"].filter(Boolean).join(" "));
   setStyle(el.children[0], "clipPath", `inset(0px ${(100 - f * 100).toFixed(1)}% 0px 0px)`);
-  setHTML(el.children[1], ICONS[p.class] ? `<img src="icons/${p.class}.svg" alt="${p.class}">` : CLASS[p.class] || "?");
+  const oc = p.alive && p.hp > p.max_hp ? Math.min(1, (p.hp - p.max_hp) / (Math.floor(p.max_hp * 1.5 / 5) * 5 - p.max_hp || 1)) : 0;
+  setStyle(el.children[1], "clipPath", `inset(0px ${(100 - oc * 100).toFixed(1)}% 0px 0px)`);
+  setHTML(el.children[2], ICONS[p.class] ? `<img src="icons/${p.class}.svg" alt="${p.class}">` : CLASS[p.class] || "?");
   setText2(el.querySelector(".nm b"), p.name);
   const sub = p.ping != null ? `${p.ping} ms` : "";
   const [subEl, wp, clip] = el.querySelector(".nm small").children;
@@ -1778,7 +1783,7 @@ function card(p) {
   }
   wp.hidden = !w;
   setText2(clip, w && w.clip != null ? String(w.clip) : "");
-  setText2(el.children[3], p.alive ? String(p.hp) : "DEAD");
+  setText2(el.children[4], p.alive ? String(p.hp) : "DEAD");
   return el;
 }
 function chargeMeter(p) {
