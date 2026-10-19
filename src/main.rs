@@ -197,7 +197,7 @@ fn map_geometry(cache: &Path, name: &str) -> Result<Vec<u8>> {
     }
     std::fs::create_dir_all(cache)?;
     // Bump the suffix when the extracted data changes, so cached maps are redone.
-    let json = cache.join(format!("{name}.v2.json"));
+    let json = cache.join(format!("{name}.v3.json"));
     if let Ok(body) = std::fs::read(&json) {
         return Ok(body);
     }
@@ -806,7 +806,7 @@ mod tests {
     fn write_atomic_replaces_the_file() {
         let dir = std::env::temp_dir().join(format!("stvmap-web-atomic-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
-        let path = dir.join("m.v2.json");
+        let path = dir.join("m.v3.json");
         std::fs::write(&path, b"old, longer contents").unwrap();
         write_atomic(&path, b"new").unwrap();
         assert_eq!(std::fs::read(&path).unwrap(), b"new");
