@@ -86,7 +86,8 @@
   .charge .pct { margin-left: auto; font-size: 17px; font-variant-numeric: tabular-nums; }
   .charge.ready .bar { background: linear-gradient(90deg, var(--team), color-mix(in srgb, var(--team) 60%, #fff)); animation: pulse 1s infinite alternate; }
   .charge.releasing { box-shadow: 0 0 14px var(--team); }
-  .charge.releasing .bar { background: linear-gradient(135deg, #fff 25%, var(--team) 25% 50%, #fff 50% 75%, var(--team) 75%) 0 0 / 24px 24px;
+  .charge.releasing .bar { --stripe: color-mix(in srgb, var(--team) 80%, #fff);
+    background: linear-gradient(135deg, var(--stripe) 25%, var(--team) 25% 50%, var(--stripe) 50% 75%, var(--team) 75%) 0 0 / 24px 24px;
     animation: stripes .6s linear infinite; }
   .charge.dead { filter: grayscale(1) brightness(.55); }
   .card { cursor: pointer; pointer-events: auto; }
