@@ -98,7 +98,8 @@ fn inside(p: &Vec3, b: &(Vec3, Vec3)) -> bool {
     (0..3).all(|i| b.0[i] <= p[i] && p[i] <= b.1[i])
 }
 
-/// Points, pickups and the spawns near them; maps also hide unused spawns far away.
+/// Points, pickups and the spawns near them; maps also hide unused spawns far away. None for a
+/// map without points or pickups (MGE, jump maps): its spawns frame no more than a spawn room.
 pub fn playable_bounds(data: &[u8]) -> Result<Option<(Vec3, Vec3)>> {
     let (mut core, mut spawns) = (Vec::new(), Vec::new());
     for ent in entities(data)? {
@@ -114,7 +115,7 @@ pub fn playable_bounds(data: &[u8]) -> Result<Option<(Vec3, Vec3)>> {
         }
     }
     if core.is_empty() {
-        return Ok((!spawns.is_empty()).then(|| bounds_of(&spawns, PAD)));
+        return Ok(None);
     }
     let near = bounds_of(&core, 4096.0);
     core.extend(spawns.into_iter().filter(|s| inside(s, &near)));
@@ -235,6 +236,7 @@ pub fn geometry(data: &[u8]) -> Result<Value> {
     let vertex = |i: usize| -> Result<Vec3> { Ok([f32_at(&verts, i * 12)?, f32_at(&verts, i * 12 + 4)?, f32_at(&verts, i * 12 + 8)?]) };
 
     let mut floors: Vec<(f32, Value)> = Vec::new();
+    let mut floor_pts = Vec::new();
     let mut walls = Vec::new();
     for f in first..first + count {
         let o = f * 56;
@@ -269,6 +271,9 @@ pub fn geometry(data: &[u8]) -> Result<Value> {
         if nz > 0.7 {
             let p: Vec<f64> = pts.iter().flat_map(|p| [r1(p[0]), r1(p[1])]).collect();
             floors.push((centre[2], json!({"z": r1(centre[2]), "p": p})));
+            if bounds.is_none() {
+                floor_pts.extend(pts);
+            }
         } else if nz.abs() < 0.3 {
             // total_cmp: a broken map can have NaN coordinates.
             let key = |a: &&Vec3, b: &&Vec3| a[0].total_cmp(&b[0]).then(a[1].total_cmp(&b[1]));
@@ -281,6 +286,13 @@ pub fn geometry(data: &[u8]) -> Result<Value> {
         }
     }
     floors.sort_by(|a, b| a.0.total_cmp(&b.0));
+    // Without points or pickups, the floors frame the map; the top keeps the PAD above the
+    // highest floor that the viewer's roof cut expects.
+    let bounds = bounds.or_else(|| {
+        let (lo, mut hi) = bounds_of(&floor_pts, 256.0);
+        hi[2] += PAD - 256.0;
+        (!floor_pts.is_empty()).then_some((lo, hi))
+    });
     Ok(json!({
         "spawns": spawns(data)?,
         "bounds": bounds.map(|(lo, hi)| json!([lo, hi])),
@@ -382,6 +394,19 @@ mod tests {
         let zs: Vec<f64> = floors.iter().map(|f| f["z"].as_f64().unwrap()).collect();
         assert!(zs.windows(2).all(|w| w[0] <= w[1]), "floors sorted by height");
         assert!(g["walls"].as_array().unwrap().len() > 1000);
+    }
+
+    #[test]
+    fn maps_without_points_or_pickups_are_framed_by_their_floors() {
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/cache/mge_training_v8_beta4b.bsp");
+        let Ok(data) = std::fs::read(path) else { return eprintln!("{path} not downloaded; skipped") };
+        let g = geometry(&data).unwrap();
+        let b = &g["bounds"];
+        // Players fighting in an arena, far from the one spawn point.
+        for p in [[2609.0, -10118.0, -473.0], [2061.0, -9786.0, -862.0]] {
+            assert!((0..3).all(|i| b[0][i].as_f64().unwrap() <= p[i] && p[i] <= b[1][i].as_f64().unwrap()), "{b}");
+        }
+        assert!(g["floors"].as_array().unwrap().len() > 1000);
     }
 
     #[test]

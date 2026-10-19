@@ -386,7 +386,8 @@ async function loadMap(map) {
 
 function renderGeometry(g) {
   const [lo, hi] = g.bounds;
-  const res = 4; // world units per pixel
+  // World units per pixel; huge maps (MGE) get coarser so the canvas stays within browser limits.
+  const res = Math.max(4, Math.max(hi[0] - lo[0], hi[1] - lo[1]) / 4096);
   const w = Math.ceil((hi[0] - lo[0]) / res), h = Math.ceil((hi[1] - lo[1]) / res);
   const oc = document.createElement("canvas"); oc.width = w; oc.height = h;
   const c = oc.getContext("2d");
