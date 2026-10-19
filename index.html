@@ -57,6 +57,9 @@
   .card .nm b { display: block; font-weight: 600; font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #fff; text-shadow: 0 1px 2px #000; }
   .card .nm small { font-size: 11px; color: #ffffffa0; letter-spacing: .02em; }
   .card .hp { padding: 0 9px; font-size: 26px; font-weight: 800; color: #fff; text-shadow: 0 2px 0 #000a; font-variant-numeric: tabular-nums; }
+  .card .nm small { display: flex; align-items: center; gap: 4px; height: 14px; white-space: nowrap; overflow: hidden; }
+  .card .wp { height: 14px; width: auto; max-width: 56px; object-fit: contain; filter: drop-shadow(0 1px 1px #000); }
+  .card .clip { color: #fff; font-weight: 700; font-variant-numeric: tabular-nums; }
   .card.over .hp { color: #9ff0ff; }
   .card.low .hp { color: #ff6b5a; animation: pulse .7s infinite alternate; }
   .card.dead { filter: grayscale(1) brightness(.55); }
@@ -158,6 +161,8 @@
   #feed div { padding: 2px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   #chat div { padding: 2px 0; overflow-wrap: anywhere; }
   #chat .notice { color: var(--dim); }
+  #chat .voice { color: var(--dim); font-style: italic; }
+  #chat .srvtext { color: var(--dim); font-size: 11px; font-family: ui-monospace, monospace; }
   #chat time { display: inline-block; min-width: 30px; color: var(--dim); font-size: 10px; font-variant-numeric: tabular-nums; }
   .t-red { color: var(--red); } .t-blue { color: var(--blue); }
   #feed div.ev { display: flex; align-items: center; gap: 5px; padding: 3px 7px; margin: 0 0 2px; border-radius: 3px;
@@ -367,7 +372,7 @@ function handle(m) {
   // Feed events from before the page opened: straight into the feed and chat, no map effects.
   if (m.history) {
     const p = id => state.players.get(id) || m.names?.[id];
-    if (m.type === "chat") chat(m, p);
+    if (CHAT_TYPES.has(m.type)) chat(m, p);
     else killiconsLoaded.finally(() => feedEvent(m, p));
     return;
   }
@@ -806,7 +811,7 @@ function fireEvents(tick, byId) {
       }
       case "round_win": banner(`${teamName(ev.team)} wins the round`, ev.team); feedEvent(ev, p); break;
       case "round_start": banner("Round start", "none"); feedEvent(ev, p); break;
-      case "chat": chat(ev, p); break;
+      case "chat": case "voice_command": case "server_text": chat(ev, p); break;
       default: feedEvent(ev, p);
     }
   }
@@ -836,6 +841,23 @@ const flagName = team => team === "red" || team === "blue" ? `the ${teamName(tea
   : state.map?.startsWith("sd_") ? "the Australium" : "the ball";
 const chip = (cls, text) => `<span class="chip ${cls}">${text}</span>`;
 let lastScores = null;
+
+const CHAT_TYPES = new Set(["chat", "voice_command", "server_text"]);
+const VOICE = [
+  ["MEDIC!", "Thanks!", "Go! Go! Go!", "Move up!", "Go left!", "Go right!", "Yes", "No"],
+  ["Incoming!", "Spy!", "Sentry ahead!", "Teleporter here", "Dispenser here", "Sentry here", "Activate charge!", "ÜberCharge ready!"],
+  ["Help!", "Battle cry", "Cheers", "Jeers", "Positive", "Negative", "Nice shot", "Good job"],
+];
+const ANNOUNCER = {
+  "Announcer.RoundEnds5minutes": "5 minutes remain", "Announcer.RoundEnds4minutes": "4 minutes remain",
+  "Announcer.RoundEnds3minutes": "3 minutes remain", "Announcer.RoundEnds2minutes": "2 minutes remain",
+  "Announcer.RoundEnds60seconds": "1 minute remains", "Announcer.RoundEnds30seconds": "30 seconds remain",
+  "Announcer.RoundEnds10seconds": "10 seconds remain", "Announcer.RoundEnds5seconds": "5 seconds remain",
+  "Announcer.RoundEnds4seconds": "4 seconds remain", "Announcer.RoundEnds3seconds": "3 seconds remain",
+  "Announcer.RoundEnds2seconds": "2 seconds remain", "Announcer.RoundEnds1seconds": "1 second remains",
+  "Game.YourTeamWon": "Victory", "Game.YourTeamLost": "Defeat", "Game.Stalemate": "Stalemate", "Game.Overtime": "Overtime",
+};
+let voteOptions = [];
 
 // One row per event, newest on top, stamped with the round clock.
 function feedEvent(ev, p) {
@@ -878,6 +900,30 @@ function feedEvent(ev, p) {
       else if (ev.event === "returned") { cls = "minor"; html = `<span>${what[0].toUpperCase() + what.slice(1)} went home</span>`; }
       break;
     }
+    case "vote_options":
+      if (!layerOn("flow") || !ev.options?.length) return;
+      voteOptions = ev.options;
+      cls = "minor"; html = `<span>Vote: ${ev.options.map(esc).join(" / ")}</span>`;
+      break;
+    case "vote_cast": {
+      if (!layerOn("flow")) return;
+      const o = voteOptions[ev.option] ?? ["Yes", "No"][ev.option];
+      if (o == null) return;
+      cls = "minor"; html = `${name(ev.player)} <span>voted ${esc(o)}</span>`;
+      break;
+    }
+    case "capture_broken": if (!layerOn("flow")) return; cls = "minor"; html = `<span>Capture of ${esc(pointName(ev))} broken</span>`; break;
+    case "killed_capper":
+      if (!layerOn("flow")) return;
+      html = `${name(ev.killer)}${ev.assister != null ? "+" + name(ev.assister) : ""}<span class="w">killed capper</span>${name(ev.victim)}`;
+      break;
+    case "medic_defended": if (!layerOn("flow")) return; html = `${name(ev.player)}<span class="w">defended medic</span>${name(ev.medic)}`; break;
+    case "tournament": if (!layerOn("flow")) return; cls = "minor"; html = `${name(ev.player)} <span>is ${ev.ready ? "ready" : "not ready"}</span>`; break;
+    case "announcer":
+      if (!layerOn("flow") || !ANNOUNCER[ev.sound]) return;
+      cls = `minor ${ev.team === "red" || ev.team === "blue" ? ev.team : ""}`; html = `<span>${ANNOUNCER[ev.sound]}</span>`;
+      break;
+    case "time_remaining": if (!layerOn("flow")) return; cls = "minor"; html = `<span>${mmss(ev.seconds)} remaining</span>`; break;
     case "round_start": cls = "big none"; html = "Round start"; break;
     case "round_win": cls = `big ${ev.team}`; html = `${teamName(ev.team)} wins the round${lastScores ? ` · BLU ${lastScores.blue} – ${lastScores.red} RED` : ""}`; break;
     case "scores": lastScores = ev; if (ev.game_over) { cls = "big none"; html = `Match over · BLU ${ev.blue} – ${ev.red} RED`; } break;
@@ -903,7 +949,16 @@ function chat(ev, p) {
   const pl = ev.player != null ? p(ev.player) : null;
   const stamp = ev.at != null ? mmss(ev.at) : state.clock;
   const time = stamp ? `<time>${stamp}</time>` : "";
-  if (pl || ev.name) {
+  if (ev.type === "voice_command") {
+    const text = VOICE[ev.menu]?.[ev.item];
+    if (!layerOn("flow") || !pl || !text) return;
+    d.className = "voice";
+    d.innerHTML = `${time}${who(pl)} <span class="w">🔊 ${esc(text)}</span>`;
+  } else if (ev.type === "server_text") {
+    if (!layerOn("flow") || !ev.text) return;
+    d.className = "srvtext";
+    d.innerHTML = time + esc(ev.text);
+  } else if (pl || ev.name) {
     d.innerHTML = `${time}${pl ? who(pl) : `<span class="w">${esc(ev.name)}</span>`}: ${esc(ev.text)}`;
   } else {
     // Server messages (plugins, rcon say) as notices; `say` from the console adds its own prefix.
@@ -1563,6 +1618,19 @@ function setHTML(el, html) { if (el.innerHTML !== html) el.innerHTML = html; }
 function setClass(el, cls) { if (el.className !== cls) el.className = cls; }
 function setStyle(el, prop, value) { if (el.style[prop] !== value) el.style[prop] = value; }
 
+let itemImages = null;
+function weaponHtml(p) {
+  if (!layerOn("loadout") || !p.alive || !p.weapon) return "";
+  if (!itemImages) {
+    itemImages = {};
+    fetch("backpack/items.json").then(r => r.json()).then(j => { itemImages = j; lastPanel = 0; }).catch(() => { itemImages = null; });
+    return "";
+  }
+  const img = itemImages[p.weapon.item];
+  if (!img) return "";
+  const clip = p.weapon.clip != null ? `<span class="clip">${p.weapon.clip}</span>` : "";
+  return `<img class="wp" src="backpack/${esc(img)}.webp" alt="" onerror="this.style.display='none'">${clip}`;
+}
 function card(p) {
   const el = node(`p${p.id}`, `<div class="card"><div class="fill"></div><span class="ci"></span><div class="nm"><b></b><small></small></div><div class="hp"></div></div>`);
   const f = p.alive ? Math.max(0, Math.min(1, p.hp / (p.max_hp || 1))) : 0;
@@ -1572,7 +1640,7 @@ function card(p) {
   setHTML(el.children[1], ICONS[p.class] ? `<img src="icons/${p.class}.svg" alt="${p.class}">` : CLASS[p.class] || "?");
   setText2(el.querySelector(".nm b"), p.name);
   const sub = p.ping != null ? `${p.ping} ms` : "";
-  setHTML(el.querySelector(".nm small"), `${p.ubered ? `<span class="tag">${UBER_LABEL[p.ubered] || "ÜBER"}</span>` : ""}${sub}`);
+  setHTML(el.querySelector(".nm small"), `${p.ubered ? `<span class="tag">${UBER_LABEL[p.ubered] || "ÜBER"}</span>` : ""}${sub}${weaponHtml(p)}`);
   setText2(el.children[3], p.alive ? String(p.hp) : "DEAD");
   return el;
 }
