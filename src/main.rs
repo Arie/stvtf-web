@@ -50,6 +50,9 @@ const ICONS: [(&str, &[u8]); 9] = [
 ];
 const FASTDL: &str = "https://fastdl.serveme.tf/maps/";
 const MAX_BSP: u64 = 512 << 20;
+const DEMOSTF: &str = "https://maps.demos.tf/";
+const MAX_OVERVIEW: u64 = 8 << 20;
+const DAY: Duration = Duration::from_secs(86400);
 /// Request line and headers together; the pages send far less.
 const MAX_REQUEST: u64 = 16 << 10;
 /// Open connections, browsers on `/events` included; more are closed straight away.
@@ -246,6 +249,37 @@ fn map_geometry(cache: &Path, name: &str) -> Result<Vec<u8>> {
     Ok(body)
 }
 
+/// demos.tf's map overviews, `boundaries.json` and `<map>.webp`, kept in the cache so viewers do
+/// not each load them from demos.tf's own server. The list is fetched again after a day; while
+/// demos.tf is down, what the cache has is served.
+fn overview(cache: &Path, file: &str) -> Result<Vec<u8>> {
+    let remote = match file.strip_suffix(".webp") {
+        _ if file == "boundaries.json" => file.to_string(),
+        Some(map) if !map.is_empty() && map.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') => format!("images/{file}"),
+        _ => bail!("no such overview"),
+    };
+    let dir = cache.join("demostf");
+    std::fs::create_dir_all(&dir)?;
+    let path = dir.join(file);
+    let age = std::fs::metadata(&path).and_then(|m| m.modified()).ok().map(|t| t.elapsed().unwrap_or_default());
+    if age.is_some_and(|a| remote.starts_with("images/") || a < DAY) {
+        return Ok(std::fs::read(&path)?);
+    }
+    let mut body = Vec::new();
+    let fetched = ureq::get(&format!("{DEMOSTF}{remote}"))
+        .call()
+        .map_err(anyhow::Error::from)
+        .and_then(|r| Ok(r.into_reader().take(MAX_OVERVIEW + 1).read_to_end(&mut body)?));
+    match fetched {
+        Ok(n) if n as u64 <= MAX_OVERVIEW => {
+            write_atomic(&path, &body)?;
+            Ok(body)
+        }
+        Ok(_) => bail!("{file} is over {} MiB", MAX_OVERVIEW >> 20),
+        Err(e) => std::fs::read(&path).map_err(|_| e),
+    }
+}
+
 /// Writes through a temporary file and a rename: a cached file that can be read is complete,
 /// even after a crash halfway through writing it.
 fn write_atomic(path: &Path, data: &[u8]) -> std::io::Result<()> {
@@ -274,6 +308,7 @@ struct App {
     matches: Matches,
     cache: PathBuf,
     maps: Mutex<()>,
+    overviews: Mutex<()>,
     /// Where a proxy serves us, like `/live`; empty at the root.
     base: String,
     /// When set, matches start only from tokens a site in front of us made.
@@ -374,20 +409,54 @@ fn serve(mut s: TcpStream, app: &App) -> Result<()> {
             Some((_, svg)) => respond(&mut s, "200 OK", "image/svg+xml", svg)?,
             None => respond(&mut s, "404 Not Found", "text/plain", b"not found")?,
         },
-        (_, p) if p.starts_with("/map/") => {
-            let result = {
-                // Guards nothing, so a panic in an earlier request (poisoning it) does not matter.
-                let _one_at_a_time = app.maps.lock().unwrap_or_else(PoisonError::into_inner);
-                map_geometry(&app.cache, &p[5..])
-            };
-            match result {
-                Ok(body) => respond(&mut s, "200 OK", "application/json", &body)?,
-                Err(e) => respond(&mut s, "404 Not Found", "text/plain", e.to_string().as_bytes())?,
-            }
-        }
+        (_, p) if p.starts_with("/overview/") || p.starts_with("/map/") => serve_cached(&mut s, app, p)?,
         _ => respond(&mut s, "404 Not Found", "text/plain", b"not found")?,
     }
     Ok(())
+}
+
+/// A map's geometry, or a demos.tf overview, from the cache (fetched and made on a miss).
+fn serve_cached(s: &mut TcpStream, app: &App, p: &str) -> std::io::Result<()> {
+    // The locks guard nothing, so a panic in an earlier request (poisoning them) does not matter.
+    let result = if let Some(file) = p.strip_prefix("/overview/") {
+        let _one_at_a_time = app.overviews.lock().unwrap_or_else(PoisonError::into_inner);
+        overview(&app.cache, file)
+    } else {
+        let _one_at_a_time = app.maps.lock().unwrap_or_else(PoisonError::into_inner);
+        map_geometry(&app.cache, &p[5..])
+    };
+    match result {
+        Ok(body) if p.starts_with("/map/") => respond(s, "200 OK", "application/json", &body),
+        Ok(body) if p == "/overview/boundaries.json" => respond_cached(s, "application/json", &body),
+        Ok(body) => respond_cached(s, "image/webp", &body),
+        Err(e) => respond(s, "404 Not Found", "text/plain", e.to_string().as_bytes()),
+    }
+}
+
+/// Fetches demos.tf's overviews and builds the most played maps, so their first viewer does not wait.
+fn warm(app: &App) {
+    let lock = || app.overviews.lock().unwrap_or_else(PoisonError::into_inner);
+    let list = {
+        let _one_at_a_time = lock();
+        overview(&app.cache, "boundaries.json")
+    };
+    let known: Vec<String> = list
+        .ok()
+        .and_then(|b| serde_json::from_slice::<serde_json::Map<String, Value>>(&b).ok())
+        .map(|m| m.into_iter().map(|(k, _)| k).collect())
+        .unwrap_or_default();
+    for map in known {
+        let _one_at_a_time = lock();
+        if let Err(e) = overview(&app.cache, &format!("{map}.webp")) {
+            eprintln!("stvmap-web: overview of {map}: {e}");
+        }
+    }
+    for name in WARM.lines().filter(|l| !l.is_empty() && !l.starts_with('#')) {
+        let _one_at_a_time = app.maps.lock().unwrap_or_else(PoisonError::into_inner);
+        if let Err(e) = map_geometry(&app.cache, name) {
+            eprintln!("stvmap-web: {name}: {e}");
+        }
+    }
 }
 
 /// A file that never changes for a given build, so the browser keeps it for a day.
@@ -627,7 +696,14 @@ fn main() -> Result<()> {
         bail!("--base-path {base}: must start with /");
     }
     let console_prompt = keys.is_none() && std::io::IsTerminal::is_terminal(&std::io::stdin());
-    let app = Arc::new(App { matches, cache: PathBuf::from(get("cache").unwrap_or("cache")), maps: Mutex::new(()), base, keys });
+    let app = Arc::new(App {
+        matches,
+        cache: PathBuf::from(get("cache").unwrap_or("cache")),
+        maps: Mutex::new(()),
+        overviews: Mutex::new(()),
+        base,
+        keys,
+    });
 
     if let Matches::Many(_) = app.matches {
         // Stop idle matches, and on Ctrl-C disconnect them all cleanly before exiting.
@@ -647,15 +723,8 @@ fn main() -> Result<()> {
                 std::thread::sleep(Duration::from_millis(250));
             }
         });
-        let warm = app.clone();
-        std::thread::spawn(move || {
-            for name in WARM.lines().filter(|l| !l.is_empty() && !l.starts_with('#')) {
-                let _one_at_a_time = warm.maps.lock().unwrap_or_else(PoisonError::into_inner);
-                if let Err(e) = map_geometry(&warm.cache, name) {
-                    eprintln!("stvmap-web: {name}: {e}");
-                }
-            }
-        });
+        let warming = app.clone();
+        std::thread::spawn(move || warm(&warming));
         if console_prompt {
             let (console, url) = (app.clone(), format!("http://{listen}{}", app.base));
             std::thread::spawn(move || prompt(&console, &url));
@@ -698,7 +767,7 @@ mod tests {
     }
 
     fn app(matches: Matches) -> App {
-        App { matches, cache: PathBuf::from("unused"), maps: Mutex::new(()), base: String::new(), keys: None }
+        App { matches, cache: PathBuf::from("unused"), maps: Mutex::new(()), overviews: Mutex::new(()), base: String::new(), keys: None }
     }
 
     /// Runs `serve` on one connection, with `send` written by the client; returns serve's result and the response.
@@ -860,6 +929,19 @@ mod tests {
         assert_eq!(kill["names"]["4"]["team"], "blue");
         let cap = lines.iter().find(|l| l["type"] == "point_captured").unwrap();
         assert_eq!(cap["names"]["3"]["name"], "can of tuna");
+    }
+
+    #[test]
+    fn only_overview_files_are_fetched() {
+        let cache = std::env::temp_dir().join(format!("stvmap-web-overview-{}", std::process::id()));
+        for bad in ["../boundaries.json", "x.json", "a/b.webp", ".webp", "boundaries.webp.json"] {
+            assert!(overview(&cache, bad).is_err(), "{bad}");
+        }
+        // A cached image is served without asking demos.tf.
+        std::fs::create_dir_all(cache.join("demostf")).unwrap();
+        std::fs::write(cache.join("demostf/cp_test.webp"), b"RIFF").unwrap();
+        assert_eq!(overview(&cache, "cp_test.webp").unwrap(), b"RIFF");
+        std::fs::remove_dir_all(&cache).unwrap();
     }
 
     #[test]

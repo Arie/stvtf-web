@@ -30,8 +30,8 @@ set), and on start picks the matches up again under the same links, with their f
 a restart or deploy is then a pause of a second or two for the people watching. SIGTERM, like
 Ctrl-C, disconnects every match cleanly first.
 
-With any number of matches, it builds the geometry of the maps in `maps.txt` (the most played
-on serveme.tf) when it starts, so their first viewer does not wait for the BSP download; other
+With any number of matches, it fetches the demos.tf overviews and builds the geometry of the
+maps in `maps.txt` (the most played on serveme.tf) when it starts, so their first viewer does not wait for the BSP download; other
 maps are built on first view. Only the geometry stays in the cache, not the BSP.
 
 `--demo MATCH.jsonl[.gz]` adds a fixed match at `/w/demo/`: a saved `stvmap` output played on
@@ -131,11 +131,12 @@ about 150 ms behind the newest data, so everything lines up with the movement.
 
 - **demos.tf overview**: the overview images and world bounds the
   [demos.tf viewer](https://demos.tf/viewer) uses (`maps.demos.tf`), looked up the
-  same way it does. About 50 competitive maps.
+  same way it does. About 50 competitive maps. The server fetches them once into `--cache`
+  (default `cache/`) and serves them itself, so viewers do not each load them from demos.tf.
 - **map geometry**: for any map, drawn from the map's BSP from fastdl
   (`fastdl.serveme.tf/maps/`): upward faces shaded by height, wall outlines, and the
-  playable area framed by control points, pickups and nearby spawns so the 3D skybox
-  stays out. The BSP and the extracted geometry are cached in `--cache` (default `cache/`).
+  playable area framed by control points, pickups and nearby spawns (or by the floors, on
+  maps without either) so the 3D skybox stays out. The extracted geometry is cached in `--cache`.
 
 ## Layout
 
@@ -177,7 +178,7 @@ repository for the `../stvmap` path dependency, using the deploy key in the
 
 From [demos.tf](https://demos.tf) by Robin Appelman: [tf-demo-parser](https://codeberg.org/demostf/parser)
 (MIT or Apache-2.0), which stvmap decodes SourceTV data with, and the map overview images and
-their boundaries, loaded from `maps.demos.tf`.
+their boundaries from `maps.demos.tf`, with demos.tf's way of matching a map name to them.
 
 Class icons (`icons/`) are by lyreix of the TF2Stadium team, licensed
 CC-BY-NC-SA-4.0 (`icons/LICENCE`), taken unmodified from the

@@ -339,7 +339,7 @@ function resetMatch(keepFollow = false) {
 let boundaries = null;
 async function demostfBoundaries() {
   if (!boundaries) {
-    try { boundaries = await (await fetch("https://maps.demos.tf/boundaries.json")).json(); }
+    try { boundaries = await (await fetch("overview/boundaries.json")).json(); }
     catch { boundaries = {}; }
   }
   return boundaries;
@@ -364,13 +364,12 @@ async function loadMap(map) {
   const alias = demostfAlias(map, known);
   if (alias) {
     const img = new Image();
-    img.crossOrigin = "anonymous";
     img.onload = () => {
       state.overview = { img: OVERLAY ? withoutBlack(img) : img, b: known[alias] };
       $("bgtoggle").hidden = false;
       if (!state.fitted) fitTo(known[alias].boundary_min, known[alias].boundary_max);
     };
-    img.src = `https://maps.demos.tf/images/${alias}.webp`;
+    img.src = `overview/${alias}.webp`;
   }
   $("bgtoggle").hidden = true;
   try {
