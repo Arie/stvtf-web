@@ -35,10 +35,10 @@ applyScale();
 export const canvas = document.getElementById("c");
 export const ctx = canvas.getContext("2d");
 export const $ = id => document.getElementById(id);
-// The canvas size, measured once per frame: asking the layout for it on every point drawn is slow.
+// The canvas size, kept up to date by an observer: asking the layout for it forces a reflow.
 let size = null;
-export function measureCanvas() { return (size = canvas.getBoundingClientRect()); }
-export const canvasSize = () => size ?? measureCanvas();
+new ResizeObserver(([e]) => { size = { width: e.contentRect.width, height: e.contentRect.height }; }).observe(canvas);
+export const canvasSize = () => size ?? (size = canvas.getBoundingClientRect());
 
 export const state = {
   map: null, snaps: [], events: [], effects: [], players: new Map(),

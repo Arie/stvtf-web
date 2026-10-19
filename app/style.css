@@ -4,6 +4,9 @@
 :root {
   --bg: #15171a; --panel: #1e2125; --line: #2c3036; --text: #d8dadd; --dim: #8a9099;
   --red: #d0453f; --blue: #4f8fc0; --red-soft: #d0453f33; --blue-soft: #4f8fc033;
+  /* Team shades worked out ahead: color-mix() in a gradient is converted again on every paint. */
+  --blue-d45: #244056; --blue-d55: #2b4f6a; --blue-d70: #376486; --blue-h30: #1f3343; --blue-w55: #9ec1dc; --blue-w60: #95bcd9; --blue-w80: #72a5cd; --blue-w85: #69a0c9;
+  --red-d45: #5e1f1c; --red-d55: #722623; --red-d70: #92302c; --red-h30: #461d1d; --red-w55: #e59995; --red-w60: #e38f8c; --red-w80: #d96a65; --red-w85: #d7615c;
 }
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
@@ -37,16 +40,16 @@ aside h3 { margin: 0 0 6px; font-size: 11px; text-transform: uppercase; letter-s
   gap: 3px; width: 250px; pointer-events: none; z-index: 2;
   font-family: "HUD Condensed", "Roboto Condensed", "Arial Narrow", sans-serif; }
 #hud-blue { left: 10px; } #hud-red { right: 10px; }
-.card { --team: var(--blue); position: relative; height: 40px; display: grid; align-items: center;
+.card { --team: var(--blue); --team-d45: var(--blue-d45); --team-d55: var(--blue-d55); --team-d70: var(--blue-d70); --team-h30: var(--blue-h30); --team-w55: var(--blue-w55); --team-w60: var(--blue-w60); --team-w80: var(--blue-w80); --team-w85: var(--blue-w85); position: relative; height: 40px; display: grid; align-items: center;
   grid-template-columns: 40px 1fr auto auto; background: #0b0c0ecc; overflow: hidden; }
-#hud-red .card, #hud-red .charge { --team: var(--red); }
+#hud-red .card, #hud-red .charge { --team: var(--red); --team-d45: var(--red-d45); --team-d55: var(--red-d55); --team-d70: var(--red-d70); --team-h30: var(--red-h30); --team-w55: var(--red-w55); --team-w60: var(--red-w60); --team-w80: var(--red-w80); --team-w85: var(--red-w85); }
 /* Fills stay full width and are revealed with clip-path, so the über stripes (a fixed
    24px tile) never stretch when health or charge changes. */
 .card .fill { position: absolute; inset: 0; clip-path: inset(0 100% 0 0); transition: clip-path .25s linear;
-  background: linear-gradient(90deg, color-mix(in srgb, var(--team) 70%, #000), color-mix(in srgb, var(--team) 45%, #000)); }
+  background: linear-gradient(90deg, var(--team-d70), var(--team-d45)); }
 /* Overheal: a brighter wash growing left to right over the health fill, behind the text. */
 .card .oh { position: absolute; inset: 0; clip-path: inset(0 100% 0 0); transition: clip-path .25s linear; opacity: .38;
-  background: color-mix(in srgb, var(--team) 55%, #fff); }
+  background: var(--team-w55); }
 .card > :not(.fill):not(.oh) { position: relative; }
 .card .ci { width: 40px; height: 40px; padding: 6px; background: var(--team); display: grid; place-items: center; font-weight: 800; }
 .card .ci img { width: 28px; height: 28px; }
@@ -71,22 +74,22 @@ aside h3 { margin: 0 0 6px; font-size: 11px; text-transform: uppercase; letter-s
 .card .tag { margin-right: 5px; padding: 0 4px; font-size: 9px; font-weight: 800;
   letter-spacing: .08em; color: #000; background: #fff; border-radius: 2px; }
 .card.ub { box-shadow: inset 0 0 0 2px #fff8, 0 0 12px var(--team); }
-.card.ub .fill { --stripe: color-mix(in srgb, var(--team) 80%, #fff);
+.card.ub .fill { --stripe: var(--team-w80);
   background: linear-gradient(135deg, var(--stripe) 25%, var(--team) 25% 50%, var(--stripe) 50% 75%, var(--team) 75%) 0 0 / 24px 24px;
   animation: stripes 1s linear infinite; }
-.charge { --team: var(--blue); position: relative; height: 30px; margin-top: 4px; background: #0b0c0ecc;
+.charge { --team: var(--blue); --team-d45: var(--blue-d45); --team-d55: var(--blue-d55); --team-d70: var(--blue-d70); --team-h30: var(--blue-h30); --team-w55: var(--blue-w55); --team-w60: var(--blue-w60); --team-w80: var(--blue-w80); --team-w85: var(--blue-w85); position: relative; height: 30px; margin-top: 4px; background: #0b0c0ecc;
   display: flex; align-items: center; gap: 6px; padding: 0 8px; overflow: hidden; }
 .charge .bar { position: absolute; inset: 0; clip-path: inset(0 100% 0 0); transition: clip-path .3s linear;
-  background: color-mix(in srgb, var(--team) 55%, #000); }
+  background: var(--team-d55); }
 .charge .segs { position: absolute; inset: 0; }
 .charge .seg { position: absolute; top: 0; bottom: 0; width: 2px; background: #0b0c0e; }
 .charge > span { position: relative; font-size: 12px; font-weight: 700; letter-spacing: .06em; color: #fff; text-transform: uppercase;
   text-shadow: 0 0 3px #000, 0 1px 2px #000; }
 .charge.releasing > span { background: #000b; padding: 1px 5px; border-radius: 2px; }
 .charge .pct { margin-left: auto; font-size: 17px; font-variant-numeric: tabular-nums; }
-.charge.ready .bar { background: linear-gradient(90deg, var(--team), color-mix(in srgb, var(--team) 60%, #fff)); animation: pulse 1s infinite alternate; }
+.charge.ready .bar { background: linear-gradient(90deg, var(--team), var(--team-w60)); animation: pulse 1s infinite alternate; }
 .charge.releasing { box-shadow: 0 0 14px var(--team); }
-.charge.releasing .bar { --stripe: color-mix(in srgb, var(--team) 80%, #fff);
+.charge.releasing .bar { --stripe: var(--team-w80);
   background: linear-gradient(135deg, var(--stripe) 25%, var(--team) 25% 50%, var(--stripe) 50% 75%, var(--team) 75%) 0 0 / 24px 24px;
   animation: stripes .6s linear infinite; }
 .charge.dead { filter: grayscale(1) brightness(.55); }
@@ -98,8 +101,8 @@ aside h3 { margin: 0 0 6px; font-size: 11px; text-transform: uppercase; letter-s
   font-family: "HUD Condensed", "Roboto Condensed", "Arial Narrow", sans-serif; }
 .sb-row { display: flex; align-items: stretch; filter: drop-shadow(0 2px 6px #000a); }
 .sb-team { position: relative; display: flex; align-items: center; gap: 10px; padding: 0 16px; height: 54px; color: #fff; }
-.sb-team.blue { background: linear-gradient(180deg, color-mix(in srgb, var(--blue) 85%, #fff), var(--blue)); border-radius: 6px 0 0 6px; }
-.sb-team.red { background: linear-gradient(180deg, color-mix(in srgb, var(--red) 85%, #fff), var(--red)); border-radius: 0 6px 6px 0; }
+.sb-team.blue { background: linear-gradient(180deg, var(--blue-w85), var(--blue)); border-radius: 6px 0 0 6px; }
+.sb-team.red { background: linear-gradient(180deg, var(--red-w85), var(--red)); border-radius: 0 6px 6px 0; }
 .sb-team b { font-size: 38px; font-weight: 800; line-height: 1; min-width: 1.2ch; text-align: center; text-shadow: 0 2px 0 #0006; font-variant-numeric: tabular-nums; }
 .sb-name { font-size: 12px; font-weight: 800; letter-spacing: .12em; opacity: .85; }
 .sb-sub { position: absolute; top: 100%; left: 0; right: 0; text-align: center; font-style: normal; font-size: 12px; font-weight: 700;
@@ -112,8 +115,8 @@ aside h3 { margin: 0 0 6px; font-size: 11px; text-transform: uppercase; letter-s
 #scoreboard.koth .sb-timer { width: 170px; }
 .sb-timer .kt { font-style: normal; font-size: 27px; }
 .sb-timer .kt + .kt { margin-left: 12px; }
-.sb-timer .kt.blue { color: color-mix(in srgb, var(--blue) 55%, #fff); }
-.sb-timer .kt.red { color: color-mix(in srgb, var(--red) 55%, #fff); }
+.sb-timer .kt.blue { color: var(--blue-w55); }
+.sb-timer .kt.red { color: var(--red-w55); }
 .sb-timer .kt.idle { opacity: .45; }
 .sb-timer .kt.low { color: #ff6b5a; animation: pulse .7s infinite alternate; }
 .sb-timer i { position: absolute; left: 0; right: 0; bottom: 3px; text-align: center; font-style: normal; font-size: 9px;
@@ -171,6 +174,8 @@ html.overlay #scoreboard { top: 6px; transform: translateX(-50%) scale(.62); tra
 @keyframes stripes { from { background-position: 0 0; } to { background-position: 24px 0; } }
 @media (max-width: 800px) { .hud { width: 150px; } .card .nm small, .card .tag { display: none; } }
 #feed, #chat { overflow-y: auto; flex: 1; min-height: 80px; }
+/* Rows scrolled out of view are skipped when the page is painted. */
+#feed > div, #chat > div { content-visibility: auto; contain-intrinsic-size: auto 20px; }
 #feed div { padding: 2px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #chat div { padding: 2px 0; overflow-wrap: anywhere; }
 #chat .notice { color: var(--dim); }
@@ -187,11 +192,11 @@ html.overlay #scoreboard { top: 6px; transform: translateX(-50%) scale(.62); tra
 #feed .ev.feign { opacity: .5; }
 /* Round flow rows: team-coloured, bold, aligned like the rest and free to wrap. */
 #feed .ev.big { font-weight: 700; padding: 5px 7px; color: #fff; white-space: normal; }
-#feed .ev.big.red { background: color-mix(in srgb, var(--red) 55%, #000); }
-#feed .ev.big.blue { background: color-mix(in srgb, var(--blue) 55%, #000); }
+#feed .ev.big.red { background: var(--red-d55); }
+#feed .ev.big.blue { background: var(--blue-d55); }
 #feed .ev.big.none { background: #2c3036; }
-#feed .ev.hot.red { background: color-mix(in srgb, var(--red) 30%, #0b0c0e); }
-#feed .ev.hot.blue { background: color-mix(in srgb, var(--blue) 30%, #0b0c0e); }
+#feed .ev.hot.red { background: var(--red-h30); }
+#feed .ev.hot.blue { background: var(--blue-h30); }
 #feed .killicon { zoom: .6; margin: 0 2px; flex: none; }
 #feed .crit { filter: drop-shadow(0 0 3px #ff4b3a); }
 .chip { flex: none; padding: 0 4px; border-radius: 2px; font-size: 9px; font-weight: 800; letter-spacing: .06em; color: #000; background: #ddd; }

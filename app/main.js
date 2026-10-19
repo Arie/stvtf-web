@@ -1,4 +1,4 @@
-import { OVERLAY, canvas, ctx, state, renderTick, measureCanvas } from "./core.js";
+import { OVERLAY, canvas, ctx, state, renderTick, canvasSize } from "./core.js";
 import { fireEvents } from "./events.js";
 import { updatePanel, renderScoreboard } from "./hud.js";
 import { layerOn, renderSettings } from "./layers.js";
@@ -55,7 +55,7 @@ function frame(now) {
 }
 
 function draw() {
-  const r = measureCanvas(), dpr = window.devicePixelRatio || 1;
+  const r = canvasSize(), dpr = window.devicePixelRatio || 1;
   if (canvas.width !== Math.round(r.width * dpr) || canvas.height !== Math.round(r.height * dpr)) {
     canvas.width = Math.round(r.width * dpr); canvas.height = Math.round(r.height * dpr);
   }

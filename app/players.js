@@ -151,6 +151,23 @@ export function drawHealBeams(players, byId) {
   }
 }
 
+// The class icons are SVGs, which Firefox rasterizes again on every draw: each size is drawn once.
+const iconSprites = new Map();
+function iconSprite(cls, size) {
+  const img = icon(cls);
+  if (!img) return null;
+  const n = Math.max(1, Math.round(size * (window.devicePixelRatio || 1))), key = `${cls} ${n}`;
+  let c = iconSprites.get(key);
+  if (!c) {
+    if (iconSprites.size > 64) iconSprites.clear();
+    c = document.createElement("canvas");
+    c.width = c.height = n;
+    c.getContext("2d").drawImage(img, 0, 0, n, n);
+    iconSprites.set(key, c);
+  }
+  return c;
+}
+
 export function drawPlayers(players) {
   const alive = [];
   // The followed player is drawn last, so their dot and name are on top.
@@ -206,7 +223,7 @@ export function drawPlayers(players) {
   for (const { p, x, y, rad } of alive) if (p.flames) drawFlames(p, x, y, rad, screenAngle(p.yaw));
   for (const { p, x, y, rad, cloaked } of alive) {
     ctx.globalAlpha = cloaked ? 0.35 : 1;
-    const img = icon(p.class);
+    const img = iconSprite(p.class, rad * 1.65);
     if (img) {
       const s = rad * 1.65;
       ctx.drawImage(img, x - s / 2, y - s / 2, s, s);

@@ -102,7 +102,7 @@ function fitTo(min, max) {
 // The part of the canvas the map has to itself: the main view keeps clear of the HUD columns
 // and the scoreboard; the overlay uses its whole panel. Framings are centred in it.
 function viewArea() {
-  const r = canvas.getBoundingClientRect();
+  const r = canvasSize();
   const side = shown("hud") && r.width > 800 ? 268 * uiScale() : 0, top = shown("score") ? 140 * uiScale() : 0;
   return { w: r.width - 2 * side, h: r.height - top, top };
 }
