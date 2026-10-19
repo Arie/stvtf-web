@@ -1,9 +1,12 @@
-"use strict";
+import { TEAM, $, state } from "./core.js";
+import { MEDIGUN_NAME, mmss } from "./hud.js";
+import { layerOn } from "./layers.js";
+
 function esc(s) { return String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
 function who(pl) { return pl ? `<span class="t-${esc(pl.team)}">${esc(pl.name)}</span>` : "world"; }
 // Kill icons from tf2-icons, named like the weapons in server logs and kill events.
 const KILLICONS = new Set();
-const killiconsLoaded = fetch("killicons.css").then(r => r.text()).then(css => {
+export const killiconsLoaded = fetch("killicons.css").then(r => r.text()).then(css => {
   for (const m of css.matchAll(/\.killicon-([A-Za-z0-9_]+)\s*\{/g)) KILLICONS.add(m[1]);
 });
 function weaponIcon(ev) {
@@ -16,15 +19,14 @@ function weaponIcon(ev) {
 const BUILDING = { sentry: "Sentry", dispenser: "Dispenser", teleporter: "Teleporter", sapper: "Sapper" };
 const BANNER = { buff_banner: "Buff Banner", battalions_backup: "Battalion's Backup", concheror: "Concheror" };
 const PROJECTILE_WEAPON = /rocket|quake_rl|directhit|liberty|blackbox|airstrike|mangler|dumpster|pipe|bomb|loch|cannon|resistance|huntsman|arrow|crossbow|flare|detonator|scorch/;
-const teamName = t => t === "red" ? "RED" : t === "blue" ? "BLU" : "";
-const pointName = ev => ev.name && !ev.name.startsWith("#") ? ev.name : "point " + (ev.point + 1);
+export const teamName = t => t === "red" ? "RED" : t === "blue" ? "BLU" : "";
+export const pointName = ev => ev.name && !ev.name.startsWith("#") ? ev.name : "point " + (ev.point + 1);
 // A team's flag is its intelligence; a neutral one is special delivery's Australium or a ball.
-const flagName = team => team === "red" || team === "blue" ? `the ${teamName(team)} intelligence`
+export const flagName = team => team === "red" || team === "blue" ? `the ${teamName(team)} intelligence`
   : state.map?.startsWith("sd_") ? "the Australium" : "the ball";
 const chip = (cls, text) => `<span class="chip ${cls}">${text}</span>`;
-let lastScores = null;
 
-const CHAT_TYPES = new Set(["chat", "voice_command", "server_text"]);
+export const CHAT_TYPES = new Set(["chat", "voice_command", "server_text"]);
 const VOICE = [
   ["MEDIC!", "Thanks!", "Go! Go! Go!", "Move up!", "Go left!", "Go right!", "Yes", "No"],
   ["Incoming!", "Spy!", "Sentry ahead!", "Teleporter here", "Dispenser here", "Sentry here", "Activate charge!", "ÜberCharge ready!"],
@@ -41,7 +43,7 @@ const ANNOUNCER = {
 let voteOptions = [];
 
 // One row per event, newest on top, stamped with the round clock.
-function feedEvent(ev, p) {
+export function feedEvent(ev, p) {
   // Players who have since left are no longer known by id.
   const name = id => (id == null ? "" : p(id) ? `<span class="who" data-id="${Number(id)}">${who(p(id))}</span>` : '<span class="who"><span class="w">?</span></span>');
   let cls = "", html = null;
@@ -107,8 +109,8 @@ function feedEvent(ev, p) {
       break;
     case "time_remaining": if (!layerOn("flow") || !(ev.seconds > 0)) return; cls = "minor"; html = `<span>${mmss(ev.seconds)} remaining</span>`; break;
     case "round_start": cls = "big none"; html = "Round start"; break;
-    case "round_win": cls = `big ${ev.team}`; html = `${teamName(ev.team)} wins the round${lastScores ? ` · BLU ${lastScores.blue} – ${lastScores.red} RED` : ""}`; break;
-    case "scores": lastScores = ev; if (ev.game_over) { cls = "big none"; html = `Match over · BLU ${ev.blue} – ${ev.red} RED`; } break;
+    case "round_win": cls = `big ${ev.team}`; html = `${teamName(ev.team)} wins the round${state.lastScores ? ` · BLU ${state.lastScores.blue} – ${state.lastScores.red} RED` : ""}`; break;
+    case "scores": state.lastScores = ev; if (ev.game_over) { cls = "big none"; html = `Match over · BLU ${ev.blue} – ${ev.red} RED`; } break;
     case "stalemate": cls = "big none"; html = "Stalemate"; break;
     case "overtime": cls = "big none"; html = "Overtime"; break;
     case "game_over": cls = "big none"; html = "Game over"; break;
@@ -126,7 +128,7 @@ function feedEvent(ev, p) {
   d.innerHTML = `${stamp ? `<time>${stamp}</time>` : ""}${html}`;
   prepend($("feed"), d);
 }
-function chat(ev, p) {
+export function chat(ev, p) {
   const d = document.createElement("div");
   const pl = ev.player != null ? p(ev.player) : null;
   const stamp = ev.at != null ? mmss(ev.at) : state.clock;
@@ -151,7 +153,7 @@ function chat(ev, p) {
 }
 function prepend(box, el) { box.prepend(el); while (box.children.length > 60) box.lastChild.remove(); }
 let bannerTimer;
-function banner(text, team) {
+export function banner(text, team) {
   const b = $("banner"); b.textContent = text; b.style.color = TEAM[team] || "#fff"; b.style.opacity = 1;
   clearTimeout(bannerTimer); bannerTimer = setTimeout(() => b.style.opacity = 0, 3500);
 }

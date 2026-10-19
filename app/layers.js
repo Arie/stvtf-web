@@ -1,4 +1,6 @@
-"use strict";
+import { $, OVERLAY } from "./core.js";
+import { openStream } from "./stream.js";
+
 // Overkill layers; `detail` ones need the hub's high-volume lines (?detail=1). All on by default; the overlay shows only caps.
 const LAYERS = {
   caps: { label: "Capture areas", key: "", def: true, detail: false },
@@ -17,16 +19,16 @@ for (const [name, l] of Object.entries(LAYERS)) {
   layerState[name] = OVERLAY ? name === "caps" : l.def;
   try { const v = !OVERLAY && localStorage.getItem("layer." + name); if (v === "1" || v === "0") layerState[name] = v === "1"; } catch {}
 }
-const layerOn = name => layerState[name];
-const detailNeeded = () => Object.entries(LAYERS).some(([n, l]) => l.detail && layerState[n]);
-function setLayer(name, on) {
+export const layerOn = name => layerState[name];
+export const detailNeeded = () => Object.entries(LAYERS).some(([n, l]) => l.detail && layerState[n]);
+export function setLayer(name, on) {
   const had = detailNeeded();
   layerState[name] = on;
   try { localStorage.setItem("layer." + name, on ? "1" : "0"); } catch {}
   renderSettings();
   if (had !== detailNeeded()) openStream();
 }
-function setOverkill(on) {
+export function setOverkill(on) {
   const had = detailNeeded();
   for (const name of Object.keys(LAYERS)) {
     layerState[name] = on;
@@ -35,8 +37,8 @@ function setOverkill(on) {
   renderSettings();
   if (had !== detailNeeded()) openStream();
 }
-const overkillOn = () => Object.keys(LAYERS).every(layerOn);
-function renderSettings() {
+export const overkillOn = () => Object.keys(LAYERS).every(layerOn);
+export function renderSettings() {
   const box = $("settings");
   if (!box) return;
   const row = (id, label, key, on, cls) => `<label class="${cls}"><input type="checkbox" data-layer="${id}"${on ? " checked" : ""}>${label}${key ? `<kbd>${key}</kbd>` : ""}</label>`;

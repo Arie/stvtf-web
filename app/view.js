@@ -1,4 +1,5 @@
-"use strict";
+import { $, OVERLAY, OPT, overlayUnit, canvas, uiScale, ctx, state } from "./core.js";
+
 // ---------- map backgrounds
 let boundaries = null;
 async function demostfBoundaries() {
@@ -20,7 +21,7 @@ function demostfAlias(map, known) {
   return null;
 }
 
-async function loadMap(map) {
+export async function loadMap(map) {
   state.map = map; state.geometry = null; state.geoCanvas = null; state.overview = null; state.fitted = false; state.framed = false;
   state.spawns = null; state.mapData = false;
   $("map").textContent = map;
@@ -107,9 +108,9 @@ function viewArea() {
 }
 // Framings are kept as the world point at the centre of the free area; the view centre sits
 // below it by half the scoreboard (the main view is never rotated, the overlay has no top).
-const viewCy = (focusCy, scale) => focusCy + viewArea().top / 2 / scale;
+export const viewCy = (focusCy, scale) => focusCy + viewArea().top / 2 / scale;
 
-function frameMap(keepView = false) {
+export function frameMap(keepView = false) {
   const pts = [];
   for (const p of state.spawns?.points || []) pts.push(p.pos);
   for (const o of state.snaps.at(-1)?.objectives || []) if (o.pos) pts.push(o.pos);
@@ -139,17 +140,17 @@ function frameMap(keepView = false) {
   return true;
 }
 // The view can be rotated (the overlay turns a map so its long axis fits the panel).
-function toScreen(x, y) {
+export function toScreen(x, y) {
   const r = canvas.getBoundingClientRect(), v = state.view;
   const dx = x - v.cx, dy = y - v.cy, c = Math.cos(v.rot), s = Math.sin(v.rot);
   return [(dx * c - dy * s) * v.scale + r.width / 2, -(dx * s + dy * c) * v.scale + r.height / 2];
 }
 // A world yaw (degrees, counter-clockwise from +x) as a canvas angle.
-function screenAngle(deg) { return -(deg * Math.PI / 180 + state.view.rot); }
+export function screenAngle(deg) { return -(deg * Math.PI / 180 + state.view.rot); }
 
 // ---------- drawing
-function px(units, min) { return Math.max(min * uiScale(), units * state.view.scale); }
-const playerRad = () => (OVERLAY ? overlayUnit() : px(30, 11));
+export function px(units, min) { return Math.max(min * uiScale(), units * state.view.scale); }
+export const playerRad = () => (OVERLAY ? overlayUnit() : px(30, 11));
 
 // The overview images have an opaque black surround; on a rotated, transparent overlay that
 // would show as a tilted black box, so make the near-black pixels transparent.
@@ -177,7 +178,7 @@ function drawWorldImage(img, minX, minY, maxX, maxY, alpha) {
   ctx.drawImage(img, -w / 2, -h / 2, w, h);
   ctx.restore();
 }
-function drawBackground(r) {
+export function drawBackground(r) {
   if (OVERLAY) ctx.clearRect(0, 0, r.width, r.height);
   else { ctx.fillStyle = "#101214"; ctx.fillRect(0, 0, r.width, r.height); }
   if (state.bg === "overview" && state.overview) {
@@ -211,7 +212,7 @@ function fightingPlayers(alive) {
   return alive.filter((_, i) => sizes.get(root(i)) === biggest || sizes.get(root(i)) >= 3);
 }
 
-function followAction(players) {
+export function followAction(players) {
   const now = performance.now(), dt = Math.min(0.1, (now - lastFrame) / 1000);
   lastFrame = now;
   const v = state.view, full = state.full;

@@ -1,5 +1,10 @@
-"use strict";
-let drag = null, lastPlayers = [];
+import { $, OVERLAY, canvas, uiScale, applyScale, state } from "./core.js";
+import { layerOn, setLayer, setOverkill, overkillOn } from "./layers.js";
+import { viewCy, frameMap, toScreen } from "./view.js";
+
+// A resize (or hiding the events) only refits the whole-map framing; auto zoom glides to it.
+addEventListener("resize", () => { applyScale(); if (state.framed) frameMap(true); });
+let drag = null;
 canvas.addEventListener("mousedown", e => drag = { x: e.clientX, y: e.clientY, cx: state.view.cx, cy: state.view.cy, moved: false });
 window.addEventListener("mouseup", e => {
   if (drag && !drag.moved) followAt(e.clientX, e.clientY);
@@ -52,17 +57,17 @@ function setAutoZoom(on) {
 }
 
 // Click a dot on the map or a card in the HUD to keep that player centred.
-function setFollow(id) {
+export function setFollow(id) {
   state.follow = id != null && id !== state.follow ? id : null;
-  const p = lastPlayers.find(p => p.id === state.follow);
+  const p = state.lastPlayers.find(p => p.id === state.follow);
   $("follow").hidden = !p;
   if (p) $("follow-name").textContent = p.name;
-  lastPanel = 0;
+  state.lastPanel = 0;
 }
 function followAt(cx, cy) {
   const r = canvas.getBoundingClientRect();
   let best = null, bestD = 18 * uiScale();
-  for (const p of lastPlayers) {
+  for (const p of state.lastPlayers) {
     if (!p.alive) continue;
     const [x, y] = toScreen(p.pos[0], p.pos[1]);
     const d = Math.hypot(x - (cx - r.left), y - (cy - r.top));

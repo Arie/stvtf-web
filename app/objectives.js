@@ -1,7 +1,9 @@
-"use strict";
+import { MS_PER_TICK, TEAM, OVERLAY, overlayUnit, uiScale, ctx, state } from "./core.js";
+import { toScreen, screenAngle, px, playerRad } from "./view.js";
+
 // The payload cart: a mine cart in the pushing team's colour carrying TF2's big black bomb, facing
 // along the track. Heading comes from movement (kept while stopped); rolling back still faces forward.
-const cartState = new Map();
+export const cartState = new Map();
 function cartPos(o, tick) {
   const s = state.snaps;
   const i = s.findIndex(x => x.tick > tick);
@@ -67,7 +69,7 @@ function drawCart(o, tick) {
   ctx.restore();
 }
 
-function drawObjectives(snap, tick) {
+export function drawObjectives(snap, tick) {
   for (const o of snap.objectives || []) {
     if (o.kind === "flag") continue;
     if (o.kind === "cart") { drawCart(o, tick); continue; }
@@ -100,7 +102,7 @@ function drawObjectives(snap, tick) {
 }
 
 // Capture areas: just an outline in the owner's colour; progress is shown on the point square.
-function drawCapAreas(snap) {
+export function drawCapAreas(snap) {
   const areas = state.geometry?.cap_areas;
   if (!areas?.length) return;
   const cps = new Map((snap.objectives || []).filter(o => o.kind === "control_point").map(o => [o.index, o]));
@@ -115,7 +117,7 @@ function drawCapAreas(snap) {
 }
 
 // TF2-HUD cap multiplier ("x2") in the bottom-right corner of the point square while it is being capped.
-function drawOnPoint(snap) {
+export function drawOnPoint(snap) {
   for (const o of snap.objectives || []) {
     if (o.kind !== "control_point" || !o.on_point) continue;
     const n = o.capping_team === "red" || o.capping_team === "blue" ? o.on_point[o.capping_team] : 0;
@@ -131,7 +133,7 @@ function drawOnPoint(snap) {
 
 // The intelligence as a briefcase in its team's colour (a neutral flag, such as the bball ball,
 // in yellow): at home, dropped with the seconds until it goes home, or riding on its carrier.
-function drawFlags(snap, players, tick) {
+export function drawFlags(snap, players, tick) {
   for (const o of snap.objectives || []) {
     if (o.kind !== "flag") continue;
     const carrier = o.status === "carried" ? players.find(p => p.id === o.carrier && p.alive && p.pos) : null;
@@ -157,14 +159,14 @@ function drawFlags(snap, players, tick) {
 
 // S1-S3 / D1-D3 / T1-T3 like the engineer's HUD (MS for a mini-sentry); the sentry's aim
 // sticks out, a teleporter exit gets a ring, and buildings under construction are faint.
-function drawBuildings(snap) {
+export function drawBuildings(snap) {
   for (const b of snap.buildings || []) {
     const [x, y] = toScreen(b.pos[0], b.pos[1]), s = OVERLAY ? overlayUnit() * 1.9 : px(44, 18);
     const label = b.kind === "sentry" && b.mini ? "MS" : (b.kind[0] || "?").toUpperCase() + (b.level || 1);
     ctx.save();
     if (b.building) ctx.globalAlpha = 0.55;
     if (b.kind === "sentry") {
-      const target = b.attacking && b.target != null ? lastPlayers.find(p => p.id === b.target && p.alive && p.pos) : null;
+      const target = b.attacking && b.target != null ? state.lastPlayers.find(p => p.id === b.target && p.alive && p.pos) : null;
       if (target) {
         const [tx, ty] = toScreen(target.pos[0], target.pos[1]);
         ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(tx, ty);
@@ -199,13 +201,13 @@ function drawBuildings(snap) {
 // point (TF2's rule); untied ones always are. Of the enabled rooms a team spawns in the most
 // forward one: the one farthest from its main spawn (the room with the most spawn points).
 // Once a team has been seen spawning since the last change of ownership, that room wins.
-let spawnSeen = {}, ownersKey = "", ownersChanged = 0;
+let ownersKey = "", ownersChanged = 0;
 const inRoom = (r, p) => p[0] >= r.min[0] && p[0] <= r.max[0] && p[1] >= r.min[1] && p[1] <= r.max[1] && p[2] >= r.min[2] - 64 && p[2] <= r.max[2] + 64;
 const centre = r => [(r.min[0] + r.max[0]) / 2, (r.min[1] + r.max[1]) / 2];
-function noteSpawn(ev) {
+export function noteSpawn(ev) {
   const rooms = state.spawns?.rooms || [];
   const i = ev.pos ? rooms.findIndex(r => r.team === ev.team && inRoom(r, ev.pos)) : -1;
-  if (i >= 0) spawnSeen[ev.team] = { room: i, at: performance.now() };
+  if (i >= 0) state.spawnSeen[ev.team] = { room: i, at: performance.now() };
 }
 function activeRooms(snap) {
   const s = state.spawns;
@@ -217,7 +219,7 @@ function activeRooms(snap) {
   const live = s.points.filter(p => !p.disabled && (p.point == null || owner[p.point] === undefined || owner[p.point] === p.team));
   const active = new Set();
   for (const team of ["red", "blue"]) {
-    const seen = spawnSeen[team];
+    const seen = state.spawnSeen[team];
     if (seen && seen.at >= ownersChanged) { active.add(seen.room); continue; }
     const rooms = s.rooms.map((r, i) => ({ r, i, n: s.points.filter(p => p.team === team && inRoom(r, p.pos)).length })).filter(x => x.r.team === team);
     const main = rooms.reduce((a, b) => (b.n > (a?.n ?? -1) ? b : a), null);
@@ -229,7 +231,7 @@ function activeRooms(snap) {
   }
   return active;
 }
-function drawSpawnRooms(snap) {
+export function drawSpawnRooms(snap) {
   const rooms = state.spawns?.rooms;
   if (!rooms?.length) return;
   const active = activeRooms(snap);

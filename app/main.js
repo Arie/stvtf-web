@@ -1,4 +1,13 @@
-"use strict";
+import { OVERLAY, canvas, ctx, state, renderTick } from "./core.js";
+import { fireEvents } from "./events.js";
+import { updatePanel, renderScoreboard } from "./hud.js";
+import { layerOn, renderSettings } from "./layers.js";
+import { drawObjectives, drawCapAreas, drawOnPoint, drawFlags, drawBuildings, drawSpawnRooms } from "./objectives.js";
+import { drawMarks, drawPacks, drawJumpTrails } from "./overkill.js";
+import { drawProjectiles, drawHealBeams, drawPlayers, drawEffects } from "./players.js";
+import { openStream } from "./stream.js";
+import { frameMap, drawBackground, followAction } from "./view.js";
+
 // ---------- interpolation
 function lerpAngle(a, b, t) { let d = ((b - a + 540) % 360) - 180; return a + d * t; }
 function frameAt(tick) {
@@ -59,7 +68,7 @@ function draw() {
     // Frame once the map's spawn points are in (or known to be missing).
     if (!state.framed && state.mapData) frameMap();
     if (state.framed && state.autoZoom && state.follow == null) followAction(f.players);
-    lastPlayers = f.players;
+    state.lastPlayers = f.players;
     // Dead players are reported where they died (no position if before we connected).
     const target = state.follow != null && f.players.find(p => p.id === state.follow);
     if (target && target.pos) {

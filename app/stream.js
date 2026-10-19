@@ -1,4 +1,11 @@
-"use strict";
+import { $, state, observeTick, setStatus } from "./core.js";
+import { killiconsLoaded, CHAT_TYPES, chat, feedEvent } from "./feed.js";
+import { hudNodes } from "./hud.js";
+import { setFollow } from "./input.js";
+import { detailNeeded } from "./layers.js";
+import { cartState } from "./objectives.js";
+import { loadMap } from "./view.js";
+
 // ---------- incoming stream
 // Next to the page, so a match at /w/<id>/ (and its /w/<id>/overlay) reads its own events.
 const EVENTS_URL = location.pathname.replace(/(overlay|index\.html)?$/, "") + "events";
@@ -6,7 +13,7 @@ const EVENTS_URL = location.pathname.replace(/(overlay|index\.html)?$/, "") + "e
 // than adding it twice (a deploy or a network blip reconnects).
 let opened = false;
 let es = null;
-function openStream() {
+export function openStream() {
   es?.close();
   const s = es = new EventSource(EVENTS_URL + (detailNeeded() ? "?detail=1" : ""));
   s.onmessage = e => handle(JSON.parse(e.data));
@@ -75,7 +82,7 @@ function handle(m) {
 // A map change (or a signon restart) starts from nothing: drop everything from the old map.
 function resetMatch(keepFollow = false) {
   state.snaps = []; state.events = []; state.effects = []; state.marks = []; state.scorches = []; state.trails = []; state.packsTaken.clear(); state.tickOffset = null; state.lastTick = 0;
-  state.players.clear(); cartState.clear(); lastPlayers = []; state.clock = ""; lastScores = null; spawnSeen = {};
+  state.players.clear(); cartState.clear(); state.lastPlayers = []; state.clock = ""; state.lastScores = null; state.spawnSeen = {};
   if (state.follow != null && !keepFollow) setFollow(null);
   $("hud-blue").replaceChildren(); $("hud-red").replaceChildren(); hudNodes.clear(); $("cps").innerHTML = "";
   $("scoreboard").hidden = true;

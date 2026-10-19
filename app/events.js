@@ -1,11 +1,16 @@
-"use strict";
+import { MS_PER_TICK, state } from "./core.js";
+import { banner, teamName, pointName, flagName, chat, feedEvent } from "./feed.js";
+import { layerOn } from "./layers.js";
+import { noteSpawn } from "./objectives.js";
+import { addScorch, nearFreshScorch } from "./overkill.js";
+
 // ---------- events become effects when playback reaches their tick
 // Detail lines can be a while behind (a hidden tab holds the page back): late ones are dropped.
-const MARK_LIFE_MS = 60000, MARK_CAP = 2000, SCORCH_CAP = 300, SCORCH_R = 65, PACK_REACH = 128, PACK_RESPAWN_MS = 10000;
+export const MARK_LIFE_MS = 60000, MARK_CAP = 2000, SCORCH_CAP = 300, SCORCH_R = 65, PACK_REACH = 128, PACK_RESPAWN_MS = 10000;
 let eventTick = 0;
 const lagMs = ev => Math.max(0, (eventTick - ev.tick) * MS_PER_TICK);
 const stale = (ev, ms) => lagMs(ev) > ms;
-function fireEvents(tick, byId) {
+export function fireEvents(tick, byId) {
   eventTick = tick;
   const due = [];
   state.events = state.events.filter(ev => (ev.tick <= tick ? (due.push(ev), false) : true));

@@ -1,6 +1,6 @@
 /* Bundled, so the HUD looks the same everywhere instead of whatever the viewer has installed. */
-@font-face { font-family: "HUD Condensed"; src: url("../fonts/RobotoCondensed-Regular.ttf") format("truetype"); font-weight: 400; }
-@font-face { font-family: "HUD Condensed"; src: url("../fonts/RobotoCondensed-Bold.ttf") format("truetype"); font-weight: 700; }
+@font-face { font-family: "HUD Condensed"; src: url("../../fonts/RobotoCondensed-Regular.ttf") format("truetype"); font-weight: 400; }
+@font-face { font-family: "HUD Condensed"; src: url("../../fonts/RobotoCondensed-Bold.ttf") format("truetype"); font-weight: 700; }
 :root {
   --bg: #15171a; --panel: #1e2125; --line: #2c3036; --text: #d8dadd; --dim: #8a9099;
   --red: #d0453f; --blue: #4f8fc0; --red-soft: #d0453f33; --blue-soft: #4f8fc033;

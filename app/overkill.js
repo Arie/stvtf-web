@@ -1,4 +1,7 @@
-"use strict";
+import { ctx, state } from "./core.js";
+import { MARK_LIFE_MS, SCORCH_CAP, SCORCH_R } from "./events.js";
+import { toScreen, px } from "./view.js";
+
 // Flat scorch craters: a few pre-rendered ragged sprites, drawn scaled and rotated.
 const scorchSprites = (() => {
   const N = 4, S = 128, c = S / 2, out = [];
@@ -16,14 +19,14 @@ const scorchSprites = (() => {
   }
   return out;
 })();
-function addScorch(pos, t0) {
+export function addScorch(pos, t0) {
   const h = Math.abs(Math.imul(Math.round(pos[0]) * 73856093 ^ Math.round(pos[1]) * 19349663, 2654435761)) >>> 0;
   state.scorches.push({ pos, t0, v: h % scorchSprites.length, rot: (h >>> 8) % 628 / 100 });
   if (state.scorches.length > SCORCH_CAP) state.scorches.splice(0, state.scorches.length - SCORCH_CAP);
   state.marks = state.marks.filter(m => !(Math.abs(m.t0 - t0) < 500 && Math.hypot(m.pos[0] - pos[0], m.pos[1] - pos[1]) < 40));
 }
 // The explosion's own blast decal would put a dot on its crater.
-function nearFreshScorch(pos, now) {
+export function nearFreshScorch(pos, now) {
   for (let i = state.scorches.length - 1; i >= 0; i--) {
     const s = state.scorches[i];
     if (now - s.t0 > 500) break;
@@ -45,7 +48,7 @@ function drawScorches(now) {
   }
 }
 
-function drawMarks() {
+export function drawMarks() {
   const now = performance.now();
   drawScorches(now);
   while (state.marks.length && now - state.marks[0].t0 >= MARK_LIFE_MS) state.marks.shift();
@@ -60,7 +63,7 @@ function drawMarks() {
 }
 
 // Every pack, solid when available and a faint outline while taken.
-function drawPacks() {
+export function drawPacks() {
   const packs = state.geometry?.packs, now = performance.now();
   if (!packs) return;
   for (const i of state.packsTaken.keys()) if (!packs[i]) state.packsTaken.delete(i);
@@ -144,7 +147,7 @@ function drawPacks() {
 }
 
 // Blast-jump trails from the interpolated positions: dark team shade off the ground to a bright one at the peak.
-function drawJumpTrails(players) {
+export function drawJumpTrails(players) {
   const now = performance.now(), byId = new Map(players.map(p => [p.id, p]));
   state.trails = state.trails.filter(t => !t.end || now - t.end < 2000);
   ctx.save(); ctx.lineCap = "round"; ctx.lineJoin = "round";

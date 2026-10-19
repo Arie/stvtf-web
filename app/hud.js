@@ -1,11 +1,13 @@
-"use strict";
+import { MS_PER_TICK, TEAM, CLASS, byClass, ICONS, $, OVERLAY, OPT, state } from "./core.js";
+import { layerOn } from "./layers.js";
+
 // ---------- HUD and header, refreshed a few times per second
 const UBER_LABEL = { uber: "ÜBER", kritz: "KRITZ", quickfix: "QUICK-FIX", vaccinator_bullet: "VACC · BULLET", vaccinator_blast: "VACC · BLAST", vaccinator_fire: "VACC · FIRE" };
-const MEDIGUN_NAME = { medigun: "Medi Gun", kritzkrieg: "Kritzkrieg", quickfix: "Quick-Fix", vaccinator: "Vaccinator" };
+export const MEDIGUN_NAME = { medigun: "Medi Gun", kritzkrieg: "Kritzkrieg", quickfix: "Quick-Fix", vaccinator: "Vaccinator" };
 
 // Cards and meters are kept and updated in place: rebuilding them would restart their
 // animations (the über stripes) several times a second.
-const hudNodes = new Map();
+export const hudNodes = new Map();
 function node(key, html) {
   let el = hudNodes.get(key);
   if (!el) {
@@ -25,7 +27,7 @@ function weaponInfo(p) {
   if (!layerOn("loadout") || !p.alive || !p.weapon) return null;
   if (!itemImages) {
     itemImages = {};
-    fetch("backpack/items.json").then(r => r.json()).then(j => { itemImages = j; lastPanel = 0; }).catch(() => {});
+    fetch("backpack/items.json").then(r => r.json()).then(j => { itemImages = j; state.lastPanel = 0; }).catch(() => {});
     return null;
   }
   const img = itemImages[p.weapon.item];
@@ -78,11 +80,10 @@ function placeChildren(box, nodes) {
   if (!same) box.replaceChildren(...nodes);
 }
 
-let lastPanel = 0;
-function updatePanel(players, snap) {
+export function updatePanel(players, snap) {
   const now = performance.now();
-  if (now - lastPanel < 250) return;
-  lastPanel = now;
+  if (now - state.lastPanel < 250) return;
+  state.lastPanel = now;
   for (const team of ["blue", "red"]) {
     const list = players.filter(p => p.team === team).sort(byClass);
     placeChildren($("hud-" + team), [...list.map(card), ...list.filter(p => p.class === "medic").map(chargeMeter)]);
@@ -96,9 +97,9 @@ function clock(secs) {
   const s = Math.max(0, Math.ceil(secs));
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 }
-function mmss(secs) { return `${Math.floor(secs / 60)}:${String(Math.floor(secs % 60)).padStart(2, "0")}`; }
+export function mmss(secs) { return `${Math.floor(secs / 60)}:${String(Math.floor(secs % 60)).padStart(2, "0")}`; }
 function setText(id, text) { const el = $(id); if (el.textContent !== text) el.textContent = text; }
-function renderScoreboard(snap, tick) {
+export function renderScoreboard(snap, tick) {
   $("scoreboard").hidden = OVERLAY && OPT.get("score") !== "1";
   // CTF counts the round in captured intelligence, like TF2's CTF HUD; maps with a neutral flag
   // (bball, special delivery) keep the team score.

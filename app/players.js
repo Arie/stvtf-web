@@ -1,5 +1,8 @@
-"use strict";
-function drawProjectiles(list) {
+import { TEAM, CLASS, icon, OVERLAY, OPT, overlayUnit, uiScale, ctx, state } from "./core.js";
+import { layerOn } from "./layers.js";
+import { toScreen, screenAngle, px, playerRad } from "./view.js";
+
+export function drawProjectiles(list) {
   // The overlay sizes projectiles from its panel like the players, a little larger than their
   // usual minimum, so they read at minimap scale.
   const size = (units, min) => (OVERLAY ? (min * overlayUnit()) / 9 : px(units, min));
@@ -130,7 +133,7 @@ function drawUberRing(p, x, y, rad, col) {
   ctx.restore();
 }
 
-function drawHealBeams(players, byId) {
+export function drawHealBeams(players, byId) {
   for (const m of players) {
     const g = m.medigun;
     if (!m.alive || !g || g.target == null) continue;
@@ -148,7 +151,7 @@ function drawHealBeams(players, byId) {
   }
 }
 
-function drawPlayers(players) {
+export function drawPlayers(players) {
   const alive = [];
   // The followed player is drawn last, so their dot and name are on top.
   players = [...players].sort((a, b) => (a.id === state.follow) - (b.id === state.follow));
@@ -286,7 +289,7 @@ function drawFlames(p, x, y, rad, a) {
   ctx.fillStyle = g; ctx.fill();
 }
 
-function drawEffects(byId) {
+export function drawEffects(byId) {
   const now = performance.now();
   state.effects = state.effects.filter(e => now - e.t0 < e.life);
   for (const e of state.effects) {
