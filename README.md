@@ -165,7 +165,7 @@ sets the directory (default `backpack`, `/usr/share/stvtf/backpack` in the Docke
 - `src/main.rs`: the SourceTV watcher thread, a small HTTP server (page, `/events`, `/map/NAME`).
 - `src/bsp.rs`: BSP reading (including LZMA-compressed lumps), top-down geometry, and the
   spawn rooms and spawn points (with their control point) served with it on `/map/NAME`.
-- `index.html`: the whole page (canvas, no build step), embedded in the binary.
+- `index.html` and `app/`: the page, its stylesheet and plain scripts (canvas, no build step), embedded in the binary.
 
 ## Tests
 

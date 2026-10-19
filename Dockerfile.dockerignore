@@ -10,6 +10,7 @@
 !stvtf-web/rust-toolchain.toml
 !stvtf-web/src
 !stvtf-web/index.html
+!stvtf-web/app
 !stvtf-web/landing.html
 !stvtf-web/icons
 !stvtf-web/killicons

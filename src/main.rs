@@ -34,6 +34,25 @@ stvtf-web: live top-down viewer of a TF2 match in the browser
 
 const INDEX: &str = include_str!("../index.html");
 const LANDING: &str = include_str!("../landing.html");
+const CSS: &str = "text/css; charset=utf-8";
+const JS: &str = "text/javascript; charset=utf-8";
+/// The page's stylesheet and scripts, served at `/app/`. The scripts share one global scope, so `index.html`
+/// loads them in order and `main.js` starts the page.
+const APP: [(&str, &str, &[u8]); 13] = [
+    ("style.css", CSS, include_bytes!("../app/style.css")),
+    ("core.js", JS, include_bytes!("../app/core.js")),
+    ("layers.js", JS, include_bytes!("../app/layers.js")),
+    ("stream.js", JS, include_bytes!("../app/stream.js")),
+    ("view.js", JS, include_bytes!("../app/view.js")),
+    ("input.js", JS, include_bytes!("../app/input.js")),
+    ("events.js", JS, include_bytes!("../app/events.js")),
+    ("feed.js", JS, include_bytes!("../app/feed.js")),
+    ("objectives.js", JS, include_bytes!("../app/objectives.js")),
+    ("overkill.js", JS, include_bytes!("../app/overkill.js")),
+    ("players.js", JS, include_bytes!("../app/players.js")),
+    ("hud.js", JS, include_bytes!("../app/hud.js")),
+    ("main.js", JS, include_bytes!("../app/main.js")),
+];
 /// How long a match nobody watches keeps its `SourceTV` connection.
 const WARM: &str = include_str!("../maps.txt");
 const LINGER: Duration = Duration::from_secs(180);
@@ -375,7 +394,9 @@ impl Drop for Stream<'_> {
 impl App {
     /// A page with its links resolved under `base`.
     fn page(&self, html: &str) -> Vec<u8> {
-        html.replace(r#"<base href="/">"#, &format!(r#"<base href="{}/">"#, self.base)).into_bytes()
+        html.replace(r#"<base href="/">"#, &format!(r#"<base href="{}/">"#, self.base))
+            .replace("?v=dev\"", &format!("?v={}\"", app_version()))
+            .into_bytes()
     }
 
     /// Whether a match being watched is on `map`: only those maps are fetched and built on request.
@@ -496,6 +517,10 @@ fn serve(mut s: TcpStream, app: &App) -> Result<()> {
             Some((_, svg)) => respond(&mut s, "200 OK", "image/svg+xml", svg)?,
             None => respond(&mut s, "404 Not Found", "text/plain", b"not found")?,
         },
+        (_, p) if p.starts_with("/app/") => match APP.iter().find(|(name, ..)| p[5..] == **name) {
+            Some((_, ctype, body)) => respond_cached(&mut s, ctype, body)?,
+            None => respond(&mut s, "404 Not Found", "text/plain", b"not found")?,
+        },
         (_, p) if p.starts_with("/backpack/") => serve_backpack(&mut s, app, &p[10..])?,
         (_, p) if p.starts_with("/overview/") || p.starts_with("/map/") => serve_cached(&mut s, app, p)?,
         _ => respond(&mut s, "404 Not Found", "text/plain", b"not found")?,
@@ -578,6 +603,18 @@ fn warm(app: &App) {
             eprintln!("stvtf-web: {name}: {e}");
         }
     }
+}
+
+/// Changes whenever a page file does, so browsers holding `/app/` files for a day fetch new ones after a deploy.
+fn app_version() -> &'static str {
+    static VERSION: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    VERSION.get_or_init(|| {
+        let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+        for b in APP.iter().flat_map(|(.., body)| body.iter()) {
+            h = (h ^ u64::from(*b)).wrapping_mul(0x0100_0000_01b3);
+        }
+        format!("{h:016x}")
+    })
 }
 
 /// A file that never changes for a given build, so the browser keeps it for a day.
@@ -938,7 +975,7 @@ mod tests {
         assert!(location.starts_with("/w/") && location.ends_with('/'), "{location}");
         assert_eq!(post_watch(&app, "192.0.2.1:27020+tv").lines().find_map(|l| l.strip_prefix("Location: ")), Some(location.as_str()));
         let page = request_to(&app, format!("GET {location} HTTP/1.1\r\n\r\n").as_bytes()).1;
-        assert!(page.starts_with("HTTP/1.1 200") && page.contains("EventSource"), "{page}");
+        assert!(page.starts_with("HTTP/1.1 200") && page.contains("app/main.js"), "{page}");
         let bare = request_to(&app, format!("GET {} HTTP/1.1\r\n\r\n", location.trim_end_matches('/')).as_bytes()).1;
         assert!(bare.starts_with("HTTP/1.1 308"), "{bare}");
         assert!(request_to(&app, b"GET /w/nope/ HTTP/1.1\r\n\r\n").1.starts_with("HTTP/1.1 404"));
@@ -1080,6 +1117,24 @@ mod tests {
         assert_eq!(types(&detail), ["heal", "kill"]);
         assert_eq!(hub.lock().unwrap().history.len(), 1);
         assert_eq!(types(&subscribe(&hub, true)), ["kill"], "detail is not replayed");
+    }
+
+    #[test]
+    fn serves_the_page_files_it_links() {
+        let a = app(Matches::One(SharedHub::default()));
+        let get = |path: &str| request_to(&a, format!("GET {path} HTTP/1.1\r\nHost: x\r\n\r\n").as_bytes()).1;
+        let page = get("/");
+        let linked: Vec<&str> = page.split("\"app/").skip(1).map(|r| r.split('"').next().unwrap()).collect();
+        assert_eq!(linked.len(), APP.len(), "{linked:?}");
+        for link in linked {
+            let (name, v) = link.split_once("?v=").unwrap();
+            assert_eq!(v, app_version());
+            let (_, ctype, _) = APP.iter().find(|(n, ..)| *n == name).unwrap();
+            let file = get(&format!("/app/{link}"));
+            assert!(file.starts_with("HTTP/1.1 200 OK") && file.contains("max-age=86400"), "{name}");
+            assert!(file.contains(&format!("Content-Type: {ctype}")), "{name}");
+        }
+        assert!(get("/app/missing.js").starts_with("HTTP/1.1 404"));
     }
 
     #[test]
