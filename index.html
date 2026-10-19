@@ -1215,7 +1215,7 @@ function drawPacks() {
       }
     } else if (k.size === "small") {
       // pill bottle: white cap, teal body with a white label band and a red cross
-      const bw = s * 0.62, ly = y + s * 0.46, lh = s * 0.28;
+      const bw = s * 0.62, ly = y + s * 0.275, lh = s * 0.28;
       shape(x - bw, y - s * 0.3, bw * 2, s * 1.15, s * 0.2, "#1f8a8f");
       shape(x - bw, ly - lh, bw * 2, lh * 2, s * 0.06, "#ecebe4");
       cross(x, ly, s * 0.22, s * 0.08, "#c0262e");
@@ -1487,7 +1487,7 @@ function drawUberRing(p, x, y, rad, col) {
   if (p.ubered === "uber") {
     const base = TEAM[p.team], pulse = 0.5 + 0.5 * Math.sin(t * 5);
     const tint = "#" + [1, 3, 5].map((i) => Math.round(parseInt(base.substr(i, 2), 16) * 0.5 + 128).toString(16).padStart(2, "0")).join("");
-    const lw = OVERLAY ? Math.max(4, rad * 0.4) : 7, r0 = rad + 3 + lw / 2, ri = r0 - lw / 2, ro = r0 + lw / 2;
+    const lw = OVERLAY ? Math.max(3, rad * 0.3) : 5, r0 = rad + 3 + lw / 2, ri = r0 - lw / 2, ro = r0 + lw / 2;
     ctx.beginPath(); ctx.arc(x, y, r0, 0, Math.PI * 2);
     ctx.shadowColor = base; ctx.shadowBlur = 10 + 8 * pulse;
     ctx.strokeStyle = "#0b0c0e"; ctx.lineWidth = lw + 3; ctx.stroke();
