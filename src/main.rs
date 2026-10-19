@@ -281,6 +281,7 @@ fn serve(mut s: TcpStream, app: &App) -> Result<()> {
     let (path, query) = target.split_once('?').unwrap_or((target, ""));
     let html = "text/html; charset=utf-8";
     match (&app.matches, path) {
+        (_, "/up") => respond(&mut s, "200 OK", "text/plain", b"ok")?,
         (Matches::One(_), "/" | "/index.html" | "/overlay") => respond(&mut s, "200 OK", html, &app.page(INDEX))?,
         (Matches::One(hub), "/events") => stream(&mut s, hub)?,
         (Matches::Many(_), "/" | "/watch") if app.keys.is_some() => {

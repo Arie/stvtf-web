@@ -25,6 +25,10 @@ site. Matches then start only from the site's `/start?t=TOKEN` links: the token 
 SourceTV password in it is never readable in a URL, and a user (`owner`) watches one match at
 a time; a null owner is unlimited.
 
+`Dockerfile` builds that server, with the directory holding both repositories as context:
+`docker build -f stvmap-web/Dockerfile .` (`Dockerfile.dockerignore` keeps the context to the
+two crates). It listens on 8080, keeps the map cache in `/data` and answers `/up` for health checks.
+
 The connect string can be as serveme.tf shows it (`connect HOST:PORT; password "tv"`),
 `HOST:PORT tv`, `HOST; password tv` or just `HOST`. Without a port it uses 27020; given a
 game port, it tries game port + 5.

@@ -1,0 +1,16 @@
+# The context is the parent directory: send only the two crates' sources.
+*
+!stvmap/Cargo.toml
+!stvmap/Cargo.lock
+!stvmap/rust-toolchain.toml
+!stvmap/src
+!stvmap/assets
+!stvmap-web/Cargo.toml
+!stvmap-web/Cargo.lock
+!stvmap-web/rust-toolchain.toml
+!stvmap-web/src
+!stvmap-web/index.html
+!stvmap-web/landing.html
+!stvmap-web/icons
+!stvmap-web/killicons
+!stvmap-web/fonts
