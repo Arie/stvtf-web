@@ -1171,7 +1171,7 @@ function drawPacks() {
     if (until !== undefined && !taken) state.packsTaken.delete(i);
     const [x, y] = toScreen(k.pos[0], k.pos[1]);
     const s = px(k.size === "small" ? 22 : k.size === "medium" ? 30 : 40, 5);
-    ctx.globalAlpha = taken ? 0.6 : 1;
+    ctx.globalAlpha = taken ? 0.3 : 1;
     const health = k.kind === "health", ink = taken ? "#f2f0e6" : "#0b0c0e";
     ctx.strokeStyle = ink;
     const shape = (bx, by, bw, bh, r, fill) => {
