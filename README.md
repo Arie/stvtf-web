@@ -25,6 +25,10 @@ site. Matches then start only from the site's `/start?t=TOKEN` links: the token 
 SourceTV password in it is never readable in a URL, and a user (`owner`) watches one match at
 a time; a null owner is unlimited.
 
+`--demo MATCH.jsonl[.gz]` adds a fixed match at `/w/demo/`: a saved `stvmap` output played on
+a loop, to show the viewer off without a live game. It needs no token, is never disconnected
+and does not count towards `--max-matches`.
+
 `Dockerfile` builds that server, with the directory holding both repositories as context:
 `docker build -f stvmap-web/Dockerfile .` (`Dockerfile.dockerignore` keeps the context to the
 two crates). It listens on 8080, keeps the map cache in `/data` and answers `/up` for health checks.

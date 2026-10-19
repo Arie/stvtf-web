@@ -19,6 +19,8 @@ pub struct Session {
     password: String,
     /// Who started it, for the one-match-per-user limit; None is unlimited.
     owner: Option<String>,
+    /// A fixed session (the demo): always there, outside the match limit.
+    pinned: bool,
     stop: AtomicBool,
     /// Set when the watcher gave up (a wrong password, say) or was stopped.
     done: AtomicBool,
@@ -82,7 +84,8 @@ impl Sessions {
             bail!("{target} is not a public address");
         }
         let mut map = self.lock();
-        if let Some(s) = map.values().find(|s| s.server == server && s.password == password && !s.done.load(Ordering::Relaxed)) {
+        if let Some(s) = map.values().find(|s| !s.pinned && s.server == server && s.password == password && !s.done.load(Ordering::Relaxed))
+        {
             return Ok(s.clone());
         }
         if let Some(o) = owner {
@@ -93,7 +96,7 @@ impl Sessions {
                 }
             }
         }
-        if map.len() >= self.max {
+        if map.values().filter(|s| !s.pinned).count() >= self.max {
             bail!("already watching {} matches, the most this server does", self.max);
         }
         let s = Arc::new(Session {
@@ -102,6 +105,7 @@ impl Sessions {
             server,
             password,
             owner: owner.map(str::to_string),
+            pinned: false,
             stop: AtomicBool::new(false),
             done: AtomicBool::new(false),
             viewers: AtomicUsize::new(0),
@@ -122,6 +126,27 @@ impl Sessions {
         Ok(s)
     }
 
+    /// A fixed session at `/w/<id>/` fed by `feed` (a recorded match on a loop, say). It is never
+    /// reaped and nothing waits for its thread.
+    pub fn pin(&self, id: &str, feed: impl FnOnce(SharedHub) + Send + 'static) {
+        let hub = SharedHub::default();
+        let s = Arc::new(Session {
+            id: id.to_string(),
+            hub: hub.clone(),
+            server: SocketAddr::from(([0, 0, 0, 0], 0)),
+            password: String::new(),
+            owner: None,
+            pinned: true,
+            stop: AtomicBool::new(false),
+            done: AtomicBool::new(false),
+            viewers: AtomicUsize::new(0),
+            idle_since: Mutex::new(None),
+            thread: Mutex::new(None),
+        });
+        std::thread::spawn(move || feed(hub));
+        self.lock().insert(id.to_string(), s);
+    }
+
     /// Stops and forgets the sessions nobody has watched for `linger`. Their watchers disconnect
     /// on their own; nothing waits for them.
     pub fn reap(&self, linger: Duration) {
@@ -129,6 +154,7 @@ impl Sessions {
             let mut map = self.lock();
             let idle: Vec<String> = map
                 .values()
+                .filter(|s| !s.pinned)
                 .filter(|s| s.idle_since.lock().unwrap_or_else(PoisonError::into_inner).is_some_and(|t| t.elapsed() >= linger))
                 .map(|s| s.id.clone())
                 .collect();
@@ -225,6 +251,17 @@ mod tests {
         let other = s.open("192.0.2.3:27020 tv", Some("u2")).unwrap();
         let unlimited = s.open("192.0.2.4:27020 tv", None).unwrap();
         assert!(s.get(&b.id).is_some() && s.get(&other.id).is_some() && s.get(&unlimited.id).is_some());
+        s.stop_all();
+    }
+
+    #[test]
+    fn a_pinned_session_stays_and_does_not_count() {
+        let s = Sessions::new(false, 1, 20.0);
+        s.pin("demo", |_| {});
+        s.reap(Duration::ZERO);
+        assert!(s.get("demo").is_some());
+        let m = s.open("192.0.2.1:27020 tv", None).unwrap();
+        assert!(s.get(&m.id).is_some(), "the demo is outside the match limit");
         s.stop_all();
     }
 

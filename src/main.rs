@@ -28,7 +28,7 @@ stvmap-web: live top-down viewer of a TF2 match in the browser
 
   stvmap-web HOST:TVPORT [--password tv] [--listen 127.0.0.1:8080] [--hz 20] [--cache DIR]
   stvmap-web HOST[:PORT] [tv] / 'connect HOST:PORT; password \"tv\"'
-  stvmap-web [--public] [--max-matches 20] [--base-path /live]   (watch any server: paste a connect string on the page)
+  stvmap-web [--public] [--max-matches 20] [--base-path /live] [--demo MATCH.jsonl[.gz]]   (watch any server: paste a connect string on the page)
      With STVMAP_TOKEN_KEY (64 hex digits) set, matches start only from a site's encrypted /start?t= links.
   stvmap-web --replay FILE.jsonl [--listen 127.0.0.1:8080]   (stvmap output, at game speed)";
 
@@ -152,10 +152,20 @@ fn subscribe(hub: &SharedHub) -> Receiver<Arc<str>> {
     rx
 }
 
+/// Plays a saved stvmap output (gzipped if it ends in `.gz`) on a loop, each pass as a new match.
 fn replay(hub: &SharedHub, path: &Path) -> Result<()> {
-    loop {
+    for pass in 0.. {
+        if pass > 0 {
+            // A pause between passes, which also keeps a file with (almost) no timing from
+            // looping flat out.
+            std::thread::sleep(Duration::from_secs(3));
+            publish(hub, &serde_json::json!({"type": "status", "state": "map_change"}));
+        }
+        let file = std::fs::File::open(path).with_context(|| format!("opening {}", path.display()))?;
+        let reader: Box<dyn Read> =
+            if path.extension().is_some_and(|e| e == "gz") { Box::new(flate2::read::GzDecoder::new(file)) } else { Box::new(file) };
         let (mut last, mut timed): (Option<u64>, bool) = (None, false);
-        for line in BufReader::new(std::fs::File::open(path)?).lines() {
+        for line in BufReader::new(reader).lines() {
             let v: Value = serde_json::from_str(&line?)?;
             // Live output has wall-clock `time`; offline output (`stvmap replay`) only ticks.
             // Each line waits for the gap since the previous one, capped so map loads and
@@ -174,6 +184,7 @@ fn replay(hub: &SharedHub, path: &Path) -> Result<()> {
             bail!("{}: no line has a time or tick", path.display());
         }
     }
+    Ok(())
 }
 
 fn map_geometry(cache: &Path, name: &str) -> Result<Vec<u8>> {
@@ -427,7 +438,7 @@ fn form_decode(v: &str) -> String {
     String::from_utf8_lossy(&out).into_owned()
 }
 
-const FLAGS: [&str; 7] = ["password", "listen", "hz", "cache", "replay", "max-matches", "base-path"];
+const FLAGS: [&str; 8] = ["password", "listen", "hz", "cache", "replay", "max-matches", "base-path", "demo"];
 const SWITCHES: [&str; 1] = ["public"];
 
 /// Positional arguments and `--name value` options; a mistyped option is an error rather than
@@ -561,7 +572,16 @@ fn main() -> Result<()> {
     } else {
         let max =
             get("max-matches").map(|n| n.parse().with_context(|| format!("--max-matches {n}: not a number"))).transpose()?.unwrap_or(20);
-        Matches::Many(Sessions::new(flags.contains_key("public"), max, hz))
+        let sessions = Sessions::new(flags.contains_key("public"), max, hz);
+        if let Some(file) = get("demo") {
+            let file = PathBuf::from(file);
+            sessions.pin("demo", move |hub| {
+                if let Err(e) = replay(&hub, &file) {
+                    eprintln!("demo: {e:#}");
+                }
+            });
+        }
+        Matches::Many(sessions)
     };
     let keys = std::env::var("STVMAP_TOKEN_KEY").ok().map(|k| token::Keys::from_hex(&k)).transpose()?;
     let base = get("base-path").unwrap_or("").trim_end_matches('/').to_string();
