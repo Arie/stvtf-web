@@ -179,6 +179,7 @@ fn packs(ents: &[Vec<(String, String)>]) -> Vec<Value> {
 }
 
 /// Capture areas (`trigger_capture_area`: their brush model's bounds) and the point each caps.
+/// Payload ones are parented to the cart and move with it, so their bounds are just its start.
 fn cap_areas(data: &[u8]) -> Result<Vec<Value>> {
     let ents = entities(data)?;
     let models = lump(data, LUMP_MODELS)?;
@@ -190,6 +191,7 @@ fn cap_areas(data: &[u8]) -> Result<Vec<Value>> {
     Ok(ents
         .iter()
         .filter(|e| get(e, "classname").as_deref() == Some("trigger_capture_area"))
+        .filter(|e| get(e, "parentname").is_none_or(|p| p.is_empty()))
         .filter_map(|e| {
             let (min, max) = brush_bounds(&models, e)?;
             let point = get(e, "area_cap_point").and_then(|cp| points.iter().find(|(name, _)| name.eq_ignore_ascii_case(&cp)).map(|p| p.1));
@@ -514,6 +516,13 @@ mod tests {
                 .iter()
                 .all(|p| ["small", "medium", "full"].contains(&p["size"].as_str().unwrap()) && p["pos"].as_array().unwrap().len() == 3)
         );
+    }
+
+    #[test]
+    fn payload_capture_areas_follow_the_cart_and_are_skipped() {
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/cache/pl_upward_f12.bsp");
+        let Ok(data) = std::fs::read(path) else { return eprintln!("{path} not downloaded; skipped") };
+        assert_eq!(geometry(&data).unwrap()["cap_areas"], json!([]));
     }
 
     #[test]

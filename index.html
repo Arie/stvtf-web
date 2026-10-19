@@ -1030,7 +1030,7 @@ function drawOnPoint(snap) {
     if (!parts.length) continue;
     const [x, y] = toScreen(o.pos[0], o.pos[1]), half = px(110, 11);
     ctx.save();
-    ctx.font = `800 ${Math.round(11 * uiScale())}px system-ui`; ctx.textAlign = "left"; ctx.textBaseline = "top"; ctx.lineWidth = 3;
+    ctx.font = `800 ${Math.round(Math.max(12 * uiScale(), half * 0.9))}px system-ui`; ctx.textAlign = "left"; ctx.textBaseline = "top"; ctx.lineWidth = 3;
     const texts = parts.map(([t, n, l]) => [`${n} ${l}`, TEAM[t]]);
     const sep = " · ", gap = ctx.measureText(sep).width;
     let cx = x - (texts.reduce((s, t) => s + ctx.measureText(t[0]).width, 0) + gap * (texts.length - 1)) / 2;
