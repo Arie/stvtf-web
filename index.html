@@ -309,15 +309,15 @@ function openStream() {
 
 // Overkill layers; `detail` ones need the hub's high-volume lines (?detail=1). Off by default except caps.
 const LAYERS = {
-  caps: { label: "Capture progress", key: "", def: true, detail: false },
-  heals: { label: "Heal beams", key: "", def: false, detail: true },
-  hits: { label: "Hits and impacts", key: "", def: false, detail: true },
-  marks: { label: "Marks", key: "", def: false, detail: true },
+  caps: { label: "Capture areas", key: "", def: true, detail: false },
+  heals: { label: "Heal numbers", key: "", def: false, detail: true },
+  hits: { label: "Hit markers", key: "", def: false, detail: true },
+  marks: { label: "Bullet holes and scorch marks", key: "", def: false, detail: true },
   jumps: { label: "Jump trails", key: "j", def: false, detail: true },
   pickups: { label: "Pickups", key: "", def: false, detail: true },
-  points: { label: "Point flow", key: "", def: false, detail: false },
-  flow: { label: "Flow", key: "", def: false, detail: false },
-  loadout: { label: "Loadouts", key: "l", def: false, detail: false },
+  points: { label: "Players on points", key: "", def: false, detail: false },
+  flow: { label: "Votes, announcer and voice commands", key: "", def: false, detail: true },
+  loadout: { label: "Weapon in hand", key: "l", def: false, detail: false },
 };
 const layerState = {};
 for (const [name, l] of Object.entries(LAYERS)) {
