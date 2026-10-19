@@ -175,6 +175,10 @@ repository for the `../stvmap` path dependency, using the deploy key in the
 
 ## Credits
 
+From [demos.tf](https://demos.tf) by Robin Appelman: [tf-demo-parser](https://codeberg.org/demostf/parser)
+(MIT or Apache-2.0), which stvmap decodes SourceTV data with, and the map overview images and
+their boundaries, loaded from `maps.demos.tf`.
+
 Class icons (`icons/`) are by lyreix of the TF2Stadium team, licensed
 CC-BY-NC-SA-4.0 (`icons/LICENCE`), taken unmodified from the
 [demos.tf frontend](https://codeberg.org/demostf/frontend), except the heavy's ammo
