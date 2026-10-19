@@ -1062,48 +1062,32 @@ function drawObjectives(snap, tick) {
   }
 }
 
-// Capture areas: an outline in the owner's colour, filled left to right (in the world's x) by the capture.
-function drawCapAreas(snap, tick) {
+// Capture areas: just an outline in the owner's colour; progress is shown on the point square.
+function drawCapAreas(snap) {
   const areas = state.geometry?.cap_areas;
   if (!areas?.length) return;
   const cps = new Map((snap.objectives || []).filter(o => o.kind === "control_point").map(o => [o.index, o]));
   for (const a of areas) {
-    const o = cps.get(a.point);
-    const owner = TEAM[o?.owner] || TEAM.none;
-    const progress = o ? Math.max(0, Math.min(1, o.cap_progress + (o.cap_rate || 0) * Math.max(0, tick - snap.tick) * MS_PER_TICK / 1000)) : 0;
-    const rect = (x0, x1) => {
-      ctx.beginPath();
-      [[x0, a.min[1]], [x1, a.min[1]], [x1, a.max[1]], [x0, a.max[1]]].forEach(([x, y], i) => { const [sx, sy] = toScreen(x, y); (i ? ctx.lineTo : ctx.moveTo).call(ctx, sx, sy); });
-      ctx.closePath();
-    };
     ctx.save();
-    if (o && o.capping_team !== "none" && progress > 0) {
-      rect(a.min[0], a.min[0] + (a.max[0] - a.min[0]) * progress);
-      ctx.fillStyle = TEAM[o.capping_team] + "59"; ctx.fill();
-    }
-    rect(a.min[0], a.max[0]);
-    ctx.strokeStyle = owner + "99"; ctx.lineWidth = OVERLAY ? 1.5 : 2; ctx.stroke();
+    ctx.beginPath();
+    [[a.min[0], a.min[1]], [a.max[0], a.min[1]], [a.max[0], a.max[1]], [a.min[0], a.max[1]]].forEach(([x, y], i) => { const [sx, sy] = toScreen(x, y); (i ? ctx.lineTo : ctx.moveTo).call(ctx, sx, sy); });
+    ctx.closePath();
+    ctx.strokeStyle = (TEAM[cps.get(a.point)?.owner] || TEAM.none) + "99"; ctx.lineWidth = OVERLAY ? 1.5 : 2; ctx.stroke();
     ctx.restore();
   }
 }
 
-// "2 BLU · 1 RED" under each point square.
+// TF2-HUD cap multiplier ("x2") in the bottom-right corner of the point square while it is being capped.
 function drawOnPoint(snap) {
   for (const o of snap.objectives || []) {
     if (o.kind !== "control_point" || !o.on_point) continue;
-    const parts = [["blue", o.on_point.blue, "BLU"], ["red", o.on_point.red, "RED"]].filter(x => x[1] > 0);
-    if (!parts.length) continue;
-    const [x, y] = toScreen(o.pos[0], o.pos[1]), half = px(110, 11);
+    const n = o.capping_team === "red" || o.capping_team === "blue" ? o.on_point[o.capping_team] : 0;
+    if (!(n > 0)) continue;
+    const [x, y] = toScreen(o.pos[0], o.pos[1]), half = px(110, 11), inset = half * 0.1;
     ctx.save();
-    ctx.font = `800 ${Math.round(Math.max(12 * uiScale(), half * 0.9))}px system-ui`; ctx.textAlign = "left"; ctx.textBaseline = "top"; ctx.lineWidth = 3;
-    const texts = parts.map(([t, n, l]) => [`${n} ${l}`, TEAM[t]]);
-    const sep = " · ", gap = ctx.measureText(sep).width;
-    let cx = x - (texts.reduce((s, t) => s + ctx.measureText(t[0]).width, 0) + gap * (texts.length - 1)) / 2;
-    texts.forEach(([t, col], i) => {
-      if (i) { ctx.fillStyle = "#fff"; ctx.strokeText(sep, cx, y + half + 3); ctx.fillText(sep, cx, y + half + 3); cx += gap; }
-      ctx.strokeStyle = "#0b0c0e"; ctx.strokeText(t, cx, y + half + 3); ctx.fillStyle = col; ctx.fillText(t, cx, y + half + 3);
-      cx += ctx.measureText(t).width;
-    });
+    ctx.font = `800 ${Math.round(Math.max(10 * uiScale(), half * 0.5))}px system-ui`; ctx.textAlign = "right"; ctx.textBaseline = "bottom";
+    ctx.lineWidth = 3; ctx.strokeStyle = "#0b0c0e"; ctx.fillStyle = "#fff";
+    ctx.strokeText(`\u00d7${n}`, x + half - inset, y + half - inset); ctx.fillText(`\u00d7${n}`, x + half - inset, y + half - inset);
     ctx.restore();
   }
 }
@@ -1924,7 +1908,7 @@ function draw() {
     const byId = new Map(f.players.map(p => [p.id, p]));
     fireEvents(tick, byId);
     drawSpawnRooms(f.snap);
-    if (layerOn("caps")) drawCapAreas(f.snap, tick);
+    if (layerOn("caps")) drawCapAreas(f.snap);
     drawObjectives(f.snap, tick);
     if (layerOn("points") && !OVERLAY) drawOnPoint(f.snap);
     drawBuildings(f.snap);
