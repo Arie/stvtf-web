@@ -1051,7 +1051,10 @@ function drawCart(o, tick) {
   let cs = cartState.get(o.id);
   if (!cs) cartState.set(o.id, cs = { x: wx, y: wy, h: null });
   const dx = wx - cs.x, dy = wy - cs.y;
-  if (Math.hypot(dx, dy) > 6) {
+  const moved = Math.hypot(dx, dy);
+  // A jump (round reset back to the start) is not travel: keep the heading.
+  if (moved > 300) { cs.x = wx; cs.y = wy; }
+  else if (moved > 6) {
     cs.h = Math.atan2(dy, dx) * 180 / Math.PI + (o.speed < 0 ? 180 : 0);
     cs.x = wx; cs.y = wy;
   }
@@ -1076,6 +1079,7 @@ function drawCart(o, tick) {
   ctx.beginPath(); ctx.roundRect(-L / 2, -W / 2, L, W, W * 0.22);
   ctx.fillStyle = team; ctx.fill(); ctx.strokeStyle = dark; ctx.stroke();
   ctx.restore();
+  ctx.save();
   const R = W * 0.36;
   ctx.fillStyle = "#15171a"; ctx.strokeStyle = dark; ctx.lineWidth = lw;
   ctx.beginPath(); ctx.arc(x, y, R, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
@@ -1090,6 +1094,7 @@ function drawCart(o, tick) {
     ctx.lineWidth = 3; ctx.strokeStyle = dark; ctx.strokeText(t, bx, by);
     ctx.fillStyle = "#fff"; ctx.fillText(t, bx, by);
   }
+  ctx.restore();
 }
 
 function drawObjectives(snap, tick) {
