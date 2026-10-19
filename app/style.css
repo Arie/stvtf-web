@@ -109,6 +109,13 @@ aside h3 { margin: 0 0 6px; font-size: 11px; text-transform: uppercase; letter-s
 .sb-timer b { font-size: 30px; font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; letter-spacing: .02em; }
 .sb-timer span { position: absolute; left: 0; right: 0; top: 3px; text-align: center; font-size: 9px; font-weight: 800; letter-spacing: .14em; color: #ffd166; line-height: 1; }
 .sb-timer.low b { color: #ff6b5a; }
+#scoreboard.koth .sb-timer { width: 170px; }
+.sb-timer .kt { font-style: normal; font-size: 27px; }
+.sb-timer .kt + .kt { margin-left: 12px; }
+.sb-timer .kt.blue { color: color-mix(in srgb, var(--blue) 55%, #fff); }
+.sb-timer .kt.red { color: color-mix(in srgb, var(--red) 55%, #fff); }
+.sb-timer .kt.idle { opacity: .45; }
+.sb-timer .kt.low { color: #ff6b5a; animation: pulse .7s infinite alternate; }
 .sb-timer i { position: absolute; left: 0; right: 0; bottom: 3px; text-align: center; font-style: normal; font-size: 9px;
   font-weight: 800; letter-spacing: .1em; line-height: 1; color: #ffffffb3; font-variant-numeric: tabular-nums; }
 .cps { display: flex; gap: 6px; }

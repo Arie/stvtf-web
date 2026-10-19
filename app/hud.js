@@ -113,13 +113,23 @@ export function renderScoreboard(snap, tick) {
   // Like TF2's HUD: the round timer when one is active, else the map's mp_timelimit; with
   // both, the map time goes underneath.
   const mapLeft = snap.time_left == null ? null : snap.time_left - Math.max(0, tick - snap.tick) * MS_PER_TICK / 1000;
-  setText("timer-main", main ? clock(left(main)) : mapLeft != null ? clock(mapLeft) : "");
-  setText("timer-map", main && mapLeft != null ? `MAP ${clock(mapLeft)}` : "");
+  // King of the hill: each team's timer, side by side in the middle like TF2's HUD; the one
+  // ticking (the team holding the point) bright, the other dimmed.
+  const koth = !main && byTeam("blue") && byTeam("red");
+  if (koth) {
+    const running = ["blue", "red"].some(t => !byTeam(t).paused);
+    setHTML($("timer-main"), ["blue", "red"].map(t => {
+      const tm = byTeam(t), s = left(tm);
+      return `<em class="kt ${t}${running && tm.paused ? " idle" : ""}${!tm.paused && s <= 30 ? " low" : ""}">${clock(s)}</em>`;
+    }).join(""));
+  } else setText("timer-main", main ? clock(left(main)) : mapLeft != null ? clock(mapLeft) : "");
+  $("scoreboard").classList.toggle("koth", !!koth);
+  setText("timer-map", (main || koth) && mapLeft != null ? `MAP ${clock(mapLeft)}` : "");
   // Events are stamped with time into the round, which (unlike the round timer) never jumps.
   const into = snap.round_time == null ? null : snap.round_time + (snap.round === "running" ? Math.max(0, tick - snap.tick) * MS_PER_TICK / 1000 : 0);
   state.clock = into == null ? "" : mmss(into);
-  setText("timer-blue", byTeam("blue") ? clock(left(byTeam("blue"))) : "");
-  setText("timer-red", byTeam("red") ? clock(left(byTeam("red"))) : "");
+  setText("timer-blue", !koth && byTeam("blue") ? clock(left(byTeam("blue"))) : "");
+  setText("timer-red", !koth && byTeam("red") ? clock(left(byTeam("red"))) : "");
   const label = main?.setup ? "SETUP" : ROUND_LABEL[snap.round] ?? "";
   // A paused round timer is not a paused game (KotH, no match started): it just stands still.
   setText("round-label", label || (main && !main.paused && left(main) <= 0 ? "OVERTIME" : ""));
