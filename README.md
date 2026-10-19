@@ -92,7 +92,7 @@ Query options, e.g. `/overlay?names=1&score=1&panel=0.6`:
 
 - A spectator HUD over the map like TF2's: BLU down the left, RED down the right.
   Each player card has the class icon, name, ping, big health number and a health
-  bar; low health pulses, overheal is cyan, dead players are greyed out, and a
+  bar; low health pulses, overheal is light blue, dead players are greyed out, and a
   player under a charge gets a striped card with its type (ÜBER, KRITZ, QUICK-FIX,
   VACC · BULLET/BLAST/FIRE). Every medic has an ÜberCharge meter with their medigun
   (Vaccinator in four pips plus the selected resistance), READY when full and a
@@ -100,9 +100,10 @@ Query options, e.g. `/overlay?names=1&score=1&panel=0.6`:
 - On the map: team-coloured dots with class icon, view direction, health ring, name;
   translucent when cloaked; a heal beam from each medic to their target (thicker
   while charging); a distinct ring per charge type (über glow, kritz crackle,
-  quick-fix pulse, vaccinator shield with its resistance).
+  quick-fix pulse, vaccinator shield with its resistance); small badges for burning, Jarate,
+  Mad Milk, bleeding, marked for death and stun.
 - Projectiles; buildings labelled like the engineer HUD (S1-S3, MS, D1-D3, T1-T3, a ring on
-  teleporter exits, faint while under construction, SAPPED); a sentry's turret turns with
+  teleporter exits, faint while under construction, SAPPED; the team colour drains from the top as health drops); a sentry's turret turns with
   its aim, a dashed line marks its target while attacking and each shot draws a tracer; control
   points as squares like the TF2 HUD (owner colour, filled left to right while being
   captured); the payload cart.

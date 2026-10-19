@@ -63,8 +63,10 @@
   .card .nm small { display: flex; align-items: center; gap: 4px; height: 14px; white-space: nowrap; overflow: hidden; }
   .card .wp { height: 14px; width: auto; max-width: 56px; object-fit: contain; filter: drop-shadow(0 1px 1px #000); }
   .card .clip { color: #fff; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .card .fx { display: inline-block; margin-right: 3px; vertical-align: -1px; width: 8px; height: 8px; border-radius: 50%; box-shadow: 0 0 0 1px #000a; }
+  .card .fx.burn { background: #ff7a1a; } .card .fx.jar { background: #f2d627; } .card .fx.milk { background: #fff; } .card .fx.bleed { background: #d22; }
   .card .nm small span:empty { display: none; }
-  .card.over .hp { color: #9ff0ff; }
+  .card.over .hp { color: #9fd8ff; }
   .card.low .hp { color: #ff6b5a; animation: pulse .7s infinite alternate; }
   .card.dead { filter: grayscale(1) brightness(.55); }
   .card.dead .hp { font-size: 12px; font-weight: 600; letter-spacing: .08em; }
@@ -330,6 +332,7 @@ const LAYERS = {
   points: { label: "Players on points", key: "", def: true, detail: false },
   flow: { label: "Votes, announcer and voice commands", key: "", def: true, detail: true },
   loadout: { label: "Weapon in hand", key: "l", def: true, detail: false },
+  effects: { label: "Status effects", key: "", def: true, detail: false },
 };
 const layerState = {};
 for (const [name, l] of Object.entries(LAYERS)) {
@@ -1088,11 +1091,14 @@ function drawCart(o, tick) {
   ctx.fillStyle = "#ffd25a"; ctx.beginPath(); ctx.arc(x + R * 1.1, y - R * 1.15, Math.max(1.2, R * 0.16), 0, Math.PI * 2); ctx.fill();
   ctx.fillStyle = "#ffffff55"; ctx.beginPath(); ctx.ellipse(x - R * 0.35, y - R * 0.35, R * 0.28, R * 0.18, -Math.PI / 4, 0, Math.PI * 2); ctx.fill();
   if (o.cappers > 0) {
-    const t = `×${o.cappers}`, bx = x + L * 0.62, by = y + L * 0.5;
-    ctx.font = `800 ${Math.round(OVERLAY ? u * 1.1 : Math.max(12 * uiScale(), L * 0.42))}px system-ui`;
-    ctx.textAlign = "center"; ctx.textBaseline = "middle";
-    ctx.lineWidth = 3; ctx.strokeStyle = dark; ctx.strokeText(t, bx, by);
-    ctx.fillStyle = "#fff"; ctx.fillText(t, bx, by);
+    // A pill centred under the cart's lowest edge in screen space, touching it.
+    const t = `×${o.cappers}`, th = screenAngle(cs.h ?? 0), fs = Math.round(OVERLAY ? u * 1.1 : Math.max(12 * uiScale(), L * 0.42));
+    const low = Math.abs(Math.sin(th)) * L / 2 + Math.abs(Math.cos(th)) * W / 2 + lw / 2;
+    ctx.font = `800 ${fs}px system-ui`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    const pw = ctx.measureText(t).width + fs * 0.7, ph = fs * 1.2, py = y + low - lw / 2;
+    ctx.beginPath(); ctx.roundRect(x - pw / 2, py, pw, ph, ph / 2);
+    ctx.fillStyle = dark; ctx.fill(); ctx.strokeStyle = "#fff"; ctx.lineWidth = Math.max(1, lw * 0.6); ctx.stroke();
+    ctx.fillStyle = "#fff"; ctx.fillText(t, x, py + ph / 2 + 0.5);
   }
   ctx.restore();
 }
@@ -1383,8 +1389,14 @@ function drawBuildings(snap) {
       ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + Math.cos(a) * s * 1.2, y + Math.sin(a) * s * 1.2);
       ctx.strokeStyle = "#fff"; ctx.lineWidth = 3; ctx.stroke();
     }
-    ctx.fillStyle = TEAM[b.team] || TEAM.none;
-    ctx.beginPath(); ctx.roundRect(x - s / 2, y - s / 2, s, s, 3); ctx.fill();
+    // The team colour drains from the top as health drops.
+    const hpf = Math.max(0, Math.min(1, b.hp / (b.max_hp || 1)));
+    const tele = b.kind === "teleporter", shape = () => { ctx.beginPath(); if (tele) ctx.arc(x, y, s / 2, 0, Math.PI * 2); else ctx.roundRect(x - s / 2, y - s / 2, s, s, 3); };
+    shape();
+    ctx.fillStyle = "rgba(11,12,14,0.6)"; ctx.fill();
+    ctx.save(); ctx.clip();
+    ctx.fillStyle = TEAM[b.team] || TEAM.none; ctx.fillRect(x - s / 2, y + s / 2 - s * hpf, s, s * hpf);
+    ctx.restore();
     ctx.lineWidth = b.sapped ? 2.5 : 1.5; ctx.strokeStyle = b.sapped ? "#fff" : "#000"; ctx.stroke();
     if (b.kind === "teleporter" && b.entrance === false) {
       ctx.beginPath(); ctx.arc(x, y, s * 0.72, 0, Math.PI * 2); ctx.strokeStyle = TEAM[b.team] || "#fff"; ctx.lineWidth = 2; ctx.stroke();
@@ -1674,6 +1686,11 @@ function drawPlayers(players) {
       ctx.beginPath(); ctx.arc(x, y, rad + 7, 0, Math.PI * 2); ctx.strokeStyle = "#fff"; ctx.lineWidth = 2; ctx.stroke();
     }
   }
+  if (layerOn("effects")) for (const { p, x, y, rad, cloaked } of alive) {
+    if (!p.conds?.length) continue;
+    ctx.globalAlpha = cloaked ? 0.35 : 1;
+    drawStatus(p.conds, p.id, x, y, rad);
+  }
   for (const { p, x, y, rad, cloaked } of alive) {
     ctx.globalAlpha = cloaked ? 0.35 : 1;
     if (!OVERLAY || OPT.get("names") === "1") {
@@ -1685,6 +1702,46 @@ function drawPlayers(players) {
     }
   }
   ctx.globalAlpha = 1;
+}
+
+// Small badges on the dot's top-right arc, one per effect; marked-for-death sits above the dot and
+// stun stars orbit it. Nothing moves the dot or covers its icon and ring.
+function drawStatus(conds, id, x, y, rad) {
+  const t = performance.now() / 1000, r = Math.max(3, rad * 0.4), lw = Math.max(1, r * 0.2);
+  const has = n => conds.includes(n);
+  const drop = (cx, cy, k, fill) => {
+    ctx.beginPath(); ctx.moveTo(cx, cy - k * 1.3);
+    ctx.bezierCurveTo(cx + k * 0.95, cy - k * 0.1, cx + k * 0.9, cy + k, cx, cy + k);
+    ctx.bezierCurveTo(cx - k * 0.9, cy + k, cx - k * 0.95, cy - k * 0.1, cx, cy - k * 1.3);
+    ctx.fillStyle = fill; ctx.fill(); ctx.stroke();
+  };
+  const badges = [];
+  if (has("Burning")) badges.push((cx, cy) => {
+    const f = 1 + 0.18 * Math.sin(t * 17 + id), sway = Math.sin(t * 11 + id) * r * 0.15;
+    drop(cx + sway, cy, r * f, "#ff7a1a"); drop(cx + sway, cy + r * 0.25, r * 0.5 * f, "#ffd23a");
+  });
+  if (has("Urine")) badges.push((cx, cy) => drop(cx, cy, r, "#f2d627"));
+  if (has("MadMilk")) badges.push((cx, cy) => drop(cx, cy, r, "#fff"));
+  if (has("Bleeding")) badges.push((cx, cy) => { drop(cx - r * 0.45, cy - r * 0.2, r * 0.6, "#d22"); drop(cx + r * 0.5, cy + r * 0.3, r * 0.6, "#d22"); });
+  ctx.save(); ctx.lineWidth = lw; ctx.strokeStyle = "#000";
+  const d = rad + r * 0.9 + 3;
+  badges.forEach((draw, i) => {
+    const a = -Math.PI / 4 + i * 0.85;
+    draw(x + Math.cos(a) * d, y + Math.sin(a) * d);
+  });
+  if (has("MarkedForDeath") || has("MarkedForDeathSilent")) {
+    const cx = x, cy = y - rad - r * 1.3 - 3;
+    ctx.beginPath(); ctx.arc(cx, cy, r * 0.95, 0, Math.PI * 2); ctx.fillStyle = "#fff"; ctx.fill(); ctx.stroke();
+    ctx.fillStyle = "#000"; ctx.beginPath();
+    ctx.arc(cx - r * 0.35, cy - r * 0.1, r * 0.25, 0, Math.PI * 2); ctx.arc(cx + r * 0.35, cy - r * 0.1, r * 0.25, 0, Math.PI * 2); ctx.fill();
+  }
+  if (has("Stunned")) for (let i = 0; i < 3; i++) {
+    const a = t * 4 + id + i * Math.PI * 2 / 3, cx = x + Math.cos(a) * rad * 0.9, cy = y - rad * 0.8 + Math.sin(a) * rad * 0.28, k = r * 0.55;
+    ctx.beginPath(); ctx.moveTo(cx, cy - k); ctx.lineTo(cx + k * 0.3, cy - k * 0.3); ctx.lineTo(cx + k, cy); ctx.lineTo(cx + k * 0.3, cy + k * 0.3);
+    ctx.lineTo(cx, cy + k); ctx.lineTo(cx - k * 0.3, cy + k * 0.3); ctx.lineTo(cx - k, cy); ctx.lineTo(cx - k * 0.3, cy - k * 0.3); ctx.closePath();
+    ctx.fillStyle = "#ffe14a"; ctx.fill(); ctx.stroke();
+  }
+  ctx.restore();
 }
 
 // A firing flamethrower: a flickering cone about as long as the flames reach. Crit flames take
@@ -1834,7 +1891,9 @@ function card(p) {
   setText2(el.querySelector(".nm b"), p.name);
   const sub = p.ping != null ? `${p.ping} ms` : "";
   const [subEl, wp, clip] = el.querySelector(".nm small").children;
-  setHTML(subEl, `${p.ubered ? `<span class="tag">${UBER_LABEL[p.ubered] || "ÜBER"}</span>` : ""}${sub}`);
+  const fx = layerOn("effects") ? [["Burning", "burn", "On fire"], ["Urine", "jar", "Jarate"], ["MadMilk", "milk", "Mad Milk"], ["Bleeding", "bleed", "Bleeding"]]
+    .filter(([c]) => p.conds?.includes(c)).map(([, k, t]) => `<i class="fx ${k}" title="${t}"></i>`).join("") : "";
+  setHTML(subEl, `${fx}${p.ubered ? `<span class="tag">${UBER_LABEL[p.ubered] || "ÜBER"}</span>` : ""}${sub}`);
   const w = weaponInfo(p);
   if (w && wp.dataset.img !== w.img) {
     wp.dataset.img = w.img;
