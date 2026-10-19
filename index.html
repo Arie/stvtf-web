@@ -24,7 +24,7 @@
   body { display: grid; grid-template-rows: 1fr; }
   #title { display: flex; gap: 10px; align-items: baseline; padding: 10px 12px; border-bottom: 1px solid var(--line); }
   #title b { font-size: 15px; }
-  .hud, #scoreboard, #follow, #bgtoggle, #autozoom, #sidetoggle, aside { zoom: var(--s); }
+  .hud, #scoreboard, #follow, #bgtoggle, #autozoom, #sidetoggle, #helptoggle, #help, aside { zoom: var(--s); }
   #status.ok { color: #7cc47f; } #status.bad { color: #e0a040; }
   #age { color: var(--dim); margin-left: auto; }
   main { display: grid; grid-template-columns: 1fr auto; min-height: 0; }
@@ -119,9 +119,16 @@
   html.noside aside { display: none; }
   html.nohud .hud, html.nohud #scoreboard, html.noscore #scoreboard { display: none; }
   html.noside main { grid-template-columns: 1fr; grid-template-rows: 1fr; }
-  #sidetoggle, #autozoom { position: absolute; right: 12px; z-index: 3; padding: 5px 10px; border: 0; border-radius: 6px;
+  #sidetoggle, #helptoggle, #autozoom { position: absolute; right: 12px; z-index: 3; padding: 5px 10px; border: 0; border-radius: 6px;
     background: #0b0c0ee6; color: #fff; font: inherit; font-size: 12px; cursor: pointer; }
-  #sidetoggle { top: 12px; font-size: 16px; line-height: 1; padding: 4px 9px; }
+  #sidetoggle, #helptoggle { top: 12px; font-size: 16px; line-height: 1; padding: 4px 9px; }
+  #helptoggle { right: 46px; }
+  #help { position: absolute; top: 44px; right: 12px; z-index: 4; padding: 10px 14px; border-radius: 6px;
+    background: #0b0c0ef2; color: var(--text); font-size: 12px; }
+  #help table { border-collapse: collapse; }
+  #help td { padding: 2px 0; }
+  #help kbd { display: inline-block; min-width: 18px; margin-right: 10px; padding: 1px 5px; border: 1px solid var(--line);
+    border-radius: 4px; text-align: center; font: inherit; color: #fff; }
   #autozoom { bottom: 52px; }
   #bgtoggle { position: absolute; right: 12px; bottom: 12px; z-index: 3; display: flex; padding: 2px; border-radius: 6px; background: #0b0c0ee6; }
   #bgtoggle button { padding: 4px 10px; border-radius: 4px; background: transparent; color: var(--dim); font-size: 12px; }
@@ -130,6 +137,7 @@
   html.overlay, html.overlay body { background: transparent; }
   html.overlay body { display: block; }
   html.overlay header, html.overlay aside, html.overlay .hud, html.overlay #follow, html.overlay #bgtoggle, html.overlay #sidetoggle,
+  html.overlay #helptoggle, html.overlay #help,
   html.overlay #empty, html.overlay #banner { display: none !important; }
   html.overlay main { display: block; height: 100%; }
   html.overlay #stage { position: fixed; inset: 0; border-radius: 14px; background: rgb(11 12 14 / var(--overlay-opacity, .82));
@@ -188,6 +196,18 @@
     <div id="follow" hidden><span>Following <b id="follow-name"></b></span><button id="follow-stop" title="Stop following (Esc)">✕</button></div>
     <button id="autozoom" hidden>Auto zoom</button>
     <button id="sidetoggle" title="Hide events and chat (e)">›</button>
+    <button id="helptoggle" title="Keyboard shortcuts (?)">?</button>
+    <div id="help" hidden>
+      <table>
+        <tr><td><kbd>h</kbd></td><td>Hide or show the player HUD and scores</td></tr>
+        <tr><td><kbd>s</kbd></td><td>Hide or show just the scores</td></tr>
+        <tr><td><kbd>e</kbd></td><td>Hide or show events and chat</td></tr>
+        <tr><td><kbd>g</kbd></td><td>Switch between overview and geometry</td></tr>
+        <tr><td><kbd>o</kbd></td><td>Switch to the broadcast overlay and back</td></tr>
+        <tr><td><kbd>Esc</kbd></td><td>Stop following a player</td></tr>
+        <tr><td><kbd>?</kbd></td><td>Show or hide this list</td></tr>
+      </table>
+    </div>
     <div id="bgtoggle" hidden title="g"><button data-bg="overview" class="on">Overview</button><button data-bg="geometry">Geometry</button></div>
   </div>
   <aside>
@@ -506,7 +526,8 @@ function toggle(cls) {
 window.addEventListener("keydown", e => {
   if (e.ctrlKey || e.metaKey || e.altKey || e.target.closest?.("input, textarea")) return;
   switch (e.key) {
-    case "Escape": setFollow(null); break;
+    case "Escape": setFollow(null); $("help").hidden = true; break;
+    case "?": $("help").hidden = !$("help").hidden; break;
     case "h": toggle("nohud"); break;
     case "s": toggle("noscore"); break;
     case "e": setSidebar(document.documentElement.classList.contains("noside")); break;
@@ -551,6 +572,7 @@ for (const id of ["hud-blue", "hud-red"]) {
   });
 }
 $("follow-stop").addEventListener("click", () => setFollow(null));
+$("helptoggle").addEventListener("click", () => { $("help").hidden = !$("help").hidden; });
 $("autozoom").addEventListener("click", () => setAutoZoom(true));
 $("feed").addEventListener("click", e => {
   const id = Number(e.target.closest(".who[data-id]")?.dataset.id);
