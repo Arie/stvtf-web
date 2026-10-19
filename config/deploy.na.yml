@@ -1,7 +1,7 @@
 servers:
   web:
     hosts: [direct.na.serveme.tf]
-    cmd: "--public --demo /data/demo.jsonl.gz --sessions /data/sessions"
+    cmd: "--public --demo /data/demo.jsonl.gz --sessions /data/sessions --home https://na.serveme.tf/stv"
     # Caps the damage of a runaway map build, so it cannot take serveme.tf down with it.
     options:
       memory: 1g

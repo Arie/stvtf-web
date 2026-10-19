@@ -1,7 +1,7 @@
 servers:
   web:
     hosts: [new.fakkelbrigade.eu]
-    cmd: "--public --demo /data/demo.jsonl.gz --sessions /data/sessions"
+    cmd: "--public --demo /data/demo.jsonl.gz --sessions /data/sessions --home https://serveme.tf/stv"
     # Caps the damage of a runaway map build, so it cannot take serveme.tf down with it.
     options:
       memory: 1g

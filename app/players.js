@@ -385,8 +385,9 @@ export function drawEffects(byId) {
       ctx.beginPath(); ctx.arc(x, y, px(14, 5), 0, Math.PI * 2); ctx.fillStyle = "#ffd36a"; ctx.fill();
     } else if (e.kind === "boom") {
       const [x, y] = toScreen(e.ev.origin[0], e.ev.origin[1]);
-      ctx.beginPath(); ctx.arc(x, y, Math.max(px(146, 6), OVERLAY ? overlayUnit() * 1.2 : 0) * (0.35 + 0.65 * k), 0, Math.PI * 2);
-      ctx.fillStyle = "#ffa04040"; ctx.fill(); ctx.strokeStyle = "#ffb050"; ctx.lineWidth = 2; ctx.stroke();
+      // A quick flash, smaller than the blast radius: the crater stays behind as the lasting mark.
+      ctx.beginPath(); ctx.arc(x, y, Math.max(px(90, 5), OVERLAY ? overlayUnit() : 0) * (0.3 + 0.7 * k), 0, Math.PI * 2);
+      ctx.fillStyle = "#ffa04028"; ctx.fill(); ctx.strokeStyle = "#ffb050"; ctx.lineWidth = 1.5; ctx.stroke();
     } else if (e.kind === "dmg" && !OVERLAY) {
       const pos = byId.get(e.ev.victim)?.pos || e.pos;
       if (!pos) continue;

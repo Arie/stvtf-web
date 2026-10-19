@@ -29,7 +29,8 @@ stvtf-web: live top-down viewer of a TF2 match in the browser
   stvtf-web HOST:TVPORT [--password tv] [--listen 127.0.0.1:8080] [--hz 20] [--cache DIR] [--backpack DIR]
   stvtf-web HOST[:PORT] [tv] / 'connect HOST:PORT; password \"tv\"'
   stvtf-web [--public] [--max-matches 20] [--base-path /live] [--demo MATCH.jsonl[.gz]] [--sessions DIR]   (watch any server: paste a connect string on the page)
-     With STVTF_TOKEN_KEY (64 hex digits) set, matches start only from a site's encrypted /start?t= links.
+     With STVTF_TOKEN_KEY (64 hex digits) set, matches start only from a site's encrypted /start?t= links;
+     --home URL then sends visitors of / to that site.
   stvtf-web --replay FILE.jsonl [--listen 127.0.0.1:8080]   (stvtf output, at game speed)";
 
 const INDEX: &str = include_str!("../index.html");
@@ -371,6 +372,8 @@ struct App {
     base: String,
     /// When set, matches start only from tokens a site in front of us made.
     keys: Option<Arc<token::Keys>>,
+    /// Where `/` sends visitors when matches start only from the site's links.
+    home: Option<String>,
     /// Open event streams by client address.
     streams: Mutex<HashMap<IpAddr, usize>>,
 }
@@ -462,9 +465,7 @@ fn serve(mut s: TcpStream, app: &App) -> Result<()> {
             Some(_slot) => stream(s, hub, gzip, wants_detail(query))?,
             None => too_many_streams(&mut s)?,
         },
-        (Matches::Many(_), "/" | "/watch") if app.keys.is_some() => {
-            respond(&mut s, "403 Forbidden", "text/plain", b"Start watching a match from the site that sent you here.")?;
-        }
+        (Matches::Many(_), "/" | "/watch") if app.keys.is_some() => front_door(&mut s, app, path)?,
         (Matches::Many(sessions), "/start") => match start(app, sessions, query) {
             Ok(m) => app.redirect(&mut s, "303 See Other", &format!("/w/{}/", m.id))?,
             Err(e) => respond(&mut s, "400 Bad Request", "text/plain", e.to_string().as_bytes())?,
@@ -525,6 +526,15 @@ fn serve(mut s: TcpStream, app: &App) -> Result<()> {
         _ => respond(&mut s, "404 Not Found", "text/plain", b"not found")?,
     }
     Ok(())
+}
+
+/// Matches start only from the site's links: `/` sends visitors to it (`--home`), and the form to
+/// watch any server is closed.
+fn front_door(s: &mut TcpStream, app: &App, path: &str) -> std::io::Result<()> {
+    match app.home.as_deref().filter(|_| path == "/") {
+        Some(home) => write!(s, "HTTP/1.1 302 Found\r\nLocation: {home}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"),
+        None => respond(s, "403 Forbidden", "text/plain", b"Start watching a match from the site that sent you here."),
+    }
 }
 
 /// Only a proxy on our own network (kamal-proxy) is believed about who the client is.
@@ -695,7 +705,8 @@ fn form_decode(v: &str) -> String {
     String::from_utf8_lossy(&out).into_owned()
 }
 
-const FLAGS: [&str; 10] = ["password", "listen", "hz", "cache", "backpack", "replay", "max-matches", "base-path", "demo", "sessions"];
+const FLAGS: [&str; 11] =
+    ["password", "listen", "hz", "cache", "backpack", "replay", "max-matches", "base-path", "demo", "sessions", "home"];
 const SWITCHES: [&str; 1] = ["public"];
 
 /// Positional arguments and `--name value` options; a mistyped option is an error rather than
@@ -866,6 +877,7 @@ fn main() -> Result<()> {
         overviews: Mutex::new(()),
         base,
         keys,
+        home: get("home").map(str::to_string),
         streams: Mutex::default(),
     });
 
@@ -939,6 +951,7 @@ mod tests {
             overviews: Mutex::new(()),
             base: String::new(),
             keys: None,
+            home: None,
             streams: Mutex::default(),
         }
     }
@@ -991,6 +1004,10 @@ mod tests {
         app.base = "/live".into();
         app.keys = Some(Arc::new(token::Keys::from_hex(&key).unwrap()));
         assert!(request_to(&app, b"GET / HTTP/1.1\r\n\r\n").1.starts_with("HTTP/1.1 403"));
+        assert!(post_watch(&app, "192.0.2.1%3A27020+tv").starts_with("HTTP/1.1 403"));
+        app.home = Some("https://serveme.tf/stv".into());
+        let home = request_to(&app, b"GET / HTTP/1.1\r\n\r\n").1;
+        assert!(home.starts_with("HTTP/1.1 302") && home.contains("Location: https://serveme.tf/stv\r\n"), "{home}");
         assert!(post_watch(&app, "192.0.2.1%3A27020+tv").starts_with("HTTP/1.1 403"));
         let exp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs() + 60;
         let t =
