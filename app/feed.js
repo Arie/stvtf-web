@@ -62,7 +62,7 @@ export function feedEvent(ev, p) {
       html = `${name(ev.medic)}${chip("", "ÜBER")}<span class="w">${esc(MEDIGUN_NAME[ev.medigun] || "")}</span>${ev.target != null ? " → " + name(ev.target) : ""}`;
       break;
     }
-    case "uber_ready": cls = "minor"; html = `${name(ev.medic)} <span>${esc(MEDIGUN_NAME[ev.medigun] || "Über")} ready</span>`; break;
+    case "uber_ready": cls = "minor"; html = `${name(ev.medic)} <span>${esc(MEDIGUN_NAME[ev.medigun] || "Medi Gun")} ÜberCharge ready</span>`; break;
     case "medic_death":
       if (!ev.drop) return;
       cls = `hot ${p(ev.attacker)?.team || ""}`;
@@ -96,7 +96,6 @@ export function feedEvent(ev, p) {
       cls = "minor"; html = `${name(ev.player)} <span>voted ${esc(o)}</span>`;
       break;
     }
-    case "capture_broken": if (!layerOn("flow")) return; cls = "minor"; html = `<span>Capture of ${esc(pointName(ev))} broken</span>`; break;
     case "killed_capper":
       if (!layerOn("flow")) return;
       html = `${name(ev.killer)}${ev.assister != null ? "+" + name(ev.assister) : ""}<span class="w">killed capper</span>${name(ev.victim)}`;

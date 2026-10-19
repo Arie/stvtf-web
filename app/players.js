@@ -133,20 +133,46 @@ function drawUberRing(p, x, y, rad, col) {
   ctx.restore();
 }
 
+// The medigun beam like TF2's: two strands twisting around a soft glow in the team colour, with
+// sparkles drifting from the medic to the patient; thicker and brighter while the charge is out.
+const BEAM_LIGHT = { red: "#ffc2b8", blue: "#c2e2ff" };
 export function drawHealBeams(players, byId) {
+  const t = performance.now() / 1000;
   for (const m of players) {
     const g = m.medigun;
     if (!m.alive || !g || g.target == null) continue;
-    const t = byId.get(g.target);
-    if (!t || !t.alive) continue;
-    const [x0, y0] = toScreen(m.pos[0], m.pos[1]), [x1, y1] = toScreen(t.pos[0], t.pos[1]);
+    const pt = byId.get(g.target);
+    if (!pt || !pt.alive) continue;
+    const [x0, y0] = toScreen(m.pos[0], m.pos[1]), [x1, y1] = toScreen(pt.pos[0], pt.pos[1]);
+    const len = Math.hypot(x1 - x0, y1 - y0);
+    if (len < 2) continue;
+    const ux = (x1 - x0) / len, uy = (y1 - y0) / len, nx = -uy, ny = ux;
+    const hot = g.releasing, col = TEAM[m.team] || "#fff", light = BEAM_LIGHT[m.team] || "#fff";
+    const amp = (hot ? 6 : 4) * uiScale(), wave = 70 * uiScale(), steps = Math.max(8, Math.min(80, Math.round(len / 6)));
     ctx.save();
+    ctx.lineCap = "round"; ctx.lineJoin = "round";
     ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1);
-    ctx.strokeStyle = TEAM[m.team]; ctx.globalAlpha = g.releasing ? 0.95 : 0.6;
-    ctx.lineWidth = g.releasing ? 6 : 3; ctx.lineCap = "round";
-    if (g.releasing) { ctx.shadowColor = TEAM[m.team]; ctx.shadowBlur = 14; }
-    ctx.setLineDash([10, 6]); ctx.lineDashOffset = -performance.now() / 25;
-    ctx.stroke();
+    ctx.strokeStyle = col; ctx.globalAlpha = hot ? 0.5 : 0.3; ctx.lineWidth = (hot ? 11 : 7) * uiScale(); ctx.stroke();
+    ctx.globalAlpha = hot ? 0.9 : 0.6; ctx.lineWidth = (hot ? 4 : 2.5) * uiScale(); ctx.stroke();
+    // The strands meet the medic and the patient, and twist along the beam towards the patient.
+    ctx.strokeStyle = light; ctx.lineWidth = (hot ? 2 : 1.4) * uiScale(); ctx.globalAlpha = hot ? 1 : 0.85;
+    for (const phase of [0, Math.PI]) {
+      ctx.beginPath();
+      for (let i = 0; i <= steps; i++) {
+        const f = i / steps, d = f * len, off = amp * Math.sin(Math.PI * f) * Math.sin(d / wave * Math.PI * 2 - t * 9 + phase);
+        const x = x0 + ux * d + nx * off, y = y0 + uy * d + ny * off;
+        if (i) ctx.lineTo(x, y); else ctx.moveTo(x, y);
+      }
+      ctx.stroke();
+    }
+    ctx.fillStyle = "#fff";
+    const sparks = Math.max(2, Math.round(len / 45));
+    for (let k = 0; k < sparks; k++) {
+      const f = (k / sparks + t * (hot ? 0.9 : 0.6)) % 1, d = f * len;
+      const off = amp * 0.9 * Math.sin(Math.PI * f) * Math.sin(k * 2.4 + t * 5);
+      ctx.globalAlpha = Math.sin(Math.PI * f) * (hot ? 1 : 0.8);
+      ctx.beginPath(); ctx.arc(x0 + ux * d + nx * off, y0 + uy * d + ny * off, (hot ? 2.2 : 1.6) * uiScale(), 0, Math.PI * 2); ctx.fill();
+    }
     ctx.restore();
   }
 }

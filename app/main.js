@@ -2,7 +2,7 @@ import { OVERLAY, canvas, ctx, state, renderTick, canvasSize } from "./core.js";
 import { fireEvents } from "./events.js";
 import { updatePanel, renderScoreboard } from "./hud.js";
 import { layerOn, renderSettings } from "./layers.js";
-import { drawObjectives, drawCapAreas, drawOnPoint, drawFlags, drawBuildings, drawSpawnRooms } from "./objectives.js";
+import { drawObjectives, drawCapAreas, drawFlags, drawBuildings, drawSpawnRooms } from "./objectives.js";
 import { drawMarks, drawPacks, drawJumpTrails } from "./overkill.js";
 import { drawProjectiles, drawHealBeams, drawPlayers, drawEffects } from "./players.js";
 import { openStream } from "./stream.js";
@@ -87,7 +87,6 @@ function draw() {
     if (layerOn("pickups")) drawPacks();
     if (layerOn("caps")) drawCapAreas(f.snap);
     drawObjectives(f.snap, tick);
-    if (layerOn("points") && !OVERLAY) drawOnPoint(f.snap);
     drawBuildings(f.snap);
     if (layerOn("jumps")) drawJumpTrails(f.players);
     // Above the players in the overlay, where a dot would otherwise cover them.

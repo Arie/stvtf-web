@@ -1,5 +1,6 @@
 import { MS_PER_TICK, TEAM, OVERLAY, overlayUnit, uiScale, ctx, state } from "./core.js";
 import { toScreen, screenAngle, px, playerRad } from "./view.js";
+import { layerOn } from "./layers.js";
 
 // The payload cart: a mine cart in the pushing team's colour carrying TF2's big black bomb, facing
 // along the track. Heading comes from movement (kept while stopped); rolling back still faces forward.
@@ -95,8 +96,11 @@ export function drawObjectives(snap, tick) {
     ctx.strokeStyle = capping ? "#fff" : "#0b0c0e"; ctx.stroke();
     ctx.fillStyle = "#fff"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
     ctx.font = `800 ${Math.round(OVERLAY ? u * 1.3 : Math.max(12 * uiScale(), half * 0.9))}px system-ui`;
-    ctx.lineWidth = 3; ctx.strokeStyle = "#0b0c0e"; ctx.strokeText(String(o.index + 1), x, y + 1);
-    ctx.fillText(String(o.index + 1), x, y + 1);
+    // While capping, the cap rate (×2 for two cappers, as TF2's HUD shows it) instead of the number.
+    const n = layerOn("points") && capping && o.on_point ? o.on_point[o.capping_team] : 0;
+    const text = n > 0 ? `\u00d7${n}` : String(o.index + 1);
+    ctx.lineWidth = 3; ctx.strokeStyle = "#0b0c0e"; ctx.strokeText(text, x, y + 1);
+    ctx.fillText(text, x, y + 1);
     ctx.restore();
   }
 }
@@ -112,21 +116,6 @@ export function drawCapAreas(snap) {
     [[a.min[0], a.min[1]], [a.max[0], a.min[1]], [a.max[0], a.max[1]], [a.min[0], a.max[1]]].forEach(([x, y], i) => { const [sx, sy] = toScreen(x, y); (i ? ctx.lineTo : ctx.moveTo).call(ctx, sx, sy); });
     ctx.closePath();
     ctx.strokeStyle = (TEAM[cps.get(a.point)?.owner] || TEAM.none) + "99"; ctx.lineWidth = OVERLAY ? 1.5 : 2; ctx.stroke();
-    ctx.restore();
-  }
-}
-
-// TF2-HUD cap multiplier ("x2") in the bottom-right corner of the point square while it is being capped.
-export function drawOnPoint(snap) {
-  for (const o of snap.objectives || []) {
-    if (o.kind !== "control_point" || !o.on_point) continue;
-    const n = o.capping_team === "red" || o.capping_team === "blue" ? o.on_point[o.capping_team] : 0;
-    if (!(n > 0)) continue;
-    const [x, y] = toScreen(o.pos[0], o.pos[1]), half = px(110, 11), inset = half * 0.1;
-    ctx.save();
-    ctx.font = `800 ${Math.round(Math.max(10 * uiScale(), half * 0.5))}px system-ui`; ctx.textAlign = "right"; ctx.textBaseline = "bottom";
-    ctx.lineWidth = 3; ctx.strokeStyle = "#0b0c0e"; ctx.fillStyle = "#fff";
-    ctx.strokeText(`\u00d7${n}`, x + half - inset, y + half - inset); ctx.fillText(`\u00d7${n}`, x + half - inset, y + half - inset);
     ctx.restore();
   }
 }
