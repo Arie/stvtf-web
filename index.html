@@ -117,7 +117,8 @@
   #follow button, #bgtoggle button { border: 0; font: inherit; cursor: pointer; }
   #follow button { width: 22px; height: 22px; border-radius: 50%; background: #ffffff1a; color: #fff; }
   html.noside aside { display: none; }
-  html.noside main { grid-template-columns: 1fr; }
+  html.nohud .hud, html.nohud #scoreboard, html.noscore #scoreboard { display: none; }
+  html.noside main { grid-template-columns: 1fr; grid-template-rows: 1fr; }
   #sidetoggle, #autozoom { position: absolute; right: 12px; z-index: 3; padding: 5px 10px; border: 0; border-radius: 6px;
     background: #0b0c0ee6; color: #fff; font: inherit; font-size: 12px; cursor: pointer; }
   #sidetoggle { top: 12px; font-size: 16px; line-height: 1; padding: 4px 9px; }
@@ -186,8 +187,8 @@
     </div>
     <div id="follow" hidden><span>Following <b id="follow-name"></b></span><button id="follow-stop" title="Stop following (Esc)">✕</button></div>
     <button id="autozoom" hidden>Auto zoom</button>
-    <button id="sidetoggle" title="Hide events and chat">›</button>
-    <div id="bgtoggle" hidden><button data-bg="overview" class="on">Overview</button><button data-bg="geometry">Geometry</button></div>
+    <button id="sidetoggle" title="Hide events and chat (e)">›</button>
+    <div id="bgtoggle" hidden title="g"><button data-bg="overview" class="on">Overview</button><button data-bg="geometry">Geometry</button></div>
   </div>
   <aside>
     <div id="title"><b id="map">connecting…</b><span id="status" class="bad">waiting for data</span><span id="age"></span></div>
@@ -415,6 +416,10 @@ function renderGeometry(g) {
 }
 
 // ---------- view
+// Whether the main view shows the player HUD or the scoreboard (h and s hide them).
+const shown = what => !OVERLAY && !document.documentElement.classList.contains("nohud") &&
+  !(what === "score" && document.documentElement.classList.contains("noscore"));
+
 function fitTo(min, max) {
   const r = canvas.getBoundingClientRect(), v = state.view;
   v.cx = (min.x + max.x) / 2; v.cy = (min.y + max.y) / 2;
@@ -422,7 +427,7 @@ function fitTo(min, max) {
   const c = Math.abs(Math.cos(v.rot)), s = Math.abs(Math.sin(v.rot));
   const w = max.x - min.x, h = max.y - min.y, rw = w * c + h * s, rh = w * s + h * c;
   // Keep the map clear of the HUD columns on both sides.
-  const hud = !OVERLAY && r.width > 800 ? 2 * 268 * uiScale() : 0;
+  const hud = shown("hud") && r.width > 800 ? 2 * 268 * uiScale() : 0;
   v.scale = Math.min((r.width - hud) / rw, r.height / rh) * (OVERLAY ? 0.96 : 0.95);
   state.fitted = true;
 }
@@ -434,7 +439,7 @@ function fitTo(min, max) {
 // and the scoreboard; the overlay uses its whole panel. Framings are centred in it.
 function viewArea() {
   const r = canvas.getBoundingClientRect();
-  const side = !OVERLAY && r.width > 800 ? 268 * uiScale() : 0, top = OVERLAY ? 0 : 140 * uiScale();
+  const side = shown("hud") && r.width > 800 ? 268 * uiScale() : 0, top = shown("score") ? 140 * uiScale() : 0;
   return { w: r.width - 2 * side, h: r.height - top, top };
 }
 // Framings are kept as the world point at the centre of the free area; the view centre sits
@@ -491,7 +496,25 @@ window.addEventListener("mousemove", e => {
   state.view.cx = drag.cx - (e.clientX - drag.x) / state.view.scale;
   state.view.cy = drag.cy + (e.clientY - drag.y) / state.view.scale;
 });
-window.addEventListener("keydown", e => { if (e.key === "Escape") setFollow(null); });
+// h: player HUD and scores, s: just the scores, e: events and chat, g: overview or geometry.
+function toggle(cls) {
+  const on = document.documentElement.classList.toggle(cls);
+  try { localStorage.setItem(cls, on ? "1" : "0"); } catch {}
+  dispatchEvent(new Event("resize"));
+}
+window.addEventListener("keydown", e => {
+  if (e.ctrlKey || e.metaKey || e.altKey || e.target.closest?.("input, textarea")) return;
+  switch (e.key) {
+    case "Escape": setFollow(null); break;
+    case "h": toggle("nohud"); break;
+    case "s": toggle("noscore"); break;
+    case "e": setSidebar(document.documentElement.classList.contains("noside")); break;
+    case "g": if (!$("bgtoggle").hidden) document.querySelector("#bgtoggle button:not(.on)").click(); break;
+  }
+});
+for (const cls of ["nohud", "noscore"]) {
+  try { if (!OVERLAY && localStorage.getItem(cls) === "1") document.documentElement.classList.add(cls); } catch {}
+}
 
 function setAutoZoom(on) {
   if (OVERLAY || state.autoZoom === on) return;
@@ -535,7 +558,7 @@ $("feed").addEventListener("click", e => {
 function setSidebar(show) {
   document.documentElement.classList.toggle("noside", !show);
   $("sidetoggle").textContent = show ? "›" : "‹";
-  $("sidetoggle").title = show ? "Hide events and chat" : "Show events and chat";
+  $("sidetoggle").title = show ? "Hide events and chat (e)" : "Show events and chat (e)";
   try { localStorage.setItem("sidebar", show ? "1" : "0"); } catch {}
   dispatchEvent(new Event("resize"));
 }
