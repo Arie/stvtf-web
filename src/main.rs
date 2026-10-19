@@ -152,8 +152,9 @@ fn subscribe(hub: &SharedHub) -> Receiver<Arc<str>> {
     rx
 }
 
-/// Plays a saved stvmap output (gzipped if it ends in `.gz`) on a loop, each pass as a new match.
-fn replay(hub: &SharedHub, path: &Path) -> Result<()> {
+/// Plays a saved stvmap output (gzipped if it ends in `.gz`) on a loop, each pass as a new match,
+/// holding still whenever `play` says nobody is watching.
+fn replay(hub: &SharedHub, path: &Path, play: &dyn Fn() -> bool) -> Result<()> {
     for pass in 0.. {
         if pass > 0 {
             // A pause between passes, which also keeps a file with (almost) no timing from
@@ -166,6 +167,9 @@ fn replay(hub: &SharedHub, path: &Path) -> Result<()> {
             if path.extension().is_some_and(|e| e == "gz") { Box::new(flate2::read::GzDecoder::new(file)) } else { Box::new(file) };
         let (mut last, mut timed): (Option<u64>, bool) = (None, false);
         for line in BufReader::new(reader).lines() {
+            while !play() {
+                std::thread::sleep(Duration::from_millis(250));
+            }
             let v: Value = serde_json::from_str(&line?)?;
             // Live output has wall-clock `time`; offline output (`stvmap replay`) only ticks.
             // Each line waits for the gap since the previous one, capped so map loads and
@@ -544,7 +548,7 @@ fn main() -> Result<()> {
         let (hub, file) = (SharedHub::default(), PathBuf::from(file));
         let replayed = hub.clone();
         std::thread::spawn(move || {
-            if let Err(e) = replay(&replayed, &file) {
+            if let Err(e) = replay(&replayed, &file, &|| true) {
                 eprintln!("replay: {e}");
             }
         });
@@ -575,8 +579,8 @@ fn main() -> Result<()> {
         let sessions = Sessions::new(flags.contains_key("public"), max, hz);
         if let Some(file) = get("demo") {
             let file = PathBuf::from(file);
-            sessions.pin("demo", move |hub| {
-                if let Err(e) = replay(&hub, &file) {
+            sessions.pin("demo", move |s| {
+                if let Err(e) = replay(&s.hub, &file, &|| s.watched()) {
                     eprintln!("demo: {e:#}");
                 }
             });
@@ -775,7 +779,7 @@ mod tests {
         let path = std::env::temp_dir().join(format!("stvmap-web-replay-{}.jsonl", std::process::id()));
         for contents in ["", "{\"type\":\"status\"}\n"] {
             std::fs::write(&path, contents).unwrap();
-            assert!(replay(&SharedHub::default(), &path).is_err(), "{contents:?}");
+            assert!(replay(&SharedHub::default(), &path, &|| true).is_err(), "{contents:?}");
         }
         std::fs::remove_file(&path).unwrap();
     }

@@ -29,6 +29,13 @@ pub struct Session {
     thread: Mutex<Option<JoinHandle<()>>>,
 }
 
+impl Session {
+    /// Whether any browser has its event stream open.
+    pub fn watched(&self) -> bool {
+        self.viewers.load(Ordering::Relaxed) > 0
+    }
+}
+
 /// Counts a browser on a session's event stream until dropped.
 pub struct Viewer(Arc<Session>);
 
@@ -128,11 +135,10 @@ impl Sessions {
 
     /// A fixed session at `/w/<id>/` fed by `feed` (a recorded match on a loop, say). It is never
     /// reaped and nothing waits for its thread.
-    pub fn pin(&self, id: &str, feed: impl FnOnce(SharedHub) + Send + 'static) {
-        let hub = SharedHub::default();
+    pub fn pin(&self, id: &str, feed: impl FnOnce(&Session) + Send + 'static) {
         let s = Arc::new(Session {
             id: id.to_string(),
-            hub: hub.clone(),
+            hub: SharedHub::default(),
             server: SocketAddr::from(([0, 0, 0, 0], 0)),
             password: String::new(),
             owner: None,
@@ -143,7 +149,8 @@ impl Sessions {
             idle_since: Mutex::new(None),
             thread: Mutex::new(None),
         });
-        std::thread::spawn(move || feed(hub));
+        let session = s.clone();
+        std::thread::spawn(move || feed(&session));
         self.lock().insert(id.to_string(), s);
     }
 
@@ -252,6 +259,18 @@ mod tests {
         let unlimited = s.open("192.0.2.4:27020 tv", None).unwrap();
         assert!(s.get(&b.id).is_some() && s.get(&other.id).is_some() && s.get(&unlimited.id).is_some());
         s.stop_all();
+    }
+
+    #[test]
+    fn a_session_knows_whether_it_is_watched() {
+        let s = Sessions::new(false, 1, 20.0);
+        s.pin("demo", |_| {});
+        let demo = s.get("demo").unwrap();
+        assert!(!demo.watched());
+        let viewer = Viewer::new(demo.clone());
+        assert!(demo.watched());
+        drop(viewer);
+        assert!(!demo.watched());
     }
 
     #[test]

@@ -26,8 +26,8 @@ SourceTV password in it is never readable in a URL, and a user (`owner`) watches
 a time; a null owner is unlimited.
 
 `--demo MATCH.jsonl[.gz]` adds a fixed match at `/w/demo/`: a saved `stvmap` output played on
-a loop, to show the viewer off without a live game. It needs no token, is never disconnected
-and does not count towards `--max-matches`.
+a loop, to show the viewer off without a live game. It needs no token, is never disconnected,
+does not count towards `--max-matches` and holds still while nobody is watching.
 
 `Dockerfile` builds that server, with the directory holding both repositories as context:
 `docker build -f stvmap-web/Dockerfile .` (`Dockerfile.dockerignore` keeps the context to the
