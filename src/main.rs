@@ -70,9 +70,13 @@ struct Hub {
     round_clock: Option<(u64, f64)>,
     /// When the latest snapshot came in, so a page opened after the stream stopped can say so.
     snapshot_at: Option<Instant>,
+    /// Name and team of everyone seen on this map, by id: the feed keeps them for players who left.
+    names: HashMap<u64, Value>,
 }
 
 const HISTORY: usize = 1000;
+/// Event fields that hold player ids.
+const PLAYER_FIELDS: [&str; 10] = ["player", "attacker", "victim", "assister", "medic", "target", "blocker", "owner", "builder", "cappers"];
 const FEED: [&str; 17] = [
     "kill",
     "uber",
@@ -103,6 +107,7 @@ fn publish(hub: &SharedHub, v: &Value) {
             if v["state"] == "map_change" {
                 h.snapshot = None;
                 h.history.clear();
+                h.names.clear();
             }
             h.status = Some(line.clone());
         }
@@ -111,6 +116,7 @@ fn publish(hub: &SharedHub, v: &Value) {
             let map = v["map"].as_str().map(str::to_string);
             if map != h.map {
                 h.history.clear();
+                h.names.clear();
                 h.map = map;
             }
             (h.server, h.snapshot, h.round_clock) = (Some(line.clone()), None, None);
@@ -120,10 +126,21 @@ fn publish(hub: &SharedHub, v: &Value) {
             h.round_clock = v["tick"].as_u64().zip(v["round_time"].as_f64());
             h.snapshot = Some(line.clone());
             h.snapshot_at = Some(Instant::now());
+            for p in v["players"].as_array().into_iter().flatten() {
+                if let Some(id) = p["id"].as_u64() {
+                    h.names.insert(id, serde_json::json!({"name": p["name"], "team": p["team"]}));
+                }
+            }
         }
         Some(t) if FEED.contains(&t) => {
             let mut past = v.clone();
             past["history"] = true.into();
+            let ids = PLAYER_FIELDS.iter().flat_map(|f| v[f].as_array().cloned().unwrap_or_else(|| vec![v[f].clone()]));
+            let names: serde_json::Map<String, Value> =
+                ids.filter_map(|id| Some((id.as_u64()?.to_string(), h.names.get(&id.as_u64()?)?.clone()))).collect();
+            if !names.is_empty() {
+                past["names"] = names.into();
+            }
             if let (Some((tick, time)), Some(at)) = (h.round_clock, v["tick"].as_u64()) {
                 let seconds = time + (at as f64 - tick as f64) * 0.015;
                 past["at"] = ((seconds * 10.0).round() / 10.0).max(0.0).into();
@@ -824,6 +841,25 @@ mod tests {
         assert_eq!(std::fs::read(&path).unwrap(), b"new");
         assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 1, "no temporary file left");
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn the_feed_keeps_names_of_players_who_left() {
+        let hub = SharedHub::default();
+        let snapshot = |players: Value| serde_json::json!({"type": "snapshot", "tick": 1, "players": players});
+        publish(
+            &hub,
+            &snapshot(serde_json::json!([{"id": 3, "name": "can of tuna", "team": "red"}, {"id": 4, "name": "silvo", "team": "blue"}])),
+        );
+        publish(&hub, &serde_json::json!({"type": "kill", "tick": 2, "attacker": 3, "victim": 4, "assister": null}));
+        publish(&hub, &serde_json::json!({"type": "point_captured", "tick": 3, "point": 0, "cappers": [3]}));
+        publish(&hub, &snapshot(serde_json::json!([])));
+        let lines: Vec<Value> = subscribe(&hub).try_iter().map(|l| serde_json::from_str(&l).unwrap()).collect();
+        let kill = lines.iter().find(|l| l["type"] == "kill").unwrap();
+        assert_eq!(kill["names"]["3"]["name"], "can of tuna");
+        assert_eq!(kill["names"]["4"]["team"], "blue");
+        let cap = lines.iter().find(|l| l["type"] == "point_captured").unwrap();
+        assert_eq!(cap["names"]["3"]["name"], "can of tuna");
     }
 
     #[test]

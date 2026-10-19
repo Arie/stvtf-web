@@ -283,7 +283,7 @@ setInterval(() => {
 function handle(m) {
   // Feed events from before the page opened: straight into the feed and chat, no map effects.
   if (m.history) {
-    const p = id => state.players.get(id);
+    const p = id => state.players.get(id) || m.names?.[id];
     if (m.type === "chat") chat(m, p);
     else killiconsLoaded.finally(() => feedEvent(m, p));
     return;
