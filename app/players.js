@@ -270,6 +270,14 @@ export function drawPlayers(players) {
       ctx.textAlign = "center"; ctx.textBaseline = "middle";
       ctx.fillText(CLASS[p.class] || "?", x, y + 0.5);
     }
+    if (p.carrying) {
+      // The building an engineer carries, as a small badge like the ones on the map.
+      const s = Math.max(12, rad * 1.0), bx = x - rad * 0.95, by = y - rad * 0.95;
+      ctx.beginPath(); ctx.roundRect(bx - s / 2, by - s / 2, s, s, 2);
+      ctx.fillStyle = TEAM[p.team] || TEAM.none; ctx.fill(); ctx.lineWidth = 1.5; ctx.strokeStyle = "#000"; ctx.stroke();
+      ctx.fillStyle = "#fff"; ctx.font = `800 ${Math.round(s * 0.62)}px system-ui`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.fillText(p.carrying[0].toUpperCase(), bx, by + 0.5);
+    }
     if (p.id === state.follow) {
       ctx.beginPath(); ctx.arc(x, y, rad + 7, 0, Math.PI * 2); ctx.strokeStyle = "#fff"; ctx.lineWidth = 2; ctx.stroke();
     }
@@ -419,6 +427,21 @@ export function drawEffects(byId) {
       ctx.fillStyle = "#6fe08a"; ctx.strokeStyle = "#000"; ctx.lineWidth = 3;
       const ty = y - playerRad() - 4 - k * 22, tx = x + playerRad() * 0.9, txt = "+" + e.ev.amount;
       ctx.strokeText(txt, tx, ty); ctx.fillText(txt, tx, ty);
+    } else if (e.kind === "upgrade") {
+      // A building going up a level: a burst of sparks, like the engineer's wrench.
+      const [x, y] = toScreen(e.pos[0], e.pos[1]), r0 = px(30, 8), r1 = r0 + px(80, 18) * k;
+      ctx.strokeStyle = "#ffe27a"; ctx.lineWidth = 2; ctx.lineCap = "round";
+      for (let i = 0; i < 10; i++) {
+        const a = i / 10 * Math.PI * 2 + 0.3;
+        ctx.beginPath(); ctx.moveTo(x + Math.cos(a) * (r0 + (r1 - r0) * 0.5), y + Math.sin(a) * (r0 + (r1 - r0) * 0.5)); ctx.lineTo(x + Math.cos(a) * r1, y + Math.sin(a) * r1); ctx.stroke();
+      }
+      ctx.lineCap = "butt";
+    } else if (e.kind === "repair") {
+      const [x, y] = toScreen(e.pos[0], e.pos[1]);
+      ctx.font = `bold ${Math.round(12 * uiScale())}px system-ui`; ctx.textAlign = "center"; ctx.textBaseline = "bottom";
+      ctx.fillStyle = "#6fe08a"; ctx.strokeStyle = "#000"; ctx.lineWidth = 3;
+      const ty = y - px(30, 12) - 4 - k * 22, txt = "+" + e.ev.amount;
+      ctx.strokeText(txt, x, ty); ctx.fillText(txt, x, ty);
     } else if (e.kind === "hit") {
       const [x, y] = toScreen(e.ev.pos[0], e.ev.pos[1]);
       const seed = Math.abs(Math.round(e.ev.pos[0] * 7 + e.ev.pos[1] * 13)), r = Math.max(5 * uiScale(), px(40, 5));

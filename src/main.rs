@@ -104,7 +104,7 @@ const HISTORY: usize = 1000;
 const PLAYER_FIELDS: [&str; 12] =
     ["player", "attacker", "victim", "assister", "medic", "target", "blocker", "owner", "builder", "cappers", "carrier", "killer"];
 /// High-volume lines for pages that ask (`?detail=1`); never kept in the history.
-const DETAIL: [&str; 7] = ["heal", "blast_jump", "pickup", "impact", "mark", "voice_command", "server_text"];
+const DETAIL: [&str; 8] = ["heal", "blast_jump", "pickup", "impact", "mark", "voice_command", "server_text", "building_repair"];
 const FEED: [&str; 26] = [
     "kill",
     "flag",

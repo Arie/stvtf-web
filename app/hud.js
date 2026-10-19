@@ -1,5 +1,6 @@
 import { MS_PER_TICK, TEAM, CLASS, byClass, ICONS, $, OVERLAY, OPT, state } from "./core.js";
 import { layerOn } from "./layers.js";
+import { esc } from "./feed.js";
 
 // ---------- HUD and header, refreshed a few times per second
 const UBER_LABEL = { uber: "ÜBER", kritz: "KRITZ", quickfix: "QUICK-FIX", vaccinator_bullet: "VACC · BULLET", vaccinator_blast: "VACC · BLAST", vaccinator_fire: "VACC · FIRE" };
@@ -56,7 +57,8 @@ function card(p) {
     wp.onerror = () => { wp.style.display = "none"; };
   }
   wp.hidden = !w;
-  setText2(el.children[5], p.alive ? String(p.hp) : "DEAD");
+  setText2(el.children[5], p.alive ? String(p.hp) : p.respawn > 0 ? `${Math.ceil(p.respawn)}s` : "DEAD");
+  setClass(el.children[5], !p.alive && p.respawn > 0 ? "hp rs" : "hp");
   return el;
 }
 function chargeMeter(p) {
@@ -88,6 +90,34 @@ export function updatePanel(players, snap) {
     placeChildren($("hud-" + team), [...list.map(card), ...list.filter(p => p.class === "medic").map(chargeMeter)]);
   }
   renderPoints(snap);
+  if (!$("board").hidden) renderBoard(players, snap);
+}
+
+// Time added to a round timer: "+M:SS" floating down under the scoreboard (on king of the hill,
+// under the team's side).
+export function showTimeAdded(ev) {
+  const el = document.createElement("div");
+  el.className = `added ${$("scoreboard").classList.contains("koth") && (ev.team === "red" || ev.team === "blue") ? ev.team : ""}`;
+  el.textContent = `+${clock(ev.seconds)}`;
+  el.addEventListener("animationend", () => el.remove());
+  $("scoreboard").append(el);
+}
+
+// The scoreboard while Tab is held: each team by points, like TF2's.
+const BOARD_COLUMNS = [["points", "Points"], ["kills", "K"], ["deaths", "D"], ["assists", "A"], ["damage", "Damage"], ["healing", "Healing"]];
+export function renderBoard(players, snap) {
+  const team = (t, label) => {
+    const rows = players.filter(p => p.team === t).sort((a, b) => (b.score?.points ?? 0) - (a.score?.points ?? 0) || (b.score?.kills ?? 0) - (a.score?.kills ?? 0));
+    const body = rows.map(p => {
+      const s = p.score || {}, status = !p.alive && p.respawn > 0 ? ` <small>${Math.ceil(p.respawn)}s</small>` : "";
+      const icon = ICONS[p.class] ? `<img src="icons/${p.class}.svg" alt="">` : "";
+      return `<tr class="${p.alive ? "" : "dead"}"><td class="bc">${icon}</td><td class="bn">${esc(p.name)}${status}</td>${BOARD_COLUMNS.map(([k]) => `<td>${s[k] ?? ""}</td>`).join("")}<td>${p.ping ?? ""}</td></tr>`;
+    }).join("");
+    const score = (snap.score || {})[t] ?? 0;
+    return `<div class="bteam ${t}"><div class="bhead"><b>${label}</b><span>${score}</span><i>${rows.length} players</i></div>` +
+      `<table><thead><tr><th></th><th class="bn">Name</th>${BOARD_COLUMNS.map(([, h]) => `<th>${h}</th>`).join("")}<th>Ping</th></tr></thead><tbody>${body}</tbody></table></div>`;
+  };
+  setHTML($("board"), team("blue", "BLU") + team("red", "RED"));
 }
 
 // ---------- TF2-style scoreboard: team scores, round timer, control points

@@ -112,6 +112,10 @@ Query options, e.g. `/overlay?names=1&score=1&panel=0.6`:
 - A TF2-style scoreboard at the top: team scores, the round timer (SETUP, ROUND OVER,
   OVERTIME; one per team on King of the Hill) and the control points with owner, lock and
   capture progress.
+- Hold Tab for a scoreboard like TF2's: each team by points, with kills, deaths, assists,
+  damage, healing and ping. Dead players' cards count down to their respawn, time added to
+  a round timer floats under the scoreboard, and an engineer carrying a building shows it on
+  their dot.
 - Click a player on the map or their card in the HUD to keep them centred; drag the
   map, press Esc or click them again to stop.
 - Keys: `h` hides the player HUD and scoreboard, `s` just the scoreboard, `e` the events and

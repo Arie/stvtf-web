@@ -2,7 +2,7 @@ import { TEAM, $, state } from "./core.js";
 import { MEDIGUN_NAME, mmss } from "./hud.js";
 import { layerOn } from "./layers.js";
 
-function esc(s) { return String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
+export function esc(s) { return String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
 function who(pl) { return pl ? `<span class="t-${esc(pl.team)}">${esc(pl.name)}</span>` : "world"; }
 // Kill icons from tf2-icons, named like the weapons in server logs and kill events.
 const KILLICONS = new Set();

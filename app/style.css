@@ -17,7 +17,7 @@ html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
 body { display: grid; grid-template-rows: 1fr; }
 #title { display: flex; gap: 10px; align-items: baseline; padding: 10px 12px; border-bottom: 1px solid var(--line); }
 #title b { font-size: 15px; }
-.hud, #scoreboard, #follow, #bgtoggle, #autozoom, #sidetoggle, #helptoggle, #settingstoggle, #help, aside { zoom: var(--s); }
+.hud, #scoreboard, #follow, #bgtoggle, #autozoom, #sidetoggle, #helptoggle, #settingstoggle, #help, #board, aside { zoom: var(--s); }
 #status.ok { color: #7cc47f; } #status.bad { color: #e0a040; }
 #age { color: var(--dim); margin-left: auto; }
 main { display: grid; grid-template-columns: 1fr auto; min-height: 0; }
@@ -204,3 +204,28 @@ html.overlay #scoreboard { top: 6px; transform: translateX(-50%) scale(.62); tra
 .w { color: var(--dim); font-size: 11px; }
 #empty { position: absolute; inset: 0; display: grid; place-items: center; color: var(--dim); pointer-events: none; }
 @media (max-width: 800px) { main { grid-template-columns: 1fr; grid-template-rows: 60vh auto; } }
+
+/* Dead cards count down to the respawn. */
+.card.dead .hp.rs { font-size: 20px; font-weight: 800; letter-spacing: 0; color: #c8ccd2; }
+
+/* Time added to a round timer, floating down under the scoreboard. */
+#scoreboard .added { position: absolute; left: 0; right: 0; top: 100%; text-align: center; font-size: 18px; font-weight: 800;
+  color: #7dff8a; text-shadow: 0 1px 3px #000, 0 0 6px #000; pointer-events: none; z-index: 5; animation: added 2.6s ease-out forwards; }
+#scoreboard .added.blue { right: 50%; } #scoreboard .added.red { left: 50%; }
+@keyframes added { 0% { opacity: 0; transform: translateY(-6px); } 15% { opacity: 1; transform: translateY(4px); } 80% { opacity: 1; } 100% { opacity: 0; transform: translateY(16px); } }
+
+/* The scoreboard (hold Tab). */
+#board { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); display: flex; gap: 12px; z-index: 20;
+  padding: 12px; border-radius: 8px; background: #0b0c0ef2; box-shadow: 0 8px 30px #000a; color: var(--text); }
+#board[hidden] { display: none; }
+.bteam { width: 470px; }
+.bhead { display: flex; align-items: baseline; gap: 10px; padding: 8px 12px; border-radius: 6px 6px 0 0; color: #fff; }
+.bteam.blue .bhead { background: var(--blue); } .bteam.red .bhead { background: var(--red); }
+.bhead b { font-size: 18px; letter-spacing: .08em; } .bhead span { font-size: 26px; font-weight: 800; } .bhead i { margin-left: auto; font-style: normal; font-size: 12px; opacity: .8; }
+#board table { width: 100%; border-collapse: collapse; font-size: 14px; font-variant-numeric: tabular-nums; }
+#board th { font-size: 11px; font-weight: 700; color: var(--dim); text-align: right; padding: 6px 6px 4px; letter-spacing: .04em; }
+#board td { text-align: right; padding: 4px 6px; border-top: 1px solid #ffffff12; }
+#board .bn { text-align: left; max-width: 150px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#board .bn small { color: var(--dim); font-weight: 700; }
+#board .bc { width: 22px; padding-right: 0; } #board .bc img { width: 18px; height: 18px; vertical-align: middle; }
+#board tr.dead td { opacity: .5; }

@@ -29,8 +29,17 @@ function toggleExclusive(id) {
   other.hidden = true;
   $(id).hidden = !$(id).hidden;
 }
+// Hold Tab for the scoreboard, as in TF2.
+function showBoard(on) {
+  if (OVERLAY || $("board").hidden === !on) return;
+  $("board").hidden = !on;
+  state.lastPanel = 0;
+}
+window.addEventListener("keyup", e => { if (e.key === "Tab") showBoard(false); });
+window.addEventListener("blur", () => showBoard(false));
 window.addEventListener("keydown", e => {
   if (e.ctrlKey || e.metaKey || e.altKey || e.target.closest?.("input:not([type=checkbox]), textarea")) return;
+  if (e.key === "Tab") { e.preventDefault(); showBoard(true); return; }
   switch (e.key) {
     case "Escape": setFollow(null); $("help").hidden = true; $("settings").hidden = true; break;
     case "?": toggleExclusive("help"); break;

@@ -1,5 +1,6 @@
 import { MS_PER_TICK, state } from "./core.js";
 import { banner, teamName, pointName, flagName, chat, feedEvent } from "./feed.js";
+import { showTimeAdded } from "./hud.js";
 import { layerOn } from "./layers.js";
 import { noteSpawn } from "./objectives.js";
 import { addScorch, nearFreshScorch } from "./overkill.js";
@@ -49,6 +50,13 @@ export function fireEvents(tick, byId) {
         const m = p(ev.medic);
         if (m) state.effects.push({ kind: "uber", id: ev.medic, team: m.team, t0: now - lagMs(ev), life: 1500 });
         feedEvent(ev, p);
+        break;
+      }
+      case "time_added": if (!stale(ev, 3000)) showTimeAdded(ev); break;
+      case "building_upgrade": case "building_repair": {
+        if (stale(ev, 1500) || (ev.type === "building_repair" && !layerOn("heals"))) break;
+        const b = state.snaps.at(-1)?.buildings?.find(b => b.id === ev.id);
+        if (b) state.effects.push({ kind: ev.type === "building_upgrade" ? "upgrade" : "repair", pos: b.pos, ev, t0: now - lagMs(ev), life: 900 });
         break;
       }
       case "heal":
