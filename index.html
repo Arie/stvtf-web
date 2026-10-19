@@ -279,7 +279,7 @@ const $ = id => document.getElementById(id);
 const state = {
   map: null, snaps: [], events: [], effects: [], players: new Map(),
   tickOffset: null, lastTick: 0, geometry: null, geoCanvas: null, overview: null,
-  marks: [], trails: [], packsTaken: new Map(),
+  marks: [], scorches: [], trails: [], packsTaken: new Map(),
   view: { cx: 0, cy: 0, scale: 0.08, rot: 0 }, fitted: false,
   // Auto zoom on the fight; the main view turns it off when panned or zoomed by hand.
   autoZoom: !OVERLAY || OPT.get("zoom") !== "map", bg: "overview", follow: null,
@@ -417,7 +417,7 @@ function handle(m) {
 
 // A map change (or a signon restart) starts from nothing: drop everything from the old map.
 function resetMatch(keepFollow = false) {
-  state.snaps = []; state.events = []; state.effects = []; state.marks = []; state.trails = []; state.packsTaken.clear(); state.tickOffset = null; state.lastTick = 0;
+  state.snaps = []; state.events = []; state.effects = []; state.marks = []; state.scorches = []; state.trails = []; state.packsTaken.clear(); state.tickOffset = null; state.lastTick = 0;
   state.players.clear(); lastPlayers = []; state.clock = ""; lastScores = null; spawnSeen = {};
   if (state.follow != null && !keepFollow) setFollow(null);
   $("hud-blue").replaceChildren(); $("hud-red").replaceChildren(); hudNodes.clear(); $("cps").innerHTML = "";
@@ -723,7 +723,7 @@ function frameAt(tick) {
 
 // ---------- events become effects when playback reaches their tick
 // Detail lines can be a while behind (a hidden tab holds the page back): late ones are dropped.
-const MARK_LIFE_MS = 60000, MARK_CAP = 2000, PACK_REACH = 128, PACK_RESPAWN_MS = 10000;
+const MARK_LIFE_MS = 60000, MARK_CAP = 2000, SCORCH_CAP = 300, SCORCH_R = 65, PACK_REACH = 128, PACK_RESPAWN_MS = 10000;
 let eventTick = 0;
 const lagMs = ev => Math.max(0, (eventTick - ev.tick) * MS_PER_TICK);
 const stale = (ev, ms) => lagMs(ev) > ms;
@@ -736,7 +736,10 @@ function fireEvents(tick, byId) {
     const p = id => byId.get(id) || state.players.get(id);
     switch (ev.type) {
       case "shot": state.effects.push({ kind: "shot", ev, team: p(ev.player)?.team, t0: now, life: 260 }); break;
-      case "explosion": state.effects.push({ kind: "boom", ev, t0: now, life: 450 }); break;
+      case "explosion":
+        state.effects.push({ kind: "boom", ev, t0: now, life: 450 });
+        if (layerOn("marks") && !stale(ev, MARK_LIFE_MS) && ev.origin) addScorch(ev.origin, now - lagMs(ev));
+        break;
       case "airblast": state.effects.push({ kind: "airblast", id: ev.player, t0: now, life: 350 }); break;
       case "sentry_shot": {
         const snap = state.snaps.at(-1);
@@ -771,7 +774,7 @@ function fireEvents(tick, byId) {
         if (layerOn("hits") && !stale(ev, 600) && ev.pos) state.effects.push({ kind: "hit", ev, t0: now - lagMs(ev), life: ev.kind === "blood" ? 450 : 250 });
         break;
       case "mark":
-        if (layerOn("marks") && !stale(ev, MARK_LIFE_MS) && ev.pos) {
+        if (layerOn("marks") && !stale(ev, MARK_LIFE_MS) && ev.pos && !nearFreshScorch(ev.pos, now)) {
           state.marks.push({ pos: ev.pos, t0: now - lagMs(ev) });
           if (state.marks.length > MARK_CAP) state.marks.splice(0, state.marks.length - MARK_CAP);
         }
@@ -1105,8 +1108,55 @@ function drawOnPoint(snap) {
   }
 }
 
+// Flat scorch craters: a few pre-rendered ragged sprites, drawn scaled and rotated.
+const scorchSprites = (() => {
+  const N = 4, S = 128, c = S / 2, out = [];
+  for (let v = 0; v < N; v++) {
+    const cv = document.createElement("canvas"); cv.width = cv.height = S;
+    const g = cv.getContext("2d"), K = 24, rad = [];
+    for (let i = 0; i < K; i++) rad.push(0.72 + 0.28 * Math.abs(Math.sin(i * 2.399 + v * 1.7) * Math.cos(i * 0.9 + v * 3.1)) + (i % 3 === v % 3 ? 0.04 : 0));
+    g.beginPath();
+    rad.forEach((r, i) => { const a = i / K * Math.PI * 2; g[i ? "lineTo" : "moveTo"](c + Math.cos(a) * r * (c - 2), c + Math.sin(a) * r * (c - 2)); });
+    g.closePath();
+    const gr = g.createRadialGradient(c, c, 0, c, c, c);
+    gr.addColorStop(0, "rgba(10,8,6,0.95)"); gr.addColorStop(0.45, "rgba(14,11,9,0.7)"); gr.addColorStop(0.8, "rgba(20,16,13,0.3)"); gr.addColorStop(1, "rgba(20,16,13,0.08)");
+    g.fillStyle = gr; g.fill();
+    out.push(cv);
+  }
+  return out;
+})();
+function addScorch(pos, t0) {
+  const h = Math.abs(Math.imul(Math.round(pos[0]) * 73856093 ^ Math.round(pos[1]) * 19349663, 2654435761)) >>> 0;
+  state.scorches.push({ pos, t0, v: h % scorchSprites.length, rot: (h >>> 8) % 628 / 100 });
+  if (state.scorches.length > SCORCH_CAP) state.scorches.splice(0, state.scorches.length - SCORCH_CAP);
+  state.marks = state.marks.filter(m => !(Math.abs(m.t0 - t0) < 500 && Math.hypot(m.pos[0] - pos[0], m.pos[1] - pos[1]) < 40));
+}
+// The explosion's own blast decal would put a dot on its crater.
+function nearFreshScorch(pos, now) {
+  for (let i = state.scorches.length - 1; i >= 0; i--) {
+    const s = state.scorches[i];
+    if (now - s.t0 > 500) break;
+    if (Math.hypot(s.pos[0] - pos[0], s.pos[1] - pos[1]) < 40) return true;
+  }
+  return false;
+}
+function drawScorches(now) {
+  while (state.scorches.length && now - state.scorches[0].t0 >= MARK_LIFE_MS) state.scorches.shift();
+  const d = SCORCH_R * 2 * state.view.scale;
+  if (d < 2) return;
+  for (const s of state.scorches) {
+    const [x, y] = toScreen(s.pos[0], s.pos[1]);
+    ctx.save();
+    ctx.globalAlpha = 0.9 * (1 - (now - s.t0) / MARK_LIFE_MS);
+    ctx.translate(x, y); ctx.rotate(s.rot);
+    ctx.drawImage(scorchSprites[s.v], -d / 2, -d / 2, d, d);
+    ctx.restore();
+  }
+}
+
 function drawMarks() {
   const now = performance.now();
+  drawScorches(now);
   while (state.marks.length && now - state.marks[0].t0 >= MARK_LIFE_MS) state.marks.shift();
   const r = Math.max(1.5, px(7, 1.5));
   ctx.save();
