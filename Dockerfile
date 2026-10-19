@@ -9,9 +9,10 @@ RUN cd stvtf-web && cargo build --release --locked
 FROM debian:bookworm-slim
 RUN useradd --system --home /data stvtf && mkdir -p /data && chown stvtf /data
 COPY --from=build /src/stvtf-web/target/release/stvtf-web /usr/local/bin/stvtf-web
+COPY stvtf-web/backpack /usr/share/stvtf/backpack
 USER stvtf
 WORKDIR /data
 EXPOSE 8080
 # The token key comes from the environment (STVTF_TOKEN_KEY); the map cache lives in /data.
-ENTRYPOINT ["stvtf-web", "--listen", "0.0.0.0:8080", "--cache", "/data/cache"]
+ENTRYPOINT ["stvtf-web", "--listen", "0.0.0.0:8080", "--cache", "/data/cache", "--backpack", "/usr/share/stvtf/backpack"]
 CMD ["--public"]

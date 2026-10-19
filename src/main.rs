@@ -26,7 +26,7 @@ use stvtf::watch::{self, Watch};
 const USAGE: &str = "\
 stvtf-web: live top-down viewer of a TF2 match in the browser
 
-  stvtf-web HOST:TVPORT [--password tv] [--listen 127.0.0.1:8080] [--hz 20] [--cache DIR]
+  stvtf-web HOST:TVPORT [--password tv] [--listen 127.0.0.1:8080] [--hz 20] [--cache DIR] [--backpack DIR]
   stvtf-web HOST[:PORT] [tv] / 'connect HOST:PORT; password \"tv\"'
   stvtf-web [--public] [--max-matches 20] [--base-path /live] [--demo MATCH.jsonl[.gz]] [--sessions DIR]   (watch any server: paste a connect string on the page)
      With STVTF_TOKEN_KEY (64 hex digits) set, matches start only from a site's encrypted /start?t= links.
@@ -331,6 +331,8 @@ enum Matches {
 struct App {
     matches: Matches,
     cache: PathBuf,
+    /// The backpack pictures and `items.json`.
+    backpack: PathBuf,
     maps: Mutex<()>,
     overviews: Mutex<()>,
     /// Where a proxy serves us, like `/live`; empty at the root.
@@ -480,6 +482,7 @@ fn serve(mut s: TcpStream, app: &App) -> Result<()> {
             Some((_, svg)) => respond(&mut s, "200 OK", "image/svg+xml", svg)?,
             None => respond(&mut s, "404 Not Found", "text/plain", b"not found")?,
         },
+        (_, p) if p.starts_with("/backpack/") => serve_backpack(&mut s, app, &p[10..])?,
         (_, p) if p.starts_with("/overview/") || p.starts_with("/map/") => serve_cached(&mut s, app, p)?,
         _ => respond(&mut s, "404 Not Found", "text/plain", b"not found")?,
     }
@@ -523,6 +526,22 @@ fn serve_cached(s: &mut TcpStream, app: &App, p: &str) -> std::io::Result<()> {
         Ok(body) if p == "/overview/boundaries.json" => respond_cached(s, "application/json", &body),
         Ok(body) => respond_cached(s, "image/webp", &body),
         Err(e) => respond(s, "404 Not Found", "text/plain", e.to_string().as_bytes()),
+    }
+}
+
+/// A backpack picture or `items.json`; the name is checked so it cannot leave the directory.
+fn serve_backpack(s: &mut TcpStream, app: &App, file: &str) -> std::io::Result<()> {
+    let (stem, ctype) = match file.rsplit_once('.') {
+        Some((stem, "webp")) => (stem, "image/webp"),
+        Some(("items", "json")) => ("items", "application/json"),
+        _ => ("", ""),
+    };
+    if stem.is_empty() || !stem.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_') {
+        return respond(s, "404 Not Found", "text/plain", b"not found");
+    }
+    match std::fs::read(app.backpack.join(file)) {
+        Ok(body) => respond_cached(s, ctype, &body),
+        Err(_) => respond(s, "404 Not Found", "text/plain", b"not found"),
     }
 }
 
@@ -621,7 +640,7 @@ fn form_decode(v: &str) -> String {
     String::from_utf8_lossy(&out).into_owned()
 }
 
-const FLAGS: [&str; 9] = ["password", "listen", "hz", "cache", "replay", "max-matches", "base-path", "demo", "sessions"];
+const FLAGS: [&str; 10] = ["password", "listen", "hz", "cache", "backpack", "replay", "max-matches", "base-path", "demo", "sessions"];
 const SWITCHES: [&str; 1] = ["public"];
 
 /// Positional arguments and `--name value` options; a mistyped option is an error rather than
@@ -787,6 +806,7 @@ fn main() -> Result<()> {
     let app = Arc::new(App {
         matches,
         cache: PathBuf::from(get("cache").unwrap_or("cache")),
+        backpack: PathBuf::from(get("backpack").unwrap_or("backpack")),
         maps: Mutex::new(()),
         overviews: Mutex::new(()),
         base,
@@ -859,6 +879,7 @@ mod tests {
         App {
             matches,
             cache: PathBuf::from("unused"),
+            backpack: PathBuf::from("unused"),
             maps: Mutex::new(()),
             overviews: Mutex::new(()),
             base: String::new(),
@@ -1026,6 +1047,33 @@ mod tests {
         assert_eq!(kill["names"]["4"]["team"], "blue");
         let cap = lines.iter().find(|l| l["type"] == "point_captured").unwrap();
         assert_eq!(cap["names"]["3"]["name"], "can of tuna");
+    }
+
+    #[test]
+    fn serves_backpack_pictures() {
+        let dir = std::env::temp_dir().join(format!("stvtf-web-backpack-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("scattergun.webp"), b"RIFF").unwrap();
+        std::fs::write(dir.join("items.json"), b"{}").unwrap();
+        let mut a = app(Matches::One(SharedHub::default()));
+        a.backpack = dir.clone();
+        let get = |path: &str| request_to(&a, format!("GET {path} HTTP/1.1\r\nHost: x\r\n\r\n").as_bytes()).1;
+        let picture = get("/backpack/scattergun.webp");
+        assert!(picture.starts_with("HTTP/1.1 200 OK"), "{picture}");
+        assert!(picture.contains("Content-Type: image/webp") && picture.contains("max-age=86400"));
+        let items = get("/backpack/items.json");
+        assert!(items.starts_with("HTTP/1.1 200 OK") && items.contains("Content-Type: application/json"), "{items}");
+        for bad in [
+            "/backpack/../x.webp",
+            "/backpack/a/b.webp",
+            "/backpack/missing.webp",
+            "/backpack/scattergun.png",
+            "/backpack/.webp",
+            "/backpack/",
+        ] {
+            assert!(get(bad).starts_with("HTTP/1.1 404"), "{bad}");
+        }
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

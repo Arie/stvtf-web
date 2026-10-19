@@ -6,8 +6,8 @@ out to any number of browsers over Server-Sent Events.
 
 ```
 cargo build --release
-./target/release/stvtf-web [--public] [--max-matches 20] [--listen 127.0.0.1:8080] [--hz 20] [--cache DIR]
-./target/release/stvtf-web HOST:TVPORT [--password tv] [--listen 127.0.0.1:8080] [--hz 20] [--cache DIR]
+./target/release/stvtf-web [--public] [--max-matches 20] [--listen 127.0.0.1:8080] [--hz 20] [--cache DIR] [--backpack DIR]
+./target/release/stvtf-web HOST:TVPORT [--password tv] [--listen 127.0.0.1:8080] [--hz 20] [--cache DIR] [--backpack DIR]
 ./target/release/stvtf-web --replay FILE.jsonl [--listen 127.0.0.1:8080]
 ```
 
@@ -146,6 +146,12 @@ about 150 ms behind the newest data, so everything lines up with the movement.
   playable area framed by control points, pickups and nearby spawns (or by the floors, on
   maps without either) so the 3D skybox stays out. The extracted geometry is cached in `--cache`.
 
+## Backpack pictures
+
+`backpack/` holds the item pictures (`<image_name>.webp`, 64 px high) and `items.json`, which maps
+an item definition index to its picture. The server serves them at `/backpack/<name>`; `--backpack DIR`
+sets the directory (default `backpack`, `/usr/share/stvtf/backpack` in the Docker image).
+
 ## Layout
 
 - `src/main.rs`: the SourceTV watcher thread, a small HTTP server (page, `/events`, `/map/NAME`).
@@ -193,6 +199,8 @@ Class icons (`icons/`) are by lyreix of the TF2Stadium team, licensed
 CC-BY-NC-SA-4.0 (`icons/LICENCE`), taken unmodified from the
 [demos.tf frontend](https://codeberg.org/demostf/frontend), except the heavy's ammo
 belt, which is our own.
+
+Backpack pictures (`backpack/`) come from TF2's game files, made by tf2-icons.
 
 The match at `/w/demo/` is the koth_product decider of the ETF2L Season 51 Premiership upper
 bracket final, MANDEM vs D M ([etf2l.org/matches/91982](https://etf2l.org/matches/91982/)),
