@@ -23,7 +23,9 @@ env:
   RUSTDOCFLAGS: -D warnings
 
 # Cargo.toml depends on stvmap as `../stvmap`, so both repositories are checked out
-# side by side: $GITHUB_WORKSPACE/stvmap-web and $GITHUB_WORKSPACE/stvmap.
+# side by side: $GITHUB_WORKSPACE/stvmap-web and $GITHUB_WORKSPACE/stvmap. Neither checkout
+# keeps its credentials: the build runs every dependency's build script, which could read them.
+# Actions are pinned by commit; Dependabot bumps the SHA and the version comment together.
 defaults:
   run:
     working-directory: stvmap-web
@@ -33,9 +35,10 @@ jobs:
     name: rustfmt
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           path: stvmap-web
+          persist-credentials: false
       - run: rustup toolchain install
       - run: cargo fmt --check
 
@@ -43,16 +46,18 @@ jobs:
     name: clippy
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           path: stvmap-web
-      - uses: actions/checkout@v7
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: Arie/stvmap
           path: stvmap
           ssh-key: ${{ secrets.STVMAP_DEPLOY_KEY }}
+          persist-credentials: false
       - run: rustup toolchain install
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: stvmap-web
       - run: cargo clippy --all-targets --locked
@@ -62,20 +67,22 @@ jobs:
     name: test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           path: stvmap-web
-      - uses: actions/checkout@v7
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: Arie/stvmap
           path: stvmap
           ssh-key: ${{ secrets.STVMAP_DEPLOY_KEY }}
+          persist-credentials: false
       - run: rustup toolchain install
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: stvmap-web
       # The BSP tests skip themselves without this map; CI always runs them.
-      - uses: actions/cache@v6
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: stvmap-web/cache/cp_process_f12.bsp
           key: bsp-cp_process_f12
@@ -89,16 +96,18 @@ jobs:
     name: cargo-deny
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           path: stvmap-web
-      - uses: actions/checkout@v7
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: Arie/stvmap
           path: stvmap
           ssh-key: ${{ secrets.STVMAP_DEPLOY_KEY }}
+          persist-credentials: false
       - run: rustup toolchain install
-      - uses: taiki-e/install-action@v2
+      - uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
         with:
           tool: cargo-deny
       - run: cargo deny --locked check
