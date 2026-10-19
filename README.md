@@ -174,7 +174,8 @@ cargo test
 cargo deny check                   # advisories, licences, sources (deny.toml; cargo install cargo-deny)
 ```
 
-`git config core.hooksPath .githooks` once per clone runs fmt and clippy before each commit.
+`ln -s ../../.githooks/pre-commit .git/hooks/pre-commit` once per clone runs fmt and clippy before
+each commit (not `core.hooksPath`, which would replace any global git hooks).
 
 CI (`.github/workflows/ci.yml`) runs these on every push to `main` and every pull request,
 and weekly for new advisories. Warnings fail CI. It checks out `Arie/stvtf` next to this
