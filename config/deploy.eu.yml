@@ -1,0 +1,8 @@
+servers:
+  web:
+    hosts: [new.fakkelbrigade.eu]
+    cmd: "--public --demo /data/demo.jsonl.gz"
+
+proxy:
+  hosts:
+    - stv.tf

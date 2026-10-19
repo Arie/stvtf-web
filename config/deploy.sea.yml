@@ -1,0 +1,8 @@
+servers:
+  web:
+    hosts: [direct.sea.serveme.tf]
+    cmd: "--public --demo /data/demo.jsonl.gz"
+
+proxy:
+  hosts:
+    - sea.stv.tf
