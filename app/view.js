@@ -149,6 +149,33 @@ export function toScreen(x, y) {
 export function screenAngle(deg) { return -(deg * Math.PI / 180 + state.view.rot); }
 
 // ---------- drawing
+// Text drawn once per string, font and colour, then copied: setting a canvas font and drawing
+// text are slow enough to show every frame. `x` of a sprite is the left of its text.
+const TEXT_PAD = 3;
+const textSprites = new Map();
+export function textSprite(text, font, fill, outline) {
+  const dpr = window.devicePixelRatio || 1, key = `${text}\n${font}\n${fill}\n${outline}\n${dpr}`;
+  let sp = textSprites.get(key);
+  if (!sp) {
+    if (textSprites.size > 128) textSprites.clear();
+    const c = document.createElement("canvas"), g = c.getContext("2d");
+    g.font = font;
+    const m = g.measureText(text), size = parseFloat(font.match(/(\d+(?:\.\d+)?)px/)?.[1] || 12);
+    const w = Math.ceil(m.width) + TEXT_PAD * 2, h = Math.ceil(size * 1.3) + TEXT_PAD * 2;
+    c.width = Math.ceil(w * dpr); c.height = Math.ceil(h * dpr);
+    g.scale(dpr, dpr); g.font = font; g.textBaseline = "top"; g.lineJoin = "round";
+    if (outline) { g.lineWidth = 3; g.strokeStyle = outline; g.strokeText(text, TEXT_PAD, TEXT_PAD); }
+    g.fillStyle = fill; g.fillText(text, TEXT_PAD, TEXT_PAD);
+    textSprites.set(key, sp = { c, w, h });
+  }
+  return sp;
+}
+// Draws a text sprite with the top of its text at y, centred on x or starting at x.
+export function drawText(text, font, fill, outline, x, y, centre) {
+  const { c, w, h } = textSprite(text, font, fill, outline);
+  ctx.drawImage(c, (centre ? x - w / 2 : x - TEXT_PAD), y - TEXT_PAD, w, h);
+}
+
 export function px(units, min) { return Math.max(min * uiScale(), units * state.view.scale); }
 export const playerRad = () => (OVERLAY ? overlayUnit() : px(30, 11));
 

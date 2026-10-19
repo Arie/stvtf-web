@@ -1,6 +1,6 @@
 import { TEAM, CLASS, icon, OVERLAY, OPT, overlayUnit, uiScale, ctx, state } from "./core.js";
 import { layerOn } from "./layers.js";
-import { toScreen, screenAngle, px, playerRad } from "./view.js";
+import { toScreen, screenAngle, px, playerRad, drawText } from "./view.js";
 
 export function drawProjectiles(list) {
   // The overlay sizes projectiles from its panel like the players, a little larger than their
@@ -279,15 +279,10 @@ export function drawPlayers(players) {
     ctx.globalAlpha = cloaked ? 0.35 : 1;
     drawStatus(p.conds, p.id, x, y, rad);
   }
-  for (const { p, x, y, rad, cloaked } of alive) {
+  if (!OVERLAY || OPT.get("names") === "1") for (const { p, x, y, rad, cloaked } of alive) {
     ctx.globalAlpha = cloaked ? 0.35 : 1;
-    if (!OVERLAY || OPT.get("names") === "1") {
-      const size = OVERLAY ? Math.round(Math.max(11, rad * 0.95)) : Math.round(12 * uiScale());
-      ctx.font = `700 ${size}px system-ui`; ctx.textBaseline = "top"; ctx.textAlign = "center";
-      const label = p.name.slice(0, OVERLAY ? 12 : 18), ly = y + rad + 4;
-      ctx.lineWidth = 3; ctx.strokeStyle = "#0b0c0e"; ctx.strokeText(label, x, ly);
-      ctx.fillStyle = "#e8e8e8"; ctx.fillText(label, x, ly);
-    }
+    const size = OVERLAY ? Math.round(Math.max(11, rad * 0.95)) : Math.round(12 * uiScale());
+    drawText(p.name.slice(0, OVERLAY ? 12 : 18), `700 ${size}px system-ui`, "#e8e8e8", "#0b0c0e", x, y + rad + 4, true);
   }
   ctx.globalAlpha = 1;
 }

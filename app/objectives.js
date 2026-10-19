@@ -1,5 +1,5 @@
 import { MS_PER_TICK, TEAM, OVERLAY, overlayUnit, uiScale, ctx, state } from "./core.js";
-import { toScreen, screenAngle, px, playerRad } from "./view.js";
+import { toScreen, screenAngle, px, playerRad, drawText } from "./view.js";
 import { layerOn } from "./layers.js";
 
 // The payload cart: a mine cart in the pushing team's colour carrying TF2's big black bomb, facing
@@ -236,8 +236,7 @@ export function drawSpawnRooms(snap) {
       ctx.strokeStyle = col; ctx.lineWidth = OVERLAY ? 1.5 : 2; ctx.stroke();
       const top = corners.reduce((a, b) => (b[1] < a[1] || (b[1] === a[1] && b[0] < a[0]) ? b : a));
       if (!OVERLAY && Math.hypot(corners[1][0] - corners[0][0], corners[1][1] - corners[0][1]) > 40) {
-        ctx.fillStyle = col; ctx.font = `800 ${Math.round(10 * uiScale())}px system-ui`; ctx.textAlign = "left"; ctx.textBaseline = "top";
-        ctx.fillText("SPAWN", top[0] + 4, top[1] + 3);
+        drawText("SPAWN", `800 ${Math.round(10 * uiScale())}px system-ui`, col, null, top[0] + 4, top[1] + 3, false);
       }
     } else {
       ctx.setLineDash([4, 4]); ctx.strokeStyle = col + "66"; ctx.lineWidth = 1; ctx.stroke();
