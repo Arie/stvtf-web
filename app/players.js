@@ -126,8 +126,8 @@ function drawUberRing(p, x, y, rad, col) {
     ctx.shadowColor = base; ctx.shadowBlur = 10 + 8 * pulse;
     ctx.strokeStyle = "#0b0c0e"; ctx.lineWidth = lw + 3; ctx.stroke();
     ctx.shadowBlur = 0; ctx.strokeStyle = base; ctx.lineWidth = lw; ctx.stroke();
-    // Candy cane like the HUD card: tint stripes slanted by their outer edge, turning one stripe pair a second.
-    const n = 12, step = Math.PI * 2 / n, slant = step * 0.8, rot = t * step;
+    // Candy cane like the HUD card: tint stripes slanted by their outer edge, turning three stripe pairs a second.
+    const n = 12, step = Math.PI * 2 / n, slant = step * 0.8, rot = t * step * 3;
     ctx.fillStyle = tint; ctx.beginPath();
     for (let i = 0; i < n; i++) {
       const a = rot + i * step, w = step / 2;
