@@ -1,10 +1,10 @@
 # stv.tf: this server as a Kamal app, one per region on the serveme.tf web hosts (sharing their
 # kamal-proxy, which routes by domain). serveme.tf hands browsers encrypted start links;
-# STVMAP_TOKEN_KEY is the key both share. The image builds from the directory holding the
-# stvmap and stvmap-web checkouts.
+# STVTF_TOKEN_KEY is the key both share. The image builds from the directory holding the
+# stvtf and stvtf-web checkouts.
 #   kamal deploy -d eu|na|au|sea
-service: stvmap
-image: arie/stvmap
+service: stvtf
+image: arie/stvtf
 require_destination: true
 
 registry:
@@ -20,13 +20,13 @@ builder:
 
 env:
   secret:
-    - STVMAP_TOKEN_KEY
+    - STVTF_TOKEN_KEY
 
 # The map cache (BSPs from fastdl, extracted geometry) survives deploys. The volume also holds
-# demo.jsonl.gz, the recorded match each region plays at /w/demo/ (`stvmap demo FILE.dem | gzip`,
+# demo.jsonl.gz, the recorded match each region plays at /w/demo/ (`stvtf demo FILE.dem | gzip`,
 # copied in with `docker cp`).
 volumes:
-  - stvmap-cache:/data
+  - stvtf-cache:/data
 
 ssh:
   user: kamal

@@ -1,4 +1,4 @@
-//! Live top-down web viewer for a TF2 match, fed by stvmap.
+//! Live top-down web viewer for a TF2 match, fed by stvtf.
 //!
 //! Given a server, one `SourceTV` connection fanned out to every browser over Server-Sent
 //! Events; without one, a page to start watching any server, each match at its own link.
@@ -21,16 +21,16 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::mpsc::{Receiver, RecvTimeoutError, SyncSender, TrySendError, sync_channel};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant};
-use stvmap::watch::{self, Watch};
+use stvtf::watch::{self, Watch};
 
 const USAGE: &str = "\
-stvmap-web: live top-down viewer of a TF2 match in the browser
+stvtf-web: live top-down viewer of a TF2 match in the browser
 
-  stvmap-web HOST:TVPORT [--password tv] [--listen 127.0.0.1:8080] [--hz 20] [--cache DIR]
-  stvmap-web HOST[:PORT] [tv] / 'connect HOST:PORT; password \"tv\"'
-  stvmap-web [--public] [--max-matches 20] [--base-path /live] [--demo MATCH.jsonl[.gz]] [--sessions DIR]   (watch any server: paste a connect string on the page)
-     With STVMAP_TOKEN_KEY (64 hex digits) set, matches start only from a site's encrypted /start?t= links.
-  stvmap-web --replay FILE.jsonl [--listen 127.0.0.1:8080]   (stvmap output, at game speed)";
+  stvtf-web HOST:TVPORT [--password tv] [--listen 127.0.0.1:8080] [--hz 20] [--cache DIR]
+  stvtf-web HOST[:PORT] [tv] / 'connect HOST:PORT; password \"tv\"'
+  stvtf-web [--public] [--max-matches 20] [--base-path /live] [--demo MATCH.jsonl[.gz]] [--sessions DIR]   (watch any server: paste a connect string on the page)
+     With STVTF_TOKEN_KEY (64 hex digits) set, matches start only from a site's encrypted /start?t= links.
+  stvtf-web --replay FILE.jsonl [--listen 127.0.0.1:8080]   (stvtf output, at game speed)";
 
 const INDEX: &str = include_str!("../index.html");
 const LANDING: &str = include_str!("../landing.html");
@@ -176,7 +176,7 @@ fn subscribe(hub: &SharedHub) -> Receiver<Arc<str>> {
     rx
 }
 
-/// Plays a saved stvmap output (gzipped if it ends in `.gz`) on a loop, each pass as a new match,
+/// Plays a saved stvtf output (gzipped if it ends in `.gz`) on a loop, each pass as a new match,
 /// holding still whenever `play` says nobody is watching.
 fn replay(hub: &SharedHub, path: &Path, play: &dyn Fn() -> bool) -> Result<()> {
     for pass in 0.. {
@@ -195,7 +195,7 @@ fn replay(hub: &SharedHub, path: &Path, play: &dyn Fn() -> bool) -> Result<()> {
                 std::thread::sleep(Duration::from_millis(250));
             }
             let v: Value = serde_json::from_str(&line?)?;
-            // Live output has wall-clock `time`; offline output (`stvmap replay`) only ticks.
+            // Live output has wall-clock `time`; offline output (`stvtf replay`) only ticks.
             // Each line waits for the gap since the previous one, capped so map loads and
             // tick resets do not stall the replay.
             if let Some(t) = v["time"].as_u64().or_else(|| v["tick"].as_u64().filter(|&t| t > 0).map(|t| t * 15)) {
@@ -534,13 +534,13 @@ fn warm(app: &App) {
     for map in known {
         let _one_at_a_time = lock();
         if let Err(e) = overview(&app.cache, &format!("{map}.webp")) {
-            eprintln!("stvmap-web: overview of {map}: {e}");
+            eprintln!("stvtf-web: overview of {map}: {e}");
         }
     }
     for name in WARM.lines().filter(|l| !l.is_empty() && !l.starts_with('#')) {
         let _one_at_a_time = app.maps.lock().unwrap_or_else(PoisonError::into_inner);
         if let Err(e) = map_geometry(&app.cache, name, true) {
-            eprintln!("stvmap-web: {name}: {e}");
+            eprintln!("stvtf-web: {name}: {e}");
         }
     }
 }
@@ -697,7 +697,7 @@ fn many(flags: &HashMap<String, String>, hz: f32, keys: Option<&Arc<token::Keys>
         sessions.store = Some(sessions::Store { dir: PathBuf::from(dir), keys: keys.cloned() });
         let restored = sessions.restore();
         if restored > 0 {
-            eprintln!("stvmap-web: picked up {restored} running matches");
+            eprintln!("stvtf-web: picked up {restored} running matches");
         }
     }
     if let Some(file) = get("demo") {
@@ -744,7 +744,7 @@ fn main() -> Result<()> {
     let hz = get("hz").map(|hz| hz.parse().with_context(|| format!("--hz {hz}: not a number"))).transpose()?.unwrap_or(20.0);
     watch::stop_on_ctrl_c(&STOP)?;
 
-    let keys = std::env::var("STVMAP_TOKEN_KEY").ok().map(|k| token::Keys::from_hex(&k).map(Arc::new)).transpose()?;
+    let keys = std::env::var("STVTF_TOKEN_KEY").ok().map(|k| token::Keys::from_hex(&k).map(Arc::new)).transpose()?;
     let matches = if let Some(file) = get("replay") {
         let (hub, file) = (SharedHub::default(), PathBuf::from(file));
         let replayed = hub.clone();
@@ -767,7 +767,7 @@ fn main() -> Result<()> {
             let result = watch::watch(&w, &STOP, &mut |v| publish(&watched, &v));
             if let Err(e) = &result {
                 publish(&watched, &serde_json::json!({"type": "status", "state": "gave_up", "reason": e.to_string()}));
-                eprintln!("stvmap-web: {e}");
+                eprintln!("stvtf-web: {e}");
             }
             if STOP.load(Ordering::Relaxed) {
                 std::process::exit(0);
@@ -819,7 +819,7 @@ fn main() -> Result<()> {
     }
 
     let listener = TcpListener::bind(&listen)?;
-    eprintln!("stvmap-web: http://{listen}/");
+    eprintln!("stvtf-web: http://{listen}/");
     for conn in listener.incoming() {
         let Ok(s) = conn else { continue };
         let Some(open) = Connection::open(&OPEN) else { continue };
@@ -987,7 +987,7 @@ mod tests {
 
     #[test]
     fn replay_without_times_stops() {
-        let path = std::env::temp_dir().join(format!("stvmap-web-replay-{}.jsonl", std::process::id()));
+        let path = std::env::temp_dir().join(format!("stvtf-web-replay-{}.jsonl", std::process::id()));
         for contents in ["", "{\"type\":\"status\"}\n"] {
             std::fs::write(&path, contents).unwrap();
             assert!(replay(&SharedHub::default(), &path, &|| true).is_err(), "{contents:?}");
@@ -997,7 +997,7 @@ mod tests {
 
     #[test]
     fn write_atomic_replaces_the_file() {
-        let dir = std::env::temp_dir().join(format!("stvmap-web-atomic-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("stvtf-web-atomic-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("m.v3.json");
         std::fs::write(&path, b"old, longer contents").unwrap();
@@ -1028,7 +1028,7 @@ mod tests {
 
     #[test]
     fn only_overview_files_are_fetched() {
-        let cache = std::env::temp_dir().join(format!("stvmap-web-overview-{}", std::process::id()));
+        let cache = std::env::temp_dir().join(format!("stvtf-web-overview-{}", std::process::id()));
         for bad in ["../boundaries.json", "x.json", "a/b.webp", ".webp", "boundaries.webp.json"] {
             assert!(overview(&cache, bad).is_err(), "{bad}");
         }
@@ -1045,7 +1045,7 @@ mod tests {
 
     #[test]
     fn only_maps_being_watched_are_built() {
-        let cache = std::env::temp_dir().join(format!("stvmap-web-onmap-{}", std::process::id()));
+        let cache = std::env::temp_dir().join(format!("stvtf-web-onmap-{}", std::process::id()));
         // Not cached and not being watched: an error, without asking fastdl.
         assert!(map_geometry(&cache, "cp_nothere", false).unwrap_err().to_string().contains("no match"));
         std::fs::write(cache.join("cp_cached.v3.json"), b"{}").unwrap();
@@ -1090,7 +1090,7 @@ mod tests {
 
     #[test]
     fn broken_cached_bsp_is_removed() {
-        let cache = std::env::temp_dir().join(format!("stvmap-web-test-{}", std::process::id()));
+        let cache = std::env::temp_dir().join(format!("stvtf-web-test-{}", std::process::id()));
         std::fs::create_dir_all(&cache).unwrap();
         let bsp = cache.join("broken.bsp");
         std::fs::write(&bsp, b"VBSP\0\0\0\0").unwrap();

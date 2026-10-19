@@ -1052,7 +1052,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "stvmap"
+name = "stvtf"
 version = "0.1.0"
 dependencies = [
  "anyhow",
@@ -1068,7 +1068,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "stvmap-web"
+name = "stvtf-web"
 version = "0.1.0"
 dependencies = [
  "aes-gcm",
@@ -1077,7 +1077,7 @@ dependencies = [
  "flate2",
  "lzma-rs",
  "serde_json",
- "stvmap",
+ "stvtf",
  "ureq",
 ]
 

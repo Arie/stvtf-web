@@ -1,14 +1,14 @@
-# stvmap-web
+# stvtf-web
 
-A live top-down view of a TF2 match in the browser. It links
-[stvmap](../stvmap) as a library: one SourceTV connection per match, fanned out
-to any number of browsers over Server-Sent Events.
+The server behind [stv.tf](https://stv.tf): a live top-down view of a TF2 match in the
+browser. It links [stvtf](../stvtf) as a library: one SourceTV connection per match, fanned
+out to any number of browsers over Server-Sent Events.
 
 ```
 cargo build --release
-./target/release/stvmap-web [--public] [--max-matches 20] [--listen 127.0.0.1:8080] [--hz 20] [--cache DIR]
-./target/release/stvmap-web HOST:TVPORT [--password tv] [--listen 127.0.0.1:8080] [--hz 20] [--cache DIR]
-./target/release/stvmap-web --replay FILE.jsonl [--listen 127.0.0.1:8080]
+./target/release/stvtf-web [--public] [--max-matches 20] [--listen 127.0.0.1:8080] [--hz 20] [--cache DIR]
+./target/release/stvtf-web HOST:TVPORT [--password tv] [--listen 127.0.0.1:8080] [--hz 20] [--cache DIR]
+./target/release/stvtf-web --replay FILE.jsonl [--listen 127.0.0.1:8080]
 ```
 
 Without a server, open `http://127.0.0.1:8080/` and paste a SourceTV connect string (or paste
@@ -19,13 +19,13 @@ watched at once, and `--public`, for a server that strangers can use, refuses pr
 internal addresses.
 
 Behind a site such as serveme.tf, which signs users in and decides what they may watch, run
-it with `--public --base-path /live` and `STVMAP_TOKEN_KEY` (64 hex digits) shared with the
+it with `--public --base-path /live` and `STVTF_TOKEN_KEY` (64 hex digits) shared with the
 site. Matches then start only from the site's `/start?t=TOKEN` links: the token is AES-256-GCM
 (`base64url(12-byte nonce | ciphertext | tag)` of `{"connect", "owner", "exp"}`), so the
 SourceTV password in it is never readable in a URL, and a user (`owner`) watches one match at
 a time; a null owner is unlimited.
 
-`--sessions DIR` keeps a file per running match there (encrypted with `STVMAP_TOKEN_KEY` when
+`--sessions DIR` keeps a file per running match there (encrypted with `STVTF_TOKEN_KEY` when
 set), and on start picks the matches up again under the same links, with their feed so far:
 a restart or deploy is then a pause of a second or two for the people watching. SIGTERM, like
 Ctrl-C, disconnects every match cleanly first.
@@ -35,18 +35,18 @@ maps in `maps.txt` (the most played on serveme.tf) when it starts, so their firs
 maps are built when a match on them is first viewed (and no others, so nobody can fill the cache
 with every map on fastdl). Only the geometry stays in the cache, not the BSP.
 
-`--demo MATCH.jsonl[.gz]` adds a fixed match at `/w/demo/`: a saved `stvmap` output played on
+`--demo MATCH.jsonl[.gz]` adds a fixed match at `/w/demo/`: a saved `stvtf` output played on
 a loop, to show the viewer off without a live game. It needs no token, is never disconnected,
 does not count towards `--max-matches` and holds still while nobody is watching.
 
 stv.tf runs this way: `config/deploy.yml` is its Kamal config (`kamal deploy -d eu|na|au|sea`),
-one app per region on the serveme.tf web hosts, with `STVMAP_TOKEN_KEY` read from
-`~/.config/stvmap/token.key` (shared with serveme.tf). It pushes to and pulls from ghcr.io with
-the classic token in `~/.config/stvmap/ghcr.token`, which has only the `write:packages` scope,
+one app per region on the serveme.tf web hosts, with `STVTF_TOKEN_KEY` read from
+`~/.config/stvtf/token.key` (shared with serveme.tf). It pushes to and pulls from ghcr.io with
+the classic token in `~/.config/stvtf/ghcr.token`, which has only the `write:packages` scope,
 because Kamal leaves the registry login on every host.
 
 `Dockerfile` builds that server, with the directory holding both repositories as context:
-`docker build -f stvmap-web/Dockerfile .` (`Dockerfile.dockerignore` keeps the context to the
+`docker build -f stvtf-web/Dockerfile .` (`Dockerfile.dockerignore` keeps the context to the
 two crates). It listens on 8080, keeps the map cache in `/data` and answers `/up` for health checks.
 
 The connect string can be as serveme.tf shows it (`connect HOST:PORT; password "tv"`),
@@ -54,7 +54,7 @@ The connect string can be as serveme.tf shows it (`connect HOST:PORT; password "
 game port, it tries game port + 5.
 
 Given a server, it watches just that match at `http://127.0.0.1:8080/`. `--replay` plays a
-saved `stvmap connect` output at its recorded speed, which is handy when working on the page.
+saved `stvtf connect` output at its recorded speed, which is handy when working on the page.
 
 The map zooms to where the players are fighting. Dragging or scrolling takes over
 the camera; the "Auto zoom" button hands it back.
@@ -177,14 +177,14 @@ cargo deny check                   # advisories, licences, sources (deny.toml; c
 `git config core.hooksPath .githooks` once per clone runs fmt and clippy before each commit.
 
 CI (`.github/workflows/ci.yml`) runs these on every push to `main` and every pull request,
-and weekly for new advisories. Warnings fail CI. It checks out `Arie/stvmap` next to this
-repository for the `../stvmap` path dependency, using the deploy key in the
+and weekly for new advisories. Warnings fail CI. It checks out `Arie/stvtf` next to this
+repository for the `../stvtf` path dependency, using the deploy key in the
 `STVMAP_DEPLOY_KEY` secret.
 
 ## Credits
 
 From [demos.tf](https://demos.tf) by Robin Appelman: [tf-demo-parser](https://codeberg.org/demostf/parser)
-(MIT or Apache-2.0), which stvmap decodes SourceTV data with, and the map overview images and
+(MIT or Apache-2.0), which stvtf decodes SourceTV data with, and the map overview images and
 their boundaries from `maps.demos.tf`, with demos.tf's way of matching a map name to them.
 
 Class icons (`icons/`) are by lyreix of the TF2Stadium team, licensed

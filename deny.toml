@@ -18,7 +18,7 @@ private = { ignore = true }
 [bans]
 multiple-versions = "warn"
 wildcards = "deny"
-# `stvmap = { path = "../stvmap" }` has no version and counts as a wildcard otherwise.
+# `stvtf = { path = "../stvtf" }` has no version and counts as a wildcard otherwise.
 allow-wildcard-paths = true
 
 [sources]

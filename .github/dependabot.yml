@@ -1,4 +1,4 @@
-# Cargo dependencies are not covered: Dependabot cannot resolve the private `../stvmap`
+# Cargo dependencies are not covered: Dependabot cannot resolve the private `../stvtf`
 # path dependency. cargo-deny in CI reports advisories for them instead.
 version: 2
 updates:

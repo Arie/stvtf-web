@@ -22,13 +22,13 @@ env:
   RUSTFLAGS: -D warnings
   RUSTDOCFLAGS: -D warnings
 
-# Cargo.toml depends on stvmap as `../stvmap`, so both repositories are checked out
-# side by side: $GITHUB_WORKSPACE/stvmap-web and $GITHUB_WORKSPACE/stvmap. Neither checkout
+# Cargo.toml depends on stvtf as `../stvtf`, so both repositories are checked out
+# side by side: $GITHUB_WORKSPACE/stvtf-web and $GITHUB_WORKSPACE/stvtf. Neither checkout
 # keeps its credentials: the build runs every dependency's build script, which could read them.
 # Actions are pinned by commit; Dependabot bumps the SHA and the version comment together.
 defaults:
   run:
-    working-directory: stvmap-web
+    working-directory: stvtf-web
 
 jobs:
   fmt:
@@ -37,7 +37,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          path: stvmap-web
+          path: stvtf-web
           persist-credentials: false
       - run: rustup toolchain install
       - run: cargo fmt --check
@@ -48,18 +48,18 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          path: stvmap-web
+          path: stvtf-web
           persist-credentials: false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          repository: Arie/stvmap
-          path: stvmap
+          repository: Arie/stvtf
+          path: stvtf
           ssh-key: ${{ secrets.STVMAP_DEPLOY_KEY }}
           persist-credentials: false
       - run: rustup toolchain install
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
-          workspaces: stvmap-web
+          workspaces: stvtf-web
       - run: cargo clippy --all-targets --locked
       - run: cargo doc --no-deps --locked
 
@@ -69,22 +69,22 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          path: stvmap-web
+          path: stvtf-web
           persist-credentials: false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          repository: Arie/stvmap
-          path: stvmap
+          repository: Arie/stvtf
+          path: stvtf
           ssh-key: ${{ secrets.STVMAP_DEPLOY_KEY }}
           persist-credentials: false
       - run: rustup toolchain install
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
-          workspaces: stvmap-web
+          workspaces: stvtf-web
       # The BSP tests skip themselves without this map; CI always runs them.
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: stvmap-web/cache/cp_process_f12.bsp
+          path: stvtf-web/cache/cp_process_f12.bsp
           key: bsp-cp_process_f12
       - name: Download test map
         run: |
@@ -98,12 +98,12 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          path: stvmap-web
+          path: stvtf-web
           persist-credentials: false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          repository: Arie/stvmap
-          path: stvmap
+          repository: Arie/stvtf
+          path: stvtf
           ssh-key: ${{ secrets.STVMAP_DEPLOY_KEY }}
           persist-credentials: false
       - run: rustup toolchain install

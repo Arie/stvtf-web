@@ -13,7 +13,7 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
-use stvmap::watch::{self, Watch};
+use stvtf::watch::{self, Watch};
 
 pub struct Session {
     pub id: String,
@@ -162,7 +162,7 @@ impl Sessions {
         if let Some(store) = &self.store
             && let Err(e) = store.save(&s)
         {
-            eprintln!("stvmap-web: saving match {}: {e:#}", s.id);
+            eprintln!("stvtf-web: saving match {}: {e:#}", s.id);
         }
         Ok(s)
     }
@@ -222,7 +222,7 @@ impl Sessions {
                 Some((server, v["password"].as_str()?.to_string(), v["owner"].as_str().map(str::to_string), v))
             });
             let Some((server, password, owner, v)) = parsed else {
-                eprintln!("stvmap-web: dropping unreadable saved match {id}");
+                eprintln!("stvtf-web: dropping unreadable saved match {id}");
                 store.forget(&id);
                 continue;
             };
@@ -244,7 +244,7 @@ impl Sessions {
         let running: Vec<Arc<Session>> = self.lock().values().filter(|s| !s.pinned).cloned().collect();
         for s in running {
             if let Err(e) = store.save(&s) {
-                eprintln!("stvmap-web: saving match {}: {e:#}", s.id);
+                eprintln!("stvtf-web: saving match {}: {e:#}", s.id);
             }
         }
     }
@@ -413,7 +413,7 @@ mod tests {
 
     #[test]
     fn matches_survive_into_the_next_process() {
-        let dir = std::env::temp_dir().join(format!("stvmap-sessions-{}", random_id()));
+        let dir = std::env::temp_dir().join(format!("stvtf-sessions-{}", random_id()));
         let keys = Arc::new(token::Keys::from_hex(&"42".repeat(32)).unwrap());
         let store = || Some(Store { dir: dir.clone(), keys: Some(keys.clone()) });
         let mut before = Sessions::new(false, 4, 20.0);

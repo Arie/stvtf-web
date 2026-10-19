@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>stvmap</title>
+<title>stv.tf</title>
 <!-- The server fills in where it is served (behind a proxy, /live/); all asset links are relative to it. -->
 <base href="/">
 <link rel="stylesheet" href="killicons.css">
@@ -833,7 +833,7 @@ function drawObjectives(snap, tick) {
     const u = OVERLAY ? overlayUnit() : 0;
     const half = OVERLAY ? u * 1.2 : px(110, 11);
     const x0 = x - half, y0 = y - half, side = half * 2, corner = Math.max(2, half * 0.18);
-    // Advance between snapshots at the rate stvmap extrapolates from the cap times and cappers.
+    // Advance between snapshots at the rate stvtf extrapolates from the cap times and cappers.
     const progress = Math.max(0, Math.min(1, o.cap_progress + (o.cap_rate || 0) * Math.max(0, tick - snap.tick) * MS_PER_TICK / 1000));
     const capping = o.capping_team !== "none" && progress > 0;
     ctx.save();
