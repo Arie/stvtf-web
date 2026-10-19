@@ -1093,7 +1093,8 @@ function drawCart(o, tick) {
   if (o.cappers > 0) {
     // A pill centred under the cart's lowest edge in screen space, touching it.
     const t = `×${o.cappers}`, th = screenAngle(cs.h ?? 0), fs = Math.round(OVERLAY ? u * 1.1 : Math.max(12 * uiScale(), L * 0.42));
-    const low = Math.abs(Math.sin(th)) * L / 2 + Math.abs(Math.cos(th)) * W / 2 + lw / 2;
+    // The wheels stick out past the body, so clear them too.
+    const low = Math.abs(Math.sin(th)) * L / 2 + Math.abs(Math.cos(th)) * W * 0.66 + lw / 2;
     ctx.font = `800 ${fs}px system-ui`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
     const pw = ctx.measureText(t).width + fs * 0.7, ph = fs * 1.2, py = y + low - lw / 2;
     ctx.beginPath(); ctx.roundRect(x - pw / 2, py, pw, ph, ph / 2);
@@ -1891,7 +1892,7 @@ function card(p) {
   setText2(el.querySelector(".nm b"), p.name);
   const sub = p.ping != null ? `${p.ping} ms` : "";
   const [subEl, wp, clip] = el.querySelector(".nm small").children;
-  const fx = layerOn("effects") ? [["Burning", "burn", "On fire"], ["Urine", "jar", "Jarate"], ["MadMilk", "milk", "Mad Milk"], ["Bleeding", "bleed", "Bleeding"]]
+  const fx = layerOn("effects") && p.alive ? [["Burning", "burn", "On fire"], ["Urine", "jar", "Jarate"], ["MadMilk", "milk", "Mad Milk"], ["Bleeding", "bleed", "Bleeding"]]
     .filter(([c]) => p.conds?.includes(c)).map(([, k, t]) => `<i class="fx ${k}" title="${t}"></i>`).join("") : "";
   setHTML(subEl, `${fx}${p.ubered ? `<span class="tag">${UBER_LABEL[p.ubered] || "ÜBER"}</span>` : ""}${sub}`);
   const w = weaponInfo(p);
