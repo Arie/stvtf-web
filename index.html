@@ -496,7 +496,8 @@ window.addEventListener("mousemove", e => {
   state.view.cx = drag.cx - (e.clientX - drag.x) / state.view.scale;
   state.view.cy = drag.cy + (e.clientY - drag.y) / state.view.scale;
 });
-// h: player HUD and scores, s: just the scores, e: events and chat, g: overview or geometry.
+// h: player HUD and scores, s: just the scores, e: events and chat, g: overview or geometry,
+// o: the overlay or back.
 function toggle(cls) {
   const on = document.documentElement.classList.toggle(cls);
   try { localStorage.setItem(cls, on ? "1" : "0"); } catch {}
@@ -510,6 +511,7 @@ window.addEventListener("keydown", e => {
     case "s": toggle("noscore"); break;
     case "e": setSidebar(document.documentElement.classList.contains("noside")); break;
     case "g": if (!$("bgtoggle").hidden) document.querySelector("#bgtoggle button:not(.on)").click(); break;
+    case "o": location.replace(OVERLAY ? location.pathname.replace(/overlay\/?$/, "") : location.pathname.replace(/(index\.html)?$/, "overlay")); break;
   }
 });
 for (const cls of ["nohud", "noscore"]) {
