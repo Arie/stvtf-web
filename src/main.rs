@@ -28,7 +28,7 @@ stvmap-web: live top-down viewer of a TF2 match in the browser
 
   stvmap-web HOST:TVPORT [--password tv] [--listen 127.0.0.1:8080] [--hz 20] [--cache DIR]
   stvmap-web HOST[:PORT] [tv] / 'connect HOST:PORT; password \"tv\"'
-  stvmap-web [--public] [--max-matches 20] [--base-path /live] [--demo MATCH.jsonl[.gz]] [--host-ip IP] [--sessions DIR]   (watch any server: paste a connect string on the page)
+  stvmap-web [--public] [--max-matches 20] [--base-path /live] [--demo MATCH.jsonl[.gz]] [--sessions DIR]   (watch any server: paste a connect string on the page)
      With STVMAP_TOKEN_KEY (64 hex digits) set, matches start only from a site's encrypted /start?t= links.
   stvmap-web --replay FILE.jsonl [--listen 127.0.0.1:8080]   (stvmap output, at game speed)";
 
@@ -444,7 +444,7 @@ fn form_decode(v: &str) -> String {
     String::from_utf8_lossy(&out).into_owned()
 }
 
-const FLAGS: [&str; 10] = ["password", "listen", "hz", "cache", "replay", "max-matches", "base-path", "demo", "host-ip", "sessions"];
+const FLAGS: [&str; 9] = ["password", "listen", "hz", "cache", "replay", "max-matches", "base-path", "demo", "sessions"];
 const SWITCHES: [&str; 1] = ["public"];
 
 /// Positional arguments and `--name value` options; a mistyped option is an error rather than
@@ -518,12 +518,6 @@ fn many(flags: &HashMap<String, String>, hz: f32, keys: Option<&Arc<token::Keys>
     let get = |k: &str| flags.get(k).map(String::as_str);
     let max = get("max-matches").map(|n| n.parse().with_context(|| format!("--max-matches {n}: not a number"))).transpose()?.unwrap_or(20);
     let mut sessions = Sessions::new(flags.contains_key("public"), max, hz);
-    if let Some(ip) = get("host-ip") {
-        let public = ip.parse().with_context(|| format!("--host-ip {ip}: not an IP address"))?;
-        let routes = std::fs::read_to_string("/proc/net/route").context("reading /proc/net/route for --host-ip")?;
-        let gateway = sessions::default_gateway(&routes).ok_or_else(|| anyhow!("--host-ip: no default gateway"))?;
-        sessions.this_host = Some((public, gateway));
-    }
     if let Some(dir) = get("sessions") {
         sessions.store = Some(sessions::Store { dir: PathBuf::from(dir), keys: keys.cloned() });
         let restored = sessions.restore();

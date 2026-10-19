@@ -2,7 +2,7 @@ servers:
   web:
     hosts: [direct.au.serveme.tf]
     # The AU web host is a 3.8 GB VPS that has frozen under memory pressure before.
-    cmd: "--public --max-matches 5 --demo /data/demo.jsonl.gz --sessions /data/sessions --host-ip 51.161.162.42"
+    cmd: "--public --max-matches 5 --demo /data/demo.jsonl.gz --sessions /data/sessions"
     options:
       memory: 256m
 

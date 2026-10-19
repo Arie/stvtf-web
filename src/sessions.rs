@@ -63,10 +63,6 @@ pub struct Sessions {
     pub public: bool,
     pub max: usize,
     pub hz: f32,
-    /// This machine's public address and the gateway to reach it on from inside the container.
-    /// A game server here, bound to 0.0.0.0, answers a packet sent to the public address from the
-    /// address of the route back to us (the gateway), which our connected socket would drop.
-    pub this_host: Option<(IpAddr, IpAddr)>,
     pub store: Option<Store>,
 }
 
@@ -112,7 +108,7 @@ impl Store {
 
 impl Sessions {
     pub fn new(public: bool, max: usize, hz: f32) -> Self {
-        Sessions { map: Mutex::default(), public, max, hz, this_host: None, store: None }
+        Sessions { map: Mutex::default(), public, max, hz, store: None }
     }
 
     fn lock(&self) -> std::sync::MutexGuard<'_, HashMap<String, Arc<Session>>> {
@@ -189,12 +185,8 @@ impl Sessions {
             thread: Mutex::new(None),
         });
         let (watcher, hz) = (s.clone(), self.hz);
-        let via = match self.this_host {
-            Some((public, gateway)) if server.ip() == public => SocketAddr::new(gateway, server.port()),
-            _ => server,
-        };
         let thread = std::thread::spawn(move || {
-            let mut w = Watch::new(&via.to_string(), &watcher.password);
+            let mut w = Watch::new(&server.to_string(), &watcher.password);
             w.snapshot_hz = hz;
             if let Err(e) = watch::watch(&w, &watcher.stop, &mut |v| publish(&watcher.hub, &v)) {
                 publish(&watcher.hub, &serde_json::json!({"type": "status", "state": "gave_up", "reason": e.to_string()}));
@@ -308,18 +300,6 @@ impl Sessions {
     }
 }
 
-/// The default route's gateway in `/proc/net/route` (addresses are little-endian hex).
-pub fn default_gateway(table: &str) -> Option<IpAddr> {
-    table.lines().skip(1).find_map(|l| {
-        let f: Vec<&str> = l.split_whitespace().collect();
-        (f.get(1) == Some(&"00000000"))
-            .then(|| u32::from_str_radix(f.get(2)?, 16).ok())
-            .flatten()
-            .filter(|&g| g != 0)
-            .map(|g| IpAddr::from(g.to_le_bytes()))
-    })
-}
-
 /// 128 random bits as hex; the link to a match is all it takes to watch it.
 fn random_id() -> String {
     let r = || RandomState::new().hash_one(Instant::now());
@@ -416,15 +396,6 @@ mod tests {
         let m = s.open("192.0.2.1:27020 tv", None).unwrap();
         assert!(s.get(&m.id).is_some(), "the demo is outside the match limit");
         s.stop_all();
-    }
-
-    #[test]
-    fn the_default_gateway_comes_from_the_route_table() {
-        let table = "Iface\tDestination\tGateway \tFlags\tRefCnt\tUse\tMetric\tMask\t\tMTU\tWindow\tIRTT\n\
-                     eth0\t000012AC\t00000000\t0001\t0\t0\t0\t0000FFFF\t0\t0\t0\n\
-                     eth0\t00000000\t010012AC\t0003\t0\t0\t0\t00000000\t0\t0\t0\n";
-        assert_eq!(default_gateway(table), Some(IpAddr::from([172, 18, 0, 1])));
-        assert_eq!(default_gateway("Iface\tDestination\tGateway\n"), None);
     }
 
     #[test]

@@ -1,7 +1,7 @@
 servers:
   web:
     hosts: [direct.na.serveme.tf]
-    cmd: "--public --demo /data/demo.jsonl.gz --sessions /data/sessions --host-ip 104.128.58.43"
+    cmd: "--public --demo /data/demo.jsonl.gz --sessions /data/sessions"
 
 proxy:
   hosts:

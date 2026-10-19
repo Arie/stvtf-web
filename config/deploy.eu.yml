@@ -1,7 +1,7 @@
 servers:
   web:
     hosts: [new.fakkelbrigade.eu]
-    cmd: "--public --demo /data/demo.jsonl.gz --sessions /data/sessions --host-ip 46.4.87.20"
+    cmd: "--public --demo /data/demo.jsonl.gz --sessions /data/sessions"
 
 proxy:
   hosts:
