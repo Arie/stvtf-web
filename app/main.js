@@ -83,11 +83,12 @@ function draw() {
     fireEvents(tick, byId);
     drawSpawnRooms(f.snap);
     if (layerOn("marks")) drawMarks();
+    // Under the points and buildings, which some maps put right on top of a pack.
+    if (layerOn("pickups")) drawPacks();
     if (layerOn("caps")) drawCapAreas(f.snap);
     drawObjectives(f.snap, tick);
     if (layerOn("points") && !OVERLAY) drawOnPoint(f.snap);
     drawBuildings(f.snap);
-    if (layerOn("pickups")) drawPacks();
     if (layerOn("jumps")) drawJumpTrails(f.players);
     // Above the players in the overlay, where a dot would otherwise cover them.
     if (!OVERLAY) drawProjectiles(f.projectiles);

@@ -146,6 +146,8 @@ export function drawPacks() {
   ctx.restore();
 }
 
+const TELEPORT = 250;
+
 // Blast-jump trails from the interpolated positions: dark team shade off the ground to a bright one at the peak.
 export function drawJumpTrails(players) {
   const now = performance.now(), byId = new Map(players.map(p => [p.id, p]));
@@ -154,10 +156,11 @@ export function drawJumpTrails(players) {
   for (const t of state.trails) {
     if (!t.end) {
       const p = byId.get(t.id);
-      if (!p || !p.alive || now - t.t0 > 6000) t.end = now;
+      const last = t.pts.at(-1), step = last && p?.pos ? Math.hypot(p.pos[0] - last[0], p.pos[1] - last[1]) : 0;
+      // A step no jump makes in one frame is a teleport (a respawn at round reset): the trail ends there.
+      if (!p || !p.alive || now - t.t0 > 6000 || step > TELEPORT) t.end = now;
       else {
-        const last = t.pts.at(-1);
-        if (!last || Math.hypot(p.pos[0] - last[0], p.pos[1] - last[1]) > 8) t.pts.push([p.pos[0], p.pos[1], p.pos[2]]);
+        if (!last || step > 8) t.pts.push([p.pos[0], p.pos[1], p.pos[2]]);
         else last[2] = p.pos[2];
         if (t.pts.length > 400) t.pts.shift();
       }

@@ -105,7 +105,7 @@ export function fireEvents(tick, byId) {
       }
       case "round_win": banner(`${teamName(ev.team)} wins the round`, ev.team); feedEvent(ev, p); break;
       case "round_start":
-        if (!stale(ev, 1500)) { state.scorches = []; state.marks = []; }
+        if (!stale(ev, 1500)) { state.scorches = []; state.marks = []; state.trails = []; }
         banner("Round start", "none"); feedEvent(ev, p); break;
       case "chat": case "voice_command": case "server_text": chat(ev, p); break;
       default: feedEvent(ev, p);
