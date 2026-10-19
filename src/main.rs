@@ -9,6 +9,8 @@ mod sessions;
 mod token;
 
 use anyhow::{Context, Result, anyhow, bail};
+use flate2::Compression;
+use flate2::write::GzEncoder;
 use serde_json::Value;
 use sessions::{Sessions, Viewer};
 use std::collections::{HashMap, VecDeque};
@@ -261,7 +263,7 @@ fn serve(mut s: TcpStream, app: &App) -> Result<()> {
     let mut reader = BufReader::new(s.try_clone()?.take(MAX_REQUEST));
     let mut request = String::new();
     reader.read_line(&mut request)?;
-    let mut length = 0;
+    let (mut length, mut gzip) = (0, false);
     loop {
         let mut header = String::new();
         if reader.read_line(&mut header)? == 0 {
@@ -270,10 +272,12 @@ fn serve(mut s: TcpStream, app: &App) -> Result<()> {
         if header == "\r\n" {
             break;
         }
-        if let Some((name, value)) = header.split_once(':')
-            && name.eq_ignore_ascii_case("content-length")
-        {
-            length = value.trim().parse().unwrap_or(0);
+        if let Some((name, value)) = header.split_once(':') {
+            if name.eq_ignore_ascii_case("content-length") {
+                length = value.trim().parse().unwrap_or(0);
+            } else if name.eq_ignore_ascii_case("accept-encoding") {
+                gzip = value.split(',').any(|e| e.split(';').next().is_some_and(|e| e.trim().eq_ignore_ascii_case("gzip")));
+            }
         }
     }
     let method = request.split_whitespace().next().unwrap_or("GET");
@@ -283,7 +287,7 @@ fn serve(mut s: TcpStream, app: &App) -> Result<()> {
     match (&app.matches, path) {
         (_, "/up") => respond(&mut s, "200 OK", "text/plain", b"ok")?,
         (Matches::One(_), "/" | "/index.html" | "/overlay") => respond(&mut s, "200 OK", html, &app.page(INDEX))?,
-        (Matches::One(hub), "/events") => stream(&mut s, hub)?,
+        (Matches::One(hub), "/events") => stream(s, hub, gzip)?,
         (Matches::Many(_), "/" | "/watch") if app.keys.is_some() => {
             respond(&mut s, "403 Forbidden", "text/plain", b"Start watching a match from the site that sent you here.")?;
         }
@@ -320,7 +324,7 @@ fn serve(mut s: TcpStream, app: &App) -> Result<()> {
                 (Some(_), "" | "overlay") => respond(&mut s, "200 OK", html, &app.page(INDEX))?,
                 (Some(m), "events") => {
                     let _viewer = Viewer::new(m.clone());
-                    stream(&mut s, &m.hub)?;
+                    stream(s, &m.hub, gzip)?;
                 }
                 _ => respond(&mut s, "404 Not Found", "text/plain", b"not found")?,
             }
@@ -371,15 +375,29 @@ fn start(app: &App, sessions: &Sessions, query: &str) -> Result<Arc<sessions::Se
 }
 
 /// A match's events to one browser, until it goes away.
-fn stream(s: &mut TcpStream, hub: &SharedHub) -> Result<()> {
-    write!(s, "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nCache-Control: no-cache\r\nX-Content-Type-Options: nosniff\r\n\r\n")?;
+/// Snapshots are 20 a second of very similar JSON: gzip, flushed after each batch so nothing waits,
+/// brings a viewer from about 110 KB/s down to a few.
+fn stream(mut s: TcpStream, hub: &SharedHub, gzip: bool) -> Result<()> {
+    write!(
+        s,
+        "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nCache-Control: no-cache\r\nX-Accel-Buffering: no\r\nX-Content-Type-Options: nosniff\r\n{}\r\n",
+        if gzip { "Content-Encoding: gzip\r\n" } else { "" }
+    )?;
+    let mut out: Box<dyn Write> = if gzip { Box::new(GzEncoder::new(s, Compression::new(5))) } else { Box::new(s) };
     let rx = subscribe(hub);
     loop {
         match rx.recv_timeout(Duration::from_secs(15)) {
-            Ok(line) => write!(s, "data: {line}\n\n")?,
-            Err(RecvTimeoutError::Timeout) => write!(s, ": keepalive\n\n")?,
+            Ok(line) => {
+                write!(out, "data: {line}\n\n")?;
+                // Whatever else is already queued goes out in the same flush.
+                for line in rx.try_iter() {
+                    write!(out, "data: {line}\n\n")?;
+                }
+            }
+            Err(RecvTimeoutError::Timeout) => write!(out, ": keepalive\n\n")?,
             Err(RecvTimeoutError::Disconnected) => return Ok(()),
         }
+        out.flush()?;
     }
 }
 

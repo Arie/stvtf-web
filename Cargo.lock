@@ -1074,6 +1074,7 @@ dependencies = [
  "aes-gcm",
  "anyhow",
  "base64",
+ "flate2",
  "lzma-rs",
  "serde_json",
  "stvmap",
