@@ -140,7 +140,9 @@ function renderPoints(snap) {
   const html = (snap.objectives || []).filter(o => o.kind === "control_point").map(o => {
     const capping = o.capping_team !== "none" && o.cap_progress > 0;
     const style = `--own:${TEAM[o.owner] || "#8a8a8a"};--cap:${capping ? TEAM[o.capping_team] : "transparent"};--p:${Math.round((capping ? o.cap_progress : 0) * 100)}%`;
-    return `<div class="cp${o.locked ? " locked" : ""}${capping ? " capping" : ""}" style="${style}">${o.index + 1}</div>`;
+    // While capping, the cap rate like on the map: ×2 for two cappers.
+    const n = layerOn("points") && capping && o.on_point ? o.on_point[o.capping_team] : 0;
+    return `<div class="cp${o.locked ? " locked" : ""}${capping ? " capping" : ""}" style="${style}">${n > 0 ? `\u00d7${n}` : o.index + 1}</div>`;
   }).join("");
   if ($("cps").innerHTML !== html) $("cps").innerHTML = html;
 }

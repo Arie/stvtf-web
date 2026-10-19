@@ -146,12 +146,22 @@ export function drawHealBeams(players, byId) {
     const [x0, y0] = toScreen(m.pos[0], m.pos[1]), [x1, y1] = toScreen(pt.pos[0], pt.pos[1]);
     const len = Math.hypot(x1 - x0, y1 - y0);
     if (len < 2) continue;
-    const ux = (x1 - x0) / len, uy = (y1 - y0) / len, nx = -uy, ny = ux;
+    // A quadratic curve leaving the medigun along the medic's aim, as TF2's beam does; aimed
+    // straight at the patient it still bends a little.
+    const a = screenAngle(m.yaw), ux = (x1 - x0) / len, uy = (y1 - y0) / len;
+    let cx = x0 + Math.cos(a) * len * 0.5, cy = y0 + Math.sin(a) * len * 0.5;
+    const side = (cx - x0) * -uy + (cy - y0) * ux;
+    if (Math.abs(side) < len * 0.08) { const k = (side < 0 ? -1 : 1) * len * 0.08 - side; cx += -uy * k; cy += ux * k; }
+    const at = f => [(1 - f) * (1 - f) * x0 + 2 * f * (1 - f) * cx + f * f * x1, (1 - f) * (1 - f) * y0 + 2 * f * (1 - f) * cy + f * f * y1];
+    const normal = f => {
+      const tx = 2 * (1 - f) * (cx - x0) + 2 * f * (x1 - cx), ty = 2 * (1 - f) * (cy - y0) + 2 * f * (y1 - cy), n = Math.hypot(tx, ty) || 1;
+      return [-ty / n, tx / n];
+    };
     const hot = g.releasing, col = TEAM[m.team] || "#fff", light = BEAM_LIGHT[m.team] || "#fff";
-    const amp = (hot ? 6 : 4) * uiScale(), wave = 70 * uiScale(), steps = Math.max(8, Math.min(80, Math.round(len / 6)));
+    const amp = (hot ? 6 : 4) * uiScale(), wave = 70 * uiScale(), steps = Math.max(10, Math.min(90, Math.round(len / 6)));
     ctx.save();
     ctx.lineCap = "round"; ctx.lineJoin = "round";
-    ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1);
+    ctx.beginPath(); ctx.moveTo(x0, y0); ctx.quadraticCurveTo(cx, cy, x1, y1);
     ctx.strokeStyle = col; ctx.globalAlpha = hot ? 0.5 : 0.3; ctx.lineWidth = (hot ? 11 : 7) * uiScale(); ctx.stroke();
     ctx.globalAlpha = hot ? 0.9 : 0.6; ctx.lineWidth = (hot ? 4 : 2.5) * uiScale(); ctx.stroke();
     // The strands meet the medic and the patient, and twist along the beam towards the patient.
@@ -159,19 +169,19 @@ export function drawHealBeams(players, byId) {
     for (const phase of [0, Math.PI]) {
       ctx.beginPath();
       for (let i = 0; i <= steps; i++) {
-        const f = i / steps, d = f * len, off = amp * Math.sin(Math.PI * f) * Math.sin(d / wave * Math.PI * 2 - t * 9 + phase);
-        const x = x0 + ux * d + nx * off, y = y0 + uy * d + ny * off;
-        if (i) ctx.lineTo(x, y); else ctx.moveTo(x, y);
+        const f = i / steps, [px, py] = at(f), [nx, ny] = normal(f);
+        const off = amp * Math.sin(Math.PI * f) * Math.sin(f * len / wave * Math.PI * 2 - t * 9 + phase);
+        if (i) ctx.lineTo(px + nx * off, py + ny * off); else ctx.moveTo(px + nx * off, py + ny * off);
       }
       ctx.stroke();
     }
     ctx.fillStyle = "#fff";
     const sparks = Math.max(2, Math.round(len / 45));
     for (let k = 0; k < sparks; k++) {
-      const f = (k / sparks + t * (hot ? 0.9 : 0.6)) % 1, d = f * len;
+      const f = (k / sparks + t * (hot ? 0.9 : 0.6)) % 1, [px, py] = at(f), [nx, ny] = normal(f);
       const off = amp * 0.9 * Math.sin(Math.PI * f) * Math.sin(k * 2.4 + t * 5);
       ctx.globalAlpha = Math.sin(Math.PI * f) * (hot ? 1 : 0.8);
-      ctx.beginPath(); ctx.arc(x0 + ux * d + nx * off, y0 + uy * d + ny * off, (hot ? 2.2 : 1.6) * uiScale(), 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(px + nx * off, py + ny * off, (hot ? 2.2 : 1.6) * uiScale(), 0, Math.PI * 2); ctx.fill();
     }
     ctx.restore();
   }
@@ -233,6 +243,8 @@ export function drawPlayers(players) {
     if (p.ubered) drawUberRing(p, x, y, rad, col);
     ctx.beginPath(); ctx.arc(x, y, rad, 0, Math.PI * 2);
     ctx.fillStyle = col; ctx.fill();
+    if (layerOn("effects") && p.conds?.length) drawStatusInside(p.conds, p.id, x, y, rad);
+    ctx.beginPath(); ctx.arc(x, y, rad, 0, Math.PI * 2);
     ctx.lineWidth = OVERLAY ? Math.max(1.5, rad * 0.16) : 1.5; ctx.strokeStyle = "#000"; ctx.stroke();
     const max = p.max_hp || 1, frac = Math.max(0, Math.min(1, p.hp / max));
     const ring = (from, to, color) => {
@@ -280,31 +292,47 @@ export function drawPlayers(players) {
   ctx.globalAlpha = 1;
 }
 
-// Small badges on the dot's top-right arc, one per effect; marked-for-death sits above the dot and
-// stun stars orbit it. Nothing moves the dot or covers its icon and ring.
+// Jarate, Mad Milk and bleeding fill the bottom of the dot like a liquid (side by side when there
+// are several) and burning licks up from it, under the class icon.
+const LIQUIDS = [["Urine", "#e8c81f"], ["MadMilk", "#dfe3e6"], ["Bleeding", "#5c0610"]];
+function drawStatusInside(conds, id, x, y, rad) {
+  const liquids = LIQUIDS.filter(([c]) => conds.includes(c)), burning = conds.includes("Burning");
+  if (!liquids.length && !burning) return;
+  const t = performance.now() / 1000, level = y + rad * 0.15;
+  ctx.save();
+  ctx.beginPath(); ctx.arc(x, y, rad, 0, Math.PI * 2); ctx.clip();
+  liquids.forEach(([, fill], i) => {
+    const w = rad * 2 / liquids.length, x0 = x - rad + i * w, surface = [];
+    for (let k = 0; k <= 6; k++) {
+      const px = x0 + w * k / 6;
+      surface.push([px, level + Math.sin(t * 3 + (px - x) / rad * 3 + id) * rad * 0.07]);
+    }
+    ctx.beginPath(); ctx.moveTo(x0, y + rad);
+    for (const [px, py] of surface) ctx.lineTo(px, py);
+    ctx.lineTo(x0 + w, y + rad); ctx.closePath();
+    ctx.fillStyle = fill; ctx.fill();
+    // A dark edge on the surface keeps it apart from the dot and the white class icon.
+    ctx.beginPath(); surface.forEach(([px, py], k) => (k ? ctx.lineTo(px, py) : ctx.moveTo(px, py)));
+    ctx.strokeStyle = "rgba(0,0,0,0.45)"; ctx.lineWidth = Math.max(1, rad * 0.08); ctx.stroke();
+  });
+  if (burning) for (let j = 0; j < 3; j++) {
+    const cx = x + (j - 1) * rad * 0.55, h = rad * (0.95 + 0.3 * Math.sin(t * 14 + j * 2.1 + id)), sway = Math.sin(t * 9 + j + id) * rad * 0.12;
+    const tongue = (k, fill) => {
+      ctx.beginPath(); ctx.moveTo(cx - rad * 0.38 * k, y + rad);
+      ctx.quadraticCurveTo(cx - rad * 0.3 * k, y + rad - h * 0.6 * k, cx + sway, y + rad - h * k);
+      ctx.quadraticCurveTo(cx + rad * 0.3 * k, y + rad - h * 0.6 * k, cx + rad * 0.38 * k, y + rad);
+      ctx.closePath(); ctx.fillStyle = fill; ctx.fill();
+    };
+    tongue(1, "#ff6a14"); tongue(0.55, "#ffd23a");
+  }
+  ctx.restore();
+}
+
+// Marked for death sits above the dot and stun stars orbit it. Nothing moves the dot or covers its icon and ring.
 function drawStatus(conds, id, x, y, rad) {
   const t = performance.now() / 1000, r = Math.max(3, rad * 0.4), lw = Math.max(1, r * 0.2);
   const has = n => conds.includes(n);
-  const drop = (cx, cy, k, fill) => {
-    ctx.beginPath(); ctx.moveTo(cx, cy - k * 1.3);
-    ctx.bezierCurveTo(cx + k * 0.95, cy - k * 0.1, cx + k * 0.9, cy + k, cx, cy + k);
-    ctx.bezierCurveTo(cx - k * 0.9, cy + k, cx - k * 0.95, cy - k * 0.1, cx, cy - k * 1.3);
-    ctx.fillStyle = fill; ctx.fill(); ctx.stroke();
-  };
-  const badges = [];
-  if (has("Burning")) badges.push((cx, cy) => {
-    const f = 1 + 0.18 * Math.sin(t * 17 + id), sway = Math.sin(t * 11 + id) * r * 0.15;
-    drop(cx + sway, cy, r * f, "#ff7a1a"); drop(cx + sway, cy + r * 0.25, r * 0.5 * f, "#ffd23a");
-  });
-  if (has("Urine")) badges.push((cx, cy) => drop(cx, cy, r, "#f2d627"));
-  if (has("MadMilk")) badges.push((cx, cy) => drop(cx, cy, r, "#fff"));
-  if (has("Bleeding")) badges.push((cx, cy) => { drop(cx - r * 0.45, cy - r * 0.2, r * 0.6, "#d22"); drop(cx + r * 0.5, cy + r * 0.3, r * 0.6, "#d22"); });
   ctx.save(); ctx.lineWidth = lw; ctx.strokeStyle = "#000";
-  const d = rad + r * 0.9 + 3;
-  badges.forEach((draw, i) => {
-    const a = -Math.PI / 4 + i * 0.85;
-    draw(x + Math.cos(a) * d, y + Math.sin(a) * d);
-  });
   if (has("MarkedForDeath") || has("MarkedForDeathSilent")) {
     const cx = x, cy = y - rad - r * 1.3 - 3;
     ctx.beginPath(); ctx.arc(cx, cy, r * 0.95, 0, Math.PI * 2); ctx.fillStyle = "#fff"; ctx.fill(); ctx.stroke();
