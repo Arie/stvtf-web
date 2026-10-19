@@ -19,8 +19,12 @@ body { display: grid; grid-template-rows: 1fr; }
 #age { color: var(--dim); margin-left: auto; }
 main { display: grid; grid-template-columns: 1fr auto; min-height: 0; }
 #stage { position: relative; min-height: 0; overflow: hidden; }
-canvas { position: absolute; inset: 0; width: 100%; height: 100%; cursor: grab; }
-canvas:active { cursor: grabbing; }
+canvas#c { position: absolute; inset: 0; width: 100%; height: 100%; cursor: grab; }
+canvas#c:active { cursor: grabbing; }
+/* The map picture under the canvas, placed by a transform the compositor applies. */
+#bg { position: absolute; inset: 0; overflow: hidden; pointer-events: none; background: #101214; }
+#bg > * { position: absolute; left: 0; top: 0; transform-origin: 0 0; will-change: transform; }
+html.overlay #bg { background: none; }
 #banner { position: absolute; top: 14px; left: 50%; transform: translateX(-50%);
   padding: 6px 16px; border-radius: 4px; background: #000a; font-weight: 600; font-size: 15px;
   opacity: 0; transition: opacity .4s; pointer-events: none; }
@@ -153,7 +157,7 @@ html.overlay #empty, html.overlay #banner { display: none !important; }
 html.overlay main { display: block; height: 100%; }
 html.overlay #stage { position: fixed; inset: 0; border-radius: 14px; background: rgb(11 12 14 / var(--overlay-opacity, .82));
   box-shadow: inset 0 0 0 1px #ffffff1f; }
-html.overlay canvas { cursor: default; pointer-events: none; }
+html.overlay canvas#c { cursor: default; pointer-events: none; }
 html.overlay #scoreboard { top: 6px; transform: translateX(-50%) scale(.62); transform-origin: top center; }
 @keyframes pulse { from { opacity: 1; } to { opacity: .55; } }
 /* Moving exactly one 24px tile per cycle loops seamlessly. */

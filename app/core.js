@@ -23,7 +23,7 @@ if (OVERLAY) {
 // stays readable: player dot radius ~12px there. ui=<factor> scales it, dot=<px> fixes it.
 export function overlayUnit() {
   if (OPT.has("dot")) return Number(OPT.get("dot")) || 12;
-  const r = canvas.getBoundingClientRect();
+  const r = canvasSize();
   return Math.max(9, Math.min(20, Math.min(r.width, r.height) / 33)) * (Number(OPT.get("ui")) || 1);
 }
 
@@ -35,6 +35,10 @@ applyScale();
 export const canvas = document.getElementById("c");
 export const ctx = canvas.getContext("2d");
 export const $ = id => document.getElementById(id);
+// The canvas size, measured once per frame: asking the layout for it on every point drawn is slow.
+let size = null;
+export function measureCanvas() { return (size = canvas.getBoundingClientRect()); }
+export const canvasSize = () => size ?? measureCanvas();
 
 export const state = {
   map: null, snaps: [], events: [], effects: [], players: new Map(),

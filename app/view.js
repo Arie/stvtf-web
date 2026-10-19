@@ -1,4 +1,4 @@
-import { $, OVERLAY, OPT, overlayUnit, canvas, uiScale, ctx, state } from "./core.js";
+import { $, OVERLAY, OPT, overlayUnit, canvas, uiScale, ctx, state, canvasSize } from "./core.js";
 
 // ---------- map backgrounds
 let boundaries = null;
@@ -30,7 +30,7 @@ export async function loadMap(map) {
   if (alias) {
     const img = new Image();
     img.onload = () => {
-      state.overview = { img: OVERLAY ? withoutBlack(img) : img, b: known[alias] };
+      state.overview = { img: OVERLAY ? withoutBlack(img) : flattened(img), b: known[alias] };
       $("bgtoggle").hidden = false;
       if (!state.fitted) fitTo(known[alias].boundary_min, known[alias].boundary_max);
     };
@@ -141,7 +141,7 @@ export function frameMap(keepView = false) {
 }
 // The view can be rotated (the overlay turns a map so its long axis fits the panel).
 export function toScreen(x, y) {
-  const r = canvas.getBoundingClientRect(), v = state.view;
+  const r = canvasSize(), v = state.view;
   const dx = x - v.cx, dy = y - v.cy, c = Math.cos(v.rot), s = Math.sin(v.rot);
   return [(dx * c - dy * s) * v.scale + r.width / 2, -(dx * s + dy * c) * v.scale + r.height / 2];
 }
@@ -170,24 +170,41 @@ function withoutBlack(img) {
   return c;
 }
 
-// An image covering a world rectangle, turned with the view.
-function drawWorldImage(img, minX, minY, maxX, maxY, alpha) {
-  const [cx, cy] = toScreen((minX + maxX) / 2, (minY + maxY) / 2);
-  const w = (maxX - minX) * state.view.scale, h = (maxY - minY) * state.view.scale;
-  ctx.save(); ctx.translate(cx, cy); ctx.rotate(-state.view.rot); ctx.globalAlpha = alpha;
-  ctx.drawImage(img, -w / 2, -h / 2, w, h);
-  ctx.restore();
+// The overview at 85% over the page background, drawn once: a plain copy each frame is much
+// cheaper than blending an image element.
+function flattened(img) {
+  const c = document.createElement("canvas");
+  c.width = img.naturalWidth; c.height = img.naturalHeight;
+  const g = c.getContext("2d");
+  g.fillStyle = "#101214"; g.fillRect(0, 0, c.width, c.height);
+  g.globalAlpha = 0.85; g.drawImage(img, 0, 0);
+  return c;
 }
+
+// The map picture is an element under the canvas, moved with a CSS transform: the compositor
+// scales and turns it, so the canvas does not redraw a full-screen image every frame.
+const bgBox = $("bg");
+let bgShown = null, bgTransform = "";
 export function drawBackground(r) {
-  if (OVERLAY) ctx.clearRect(0, 0, r.width, r.height);
-  else { ctx.fillStyle = "#101214"; ctx.fillRect(0, 0, r.width, r.height); }
+  ctx.clearRect(0, 0, r.width, r.height);
+  let pic = null, lo, hi;
   if (state.bg === "overview" && state.overview) {
     const { img, b } = state.overview;
-    drawWorldImage(img, b.boundary_min.x, b.boundary_min.y, b.boundary_max.x, b.boundary_max.y, OVERLAY ? 0.95 : 0.85);
+    pic = img; lo = [b.boundary_min.x, b.boundary_min.y]; hi = [b.boundary_max.x, b.boundary_max.y];
   } else if (state.geoCanvas) {
-    const { canvas: oc, lo, hi } = state.geoCanvas;
-    drawWorldImage(oc, lo[0], lo[1], hi[0], hi[1], 1);
+    ({ canvas: pic, lo, hi } = state.geoCanvas);
   }
+  if (pic !== bgShown) {
+    bgBox.replaceChildren(...(pic ? [pic] : []));
+    if (pic) pic.style.opacity = OVERLAY && pic !== state.geoCanvas?.canvas ? "0.95" : "";
+    bgShown = pic; bgTransform = "";
+  }
+  if (!pic) return;
+  const [cx, cy] = toScreen((lo[0] + hi[0]) / 2, (lo[1] + hi[1]) / 2);
+  const w = (hi[0] - lo[0]) * state.view.scale, h = (hi[1] - lo[1]) * state.view.scale;
+  const pw = pic.naturalWidth || pic.width, ph = pic.naturalHeight || pic.height;
+  const t = `translate(${cx}px, ${cy}px) rotate(${-state.view.rot}rad) scale(${w / pw}, ${h / ph}) translate(-50%, -50%)`;
+  if (t !== bgTransform) { pic.style.transform = t; bgTransform = t; }
 }
 
 // Auto zoom frames the fight: clumps of players first. A player on their own joins the
