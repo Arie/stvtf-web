@@ -92,10 +92,9 @@ export function drawObjectives(snap, tick) {
       ctx.restore();
     }
     if (o.locked) { ctx.fillStyle = "#0b0c0e99"; ctx.fill(); }
-    // Outlined in the colour of the team holding it (grey while nobody does), on a dark edge.
-    const lw = OVERLAY ? Math.max(2, u * 0.18) : 2;
-    ctx.lineWidth = lw + 2; ctx.strokeStyle = "#0b0c0e"; ctx.stroke();
-    ctx.lineWidth = lw; ctx.strokeStyle = TEAM[o.owner] || "#b8bcc2"; ctx.stroke();
+    // Outlined in the colour of the team holding it, grey while nobody does.
+    ctx.lineWidth = OVERLAY ? Math.max(2, u * 0.18) : 2;
+    ctx.strokeStyle = TEAM[o.owner] || "#b8bcc2"; ctx.stroke();
     ctx.fillStyle = "#fff"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
     ctx.font = `800 ${Math.round(OVERLAY ? u * 1.3 : Math.max(12 * uiScale(), half * 0.9))}px system-ui`;
     // While capping, the cap rate (×2 for two cappers, as TF2's HUD shows it) instead of the number.
