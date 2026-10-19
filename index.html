@@ -675,6 +675,12 @@ function fireEvents(tick, byId) {
         break;
       }
       case "point_captured": banner(`${teamName(ev.team)} captured ${pointName(ev)}`, ev.team); feedEvent(ev, p); break;
+      case "flag": {
+        const team = p(ev.player)?.team;
+        if (ev.event === "captured") banner(`${teamName(team)} captured ${flagName(ev.team)}`, team || "none");
+        feedEvent(ev, p);
+        break;
+      }
       case "round_win": banner(`${teamName(ev.team)} wins the round`, ev.team); feedEvent(ev, p); break;
       case "round_start": banner("Round start", "none"); feedEvent(ev, p); break;
       case "chat": chat(ev, p); break;
@@ -702,6 +708,9 @@ const BANNER = { buff_banner: "Buff Banner", battalions_backup: "Battalion's Bac
 const PROJECTILE_WEAPON = /rocket|quake_rl|directhit|liberty|blackbox|airstrike|mangler|dumpster|pipe|bomb|loch|cannon|resistance|huntsman|arrow|crossbow|flare|detonator|scorch/;
 const teamName = t => t === "red" ? "RED" : t === "blue" ? "BLU" : "";
 const pointName = ev => ev.name && !ev.name.startsWith("#") ? ev.name : "point " + (ev.point + 1);
+// A team's flag is its intelligence; a neutral one is special delivery's Australium or a ball.
+const flagName = team => team === "red" || team === "blue" ? `the ${teamName(team)} intelligence`
+  : state.map?.startsWith("sd_") ? "the Australium" : "the ball";
 const chip = (cls, text) => `<span class="chip ${cls}">${text}</span>`;
 let lastScores = null;
 
@@ -737,6 +746,15 @@ function feedEvent(ev, p) {
       break;
     case "banner": cls = "minor"; html = `${name(ev.player)} <span>deployed the ${BANNER[ev.kind] || "banner"}</span>`; break;
     case "point_captured": cls = `big ${ev.team}`; html = `${teamName(ev.team)} captured ${esc(pointName(ev))}`; break;
+    case "flag": {
+      const what = esc(flagName(ev.team));
+      if (ev.event === "captured") { cls = `big ${p(ev.player)?.team || "none"}`; html = `${name(ev.player)} <span>captured ${what}</span>`; }
+      else if (ev.event === "defended") html = `${name(ev.player)}<span class="w">stopped</span>${name(ev.carrier)}<span class="w">with ${what}</span>`;
+      else if (ev.event === "pickup") { cls = "minor"; html = `${name(ev.player)} <span>picked up ${what}</span>`; }
+      else if (ev.event === "dropped") { cls = "minor"; html = `${name(ev.player)} <span>dropped ${what}</span>`; }
+      else if (ev.event === "returned") { cls = "minor"; html = `<span>${what[0].toUpperCase() + what.slice(1)} went home</span>`; }
+      break;
+    }
     case "round_start": cls = "big none"; html = "Round start"; break;
     case "round_win": cls = `big ${ev.team}`; html = `${teamName(ev.team)} wins the round${lastScores ? ` · BLU ${lastScores.blue} – ${lastScores.red} RED` : ""}`; break;
     case "scores": lastScores = ev; if (ev.game_over) { cls = "big none"; html = `Match over · BLU ${ev.blue} – ${ev.red} RED`; } break;
@@ -822,6 +840,7 @@ function drawBackground(r) {
 
 function drawObjectives(snap, tick) {
   for (const o of snap.objectives || []) {
+    if (o.kind === "flag") continue;
     const [x, y] = toScreen(o.pos[0], o.pos[1]);
     if (o.kind === "cart") {
       ctx.fillStyle = "#e8c547"; ctx.strokeStyle = "#000"; const s = px(40, 9);
@@ -851,6 +870,32 @@ function drawObjectives(snap, tick) {
     ctx.font = `800 ${Math.round(OVERLAY ? u * 1.3 : Math.max(12 * uiScale(), half * 0.9))}px system-ui`;
     ctx.lineWidth = 3; ctx.strokeStyle = "#0b0c0e"; ctx.strokeText(String(o.index + 1), x, y + 1);
     ctx.fillText(String(o.index + 1), x, y + 1);
+    ctx.restore();
+  }
+}
+
+// The intelligence as a briefcase in its team's colour (a neutral flag, such as the bball ball,
+// in yellow): at home, dropped with the seconds until it goes home, or riding on its carrier.
+function drawFlags(snap, players, tick) {
+  for (const o of snap.objectives || []) {
+    if (o.kind !== "flag") continue;
+    const carrier = o.status === "carried" ? players.find(p => p.id === o.carrier && p.alive && p.pos) : null;
+    const pos = carrier ? carrier.pos : o.pos;
+    let [x, y] = toScreen(pos[0], pos[1]);
+    const s = OVERLAY ? overlayUnit() * 1.3 : px(48, 17);
+    if (carrier) { const r = playerRad(); x += r * 0.9; y -= r * 0.9; }
+    ctx.save();
+    ctx.lineWidth = Math.max(1.5, s * 0.12); ctx.strokeStyle = "#000";
+    ctx.beginPath(); ctx.roundRect(x - s * 0.25, y - s * 0.62, s * 0.5, s * 0.36, s * 0.1); ctx.stroke();
+    ctx.beginPath(); ctx.roundRect(x - s * 0.6, y - s * 0.35, s * 1.2, s * 0.8, s * 0.14);
+    ctx.fillStyle = o.team === "red" || o.team === "blue" ? TEAM[o.team] : "#f2c94c"; ctx.fill(); ctx.stroke();
+    if (o.status === "dropped" && o.returns_in != null) {
+      const left = Math.max(0, Math.ceil(o.returns_in - Math.max(0, tick - snap.tick) * MS_PER_TICK / 1000));
+      ctx.font = `700 ${Math.round(Math.max(11 * uiScale(), s * 0.7))}px "HUD Condensed", system-ui`;
+      ctx.textAlign = "center"; ctx.textBaseline = "top"; ctx.lineJoin = "round";
+      ctx.lineWidth = 3; ctx.strokeText(String(left), x, y + s * 0.55);
+      ctx.fillStyle = "#fff"; ctx.fillText(String(left), x, y + s * 0.55);
+    }
     ctx.restore();
   }
 }
@@ -1313,8 +1358,12 @@ function mmss(secs) { return `${Math.floor(secs / 60)}:${String(Math.floor(secs 
 function setText(id, text) { const el = $(id); if (el.textContent !== text) el.textContent = text; }
 function renderScoreboard(snap, tick) {
   $("scoreboard").hidden = OVERLAY && OPT.get("score") !== "1";
-  setText("score-blue", String(snap.score?.blue ?? 0));
-  setText("score-red", String(snap.score?.red ?? 0));
+  // CTF counts the round in captured intelligence, like TF2's CTF HUD; maps with a neutral flag
+  // (bball, special delivery) keep the team score.
+  const ctf = snap.captures && (snap.objectives || []).some(o => o.kind === "flag" && (o.team === "red" || o.team === "blue"));
+  const scores = ctf ? snap.captures : snap.score;
+  setText("score-blue", String(scores?.blue ?? 0));
+  setText("score-red", String(scores?.red ?? 0));
   const timers = snap.timers || [];
   const left = t => t.paused ? t.remaining : t.remaining - Math.max(0, tick - snap.tick) * MS_PER_TICK / 1000;
   const main = timers.find(t => t.team === "none") || (timers.length === 1 ? timers[0] : null);
@@ -1480,6 +1529,7 @@ function draw() {
     drawEffects(byId);
     drawHealBeams(f.players, byId);
     drawPlayers(f.players);
+    drawFlags(f.snap, f.players, tick);
     if (OVERLAY) drawProjectiles(f.projectiles);
     updatePanel(f.players, f.snap);
   }

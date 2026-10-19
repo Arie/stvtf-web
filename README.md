@@ -71,7 +71,8 @@ frames itself around the spawns and points of the map, upright like the main vie
 then glides in on the area where the living players are.
 
 It shows the map, players as team dots with class icon, view direction and health ring,
-an X where a player died until they respawn, übers, heal beams, sentries, projectiles,
+an X where a player died until they respawn, übers, heal beams, sentries, projectiles, the
+intelligence (or bball ball) at home, dropped or on its carrier,
 shots and explosions, control points (squares filling left to right while captured) and
 the active spawn rooms.
 

@@ -82,9 +82,11 @@ struct Hub {
 
 const HISTORY: usize = 1000;
 /// Event fields that hold player ids.
-const PLAYER_FIELDS: [&str; 10] = ["player", "attacker", "victim", "assister", "medic", "target", "blocker", "owner", "builder", "cappers"];
-const FEED: [&str; 17] = [
+const PLAYER_FIELDS: [&str; 11] =
+    ["player", "attacker", "victim", "assister", "medic", "target", "blocker", "owner", "builder", "cappers", "carrier"];
+const FEED: [&str; 18] = [
     "kill",
+    "flag",
     "uber",
     "uber_ready",
     "medic_death",
