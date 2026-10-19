@@ -314,21 +314,21 @@ function openStream() {
   s.onerror = () => setStatus("stream lost, retrying", false);
 }
 
-// Overkill layers; `detail` ones need the hub's high-volume lines (?detail=1). Off by default except caps.
+// Overkill layers; `detail` ones need the hub's high-volume lines (?detail=1). All on by default; the overlay shows only caps.
 const LAYERS = {
   caps: { label: "Capture areas", key: "", def: true, detail: false },
-  heals: { label: "Heal numbers", key: "", def: false, detail: true },
-  hits: { label: "Hit markers", key: "", def: false, detail: true },
-  marks: { label: "Bullet holes and scorch marks", key: "", def: false, detail: true },
-  jumps: { label: "Jump trails", key: "j", def: false, detail: true },
-  pickups: { label: "Pickups", key: "", def: false, detail: true },
-  points: { label: "Players on points", key: "", def: false, detail: false },
-  flow: { label: "Votes, announcer and voice commands", key: "", def: false, detail: true },
-  loadout: { label: "Weapon in hand", key: "l", def: false, detail: false },
+  heals: { label: "Heal numbers", key: "", def: true, detail: true },
+  hits: { label: "Hit markers", key: "", def: true, detail: true },
+  marks: { label: "Bullet holes and scorch marks", key: "", def: true, detail: true },
+  jumps: { label: "Jump trails", key: "j", def: true, detail: true },
+  pickups: { label: "Pickups", key: "", def: true, detail: true },
+  points: { label: "Players on points", key: "", def: true, detail: false },
+  flow: { label: "Votes, announcer and voice commands", key: "", def: true, detail: true },
+  loadout: { label: "Weapon in hand", key: "l", def: true, detail: false },
 };
 const layerState = {};
 for (const [name, l] of Object.entries(LAYERS)) {
-  layerState[name] = l.def;
+  layerState[name] = OVERLAY ? name === "caps" : l.def;
   try { const v = !OVERLAY && localStorage.getItem("layer." + name); if (v === "1" || v === "0") layerState[name] = v === "1"; } catch {}
 }
 const layerOn = name => layerState[name];
@@ -1166,22 +1166,48 @@ function drawPacks() {
     const [x, y] = toScreen(k.pos[0], k.pos[1]);
     const s = px(k.size === "small" ? 22 : k.size === "medium" ? 30 : 40, 5);
     ctx.globalAlpha = taken ? 0.6 : 1;
-    const health = k.kind === "health", ink = taken ? "#f2f0e6" : "#0b0c0e", h = s * 0.8, ww = s * 0.85;
+    const health = k.kind === "health", ink = taken ? "#f2f0e6" : "#0b0c0e";
     ctx.strokeStyle = ink; ctx.fillStyle = health ? "#f4f1e8" : "#2f9c86";
-    ctx.beginPath(); ctx.roundRect(x - ww, y - h, ww * 2, h * 2, s * 0.25);
-    if (!taken) ctx.fill();
-    ctx.stroke();
-    if (health) {
-      const t = s * 0.22, a = s * 0.6;
+    const shape = (bx, by, bw, bh, r, fill) => {
+      ctx.beginPath(); ctx.roundRect(bx, by, bw, bh, r);
+      if (!taken) { ctx.fillStyle = fill || (health ? "#f4f1e8" : "#2f9c86"); ctx.fill(); }
+      ctx.stroke();
+    };
+    const cross = (cx, cy, a, t) => {
       ctx.beginPath();
-      ctx.moveTo(x - t, y - a); ctx.lineTo(x + t, y - a); ctx.lineTo(x + t, y - t); ctx.lineTo(x + a, y - t);
-      ctx.lineTo(x + a, y + t); ctx.lineTo(x + t, y + t); ctx.lineTo(x + t, y + a); ctx.lineTo(x - t, y + a);
-      ctx.lineTo(x - t, y + t); ctx.lineTo(x - a, y + t); ctx.lineTo(x - a, y - t); ctx.lineTo(x - t, y - t);
+      ctx.moveTo(cx - t, cy - a); ctx.lineTo(cx + t, cy - a); ctx.lineTo(cx + t, cy - t); ctx.lineTo(cx + a, cy - t);
+      ctx.lineTo(cx + a, cy + t); ctx.lineTo(cx + t, cy + t); ctx.lineTo(cx + t, cy + a); ctx.lineTo(cx - t, cy + a);
+      ctx.lineTo(cx - t, cy + t); ctx.lineTo(cx - a, cy + t); ctx.lineTo(cx - a, cy - t); ctx.lineTo(cx - t, cy - t);
       ctx.closePath();
       if (!taken) { ctx.fillStyle = "#d3281f"; ctx.fill(); }
       ctx.lineWidth = 1; ctx.stroke(); ctx.lineWidth = 1.5;
+    };
+    if (!health) {
+      // small: gray box; medium and full: olive with a gray lid band and strap
+      const h = s * 0.8, ww = s * (k.size === "full" ? 1.0 : 0.85), small = k.size === "small";
+      shape(x - ww, y - h, ww * 2, h * 2, s * 0.25, small ? "#8b8e91" : "#6b7133");
+      if (small) { ctx.beginPath(); ctx.moveTo(x - ww, y - h * 0.35); ctx.lineTo(x + ww, y - h * 0.35); ctx.stroke(); }
+      else {
+        shape(x - ww, y - h, ww * 2, h * 0.65, s * 0.2, "#9a9da0");
+        shape(x - ww * 0.14, y - h * 0.35, ww * 0.28, h * 1.35, 0, "#9a9da0");
+      }
+    } else if (k.size === "small") {
+      // pill bottle: tall body, red cap, red label band
+      const bw = s * 0.55, bh = s * 0.95;
+      shape(x - bw, y - bh * 0.75, bw * 2, bh * 1.75, s * 0.2);
+      shape(x - bw, y - bh * 0.1, bw * 2, bh * 0.5, 0, "#d3281f");
+      shape(x - bw * 1.1, y - bh * 1.1, bw * 2.2, bh * 0.4, s * 0.1, "#d3281f");
+    } else if (k.size === "medium") {
+      const h = s * 0.85;
+      shape(x - h, y - h, h * 2, h * 2, s * 0.25);
+      cross(x, y, s * 0.6, s * 0.22);
     } else {
-      ctx.beginPath(); ctx.moveTo(x - ww, y - h * 0.35); ctx.lineTo(x + ww, y - h * 0.35); ctx.stroke();
+      // big case: wide box with a lid line and a handle on top
+      const ww = s * 1.15, h = s * 0.75;
+      ctx.beginPath(); ctx.roundRect(x - ww * 0.3, y - h - s * 0.28, ww * 0.6, s * 0.4, s * 0.12); ctx.stroke();
+      shape(x - ww, y - h, ww * 2, h * 2, s * 0.2);
+      ctx.beginPath(); ctx.moveTo(x - ww, y - h * 0.62); ctx.lineTo(x + ww, y - h * 0.62); ctx.stroke();
+      cross(x, y + h * 0.17, s * 0.5, s * 0.19);
     }
   });
   ctx.restore();
