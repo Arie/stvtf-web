@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>stvmap</title>
+<base href="/">
 <style>
   :root { --bg: #15171a; --panel: #1e2125; --line: #2c3036; --text: #d8dadd; --dim: #8a9099; --blue: #4f8fc0; --bad: #e0a040; }
   * { box-sizing: border-box; }
@@ -27,7 +28,7 @@
 <main>
   <h1>Watch a match</h1>
   <p>Paste the server's SourceTV connect string, like <code>connect host:27020; password "tv"</code>.</p>
-  <form method="post" action="/watch">
+  <form method="post" action="watch">
     <input name="connect" placeholder='connect host:27020; password "tv"' autofocus required autocomplete="off" spellcheck="false">
     <button>Watch</button>
   </form>

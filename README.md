@@ -18,6 +18,13 @@ A match nobody has watched for 3 minutes is disconnected. `--max-matches` caps h
 watched at once, and `--public`, for a server that strangers can use, refuses private and
 internal addresses.
 
+Behind a site such as serveme.tf, which signs users in and decides what they may watch, run
+it with `--public --base-path /live` and `STVMAP_TOKEN_KEY` (64 hex digits) shared with the
+site. Matches then start only from the site's `/start?t=TOKEN` links: the token is AES-256-GCM
+(`base64url(12-byte nonce | ciphertext | tag)` of `{"connect", "owner", "exp"}`), so the
+SourceTV password in it is never readable in a URL, and a user (`owner`) watches one match at
+a time; a null owner is unlimited.
+
 The connect string can be as serveme.tf shows it (`connect HOST:PORT; password "tv"`),
 `HOST:PORT tv`, `HOST; password tv` or just `HOST`. Without a port it uses 27020; given a
 game port, it tries game port + 5.

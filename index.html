@@ -4,11 +4,13 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>stvmap</title>
-<link rel="stylesheet" href="/killicons.css">
+<!-- The server fills in where it is served (behind a proxy, /live/); all asset links are relative to it. -->
+<base href="/">
+<link rel="stylesheet" href="killicons.css">
 <style>
   /* Bundled, so the HUD looks the same everywhere instead of whatever the viewer has installed. */
-  @font-face { font-family: "HUD Condensed"; src: url("/fonts/RobotoCondensed-Regular.ttf") format("truetype"); font-weight: 400; }
-  @font-face { font-family: "HUD Condensed"; src: url("/fonts/RobotoCondensed-Bold.ttf") format("truetype"); font-weight: 700; }
+  @font-face { font-family: "HUD Condensed"; src: url("fonts/RobotoCondensed-Regular.ttf") format("truetype"); font-weight: 400; }
+  @font-face { font-family: "HUD Condensed"; src: url("fonts/RobotoCondensed-Bold.ttf") format("truetype"); font-weight: 700; }
   :root {
     --bg: #15171a; --panel: #1e2125; --line: #2c3036; --text: #d8dadd; --dim: #8a9099;
     --red: #d0453f; --blue: #4f8fc0; --red-soft: #d0453f33; --blue-soft: #4f8fc033;
@@ -205,7 +207,7 @@ const classRank = c => { const i = CLASS_ORDER.indexOf(c); return i < 0 ? CLASS_
 const byClass = (a, b) => classRank(a.class) - classRank(b.class) || a.name.localeCompare(b.name, undefined, { sensitivity: "base" }) || a.id - b.id;
 
 const ICONS = {};
-for (const c of CLASS_ORDER) { if (c !== "unknown") { ICONS[c] = new Image(); ICONS[c].src = `/icons/${c}.svg`; } }
+for (const c of CLASS_ORDER) { if (c !== "unknown") { ICONS[c] = new Image(); ICONS[c].src = `icons/${c}.svg`; } }
 const icon = c => ICONS[c]?.complete && ICONS[c].naturalWidth ? ICONS[c] : null;
 
 // /overlay: a fixed, transparent minimap for broadcasts. Options in the query string:
@@ -255,8 +257,8 @@ function observeTick(tick) {
 function renderTick() { return nowTick() - BUFFER_TICKS; }
 
 // ---------- incoming stream
-// Relative, so a match at /w/<id>/ (and its /w/<id>/overlay) reads its own events.
-const es = new EventSource("events");
+// Next to the page, so a match at /w/<id>/ (and its /w/<id>/overlay) reads its own events.
+const es = new EventSource(location.pathname.replace(/(overlay|index\.html)?$/, "") + "events");
 es.onmessage = e => handle(JSON.parse(e.data));
 es.onerror = () => setStatus("stream lost, retrying", false);
 
@@ -362,7 +364,7 @@ async function loadMap(map) {
   }
   $("bgtoggle").hidden = true;
   try {
-    const g = await (await fetch(`/map/${map}`)).json();
+    const g = await (await fetch(`map/${map}`)).json();
     if (state.map !== map) return;
     state.geometry = g;
     state.spawns = g.spawns || null;
@@ -628,7 +630,7 @@ function esc(s) { return String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;"
 function who(pl) { return pl ? `<span class="t-${esc(pl.team)}">${esc(pl.name)}</span>` : "world"; }
 // Kill icons from tf2-icons, named like the weapons in server logs and kill events.
 const KILLICONS = new Set();
-const killiconsLoaded = fetch("/killicons.css").then(r => r.text()).then(css => {
+const killiconsLoaded = fetch("killicons.css").then(r => r.text()).then(css => {
   for (const m of css.matchAll(/\.killicon-([A-Za-z0-9_]+)\s*\{/g)) KILLICONS.add(m[1]);
 });
 function weaponIcon(ev) {
@@ -1200,7 +1202,7 @@ function card(p) {
   if (el.dataset.id !== String(p.id)) el.dataset.id = p.id;
   setClass(el, ["card", p.id === state.follow && "followed", !p.alive && "dead", p.alive && p.hp > p.max_hp && "over", p.alive && f < 0.35 && "low", p.ubered && "ub"].filter(Boolean).join(" "));
   setStyle(el.children[0], "clipPath", `inset(0px ${(100 - f * 100).toFixed(1)}% 0px 0px)`);
-  setHTML(el.children[1], ICONS[p.class] ? `<img src="/icons/${p.class}.svg" alt="${p.class}">` : CLASS[p.class] || "?");
+  setHTML(el.children[1], ICONS[p.class] ? `<img src="icons/${p.class}.svg" alt="${p.class}">` : CLASS[p.class] || "?");
   setText2(el.querySelector(".nm b"), p.name);
   const sub = p.ping != null ? `${p.ping} ms` : "";
   setHTML(el.querySelector(".nm small"), `${p.ubered ? `<span class="tag">${UBER_LABEL[p.ubered] || "ÜBER"}</span>` : ""}${sub}`);

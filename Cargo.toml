@@ -13,6 +13,8 @@ serde_json = "1"
 anyhow = "1"
 lzma-rs = "0.3"
 ureq = "2"
+aes-gcm = "0.10"
+base64 = "0.22"
 
 [profile.release]
 debug = 1
