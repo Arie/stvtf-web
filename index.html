@@ -1167,47 +1167,70 @@ function drawPacks() {
     const s = px(k.size === "small" ? 22 : k.size === "medium" ? 30 : 40, 5);
     ctx.globalAlpha = taken ? 0.6 : 1;
     const health = k.kind === "health", ink = taken ? "#f2f0e6" : "#0b0c0e";
-    ctx.strokeStyle = ink; ctx.fillStyle = health ? "#f4f1e8" : "#2f9c86";
+    ctx.strokeStyle = ink;
     const shape = (bx, by, bw, bh, r, fill) => {
       ctx.beginPath(); ctx.roundRect(bx, by, bw, bh, r);
-      if (!taken) { ctx.fillStyle = fill || (health ? "#f4f1e8" : "#2f9c86"); ctx.fill(); }
+      if (!taken) { ctx.fillStyle = fill; ctx.fill(); }
       ctx.stroke();
     };
-    const cross = (cx, cy, a, t) => {
+    const disc = (cx, cy, r, fill, lw = 1.5) => {
+      ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2);
+      if (!taken) { ctx.fillStyle = fill; ctx.fill(); }
+      ctx.lineWidth = lw; ctx.stroke(); ctx.lineWidth = 1.5;
+    };
+    const cross = (cx, cy, a, t, fill) => {
       ctx.beginPath();
       ctx.moveTo(cx - t, cy - a); ctx.lineTo(cx + t, cy - a); ctx.lineTo(cx + t, cy - t); ctx.lineTo(cx + a, cy - t);
       ctx.lineTo(cx + a, cy + t); ctx.lineTo(cx + t, cy + t); ctx.lineTo(cx + t, cy + a); ctx.lineTo(cx - t, cy + a);
       ctx.lineTo(cx - t, cy + t); ctx.lineTo(cx - a, cy + t); ctx.lineTo(cx - a, cy - t); ctx.lineTo(cx - t, cy - t);
       ctx.closePath();
-      if (!taken) { ctx.fillStyle = "#d3281f"; ctx.fill(); }
+      if (!taken) { ctx.fillStyle = fill; ctx.fill(); }
       ctx.lineWidth = 1; ctx.stroke(); ctx.lineWidth = 1.5;
     };
     if (!health) {
-      // small: gray box; medium and full: olive with a gray lid band and strap
-      const h = s * 0.8, ww = s * (k.size === "full" ? 1.0 : 0.85), small = k.size === "small";
-      shape(x - ww, y - h, ww * 2, h * 2, s * 0.25, small ? "#8b8e91" : "#6b7133");
-      if (small) { ctx.beginPath(); ctx.moveTo(x - ww, y - h * 0.35); ctx.lineTo(x + ww, y - h * 0.35); ctx.stroke(); }
-      else {
-        shape(x - ww, y - h, ww * 2, h * 0.65, s * 0.2, "#9a9da0");
-        shape(x - ww * 0.14, y - h * 0.35, ww * 0.28, h * 1.35, 0, "#9a9da0");
+      // gray metal frame; medium and full add a tan panel with a dark bullet emblem
+      const h = s * 0.8, ww = s * (k.size === "full" ? 1.05 : 0.9), small = k.size === "small";
+      shape(x - ww, y - h, ww * 2, h * 2, s * 0.2, "#aeb3ba");
+      if (small) {
+        shape(x - ww * 0.7, y - h * 0.6, ww * 1.4, h * 1.2, s * 0.1, "#5c5f66");
+        disc(x, y, s * 0.17, "#2e2a24", 1);
+      } else {
+        const iw = ww * 0.76, ih = h * 0.72;
+        shape(x - iw, y - ih, iw * 2, ih * 2, s * 0.1, "#c4a67c");
+        const r = Math.min(iw, ih) * 0.62;
+        ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2);
+        ctx.lineWidth = Math.max(1.5, r * 0.28); ctx.strokeStyle = taken ? ink : "#3b3226"; ctx.stroke();
+        ctx.lineWidth = 1.5; ctx.strokeStyle = ink;
+        if (r > 6) for (const dx of [-0.4, 0, 0.4]) {
+          ctx.beginPath(); ctx.moveTo(x + dx * r, y - r * 0.4); ctx.lineTo(x + dx * r, y + r * 0.4);
+          ctx.lineWidth = Math.max(1.2, r * 0.2); ctx.strokeStyle = taken ? ink : "#3b3226"; ctx.stroke();
+          ctx.lineWidth = 1.5; ctx.strokeStyle = ink;
+        }
       }
     } else if (k.size === "small") {
-      // pill bottle: tall body, red cap, red label band
-      const bw = s * 0.55, bh = s * 0.95;
-      shape(x - bw, y - bh * 0.75, bw * 2, bh * 1.75, s * 0.2);
-      shape(x - bw, y - bh * 0.1, bw * 2, bh * 0.5, 0, "#d3281f");
-      shape(x - bw * 1.1, y - bh * 1.1, bw * 2.2, bh * 0.4, s * 0.1, "#d3281f");
+      // pill bottle: white bottle with a red cross label, teal cap on top
+      const bw = s * 0.62;
+      shape(x - bw, y - s * 0.3, bw * 2, s * 1.15, s * 0.2, "#ecebe4");
+      cross(x, y + s * 0.38, s * 0.3, s * 0.11, "#c0262e");
+      disc(x, y - s * 0.38, bw * 0.85, "#1f8a8f");
+      disc(x, y - s * 0.38, bw * 0.45, "#14666b", 1);
     } else if (k.size === "medium") {
       const h = s * 0.85;
-      shape(x - h, y - h, h * 2, h * 2, s * 0.25);
-      cross(x, y, s * 0.6, s * 0.22);
+      shape(x - h, y - h, h * 2, h * 2, s * 0.28, "#1f8a8f");
+      disc(x, y, h * 0.74, "#c0262e", 1);
+      cross(x, y, h * 0.52, h * 0.2, "#ecebe4");
     } else {
-      // big case: wide box with a lid line and a handle on top
-      const ww = s * 1.15, h = s * 0.75;
-      ctx.beginPath(); ctx.roundRect(x - ww * 0.3, y - h - s * 0.28, ww * 0.6, s * 0.4, s * 0.12); ctx.stroke();
-      shape(x - ww, y - h, ww * 2, h * 2, s * 0.2);
-      ctx.beginPath(); ctx.moveTo(x - ww, y - h * 0.62); ctx.lineTo(x + ww, y - h * 0.62); ctx.stroke();
-      cross(x, y + h * 0.17, s * 0.5, s * 0.19);
+      // big case: teal box, light lid band, gray handle on top, red badge on the front
+      const ww = s * 1.15, h = s * 0.75, ly = y - h * 0.3;
+      ctx.beginPath();
+      ctx.moveTo(x - ww * 0.3, y - h); ctx.lineTo(x - ww * 0.3, y - h - s * 0.22); ctx.lineTo(x + ww * 0.3, y - h - s * 0.22); ctx.lineTo(x + ww * 0.3, y - h);
+      if (!taken) { ctx.fillStyle = "#8f9089"; ctx.fill(); }
+      ctx.stroke();
+      shape(x - ww, y - h, ww * 2, h * 2, s * 0.2, "#1f8a8f");
+      if (!taken) { ctx.beginPath(); ctx.roundRect(x - ww, y - h, ww * 2, ly - (y - h), [s * 0.2, s * 0.2, 0, 0]); ctx.fillStyle = "#b7b7af"; ctx.fill(); ctx.beginPath(); ctx.roundRect(x - ww, y - h, ww * 2, h * 2, s * 0.2); ctx.stroke(); }
+      ctx.beginPath(); ctx.moveTo(x - ww, ly); ctx.lineTo(x + ww, ly); ctx.stroke();
+      disc(x, y + h * 0.42, h * 0.4, "#c0262e", 1);
+      cross(x, y + h * 0.42, h * 0.27, h * 0.1, "#ecebe4");
     }
   });
   ctx.restore();
