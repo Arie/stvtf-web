@@ -139,13 +139,71 @@ fn vec3(v: Option<&str>) -> Option<Vec3> {
     <Vec3>::try_from(v.as_slice()).ok()
 }
 
+fn get(e: &[(String, String)], k: &str) -> Option<String> {
+    e.iter().find(|(key, _)| key.eq_ignore_ascii_case(k)).map(|(_, v)| v.clone())
+}
+
+/// A brush entity's bounds: its model's box (models lump, 48 bytes each) moved by its origin.
+fn brush_bounds(models: &[u8], e: &[(String, String)]) -> Option<(Vec3, Vec3)> {
+    let m = usize::from(get(e, "model")?.strip_prefix('*')?.parse::<u16>().ok()?);
+    if (m + 1) * 48 > models.len() {
+        return None;
+    }
+    let origin = vec3(get(e, "origin").as_deref()).unwrap_or([0.0; 3]);
+    let corner = |o: usize| -> Option<Vec3> {
+        let mut c = origin;
+        for (i, v) in c.iter_mut().enumerate() {
+            *v += f32_at(models, m * 48 + o + i * 4).ok()?;
+        }
+        Some(c)
+    };
+    Some((corner(0)?, corner(12)?))
+}
+
+/// Health and ammo packs by size.
+fn packs(ents: &[Vec<(String, String)>]) -> Vec<Value> {
+    ents.iter()
+        .filter_map(|e| {
+            let class = e.iter().find(|(k, _)| k.eq_ignore_ascii_case("classname"))?.1.as_str();
+            let (kind, size) = class
+                .strip_prefix("item_healthkit_")
+                .map(|s| ("health", s))
+                .or_else(|| class.strip_prefix("item_ammopack_").map(|s| ("ammo", s)))?;
+            if !["small", "medium", "full"].contains(&size) {
+                return None;
+            }
+            let pos = vec3(e.iter().find(|(k, _)| k.eq_ignore_ascii_case("origin"))?.1.as_str().into())?;
+            Some(json!({"kind": kind, "size": size, "pos": pos.map(r1)}))
+        })
+        .collect()
+}
+
+/// Capture areas (`trigger_capture_area`: their brush model's bounds) and the point each caps.
+fn cap_areas(data: &[u8]) -> Result<Vec<Value>> {
+    let ents = entities(data)?;
+    let models = lump(data, LUMP_MODELS)?;
+    let points: Vec<(String, i64)> = ents
+        .iter()
+        .filter(|e| get(e, "classname").as_deref() == Some("team_control_point"))
+        .filter_map(|e| Some((get(e, "targetname")?, get(e, "point_index")?.parse().ok()?)))
+        .collect();
+    Ok(ents
+        .iter()
+        .filter(|e| get(e, "classname").as_deref() == Some("trigger_capture_area"))
+        .filter_map(|e| {
+            let (min, max) = brush_bounds(&models, e)?;
+            let point = get(e, "area_cap_point").and_then(|cp| points.iter().find(|(name, _)| name.eq_ignore_ascii_case(&cp)).map(|p| p.1));
+            Some(json!({"point": point, "min": min.map(r1), "max": max.map(r1)}))
+        })
+        .collect())
+}
+
 /// Spawn rooms (`func_respawnroom`: their brush model's bounds) and spawn points
 /// (`info_player_teamspawn`), with the control point each spawn point belongs to: TF2 enables
 /// such a spawn point for the team that owns that point.
 pub fn spawns(data: &[u8]) -> Result<Value> {
     let ents = entities(data)?;
     let models = lump(data, LUMP_MODELS)?;
-    let get = |e: &[(String, String)], k: &str| e.iter().find(|(key, _)| key.eq_ignore_ascii_case(k)).map(|(_, v)| v.clone());
     // team_control_point targetname -> point index
     let points: Vec<(String, i64)> = ents
         .iter()
@@ -157,24 +215,12 @@ pub fn spawns(data: &[u8]) -> Result<Value> {
     for e in &ents {
         match get(e, "classname").as_deref() {
             Some("func_respawnroom") => {
-                let Some(m) = get(e, "model").and_then(|m| m.strip_prefix('*')?.parse::<u16>().ok()) else { continue };
-                let m = usize::from(m);
-                if (m + 1) * 48 > models.len() {
-                    continue;
-                }
-                let origin = vec3(get(e, "origin").as_deref()).unwrap_or([0.0; 3]);
-                let corner = |o: usize| -> Result<Vec3> {
-                    let mut c = origin;
-                    for (i, v) in c.iter_mut().enumerate() {
-                        *v += f32_at(&models, m * 48 + o + i * 4)?;
-                    }
-                    Ok(c)
-                };
+                let Some((min, max)) = brush_bounds(&models, e) else { continue };
                 rooms.push(json!({
                     "name": get(e, "targetname").unwrap_or_default(),
                     "team": team(get(e, "TeamNum").as_deref()),
-                    "min": corner(0)?.map(r1),
-                    "max": corner(12)?.map(r1),
+                    "min": min.map(r1),
+                    "max": max.map(r1),
                     "disabled": get(e, "StartDisabled").as_deref() == Some("1"),
                 }));
             }
@@ -303,6 +349,8 @@ pub fn geometry(data: &[u8]) -> Result<Value> {
     });
     Ok(json!({
         "spawns": spawns(data)?,
+        "packs": packs(&entities(data)?),
+        "cap_areas": cap_areas(data)?,
         "bounds": bounds.map(|(lo, hi)| json!([lo, hi])),
         "floors": floors.into_iter().map(|f| f.1).collect::<Vec<_>>(),
         "walls": walls,
@@ -442,6 +490,30 @@ mod tests {
             assert!((0..3).all(|i| b[0][i].as_f64().unwrap() <= p[i] && p[i] <= b[1][i].as_f64().unwrap()), "{b}");
         }
         assert!(g["floors"].as_array().unwrap().len() > 1000);
+        assert_eq!(g["packs"], json!([]));
+        assert_eq!(g["cap_areas"], json!([]));
+    }
+
+    #[test]
+    fn process_packs_and_capture_areas() {
+        let Some(data) = process() else { return eprintln!("cache/cp_process_f12.bsp not downloaded; skipped") };
+        let g = geometry(&data).unwrap();
+        let areas = g["cap_areas"].as_array().unwrap();
+        for i in 0..5 {
+            let n = areas.iter().filter(|a| a["point"] == i).count();
+            eprintln!("cap areas point {i}: {n}");
+            assert!(n >= 1, "point {i}");
+        }
+        assert!(areas.iter().all(|a| (0..3).all(|i| a["min"][i].as_f64() < a["max"][i].as_f64())), "{areas:?}");
+        let packs = g["packs"].as_array().unwrap();
+        let count = |k: &str| packs.iter().filter(|p| p["kind"] == k).count();
+        eprintln!("packs health {} ammo {}", count("health"), count("ammo"));
+        assert!(count("health") > 10 && count("ammo") > 10, "{packs:?}");
+        assert!(
+            packs
+                .iter()
+                .all(|p| ["small", "medium", "full"].contains(&p["size"].as_str().unwrap()) && p["pos"].as_array().unwrap().len() == 3)
+        );
     }
 
     #[test]

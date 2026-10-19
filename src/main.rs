@@ -68,7 +68,8 @@ struct Hub {
     server: Option<Arc<str>>,
     world: Option<Arc<str>>,
     snapshot: Option<Arc<str>>,
-    clients: Vec<SyncSender<Arc<str>>>,
+    /// With whether the page asked for detail lines.
+    clients: Vec<(SyncSender<Arc<str>>, bool)>,
     map: Option<String>,
     /// Feed events of the current map, so a page opened late still shows kills and chat.
     history: VecDeque<Arc<str>>,
@@ -84,7 +85,9 @@ const HISTORY: usize = 1000;
 /// Event fields that hold player ids.
 const PLAYER_FIELDS: [&str; 11] =
     ["player", "attacker", "victim", "assister", "medic", "target", "blocker", "owner", "builder", "cappers", "carrier"];
-const FEED: [&str; 18] = [
+/// High-volume lines for pages that ask (`?detail=1`); never kept in the history.
+const DETAIL: [&str; 7] = ["heal", "blast_jump", "pickup", "impact", "mark", "voice_command", "server_text"];
+const FEED: [&str; 26] = [
     "kill",
     "flag",
     "uber",
@@ -103,6 +106,14 @@ const FEED: [&str; 18] = [
     "player_leave",
     "team_change",
     "chat",
+    "capture_broken",
+    "killed_capper",
+    "medic_defended",
+    "vote_options",
+    "vote_cast",
+    "tournament",
+    "announcer",
+    "time_remaining",
 ];
 
 type SharedHub = Arc<Mutex<Hub>>;
@@ -110,6 +121,7 @@ type SharedHub = Arc<Mutex<Hub>>;
 fn publish(hub: &SharedHub, v: &Value) {
     let line: Arc<str> = v.to_string().into();
     let mut h = hub.lock().unwrap();
+    let detail = v["type"].as_str().is_some_and(|t| DETAIL.contains(&t));
     match v["type"].as_str() {
         Some("status") => {
             if v["state"] == "map_change" {
@@ -161,10 +173,12 @@ fn publish(hub: &SharedHub, v: &Value) {
         _ => {}
     }
     // A browser that cannot keep up is dropped; it reconnects and resyncs from the latest state.
-    h.clients.retain(|c| !matches!(c.try_send(line.clone()), Err(TrySendError::Full(_) | TrySendError::Disconnected(_))));
+    h.clients.retain(|(c, wants)| {
+        (detail && !wants) || !matches!(c.try_send(line.clone()), Err(TrySendError::Full(_) | TrySendError::Disconnected(_)))
+    });
 }
 
-fn subscribe(hub: &SharedHub) -> Receiver<Arc<str>> {
+fn subscribe(hub: &SharedHub, detail: bool) -> Receiver<Arc<str>> {
     let (tx, rx) = sync_channel(4096);
     let mut h = hub.lock().unwrap();
     // The snapshot goes before the history so the page knows the players' names.
@@ -174,7 +188,7 @@ fn subscribe(hub: &SharedHub) -> Receiver<Arc<str>> {
     if let Some(at) = h.snapshot_at {
         let _ = tx.try_send(serde_json::json!({"type": "data_age", "ms": at.elapsed().as_millis() as u64}).to_string().into());
     }
-    h.clients.push(tx);
+    h.clients.push((tx, detail));
     rx
 }
 
@@ -225,7 +239,7 @@ fn map_geometry(cache: &Path, name: &str, fetch: bool) -> Result<Vec<u8>> {
     }
     std::fs::create_dir_all(cache)?;
     // Bump the suffix when the extracted data changes, so cached maps are redone.
-    let json = cache.join(format!("{name}.v3.json"));
+    let json = cache.join(format!("{name}.v4.json"));
     if let Ok(body) = std::fs::read(&json) {
         return Ok(body);
     }
@@ -425,7 +439,7 @@ fn serve(mut s: TcpStream, app: &App) -> Result<()> {
         (_, "/up") => respond(&mut s, "200 OK", "text/plain", b"ok")?,
         (Matches::One(_), "/" | "/index.html" | "/overlay") => respond(&mut s, "200 OK", html, &app.page(INDEX))?,
         (Matches::One(hub), "/events") => match app.stream_slot(client) {
-            Some(_slot) => stream(s, hub, gzip)?,
+            Some(_slot) => stream(s, hub, gzip, wants_detail(query))?,
             None => too_many_streams(&mut s)?,
         },
         (Matches::Many(_), "/" | "/watch") if app.keys.is_some() => {
@@ -465,7 +479,7 @@ fn serve(mut s: TcpStream, app: &App) -> Result<()> {
                 (Some(m), "events") => match app.stream_slot(client) {
                     Some(_slot) => {
                         let _viewer = Viewer::new(m.clone());
-                        stream(s, &m.hub, gzip)?;
+                        stream(s, &m.hub, gzip, wants_detail(query))?;
                     }
                     None => too_many_streams(&mut s)?,
                 },
@@ -585,10 +599,14 @@ fn start(app: &App, sessions: &Sessions, query: &str) -> Result<Arc<sessions::Se
     sessions.open(&t.connect, t.owner.as_deref())
 }
 
+fn wants_detail(query: &str) -> bool {
+    query.split('&').any(|kv| kv == "detail=1")
+}
+
 /// A match's events to one browser, until it goes away.
 /// Snapshots are 20 a second of very similar JSON: gzip, flushed after each batch so nothing waits,
 /// brings a viewer from about 110 KB/s down to a few.
-fn stream(mut s: TcpStream, hub: &SharedHub, gzip: bool) -> Result<()> {
+fn stream(mut s: TcpStream, hub: &SharedHub, gzip: bool, detail: bool) -> Result<()> {
     write!(
         s,
         "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nCache-Control: no-cache\r\nX-Accel-Buffering: no\r\nX-Content-Type-Options: nosniff\r\n{}\r\n",
@@ -597,7 +615,7 @@ fn stream(mut s: TcpStream, hub: &SharedHub, gzip: bool) -> Result<()> {
     let mut out: Box<dyn Write> = if gzip { Box::new(GzEncoder::new(s, Compression::new(5))) } else { Box::new(s) };
     // After a restart (a deploy), browsers come back after 1 s instead of their default 3 s.
     write!(out, "retry: 1000\n\n")?;
-    let rx = subscribe(hub);
+    let rx = subscribe(hub, detail);
     loop {
         match rx.recv_timeout(Duration::from_secs(15)) {
             Ok(line) => {
@@ -1022,7 +1040,7 @@ mod tests {
     fn write_atomic_replaces_the_file() {
         let dir = std::env::temp_dir().join(format!("stvtf-web-atomic-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
-        let path = dir.join("m.v3.json");
+        let path = dir.join("m.v4.json");
         std::fs::write(&path, b"old, longer contents").unwrap();
         write_atomic(&path, b"new").unwrap();
         assert_eq!(std::fs::read(&path).unwrap(), b"new");
@@ -1041,12 +1059,27 @@ mod tests {
         publish(&hub, &serde_json::json!({"type": "kill", "tick": 2, "attacker": 3, "victim": 4, "assister": null}));
         publish(&hub, &serde_json::json!({"type": "point_captured", "tick": 3, "point": 0, "cappers": [3]}));
         publish(&hub, &snapshot(serde_json::json!([])));
-        let lines: Vec<Value> = subscribe(&hub).try_iter().map(|l| serde_json::from_str(&l).unwrap()).collect();
+        let lines: Vec<Value> = subscribe(&hub, false).try_iter().map(|l| serde_json::from_str(&l).unwrap()).collect();
         let kill = lines.iter().find(|l| l["type"] == "kill").unwrap();
         assert_eq!(kill["names"]["3"]["name"], "can of tuna");
         assert_eq!(kill["names"]["4"]["team"], "blue");
         let cap = lines.iter().find(|l| l["type"] == "point_captured").unwrap();
         assert_eq!(cap["names"]["3"]["name"], "can of tuna");
+    }
+
+    #[test]
+    fn detail_lines_reach_only_detail_clients() {
+        let hub = SharedHub::default();
+        let (plain, detail) = (subscribe(&hub, false), subscribe(&hub, true));
+        publish(&hub, &serde_json::json!({"type": "heal", "tick": 1, "medic": 3, "target": 4, "amount": 20}));
+        publish(&hub, &serde_json::json!({"type": "kill", "tick": 2, "attacker": 3, "victim": 4, "assister": null}));
+        let types = |rx: &Receiver<Arc<str>>| -> Vec<String> {
+            rx.try_iter().map(|l| serde_json::from_str::<Value>(&l).unwrap()["type"].as_str().unwrap().to_string()).collect()
+        };
+        assert_eq!(types(&plain), ["kill"]);
+        assert_eq!(types(&detail), ["heal", "kill"]);
+        assert_eq!(hub.lock().unwrap().history.len(), 1);
+        assert_eq!(types(&subscribe(&hub, true)), ["kill"], "detail is not replayed");
     }
 
     #[test]
@@ -1098,7 +1131,7 @@ mod tests {
         let cache = std::env::temp_dir().join(format!("stvtf-web-onmap-{}", std::process::id()));
         // Not cached and not being watched: an error, without asking fastdl.
         assert!(map_geometry(&cache, "cp_nothere", false).unwrap_err().to_string().contains("no match"));
-        std::fs::write(cache.join("cp_cached.v3.json"), b"{}").unwrap();
+        std::fs::write(cache.join("cp_cached.v4.json"), b"{}").unwrap();
         assert_eq!(map_geometry(&cache, "cp_cached", false).unwrap(), b"{}");
         std::fs::remove_dir_all(&cache).unwrap();
 

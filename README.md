@@ -130,6 +130,9 @@ Query options, e.g. `/overlay?names=1&score=1&panel=0.6`:
   overtime, match end, joins and leaves, map changes) and chat.
 - The server keeps the feed and chat of the current map (up to 1000 events), so a page
   opened or reloaded mid-match starts with them.
+- `/events?detail=1` (and `/w/<id>/events?detail=1`) also streams the high-volume lines
+  (`heal`, `blast_jump`, `pickup`, `impact`, `mark`, `voice_command`, `server_text`). They are
+  never kept in that history, so a page only sees them from when it connects.
 - A map change clears the HUD, scoreboard, followed player and everything else from the old map.
 
 Snapshots are interpolated and events are fired when playback reaches their tick,
@@ -144,7 +147,9 @@ about 150 ms behind the newest data, so everything lines up with the movement.
 - **map geometry**: for any map, drawn from the map's BSP from fastdl
   (`fastdl.serveme.tf/maps/`): upward faces shaded by height, wall outlines, and the
   playable area framed by control points, pickups and nearby spawns (or by the floors, on
-  maps without either) so the 3D skybox stays out. The extracted geometry is cached in `--cache`.
+  maps without either) so the 3D skybox stays out. It also carries `packs` (health and ammo
+  kits by size) and `cap_areas` (each capture trigger's bounds and its point). The extracted
+  geometry is cached in `--cache`.
 
 ## Backpack pictures
 
