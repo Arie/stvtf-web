@@ -34,7 +34,7 @@ aside h3 { margin: 0 0 6px; font-size: 11px; text-transform: uppercase; letter-s
   font-family: "HUD Condensed", "Roboto Condensed", "Arial Narrow", sans-serif; }
 #hud-blue { left: 10px; } #hud-red { right: 10px; }
 .card { --team: var(--blue); position: relative; height: 40px; display: grid; align-items: center;
-  grid-template-columns: 40px 1fr auto; background: #0b0c0ecc; overflow: hidden; }
+  grid-template-columns: 40px 1fr auto auto; background: #0b0c0ecc; overflow: hidden; }
 #hud-red .card, #hud-red .charge { --team: var(--red); }
 /* Fills stay full width and are revealed with clip-path, so the über stripes (a fixed
    24px tile) never stretch when health or charge changes. */
@@ -52,9 +52,10 @@ aside h3 { margin: 0 0 6px; font-size: 11px; text-transform: uppercase; letter-s
 .card .hp { padding: 0 9px; font-size: 26px; font-weight: 800; color: #fff; text-shadow: 0 2px 0 #000a; font-variant-numeric: tabular-nums; }
 .card .nm small { display: flex; align-items: center; gap: 4px; height: 14px; white-space: nowrap; overflow: hidden; }
 .card .wp { height: 14px; width: auto; max-width: 56px; object-fit: contain; filter: drop-shadow(0 1px 1px #000); }
-.card .clip { color: #fff; font-weight: 700; font-variant-numeric: tabular-nums; }
-.card .fx { display: inline-block; margin-right: 3px; vertical-align: -1px; width: 8px; height: 8px; border-radius: 50%; box-shadow: 0 0 0 1px #000a; }
-.card .fx.burn { background: #ff7a1a; } .card .fx.jar { background: #f2d627; } .card .fx.milk { background: #fff; } .card .fx.bleed { background: #d22; }
+/* Status effects left of the health number, one dot each. */
+.card .fx { display: flex; gap: 3px; }
+.card .fx i { width: 10px; height: 10px; border-radius: 50%; box-shadow: 0 0 0 1.5px #000b; }
+.card .fx .burn { background: #ff7a1a; } .card .fx .jar { background: #f2d627; } .card .fx .milk { background: #fff; } .card .fx .bleed { background: #d22; }
 .card .nm small span:empty { display: none; }
 .card.over .hp { color: #9fd8ff; }
 .card.low .hp { color: #ff6b5a; animation: pulse .7s infinite alternate; }

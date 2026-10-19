@@ -23,18 +23,17 @@ function setClass(el, cls) { if (el.className !== cls) el.className = cls; }
 function setStyle(el, prop, value) { if (el.style[prop] !== value) el.style[prop] = value; }
 
 let itemImages = null;
-function weaponInfo(p) {
+function weaponImage(p) {
   if (!layerOn("loadout") || !p.alive || !p.weapon) return null;
   if (!itemImages) {
     itemImages = {};
     fetch("backpack/items.json").then(r => r.json()).then(j => { itemImages = j; state.lastPanel = 0; }).catch(() => {});
     return null;
   }
-  const img = itemImages[p.weapon.item];
-  return img ? { img, clip: p.weapon.clip } : null;
+  return itemImages[p.weapon.item] || null;
 }
 function card(p) {
-  const el = node(`p${p.id}`, `<div class="card"><div class="fill"></div><div class="oh"></div><span class="ci"></span><div class="nm"><b></b><small><span></span><img class="wp" alt="" hidden><span class="clip"></span></small></div><div class="hp"></div></div>`);
+  const el = node(`p${p.id}`, `<div class="card"><div class="fill"></div><div class="oh"></div><span class="ci"></span><div class="nm"><b></b><small><span></span><img class="wp" alt="" hidden></small></div><span class="fx"></span><div class="hp"></div></div>`);
   const f = p.alive ? Math.max(0, Math.min(1, p.hp / (p.max_hp || 1))) : 0;
   if (el.dataset.id !== String(p.id)) el.dataset.id = p.id;
   setClass(el, ["card", p.id === state.follow && "followed", !p.alive && "dead", p.alive && p.hp > p.max_hp && "over", p.alive && f < 0.35 && "low", p.ubered && "ub"].filter(Boolean).join(" "));
@@ -44,20 +43,20 @@ function card(p) {
   setHTML(el.children[2], ICONS[p.class] ? `<img src="icons/${p.class}.svg" alt="${p.class}">` : CLASS[p.class] || "?");
   setText2(el.querySelector(".nm b"), p.name);
   const sub = p.ping != null ? `${p.ping} ms` : "";
-  const [subEl, wp, clip] = el.querySelector(".nm small").children;
+  const [subEl, wp] = el.querySelector(".nm small").children;
   const fx = layerOn("effects") && p.alive ? [["Burning", "burn", "On fire"], ["Urine", "jar", "Jarate"], ["MadMilk", "milk", "Mad Milk"], ["Bleeding", "bleed", "Bleeding"]]
-    .filter(([c]) => p.conds?.includes(c)).map(([, k, t]) => `<i class="fx ${k}" title="${t}"></i>`).join("") : "";
-  setHTML(subEl, `${fx}${p.ubered ? `<span class="tag">${UBER_LABEL[p.ubered] || "ÜBER"}</span>` : ""}${sub}`);
-  const w = weaponInfo(p);
-  if (w && wp.dataset.img !== w.img) {
-    wp.dataset.img = w.img;
+    .filter(([c]) => p.conds?.includes(c)).map(([, k, t]) => `<i class="${k}" title="${t}"></i>`).join("") : "";
+  setHTML(el.children[4], fx);
+  setHTML(subEl, `${p.ubered ? `<span class="tag">${UBER_LABEL[p.ubered] || "ÜBER"}</span>` : ""}${sub}`);
+  const w = weaponImage(p);
+  if (w && wp.dataset.img !== w) {
+    wp.dataset.img = w;
     wp.style.display = "";
-    wp.src = `backpack/${w.img}.webp`;
+    wp.src = `backpack/${w}.webp`;
     wp.onerror = () => { wp.style.display = "none"; };
   }
   wp.hidden = !w;
-  setText2(clip, w && w.clip != null ? String(w.clip) : "");
-  setText2(el.children[4], p.alive ? String(p.hp) : "DEAD");
+  setText2(el.children[5], p.alive ? String(p.hp) : "DEAD");
   return el;
 }
 function chargeMeter(p) {
