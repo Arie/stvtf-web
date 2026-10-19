@@ -31,7 +31,10 @@ does not count towards `--max-matches` and holds still while nobody is watching.
 
 stv.tf runs this way: `config/deploy.yml` is its Kamal config (`kamal deploy -d eu|na|au|sea`),
 one app per region on the serveme.tf web hosts, with `STVMAP_TOKEN_KEY` read from
-`~/.config/stvmap/token.key` (shared with serveme.tf).
+`~/.config/stvmap/token.key` (shared with serveme.tf). Those hosts run game servers too: `--host-ip` (the host's
+public address) makes the hub reach them through its container's gateway, because a game
+server bound to 0.0.0.0 answers a packet to the public address from the gateway's address,
+which a connected socket drops.
 
 `Dockerfile` builds that server, with the directory holding both repositories as context:
 `docker build -f stvmap-web/Dockerfile .` (`Dockerfile.dockerignore` keeps the context to the
