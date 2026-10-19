@@ -24,7 +24,7 @@
   body { display: grid; grid-template-rows: 1fr; }
   #title { display: flex; gap: 10px; align-items: baseline; padding: 10px 12px; border-bottom: 1px solid var(--line); }
   #title b { font-size: 15px; }
-  .hud, #scoreboard, #follow, #bgtoggle, #autozoom, #sidetoggle, #helptoggle, #help, aside { zoom: var(--s); }
+  .hud, #scoreboard, #follow, #bgtoggle, #autozoom, #sidetoggle, #helptoggle, #settingstoggle, #help, aside { zoom: var(--s); }
   #status.ok { color: #7cc47f; } #status.bad { color: #e0a040; }
   #age { color: var(--dim); margin-left: auto; }
   main { display: grid; grid-template-columns: 1fr auto; min-height: 0; }
@@ -125,7 +125,8 @@
   html.noside main { grid-template-columns: 1fr; grid-template-rows: 1fr; }
   #sidetoggle, #helptoggle, #settingstoggle, #autozoom { position: absolute; right: 12px; z-index: 3; padding: 5px 10px; border: 0; border-radius: 6px;
     background: #0b0c0ee6; color: #fff; font: inherit; font-size: 12px; cursor: pointer; }
-  #sidetoggle, #helptoggle, #settingstoggle { top: 12px; font-size: 16px; line-height: 1; padding: 4px 9px; }
+  #sidetoggle, #helptoggle, #settingstoggle { top: 12px; font-size: 16px; line-height: 1; padding: 4px 0; width: 24px; text-align: center; }
+  #settingstoggle { font-size: 18px; padding: 3px 0; }
   #helptoggle { right: 46px; }
   #help { position: absolute; top: 44px; right: 12px; z-index: 4; padding: 10px 14px; border-radius: 6px;
     background: #0b0c0ef2; color: var(--text); font-size: 12px; }
@@ -820,7 +821,9 @@ function fireEvents(tick, byId) {
         break;
       }
       case "round_win": banner(`${teamName(ev.team)} wins the round`, ev.team); feedEvent(ev, p); break;
-      case "round_start": banner("Round start", "none"); feedEvent(ev, p); break;
+      case "round_start":
+        if (!stale(ev, 1500)) { state.scorches = []; state.marks = []; }
+        banner("Round start", "none"); feedEvent(ev, p); break;
       case "chat": case "voice_command": case "server_text": chat(ev, p); break;
       default: feedEvent(ev, p);
     }
@@ -1208,12 +1211,12 @@ function drawPacks() {
         }
       }
     } else if (k.size === "small") {
-      // pill bottle: white bottle with a red cross label, teal cap on top
-      const bw = s * 0.62;
-      shape(x - bw, y - s * 0.3, bw * 2, s * 1.15, s * 0.2, "#ecebe4");
-      cross(x, y + s * 0.38, s * 0.3, s * 0.11, "#c0262e");
-      disc(x, y - s * 0.38, bw * 0.85, "#1f8a8f");
-      disc(x, y - s * 0.38, bw * 0.45, "#14666b", 1);
+      // pill bottle: white cap, teal body with a white label band and a red cross
+      const bw = s * 0.62, ly = y + s * 0.46, lh = s * 0.28;
+      shape(x - bw, y - s * 0.3, bw * 2, s * 1.15, s * 0.2, "#1f8a8f");
+      shape(x - bw, ly - lh, bw * 2, lh * 2, s * 0.06, "#ecebe4");
+      cross(x, ly, s * 0.22, s * 0.08, "#c0262e");
+      shape(x - bw * 0.85, y - s * 0.62, bw * 1.7, s * 0.36, s * 0.1, "#ecebe4");
     } else if (k.size === "medium") {
       const h = s * 0.85;
       shape(x - h, y - h, h * 2, h * 2, s * 0.28, "#1f8a8f");
