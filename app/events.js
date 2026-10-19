@@ -5,7 +5,8 @@ import { noteSpawn } from "./objectives.js";
 import { addScorch, nearFreshScorch } from "./overkill.js";
 
 // ---------- events become effects when playback reaches their tick
-// Detail lines can be a while behind (a hidden tab holds the page back): late ones are dropped.
+// Playback can reach events late (a hidden tab holds the page back): effects are back-dated, so a late
+// one shows only what is left of its life, and detail lines are dropped once they are too old.
 export const MARK_LIFE_MS = 60000, MARK_CAP = 2000, SCORCH_CAP = 300, SCORCH_R = 65, PACK_REACH = 128, PACK_RESPAWN_MS = 10000;
 let eventTick = 0;
 const lagMs = ev => Math.max(0, (eventTick - ev.tick) * MS_PER_TICK);
@@ -18,35 +19,35 @@ export function fireEvents(tick, byId) {
   for (const ev of due) {
     const p = id => byId.get(id) || state.players.get(id);
     switch (ev.type) {
-      case "shot": state.effects.push({ kind: "shot", ev, team: p(ev.player)?.team, t0: now, life: 260 }); break;
+      case "shot": state.effects.push({ kind: "shot", ev, team: p(ev.player)?.team, t0: now - lagMs(ev), life: 260 }); break;
       case "explosion":
-        state.effects.push({ kind: "boom", ev, t0: now, life: 450 });
+        state.effects.push({ kind: "boom", ev, t0: now - lagMs(ev), life: 450 });
         if (layerOn("marks") && !stale(ev, MARK_LIFE_MS) && ev.origin) addScorch(ev.origin, now - lagMs(ev));
         break;
-      case "airblast": state.effects.push({ kind: "airblast", id: ev.player, t0: now, life: 350 }); break;
+      case "airblast": state.effects.push({ kind: "airblast", id: ev.player, t0: now - lagMs(ev), life: 350 }); break;
       case "sentry_shot": {
         const snap = state.snaps.at(-1);
         const sentry = snap?.buildings.find(b => b.id === ev.sentry);
-        if (sentry) state.effects.push({ kind: "sentryshot", from: sentry.pos, aim: sentry.aim, team: sentry.team, target: ev.target, t0: now, life: 180 });
+        if (sentry) state.effects.push({ kind: "sentryshot", from: sentry.pos, aim: sentry.aim, team: sentry.team, target: ev.target, t0: now - lagMs(ev), life: 180 });
         break;
       }
       case "damage": {
         const v = p(ev.victim);
-        if (v?.pos) state.effects.push({ kind: "dmg", pos: v.pos, ev, t0: now, life: 900 });
+        if (v?.pos) state.effects.push({ kind: "dmg", pos: v.pos, ev, t0: now - lagMs(ev), life: 900 });
         break;
       }
       case "kill": {
-        if (!ev.feign) state.effects.push({ kind: "kill", ev, team: p(ev.victim)?.team, t0: now, life: 3000 });
+        if (!ev.feign) state.effects.push({ kind: "kill", ev, team: p(ev.victim)?.team, t0: now - lagMs(ev), life: 3000 });
         feedEvent(ev, p);
         break;
       }
       case "spawn":
-        state.effects.push({ kind: "spawn", pos: ev.pos, team: ev.team, t0: now, life: 700 });
+        state.effects.push({ kind: "spawn", pos: ev.pos, team: ev.team, t0: now - lagMs(ev), life: 700 });
         noteSpawn(ev);
         break;
       case "uber": {
         const m = p(ev.medic);
-        if (m) state.effects.push({ kind: "uber", id: ev.medic, team: m.team, t0: now, life: 1500 });
+        if (m) state.effects.push({ kind: "uber", id: ev.medic, team: m.team, t0: now - lagMs(ev), life: 1500 });
         feedEvent(ev, p);
         break;
       }
@@ -85,14 +86,14 @@ export function fireEvents(tick, byId) {
         });
         if (best < 0) break;
         state.packsTaken.set(best, now + PACK_RESPAWN_MS);
-        state.effects.push({ kind: "packflash", pos: packs[best].pos, t0: now, life: 600 });
+        state.effects.push({ kind: "packflash", pos: packs[best].pos, t0: now - lagMs(ev), life: 600 });
         break;
       }
       case "capture_broken": {
         feedEvent(ev, p);
         if (!layerOn("points") || stale(ev, 1500)) break;
         const o = state.snaps.at(-1)?.objectives?.find(o => o.kind === "control_point" && o.index === ev.point);
-        if (o) state.effects.push({ kind: "capbreak", pos: o.pos, t0: now, life: 800 });
+        if (o) state.effects.push({ kind: "capbreak", pos: o.pos, t0: now - lagMs(ev), life: 800 });
         break;
       }
       case "point_captured": banner(`${teamName(ev.team)} captured ${pointName(ev)}`, ev.team); feedEvent(ev, p); break;
