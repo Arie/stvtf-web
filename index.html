@@ -1376,6 +1376,8 @@ function draw() {
     canvas.width = Math.round(r.width * dpr); canvas.height = Math.round(r.height * dpr);
   }
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  // Round joins: outlined text with sharp (miter) joins grows spikes off pointed glyphs like "y".
+  ctx.lineJoin = "round";
   const tick = renderTick();
   const f = frameAt(tick);
   if (f) {
