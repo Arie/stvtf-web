@@ -3,7 +3,7 @@
 //! AES-256-GCM encrypted, so the `SourceTV` password inside it is never readable in a URL:
 //! base64url(12-byte nonce | ciphertext | 16-byte tag) of `{"connect", "owner", "exp"}`.
 
-use aes_gcm::aead::{Aead, KeyInit};
+use aes_gcm::aead::{Aead, AeadCore, KeyInit, OsRng};
 use aes_gcm::{Aes256Gcm, Nonce};
 use anyhow::{Result, anyhow, bail};
 use base64::Engine;
@@ -33,13 +33,25 @@ impl Keys {
         Ok(Keys(Aes256Gcm::new_from_slice(&bytes).map_err(|_| anyhow!("bad token key"))?))
     }
 
+    /// 12-byte random nonce | ciphertext | tag, the layout of the tokens.
+    pub fn seal(&self, plain: &[u8]) -> Vec<u8> {
+        let nonce = Aes256Gcm::generate_nonce(&mut OsRng);
+        let mut out = nonce.to_vec();
+        out.extend(self.0.encrypt(&nonce, plain).expect("AES-GCM encryption of an in-memory buffer"));
+        out
+    }
+
+    pub fn unseal(&self, sealed: &[u8]) -> Result<Vec<u8>> {
+        if sealed.len() < 12 + 16 {
+            bail!("too short");
+        }
+        let (nonce, data) = sealed.split_at(12);
+        self.0.decrypt(Nonce::from_slice(nonce), data).map_err(|_| anyhow!("does not decrypt with this key"))
+    }
+
     pub fn open(&self, token: &str, now: u64) -> Result<Start> {
         let raw = URL_SAFE_NO_PAD.decode(token.trim()).map_err(|_| anyhow!("malformed token"))?;
-        if raw.len() < 12 + 16 {
-            bail!("malformed token");
-        }
-        let (nonce, sealed) = raw.split_at(12);
-        let plain = self.0.decrypt(Nonce::from_slice(nonce), sealed).map_err(|_| anyhow!("invalid token"))?;
+        let plain = self.unseal(&raw).map_err(|_| anyhow!("invalid token"))?;
         let v: Value = serde_json::from_slice(&plain).map_err(|_| anyhow!("invalid token"))?;
         if v["exp"].as_u64().is_none_or(|exp| exp < now) {
             bail!("this link has expired; open the match again from the site");
@@ -75,6 +87,15 @@ mod tests {
         assert_eq!(s.owner.as_deref(), Some("76561197960497430"));
         let unlimited = seal(r#"{"connect":"1.2.3.4:27020","owner":null,"exp":2000}"#, [8; 12]);
         assert!(Keys::from_hex(KEY).unwrap().open(&unlimited, 1000).unwrap().owner.is_none());
+    }
+
+    #[test]
+    fn seals_and_unseals() {
+        let keys = Keys::from_hex(KEY).unwrap();
+        let a = keys.seal(b"secret");
+        assert_ne!(a, keys.seal(b"secret"), "fresh nonce each time");
+        assert_eq!(keys.unseal(&a).unwrap(), b"secret");
+        assert!(Keys::from_hex(&"ee".repeat(32)).unwrap().unseal(&a).is_err());
     }
 
     #[test]

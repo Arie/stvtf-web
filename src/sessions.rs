@@ -1,11 +1,13 @@
 //! Many matches in one process: a watcher per `SourceTV` server, started when someone asks for
-//! it and stopped a while after its last viewer leaves.
+//! it and stopped a while after its last viewer leaves. With a store, the matches outlive the
+//! process: a deploy's new container picks them up under the same links.
 
-use crate::{SharedHub, parse_connect, publish};
+use crate::{SharedHub, parse_connect, publish, token, write_atomic};
 use anyhow::{Result, anyhow, bail};
 use std::collections::HashMap;
 use std::hash::{BuildHasher, RandomState};
 use std::net::{IpAddr, SocketAddr, ToSocketAddrs};
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::thread::JoinHandle;
@@ -65,11 +67,52 @@ pub struct Sessions {
     /// A game server here, bound to 0.0.0.0, answers a packet sent to the public address from the
     /// address of the route back to us (the gateway), which our connected socket would drop.
     pub this_host: Option<(IpAddr, IpAddr)>,
+    pub store: Option<Store>,
+}
+
+/// A file per match, so the containers of a deploy, briefly running side by side, never write
+/// over each other's list. Encrypted with the token key when there is one.
+pub struct Store {
+    pub dir: PathBuf,
+    pub keys: Option<Arc<token::Keys>>,
+}
+
+impl Store {
+    fn path(&self, id: &str) -> PathBuf {
+        self.dir.join(id)
+    }
+
+    fn save(&self, s: &Session) -> Result<()> {
+        let (map, history) = {
+            let h = s.hub.lock().unwrap_or_else(PoisonError::into_inner);
+            (h.map.clone(), h.history.iter().map(ToString::to_string).collect::<Vec<_>>())
+        };
+        let plain = serde_json::json!({
+            "server": s.server.to_string(), "password": s.password, "owner": s.owner, "map": map, "history": history,
+        })
+        .to_string()
+        .into_bytes();
+        std::fs::create_dir_all(&self.dir)?;
+        let data = self.keys.as_ref().map_or_else(|| plain.clone(), |k| k.seal(&plain));
+        Ok(write_atomic(&self.path(&s.id), &data)?)
+    }
+
+    fn forget(&self, id: &str) {
+        let _ = std::fs::remove_file(self.path(id));
+    }
+
+    fn load(&self, data: &[u8]) -> Result<serde_json::Value> {
+        let plain = match &self.keys {
+            Some(k) => k.unseal(data)?,
+            None => data.to_vec(),
+        };
+        Ok(serde_json::from_slice(&plain)?)
+    }
 }
 
 impl Sessions {
     pub fn new(public: bool, max: usize, hz: f32) -> Self {
-        Sessions { map: Mutex::default(), public, max, hz, this_host: None }
+        Sessions { map: Mutex::default(), public, max, hz, this_host: None, store: None }
     }
 
     fn lock(&self) -> std::sync::MutexGuard<'_, HashMap<String, Arc<Session>>> {
@@ -104,18 +147,40 @@ impl Sessions {
             for id in previous {
                 if let Some(p) = map.remove(&id) {
                     p.stop.store(true, Ordering::Relaxed);
+                    if let Some(store) = &self.store {
+                        store.forget(&id);
+                    }
                 }
             }
         }
         if map.values().filter(|s| !s.pinned).count() >= self.max {
             bail!("already watching {} matches, the most this server does", self.max);
         }
+        let s = self.start(&mut map, random_id(), server, password, owner.map(str::to_string), SharedHub::default());
+        if let Some(store) = &self.store
+            && let Err(e) = store.save(&s)
+        {
+            eprintln!("stvmap-web: saving match {}: {e:#}", s.id);
+        }
+        Ok(s)
+    }
+
+    /// Watches `server` as session `id`.
+    fn start(
+        &self,
+        map: &mut HashMap<String, Arc<Session>>,
+        id: String,
+        server: SocketAddr,
+        password: String,
+        owner: Option<String>,
+        hub: SharedHub,
+    ) -> Arc<Session> {
         let s = Arc::new(Session {
-            id: random_id(),
-            hub: SharedHub::default(),
+            id,
+            hub,
             server,
             password,
-            owner: owner.map(str::to_string),
+            owner,
             pinned: false,
             stop: AtomicBool::new(false),
             done: AtomicBool::new(false),
@@ -138,7 +203,52 @@ impl Sessions {
         });
         *s.thread.lock().unwrap_or_else(PoisonError::into_inner) = Some(thread);
         map.insert(s.id.clone(), s.clone());
-        Ok(s)
+        s
+    }
+
+    /// Picks up the matches a previous process saved (the one a deploy replaces), each under its
+    /// old link and with its feed so far. Returns how many.
+    pub fn restore(&self) -> usize {
+        let Some(store) = &self.store else { return 0 };
+        let Ok(entries) = std::fs::read_dir(&store.dir) else { return 0 };
+        let mut map = self.lock();
+        let mut restored = 0;
+        for entry in entries.flatten() {
+            let id = entry.file_name().to_string_lossy().into_owned();
+            if id.len() != 32 || !id.chars().all(|c| c.is_ascii_hexdigit()) || map.contains_key(&id) {
+                continue;
+            }
+            let saved = std::fs::read(entry.path()).map_err(anyhow::Error::from).and_then(|d| store.load(&d));
+            let parsed = saved.ok().and_then(|v| {
+                let server: SocketAddr = v["server"].as_str()?.parse().ok()?;
+                Some((server, v["password"].as_str()?.to_string(), v["owner"].as_str().map(str::to_string), v))
+            });
+            let Some((server, password, owner, v)) = parsed else {
+                eprintln!("stvmap-web: dropping unreadable saved match {id}");
+                store.forget(&id);
+                continue;
+            };
+            let hub = SharedHub::default();
+            {
+                let mut h = hub.lock().unwrap_or_else(PoisonError::into_inner);
+                h.map = v["map"].as_str().map(str::to_string);
+                h.history = v["history"].as_array().into_iter().flatten().filter_map(|l| l.as_str().map(Into::into)).collect();
+            }
+            self.start(&mut map, id, server, password, owner, hub);
+            restored += 1;
+        }
+        restored
+    }
+
+    /// Saves every running match, with its feed so far.
+    pub fn persist(&self) {
+        let Some(store) = &self.store else { return };
+        let running: Vec<Arc<Session>> = self.lock().values().filter(|s| !s.pinned).cloned().collect();
+        for s in running {
+            if let Err(e) = store.save(&s) {
+                eprintln!("stvmap-web: saving match {}: {e:#}", s.id);
+            }
+        }
     }
 
     /// A fixed session at `/w/<id>/` fed by `feed` (a recorded match on a loop, say). It is never
@@ -177,10 +287,14 @@ impl Sessions {
         };
         for s in idle {
             s.stop.store(true, Ordering::Relaxed);
+            if let Some(store) = &self.store {
+                store.forget(&s.id);
+            }
         }
     }
 
-    /// Disconnects every watcher cleanly, so the servers free their `SourceTV` slots.
+    /// Disconnects every watcher cleanly, so the servers free their `SourceTV` slots. Their saved
+    /// files stay for the process that takes over.
     pub fn stop_all(&self) {
         let all: Vec<Arc<Session>> = self.lock().drain().map(|(_, s)| s).collect();
         for s in &all {
@@ -311,6 +425,32 @@ mod tests {
                      eth0\t00000000\t010012AC\t0003\t0\t0\t0\t00000000\t0\t0\t0\n";
         assert_eq!(default_gateway(table), Some(IpAddr::from([172, 18, 0, 1])));
         assert_eq!(default_gateway("Iface\tDestination\tGateway\n"), None);
+    }
+
+    #[test]
+    fn matches_survive_into_the_next_process() {
+        let dir = std::env::temp_dir().join(format!("stvmap-sessions-{}", random_id()));
+        let keys = Arc::new(token::Keys::from_hex(&"42".repeat(32)).unwrap());
+        let store = || Some(Store { dir: dir.clone(), keys: Some(keys.clone()) });
+        let mut before = Sessions::new(false, 4, 20.0);
+        before.store = store();
+        let m = before.open("connect 192.0.2.1:27020; password \"hunter2\"", Some("u1")).unwrap();
+        m.hub.lock().unwrap().history.push_back(r#"{"type":"kill","history":true}"#.into());
+        before.persist();
+        let file = std::fs::read(dir.join(&m.id)).unwrap();
+        assert!(!String::from_utf8_lossy(&file).contains("hunter2"), "saved encrypted");
+        before.stop_all();
+
+        let mut after = Sessions::new(false, 4, 20.0);
+        after.store = store();
+        assert_eq!(after.restore(), 1);
+        let again = after.get(&m.id).expect("same link");
+        assert_eq!((again.server, again.password.as_str(), again.owner.as_deref()), (m.server, "hunter2", Some("u1")));
+        assert_eq!(again.hub.lock().unwrap().history.len(), 1, "feed so far");
+        after.reap(Duration::ZERO);
+        assert!(!dir.join(&m.id).exists(), "a dropped match is forgotten");
+        after.stop_all();
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

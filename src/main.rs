@@ -28,7 +28,7 @@ stvmap-web: live top-down viewer of a TF2 match in the browser
 
   stvmap-web HOST:TVPORT [--password tv] [--listen 127.0.0.1:8080] [--hz 20] [--cache DIR]
   stvmap-web HOST[:PORT] [tv] / 'connect HOST:PORT; password \"tv\"'
-  stvmap-web [--public] [--max-matches 20] [--base-path /live] [--demo MATCH.jsonl[.gz]] [--host-ip IP]   (watch any server: paste a connect string on the page)
+  stvmap-web [--public] [--max-matches 20] [--base-path /live] [--demo MATCH.jsonl[.gz]] [--host-ip IP] [--sessions DIR]   (watch any server: paste a connect string on the page)
      With STVMAP_TOKEN_KEY (64 hex digits) set, matches start only from a site's encrypted /start?t= links.
   stvmap-web --replay FILE.jsonl [--listen 127.0.0.1:8080]   (stvmap output, at game speed)";
 
@@ -257,7 +257,7 @@ struct App {
     /// Where a proxy serves us, like `/live`; empty at the root.
     base: String,
     /// When set, matches start only from tokens a site in front of us made.
-    keys: Option<token::Keys>,
+    keys: Option<Arc<token::Keys>>,
 }
 
 impl App {
@@ -399,6 +399,8 @@ fn stream(mut s: TcpStream, hub: &SharedHub, gzip: bool) -> Result<()> {
         if gzip { "Content-Encoding: gzip\r\n" } else { "" }
     )?;
     let mut out: Box<dyn Write> = if gzip { Box::new(GzEncoder::new(s, Compression::new(5))) } else { Box::new(s) };
+    // After a restart (a deploy), browsers come back after 1 s instead of their default 3 s.
+    write!(out, "retry: 1000\n\n")?;
     let rx = subscribe(hub);
     loop {
         match rx.recv_timeout(Duration::from_secs(15)) {
@@ -442,7 +444,7 @@ fn form_decode(v: &str) -> String {
     String::from_utf8_lossy(&out).into_owned()
 }
 
-const FLAGS: [&str; 9] = ["password", "listen", "hz", "cache", "replay", "max-matches", "base-path", "demo", "host-ip"];
+const FLAGS: [&str; 10] = ["password", "listen", "hz", "cache", "replay", "max-matches", "base-path", "demo", "host-ip", "sessions"];
 const SWITCHES: [&str; 1] = ["public"];
 
 /// Positional arguments and `--name value` options; a mistyped option is an error rather than
@@ -511,6 +513,35 @@ impl Drop for Connection {
     }
 }
 
+/// Any number of matches: the hub's options, the matches a previous process left, the demo.
+fn many(flags: &HashMap<String, String>, hz: f32, keys: Option<&Arc<token::Keys>>) -> Result<Sessions> {
+    let get = |k: &str| flags.get(k).map(String::as_str);
+    let max = get("max-matches").map(|n| n.parse().with_context(|| format!("--max-matches {n}: not a number"))).transpose()?.unwrap_or(20);
+    let mut sessions = Sessions::new(flags.contains_key("public"), max, hz);
+    if let Some(ip) = get("host-ip") {
+        let public = ip.parse().with_context(|| format!("--host-ip {ip}: not an IP address"))?;
+        let routes = std::fs::read_to_string("/proc/net/route").context("reading /proc/net/route for --host-ip")?;
+        let gateway = sessions::default_gateway(&routes).ok_or_else(|| anyhow!("--host-ip: no default gateway"))?;
+        sessions.this_host = Some((public, gateway));
+    }
+    if let Some(dir) = get("sessions") {
+        sessions.store = Some(sessions::Store { dir: PathBuf::from(dir), keys: keys.cloned() });
+        let restored = sessions.restore();
+        if restored > 0 {
+            eprintln!("stvmap-web: picked up {restored} running matches");
+        }
+    }
+    if let Some(file) = get("demo") {
+        let file = PathBuf::from(file);
+        sessions.pin("demo", move |s| {
+            if let Err(e) = replay(&s.hub, &file, &|| s.watched()) {
+                eprintln!("demo: {e:#}");
+            }
+        });
+    }
+    Ok(sessions)
+}
+
 /// A connect string pasted in the terminal works like one pasted on the page.
 fn prompt(app: &App, url: &str) {
     let Matches::Many(sessions) = &app.matches else { return };
@@ -544,6 +575,7 @@ fn main() -> Result<()> {
     let hz = get("hz").map(|hz| hz.parse().with_context(|| format!("--hz {hz}: not a number"))).transpose()?.unwrap_or(20.0);
     watch::stop_on_ctrl_c(&STOP)?;
 
+    let keys = std::env::var("STVMAP_TOKEN_KEY").ok().map(|k| token::Keys::from_hex(&k).map(Arc::new)).transpose()?;
     let matches = if let Some(file) = get("replay") {
         let (hub, file) = (SharedHub::default(), PathBuf::from(file));
         let replayed = hub.clone();
@@ -574,26 +606,8 @@ fn main() -> Result<()> {
         });
         Matches::One(hub)
     } else {
-        let max =
-            get("max-matches").map(|n| n.parse().with_context(|| format!("--max-matches {n}: not a number"))).transpose()?.unwrap_or(20);
-        let mut sessions = Sessions::new(flags.contains_key("public"), max, hz);
-        if let Some(ip) = get("host-ip") {
-            let public = ip.parse().with_context(|| format!("--host-ip {ip}: not an IP address"))?;
-            let routes = std::fs::read_to_string("/proc/net/route").context("reading /proc/net/route for --host-ip")?;
-            let gateway = sessions::default_gateway(&routes).ok_or_else(|| anyhow!("--host-ip: no default gateway"))?;
-            sessions.this_host = Some((public, gateway));
-        }
-        if let Some(file) = get("demo") {
-            let file = PathBuf::from(file);
-            sessions.pin("demo", move |s| {
-                if let Err(e) = replay(&s.hub, &file, &|| s.watched()) {
-                    eprintln!("demo: {e:#}");
-                }
-            });
-        }
-        Matches::Many(sessions)
+        Matches::Many(many(&flags, hz, keys.as_ref())?)
     };
-    let keys = std::env::var("STVMAP_TOKEN_KEY").ok().map(|k| token::Keys::from_hex(&k)).transpose()?;
     let base = get("base-path").unwrap_or("").trim_end_matches('/').to_string();
     if !base.is_empty() && !base.starts_with('/') {
         bail!("--base-path {base}: must start with /");
@@ -606,12 +620,16 @@ fn main() -> Result<()> {
         let reaper = app.clone();
         std::thread::spawn(move || {
             let Matches::Many(sessions) = &reaper.matches else { return };
-            loop {
+            for round in 0u64.. {
                 if STOP.load(Ordering::Relaxed) {
                     sessions.stop_all();
                     std::process::exit(0);
                 }
                 sessions.reap(LINGER);
+                // Every 5 s: what a deploy's next container picks up, feed included.
+                if round % 20 == 0 {
+                    sessions.persist();
+                }
                 std::thread::sleep(Duration::from_millis(250));
             }
         });
@@ -706,7 +724,7 @@ mod tests {
         let key = "11".repeat(32);
         let mut app = app(Matches::Many(Sessions::new(false, 4, 20.0)));
         app.base = "/live".into();
-        app.keys = Some(token::Keys::from_hex(&key).unwrap());
+        app.keys = Some(Arc::new(token::Keys::from_hex(&key).unwrap()));
         assert!(request_to(&app, b"GET / HTTP/1.1\r\n\r\n").1.starts_with("HTTP/1.1 403"));
         assert!(post_watch(&app, "192.0.2.1%3A27020+tv").starts_with("HTTP/1.1 403"));
         let exp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs() + 60;

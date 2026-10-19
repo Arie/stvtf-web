@@ -25,6 +25,11 @@ site. Matches then start only from the site's `/start?t=TOKEN` links: the token 
 SourceTV password in it is never readable in a URL, and a user (`owner`) watches one match at
 a time; a null owner is unlimited.
 
+`--sessions DIR` keeps a file per running match there (encrypted with `STVMAP_TOKEN_KEY` when
+set), and on start picks the matches up again under the same links, with their feed so far:
+a restart or deploy is then a pause of a second or two for the people watching. SIGTERM, like
+Ctrl-C, disconnects every match cleanly first.
+
 `--demo MATCH.jsonl[.gz]` adds a fixed match at `/w/demo/`: a saved `stvmap` output played on
 a loop, to show the viewer off without a live game. It needs no token, is never disconnected,
 does not count towards `--max-matches` and holds still while nobody is watching.

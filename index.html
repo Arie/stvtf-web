@@ -260,6 +260,13 @@ function renderTick() { return nowTick() - BUFFER_TICKS; }
 // Next to the page, so a match at /w/<id>/ (and its /w/<id>/overlay) reads its own events.
 const es = new EventSource(location.pathname.replace(/(overlay|index\.html)?$/, "") + "events");
 es.onmessage = e => handle(JSON.parse(e.data));
+// Every (re)connect starts with the whole feed and chat so far: replace what is shown rather
+// than adding it twice (a deploy or a network blip reconnects).
+let opened = false;
+es.onopen = () => {
+  if (opened) { $("feed").replaceChildren(); $("chat").replaceChildren(); }
+  opened = true;
+};
 es.onerror = () => setStatus("stream lost, retrying", false);
 
 function setStatus(text, ok) { const s = $("status"); s.textContent = text; s.className = ok ? "ok" : "bad"; }
@@ -282,13 +289,16 @@ function handle(m) {
     return;
   }
   switch (m.type) {
-    case "server":
-      if (m.map !== state.map) {
+    case "server": {
+      const sameMap = m.map === state.map;
+      if (!sameMap) {
         if (state.map) feedEvent({ type: "map", map: m.map }, () => null);
         loadMap(m.map);
       }
-      resetMatch();
+      // The same map again (a reconnect, a signon restart) keeps who you are following.
+      resetMatch(sameMap);
       break;
+    }
     case "status":
       if (m.state === "map_change") { resetMatch(); setStatus("map changing", false); }
       else if (m.state === "full") setStatus("live", true);
@@ -317,10 +327,10 @@ function handle(m) {
 }
 
 // A map change (or a signon restart) starts from nothing: drop everything from the old map.
-function resetMatch() {
+function resetMatch(keepFollow = false) {
   state.snaps = []; state.events = []; state.effects = []; state.tickOffset = null; state.lastTick = 0;
   state.players.clear(); lastPlayers = []; state.clock = ""; lastScores = null; spawnSeen = {};
-  if (state.follow != null) setFollow(null);
+  if (state.follow != null && !keepFollow) setFollow(null);
   $("hud-blue").replaceChildren(); $("hud-red").replaceChildren(); hudNodes.clear(); $("cps").innerHTML = "";
   $("scoreboard").hidden = true;
 }
