@@ -60,6 +60,7 @@
   .card .nm small { display: flex; align-items: center; gap: 4px; height: 14px; white-space: nowrap; overflow: hidden; }
   .card .wp { height: 14px; width: auto; max-width: 56px; object-fit: contain; filter: drop-shadow(0 1px 1px #000); }
   .card .clip { color: #fff; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .card .nm small span:empty { display: none; }
   .card.over .hp { color: #9ff0ff; }
   .card.low .hp { color: #ff6b5a; animation: pulse .7s infinite alternate; }
   .card.dead { filter: grayscale(1) brightness(.55); }
@@ -590,12 +591,17 @@ function toggle(cls) {
   try { localStorage.setItem(cls, on ? "1" : "0"); } catch {}
   dispatchEvent(new Event("resize"));
 }
+function toggleExclusive(id) {
+  const other = $(id === "help" ? "settings" : "help");
+  other.hidden = true;
+  $(id).hidden = !$(id).hidden;
+}
 window.addEventListener("keydown", e => {
-  if (e.ctrlKey || e.metaKey || e.altKey || e.target.closest?.("input, textarea")) return;
+  if (e.ctrlKey || e.metaKey || e.altKey || e.target.closest?.("input:not([type=checkbox]), textarea")) return;
   switch (e.key) {
     case "Escape": setFollow(null); $("help").hidden = true; $("settings").hidden = true; break;
-    case "?": $("help").hidden = !$("help").hidden; break;
-    case "k": if (!OVERLAY) $("settings").hidden = !$("settings").hidden; break;
+    case "?": toggleExclusive("help"); break;
+    case "k": if (!OVERLAY) toggleExclusive("settings"); break;
     case "x": if (!OVERLAY) setOverkill(!overkillOn()); break;
     case "j": if (!OVERLAY) setLayer("jumps", !layerOn("jumps")); break;
     case "l": if (!OVERLAY) setLayer("loadout", !layerOn("loadout")); break;
@@ -643,14 +649,14 @@ for (const id of ["hud-blue", "hud-red"]) {
   });
 }
 $("follow-stop").addEventListener("click", () => setFollow(null));
-$("settingstoggle").addEventListener("click", () => { $("settings").hidden = !$("settings").hidden; });
+$("settingstoggle").addEventListener("click", () => toggleExclusive("settings"));
 $("settings").addEventListener("change", e => {
   const id = e.target.dataset.layer;
   if (id === "*") setOverkill(e.target.checked); else if (id) setLayer(id, e.target.checked);
 });
 renderSettings();
 openStream();
-$("helptoggle").addEventListener("click", () => { $("help").hidden = !$("help").hidden; });
+$("helptoggle").addEventListener("click", () => toggleExclusive("help"));
 $("autozoom").addEventListener("click", () => setAutoZoom(true));
 $("feed").addEventListener("click", e => {
   const id = Number(e.target.closest(".who[data-id]")?.dataset.id);
@@ -797,6 +803,7 @@ function fireEvents(tick, byId) {
         break;
       }
       case "capture_broken": {
+        feedEvent(ev, p);
         if (!layerOn("points") || stale(ev, 1500)) break;
         const o = state.snaps.at(-1)?.objectives?.find(o => o.kind === "control_point" && o.index === ev.point);
         if (o) state.effects.push({ kind: "capbreak", pos: o.pos, t0: now, life: 800 });
@@ -854,7 +861,7 @@ const ANNOUNCER = {
   "Announcer.RoundEnds20seconds": "20 seconds remain", "Announcer.RoundEnds10seconds": "10 seconds remain",
   "Announcer.RoundEnds5seconds": "5 seconds remain", "Announcer.RoundEnds4seconds": "4 seconds remain",
   "Announcer.RoundEnds3seconds": "3 seconds remain", "Announcer.RoundEnds2seconds": "2 seconds remain",
-  "Announcer.RoundEnds1seconds": "1 second remains", "Game.Stalemate": "Stalemate", "Game.Overtime": "Overtime",
+  "Announcer.RoundEnds1seconds": "1 second remains"
 };
 let voteOptions = [];
 
@@ -918,12 +925,12 @@ function feedEvent(ev, p) {
       html = `${name(ev.killer)}${ev.assister != null ? "+" + name(ev.assister) : ""}<span class="w">killed capper</span>${name(ev.victim)}`;
       break;
     case "medic_defended": if (!layerOn("flow")) return; html = `${name(ev.player)}<span class="w">defended medic</span>${name(ev.medic)}`; break;
-    case "tournament": if (!layerOn("flow")) return; cls = "minor"; html = `${name(ev.player)} <span>is ${ev.ready ? "ready" : "not ready"}</span>`; break;
+    case "tournament": if (!layerOn("flow") || ev.ready == null) return; cls = "minor"; html = `${name(ev.player)} <span>is ${ev.ready ? "ready" : "not ready"}</span>`; break;
     case "announcer":
       if (!layerOn("flow") || !ANNOUNCER[ev.sound]) return;
       cls = `minor ${ev.team === "red" || ev.team === "blue" ? ev.team : ""}`; html = `<span>${ANNOUNCER[ev.sound]}</span>`;
       break;
-    case "time_remaining": if (!layerOn("flow")) return; cls = "minor"; html = `<span>${mmss(ev.seconds)} remaining</span>`; break;
+    case "time_remaining": if (!layerOn("flow") || !(ev.seconds > 0)) return; cls = "minor"; html = `<span>${mmss(ev.seconds)} remaining</span>`; break;
     case "round_start": cls = "big none"; html = "Round start"; break;
     case "round_win": cls = `big ${ev.team}`; html = `${teamName(ev.team)} wins the round${lastScores ? ` · BLU ${lastScores.blue} – ${lastScores.red} RED` : ""}`; break;
     case "scores": lastScores = ev; if (ev.game_over) { cls = "big none"; html = `Match over · BLU ${ev.blue} – ${ev.red} RED`; } break;
@@ -955,7 +962,7 @@ function chat(ev, p) {
     d.className = "voice";
     d.innerHTML = `${time}${who(pl)} <span class="w">🔊 ${esc(text)}</span>`;
   } else if (ev.type === "server_text") {
-    if (!layerOn("flow") || !ev.text) return;
+    if (!layerOn("flow") || !ev.text || ev.text.startsWith("#")) return;
     d.className = "srvtext";
     d.innerHTML = time + esc(ev.text);
   } else if (pl || ev.name) {
@@ -1619,20 +1626,18 @@ function setClass(el, cls) { if (el.className !== cls) el.className = cls; }
 function setStyle(el, prop, value) { if (el.style[prop] !== value) el.style[prop] = value; }
 
 let itemImages = null;
-function weaponHtml(p) {
-  if (!layerOn("loadout") || !p.alive || !p.weapon) return "";
+function weaponInfo(p) {
+  if (!layerOn("loadout") || !p.alive || !p.weapon) return null;
   if (!itemImages) {
     itemImages = {};
     fetch("backpack/items.json").then(r => r.json()).then(j => { itemImages = j; lastPanel = 0; }).catch(() => {});
-    return "";
+    return null;
   }
   const img = itemImages[p.weapon.item];
-  if (!img) return "";
-  const clip = p.weapon.clip != null ? `<span class="clip">${p.weapon.clip}</span>` : "";
-  return `<img class="wp" src="backpack/${esc(img)}.webp" alt="" onerror="this.style.display='none'">${clip}`;
+  return img ? { img, clip: p.weapon.clip } : null;
 }
 function card(p) {
-  const el = node(`p${p.id}`, `<div class="card"><div class="fill"></div><span class="ci"></span><div class="nm"><b></b><small></small></div><div class="hp"></div></div>`);
+  const el = node(`p${p.id}`, `<div class="card"><div class="fill"></div><span class="ci"></span><div class="nm"><b></b><small><span></span><img class="wp" alt="" hidden><span class="clip"></span></small></div><div class="hp"></div></div>`);
   const f = p.alive ? Math.max(0, Math.min(1, p.hp / (p.max_hp || 1))) : 0;
   if (el.dataset.id !== String(p.id)) el.dataset.id = p.id;
   setClass(el, ["card", p.id === state.follow && "followed", !p.alive && "dead", p.alive && p.hp > p.max_hp && "over", p.alive && f < 0.35 && "low", p.ubered && "ub"].filter(Boolean).join(" "));
@@ -1640,7 +1645,17 @@ function card(p) {
   setHTML(el.children[1], ICONS[p.class] ? `<img src="icons/${p.class}.svg" alt="${p.class}">` : CLASS[p.class] || "?");
   setText2(el.querySelector(".nm b"), p.name);
   const sub = p.ping != null ? `${p.ping} ms` : "";
-  setHTML(el.querySelector(".nm small"), `${p.ubered ? `<span class="tag">${UBER_LABEL[p.ubered] || "ÜBER"}</span>` : ""}${sub}${weaponHtml(p)}`);
+  const [subEl, wp, clip] = el.querySelector(".nm small").children;
+  setHTML(subEl, `${p.ubered ? `<span class="tag">${UBER_LABEL[p.ubered] || "ÜBER"}</span>` : ""}${sub}`);
+  const w = weaponInfo(p);
+  if (w && wp.dataset.img !== w.img) {
+    wp.dataset.img = w.img;
+    wp.style.display = "";
+    wp.src = `backpack/${w.img}.webp`;
+    wp.onerror = () => { wp.style.display = "none"; };
+  }
+  wp.hidden = !w;
+  setText2(clip, w && w.clip != null ? String(w.clip) : "");
   setText2(el.children[3], p.alive ? String(p.hp) : "DEAD");
   return el;
 }

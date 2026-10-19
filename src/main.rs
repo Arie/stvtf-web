@@ -83,8 +83,8 @@ struct Hub {
 
 const HISTORY: usize = 1000;
 /// Event fields that hold player ids.
-const PLAYER_FIELDS: [&str; 11] =
-    ["player", "attacker", "victim", "assister", "medic", "target", "blocker", "owner", "builder", "cappers", "carrier"];
+const PLAYER_FIELDS: [&str; 12] =
+    ["player", "attacker", "victim", "assister", "medic", "target", "blocker", "owner", "builder", "cappers", "carrier", "killer"];
 /// High-volume lines for pages that ask (`?detail=1`); never kept in the history.
 const DETAIL: [&str; 7] = ["heal", "blast_jump", "pickup", "impact", "mark", "voice_command", "server_text"];
 const FEED: [&str; 26] = [
