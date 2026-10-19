@@ -128,7 +128,7 @@ aside h3 { margin: 0 0 6px; font-size: 11px; text-transform: uppercase; letter-s
   display: grid; place-items: center; color: #fff; font-size: 13px; font-weight: 800; text-shadow: 0 1px 2px #000; }
 .cp.locked { filter: grayscale(.7) brightness(.7); }
 .cp.locked::after { content: "🔒"; position: absolute; right: -6px; bottom: -6px; font-size: 11px; }
-.cp.capping { box-shadow: 0 0 0 2px #fff, 0 0 12px var(--cap); }
+.cp.capping { box-shadow: 0 0 0 1px #000, 0 0 0 3px var(--own), 0 0 12px var(--cap); }
 #follow { position: absolute; bottom: 14px; left: 50%; transform: translateX(-50%); z-index: 3; display: flex; align-items: center; gap: 8px;
   padding: 5px 6px 5px 12px; background: #0b0c0ee6; border-radius: 16px; color: var(--dim); }
 #follow b { color: #fff; }
