@@ -422,7 +422,7 @@ function handle(m) {
 // A map change (or a signon restart) starts from nothing: drop everything from the old map.
 function resetMatch(keepFollow = false) {
   state.snaps = []; state.events = []; state.effects = []; state.marks = []; state.scorches = []; state.trails = []; state.packsTaken.clear(); state.tickOffset = null; state.lastTick = 0;
-  state.players.clear(); lastPlayers = []; state.clock = ""; lastScores = null; spawnSeen = {};
+  state.players.clear(); cartState.clear(); lastPlayers = []; state.clock = ""; lastScores = null; spawnSeen = {};
   if (state.follow != null && !keepFollow) setFollow(null);
   $("hud-blue").replaceChildren(); $("hud-red").replaceChildren(); hudNodes.clear(); $("cps").innerHTML = "";
   $("scoreboard").hidden = true;
@@ -1032,15 +1032,70 @@ function drawBackground(r) {
   }
 }
 
+// The payload cart: a mine cart in the pushing team's colour carrying TF2's big black bomb, facing
+// along the track. Heading comes from movement (kept while stopped); rolling back still faces forward.
+const cartState = new Map();
+function cartPos(o, tick) {
+  const s = state.snaps;
+  const i = s.findIndex(x => x.tick > tick);
+  if (i < 1) return o.pos;
+  const a = s[i - 1].objectives?.find(q => q.kind === "cart" && q.id === o.id);
+  const b = s[i].objectives?.find(q => q.kind === "cart" && q.id === o.id);
+  if (!a || !b) return o.pos;
+  const t = (tick - s[i - 1].tick) / (s[i].tick - s[i - 1].tick);
+  return [a.pos[0] + (b.pos[0] - a.pos[0]) * t, a.pos[1] + (b.pos[1] - a.pos[1]) * t];
+}
+function drawCart(o, tick) {
+  const [wx, wy] = cartPos(o, tick);
+  let cs = cartState.get(o.id);
+  if (!cs) cartState.set(o.id, cs = { x: wx, y: wy, h: null });
+  const dx = wx - cs.x, dy = wy - cs.y;
+  if (Math.hypot(dx, dy) > 6) {
+    cs.h = Math.atan2(dy, dx) * 180 / Math.PI + (o.speed < 0 ? 180 : 0);
+    cs.x = wx; cs.y = wy;
+  }
+  const [x, y] = toScreen(wx, wy);
+  const u = OVERLAY ? overlayUnit() : 0;
+  const L = OVERLAY ? u * 2.4 : px(72, 18), W = L * 0.64, lw = Math.max(1.5, L * 0.07);
+  const team = TEAM[o.team] || TEAM.none, dark = "#0b0c0e";
+  ctx.save();
+  ctx.translate(x, y); ctx.rotate(screenAngle(cs.h ?? 0));
+  ctx.lineWidth = lw; ctx.lineJoin = "round";
+  if (o.speed) {
+    const fwd = o.speed > 0, k = fwd ? 1 : -1, ax = k * (L / 2 + L * 0.12), ah = L * 0.22;
+    ctx.beginPath();
+    ctx.moveTo(ax, -ah); ctx.lineTo(ax + k * ah, 0); ctx.lineTo(ax, ah);
+    ctx.lineWidth = lw * 1.4; ctx.lineCap = "round"; ctx.strokeStyle = fwd ? team : "#ff8a5c"; ctx.globalAlpha = 0.85; ctx.stroke();
+    ctx.globalAlpha = 1; ctx.lineWidth = lw;
+  }
+  ctx.fillStyle = dark;
+  for (const sx of [-1, 1]) for (const sy of [-1, 1]) {
+    ctx.beginPath(); ctx.roundRect(sx * L * 0.3 - L * 0.1, sy * W / 2 - W * 0.12 + sy * W * 0.04, L * 0.2, W * 0.24, lw); ctx.fill();
+  }
+  ctx.beginPath(); ctx.roundRect(-L / 2, -W / 2, L, W, W * 0.22);
+  ctx.fillStyle = team; ctx.fill(); ctx.strokeStyle = dark; ctx.stroke();
+  ctx.restore();
+  const R = W * 0.36;
+  ctx.fillStyle = "#15171a"; ctx.strokeStyle = dark; ctx.lineWidth = lw;
+  ctx.beginPath(); ctx.arc(x, y, R, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+  ctx.strokeStyle = "#8a8f96"; ctx.lineCap = "round";
+  ctx.beginPath(); ctx.moveTo(x + R * 0.45, y - R * 0.8); ctx.quadraticCurveTo(x + R * 0.75, y - R * 1.3, x + R * 1.1, y - R * 1.15); ctx.stroke();
+  ctx.fillStyle = "#ffd25a"; ctx.beginPath(); ctx.arc(x + R * 1.1, y - R * 1.15, Math.max(1.2, R * 0.16), 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = "#ffffff55"; ctx.beginPath(); ctx.ellipse(x - R * 0.35, y - R * 0.35, R * 0.28, R * 0.18, -Math.PI / 4, 0, Math.PI * 2); ctx.fill();
+  if (o.cappers > 0) {
+    const t = `×${o.cappers}`, bx = x + L * 0.62, by = y + L * 0.5;
+    ctx.font = `800 ${Math.round(OVERLAY ? u * 1.1 : Math.max(12 * uiScale(), L * 0.42))}px system-ui`;
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.lineWidth = 3; ctx.strokeStyle = dark; ctx.strokeText(t, bx, by);
+    ctx.fillStyle = "#fff"; ctx.fillText(t, bx, by);
+  }
+}
+
 function drawObjectives(snap, tick) {
   for (const o of snap.objectives || []) {
     if (o.kind === "flag") continue;
+    if (o.kind === "cart") { drawCart(o, tick); continue; }
     const [x, y] = toScreen(o.pos[0], o.pos[1]);
-    if (o.kind === "cart") {
-      ctx.fillStyle = "#e8c547"; ctx.strokeStyle = "#000"; const s = px(40, 9);
-      ctx.fillRect(x - s / 2, y - s / 2, s, s); ctx.strokeRect(x - s / 2, y - s / 2, s, s);
-      continue;
-    }
     // Points are squares like TF2's HUD, so they never read as players: the owner's colour,
     // filled left to right in the capping team's colour while a capture is under way.
     const u = OVERLAY ? overlayUnit() : 0;
@@ -1992,11 +2047,11 @@ function draw() {
     const byId = new Map(f.players.map(p => [p.id, p]));
     fireEvents(tick, byId);
     drawSpawnRooms(f.snap);
+    if (layerOn("marks")) drawMarks();
     if (layerOn("caps")) drawCapAreas(f.snap);
     drawObjectives(f.snap, tick);
     if (layerOn("points") && !OVERLAY) drawOnPoint(f.snap);
     drawBuildings(f.snap);
-    if (layerOn("marks")) drawMarks();
     if (layerOn("pickups")) drawPacks();
     if (layerOn("jumps")) drawJumpTrails(f.players);
     // Above the players in the overlay, where a dot would otherwise cover them.
