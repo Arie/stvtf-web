@@ -107,16 +107,21 @@ export function drawObjectives(snap, tick) {
 }
 
 // Capture areas: just an outline in the owner's colour; progress is shown on the point square.
+// An area belongs to the point standing in it: point numbers in the map file don't always match
+// the game's (multi-round maps number per round).
 export function drawCapAreas(snap) {
   const areas = state.geometry?.cap_areas;
   if (!areas?.length) return;
-  const cps = new Map((snap.objectives || []).filter(o => o.kind === "control_point").map(o => [o.index, o]));
+  const cps = (snap.objectives || []).filter(o => o.kind === "control_point" && o.pos);
+  const near = (a, p) => Math.hypot(Math.max(a.min[0] - p[0], 0, p[0] - a.max[0]), Math.max(a.min[1] - p[1], 0, p[1] - a.max[1]));
   for (const a of areas) {
+    const cp = cps.reduce((b, o) => (!b || near(a, o.pos) < near(a, b.pos) ? o : b), null);
+    if (!cp || near(a, cp.pos) > 256) continue;
     ctx.save();
     ctx.beginPath();
     [[a.min[0], a.min[1]], [a.max[0], a.min[1]], [a.max[0], a.max[1]], [a.min[0], a.max[1]]].forEach(([x, y], i) => { const [sx, sy] = toScreen(x, y); (i ? ctx.lineTo : ctx.moveTo).call(ctx, sx, sy); });
     ctx.closePath();
-    ctx.strokeStyle = (TEAM[cps.get(a.point)?.owner] || TEAM.none) + "99"; ctx.lineWidth = OVERLAY ? 1.5 : 2; ctx.stroke();
+    ctx.strokeStyle = (TEAM[cp.owner] || TEAM.none) + "99"; ctx.lineWidth = OVERLAY ? 1.5 : 2; ctx.stroke();
     ctx.restore();
   }
 }
