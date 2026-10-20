@@ -244,6 +244,36 @@ pub fn spawns(data: &[u8]) -> Result<Value> {
             _ => {}
         }
     }
+    // Some maps (pl_swiftwater) give a room its team by input: take the team of the spawn points
+    // inside, else of the room around its centre.
+    let inside = |r: &Value, p: &Value| {
+        (0..3).all(|k| {
+            let (lo, hi, v) = (r["min"][k].as_f64(), r["max"][k].as_f64(), p[k].as_f64());
+            let slack = if k == 2 { 64.0 } else { 0.0 };
+            matches!((lo, hi, v), (Some(lo), Some(hi), Some(v)) if v >= lo - slack && v <= hi + slack)
+        })
+    };
+    let centre = |r: &Value| {
+        Value::from(
+            (0..3).map(|k| f64::midpoint(r["min"][k].as_f64().unwrap_or(0.0), r["max"][k].as_f64().unwrap_or(0.0))).collect::<Vec<_>>(),
+        )
+    };
+    for by_points in [true, false] {
+        for i in 0..rooms.len() {
+            if rooms[i]["team"] != "none" {
+                continue;
+            }
+            let found = if by_points {
+                let teams: Vec<&Value> = spawn_points.iter().filter(|p| inside(&rooms[i], &p["pos"])).map(|p| &p["team"]).collect();
+                teams.first().filter(|&&t| teams.iter().all(|u| u == &t)).map(|&t| t.clone())
+            } else {
+                rooms.iter().find(|o| o["team"] != "none" && inside(o, &centre(&rooms[i]))).map(|o| o["team"].clone())
+            };
+            if let Some(team) = found {
+                rooms[i]["team"] = team;
+            }
+        }
+    }
     Ok(json!({"rooms": rooms, "points": spawn_points}))
 }
 
@@ -543,6 +573,15 @@ mod tests {
         assert_eq!(count("blue", 0), 16);
         assert_eq!((count("red", 2), count("red", 1)), (3, 3));
         assert_eq!((count("blue", 2), count("blue", 3)), (3, 3));
+    }
+
+    #[test]
+    fn swiftwater_teamless_spawn_rooms_take_their_spawn_points_team() {
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/cache/pl_swiftwater_final1.bsp");
+        let Ok(data) = std::fs::read(path) else { return eprintln!("{path} not downloaded; skipped") };
+        let s = spawns(&data).unwrap();
+        let teams: Vec<&str> = s["rooms"].as_array().unwrap().iter().map(|r| r["team"].as_str().unwrap()).collect();
+        assert_eq!(teams, ["blue", "blue", "red", "red", "blue", "red"]);
     }
 
     #[test]
