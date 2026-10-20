@@ -197,19 +197,19 @@ export function drawHealBeams(players, byId) {
     for (const phase of [0, Math.PI]) {
       ctx.beginPath();
       for (let i = 0; i <= steps; i++) {
-        const f = i / steps, [px, py] = at(f), [nx, ny] = normal(f);
+        const f = i / steps, [ax, ay] = at(f), [nx, ny] = normal(f);
         const off = amp * Math.sin(Math.PI * f) * Math.sin(f * len / wave * Math.PI * 2 - t * 9 + phase);
-        if (i) ctx.lineTo(px + nx * off, py + ny * off); else ctx.moveTo(px + nx * off, py + ny * off);
+        if (i) ctx.lineTo(ax + nx * off, ay + ny * off); else ctx.moveTo(ax + nx * off, ay + ny * off);
       }
       ctx.stroke();
     }
     ctx.fillStyle = "#fff";
     const sparks = Math.max(2, Math.round(len / 45));
     for (let k = 0; k < sparks; k++) {
-      const f = (k / sparks + t * (hot ? 0.9 : 0.6)) % 1, [px, py] = at(f), [nx, ny] = normal(f);
+      const f = (k / sparks + t * (hot ? 0.9 : 0.6)) % 1, [ax, ay] = at(f), [nx, ny] = normal(f);
       const off = amp * 0.9 * Math.sin(Math.PI * f) * Math.sin(k * 2.4 + t * 5);
       ctx.globalAlpha = Math.sin(Math.PI * f) * (hot ? 1 : 0.8);
-      ctx.beginPath(); ctx.arc(px + nx * off, py + ny * off, (hot ? 2.2 : 1.6) * uiScale(), 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(ax + nx * off, ay + ny * off, (hot ? 2.2 : 1.6) * uiScale(), 0, Math.PI * 2); ctx.fill();
     }
     ctx.restore();
   }
@@ -300,7 +300,7 @@ export function drawPlayers(players) {
     }
     if (p.carrying) {
       // The building an engineer carries, as a small badge like the ones on the map.
-      const s = Math.max(12, rad * 1.0), bx = x - rad * 0.95, by = y - rad * 0.95;
+      const s = Math.max(12, rad), bx = x - rad * 0.95, by = y - rad * 0.95;
       ctx.beginPath(); ctx.roundRect(bx - s / 2, by - s / 2, s, s, 2);
       ctx.fillStyle = TEAM[p.team] || TEAM.none; ctx.fill(); ctx.lineWidth = 1.5; ctx.strokeStyle = "#000"; ctx.stroke();
       ctx.fillStyle = "#fff"; ctx.font = `800 ${Math.round(s * 0.62)}px system-ui`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
@@ -335,15 +335,15 @@ function drawStatusInside(conds, id, x, y, rad) {
   liquids.forEach(([, fill], i) => {
     const w = rad * 2 / liquids.length, x0 = x - rad + i * w, surface = [];
     for (let k = 0; k <= 6; k++) {
-      const px = x0 + w * k / 6;
-      surface.push([px, level + Math.sin(t * 3 + (px - x) / rad * 3 + id) * rad * 0.07]);
+      const sx = x0 + w * k / 6;
+      surface.push([sx, level + Math.sin(t * 3 + (sx - x) / rad * 3 + id) * rad * 0.07]);
     }
     ctx.beginPath(); ctx.moveTo(x0, y + rad);
-    for (const [px, py] of surface) ctx.lineTo(px, py);
+    for (const [sx, sy] of surface) ctx.lineTo(sx, sy);
     ctx.lineTo(x0 + w, y + rad); ctx.closePath();
     ctx.fillStyle = fill; ctx.fill();
     // A dark edge on the surface keeps it apart from the dot and the white class icon.
-    ctx.beginPath(); surface.forEach(([px, py], k) => (k ? ctx.lineTo(px, py) : ctx.moveTo(px, py)));
+    ctx.beginPath(); surface.forEach(([sx, sy], k) => (k ? ctx.lineTo(sx, sy) : ctx.moveTo(sx, sy)));
     ctx.strokeStyle = "rgba(0,0,0,0.45)"; ctx.lineWidth = Math.max(1, rad * 0.08); ctx.stroke();
   });
   if (burning) for (let j = 0; j < 3; j++) {

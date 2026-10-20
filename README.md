@@ -192,10 +192,11 @@ cargo fmt                          # format (settings in rustfmt.toml)
 cargo clippy --all-targets         # lints (configured under [lints] in Cargo.toml)
 cargo test
 cargo deny check                   # advisories, licences, sources (deny.toml; cargo install cargo-deny)
+npm ci && npm run lint             # ESLint on app/ (eslint.config.mjs)
 ```
 
-`ln -s ../../.githooks/pre-commit .git/hooks/pre-commit` once per clone runs fmt and clippy before
-each commit (not `core.hooksPath`, which would replace any global git hooks).
+`ln -s ../../.githooks/pre-commit .git/hooks/pre-commit` once per clone runs fmt, clippy and ESLint
+before each commit (not `core.hooksPath`, which would replace any global git hooks).
 
 CI (`.github/workflows/ci.yml`) runs these on every push to `main` and every pull request,
 and weekly for new advisories. Warnings fail CI. It checks out `Arie/stvtf` next to this

@@ -55,7 +55,7 @@ export function fireEvents(tick, byId) {
       case "time_added": if (!stale(ev, 3000)) showTimeAdded(ev); break;
       case "building_upgrade": case "building_repair": {
         if (stale(ev, 1500) || (ev.type === "building_repair" && !layerOn("heals"))) break;
-        const b = state.snaps.at(-1)?.buildings?.find(b => b.id === ev.id);
+        const b = state.snaps.at(-1)?.buildings?.find(x => x.id === ev.id);
         if (b) state.effects.push({ kind: ev.type === "building_upgrade" ? "upgrade" : "repair", pos: b.pos, ev, t0: now - lagMs(ev), life: 900 });
         break;
       }
@@ -99,7 +99,7 @@ export function fireEvents(tick, byId) {
       case "capture_broken": {
         feedEvent(ev, p);
         if (!layerOn("points") || stale(ev, 1500)) break;
-        const o = state.snaps.at(-1)?.objectives?.find(o => o.kind === "control_point" && o.index === ev.point);
+        const o = state.snaps.at(-1)?.objectives?.find(x => x.kind === "control_point" && x.index === ev.point);
         if (o) state.effects.push({ kind: "capbreak", pos: o.pos, t0: now - lagMs(ev), life: 800 });
         break;
       }

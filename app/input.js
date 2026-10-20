@@ -68,7 +68,7 @@ function setAutoZoom(on) {
 // Click a dot on the map or a card in the HUD to keep that player centred.
 export function setFollow(id) {
   state.follow = id != null && id !== state.follow ? id : null;
-  const p = state.lastPlayers.find(p => p.id === state.follow);
+  const p = state.lastPlayers.find(x => x.id === state.follow);
   $("follow").hidden = !p;
   if (p) $("follow-name").textContent = p.name;
   state.lastPanel = 0;

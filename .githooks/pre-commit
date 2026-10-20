@@ -4,3 +4,5 @@
 set -e
 cargo fmt --check || { echo "pre-commit: run 'cargo fmt' to fix formatting"; exit 1; }
 cargo clippy --all-targets --quiet -- -D warnings
+[ -d node_modules ] || { echo "pre-commit: run 'npm ci' once to install ESLint"; exit 1; }
+npx --no-install eslint app

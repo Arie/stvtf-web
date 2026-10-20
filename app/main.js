@@ -9,11 +9,11 @@ import { openStream } from "./stream.js";
 import { frameMap, drawBackground, followAction } from "./view.js";
 
 // ---------- interpolation
-function lerpAngle(a, b, t) { let d = ((b - a + 540) % 360) - 180; return a + d * t; }
+function lerpAngle(a, b, t) { const d = ((b - a + 540) % 360) - 180; return a + d * t; }
 function frameAt(tick) {
   const s = state.snaps;
   if (!s.length) return null;
-  let i = s.findIndex(x => x.tick > tick);
+  const i = s.findIndex(x => x.tick > tick);
   if (i === -1) { const l = s[s.length - 1]; return { snap: l, players: l.players, projectiles: l.projectiles }; }
   if (i === 0) return { snap: s[0], players: s[0].players, projectiles: s[0].projectiles };
   const a = s[i - 1], b = s[i], t = (tick - a.tick) / (b.tick - a.tick);

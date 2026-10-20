@@ -187,10 +187,10 @@ function withoutBlack(img) {
   const g = c.getContext("2d");
   g.drawImage(img, 0, 0);
   try {
-    const d = g.getImageData(0, 0, c.width, c.height), px = d.data;
-    for (let i = 0; i < px.length; i += 4) {
-      const lum = Math.max(px[i], px[i + 1], px[i + 2]);
-      if (lum < 14) px[i + 3] = 0; else if (lum < 28) px[i + 3] = Math.round(255 * (lum - 14) / 14);
+    const d = g.getImageData(0, 0, c.width, c.height), rgba = d.data;
+    for (let i = 0; i < rgba.length; i += 4) {
+      const lum = Math.max(rgba[i], rgba[i + 1], rgba[i + 2]);
+      if (lum < 14) rgba[i + 3] = 0; else if (lum < 28) rgba[i + 3] = Math.round(255 * (lum - 14) / 14);
     }
     g.putImageData(d, 0, 0);
   } catch { return img; }

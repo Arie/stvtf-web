@@ -153,7 +153,7 @@ export function renderScoreboard(snap, tick) {
       return `<em class="kt ${t}${running && tm.paused ? " idle" : ""}${!tm.paused && s <= 30 ? " low" : ""}">${clock(s)}</em>`;
     }).join(""));
   } else setText("timer-main", main ? clock(left(main)) : mapLeft != null ? clock(mapLeft) : "");
-  $("scoreboard").classList.toggle("koth", !!koth);
+  $("scoreboard").classList.toggle("koth", Boolean(koth));
   setText("timer-map", (main || koth) && mapLeft != null ? `MAP ${clock(mapLeft)}` : "");
   // Events are stamped with time into the round, which (unlike the round timer) never jumps.
   const into = snap.round_time == null ? null : snap.round_time + (snap.round === "running" ? Math.max(0, tick - snap.tick) * MS_PER_TICK / 1000 : 0);
