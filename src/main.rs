@@ -258,7 +258,7 @@ fn map_geometry(cache: &Path, name: &str, fetch: bool) -> Result<Vec<u8>> {
     }
     std::fs::create_dir_all(cache)?;
     // Bump the suffix when the extracted data changes, so cached maps are redone.
-    let json = cache.join(format!("{name}.v5.json"));
+    let json = cache.join(format!("{name}.v6.json"));
     if let Ok(body) = std::fs::read(&json) {
         return Ok(body);
     }
@@ -1094,7 +1094,7 @@ mod tests {
     fn write_atomic_replaces_the_file() {
         let dir = std::env::temp_dir().join(format!("stvtf-web-atomic-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
-        let path = dir.join("m.v5.json");
+        let path = dir.join("m.v6.json");
         std::fs::write(&path, b"old, longer contents").unwrap();
         write_atomic(&path, b"new").unwrap();
         assert_eq!(std::fs::read(&path).unwrap(), b"new");
@@ -1225,7 +1225,7 @@ mod tests {
         let cache = std::env::temp_dir().join(format!("stvtf-web-onmap-{}", std::process::id()));
         // Not cached and not being watched: an error, without asking fastdl.
         assert!(map_geometry(&cache, "cp_nothere", false).unwrap_err().to_string().contains("no match"));
-        std::fs::write(cache.join("cp_cached.v5.json"), b"{}").unwrap();
+        std::fs::write(cache.join("cp_cached.v6.json"), b"{}").unwrap();
         assert_eq!(map_geometry(&cache, "cp_cached", false).unwrap(), b"{}");
         std::fs::remove_dir_all(&cache).unwrap();
 

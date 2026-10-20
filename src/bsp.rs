@@ -178,16 +178,26 @@ fn packs(ents: &[Vec<(String, String)>]) -> Vec<Value> {
         .collect()
 }
 
+/// `team_control_point` targetname -> the point's index in the game, which is its rank by
+/// `point_index` (`cp_gullywash` numbers its points from 1).
+fn point_indices(ents: &[Vec<(String, String)>]) -> Vec<(String, i64)> {
+    let mut points: Vec<(String, i64)> = ents
+        .iter()
+        .filter(|e| get(e, "classname").as_deref() == Some("team_control_point"))
+        .filter_map(|e| Some((get(e, "targetname")?, get(e, "point_index")?.parse().ok()?)))
+        .collect();
+    points.sort_by_key(|p| p.1);
+    let mut ranks: Vec<i64> = points.iter().map(|p| p.1).collect();
+    ranks.dedup();
+    points.into_iter().map(|(name, i)| (name, ranks.iter().position(|&r| r == i).unwrap_or_default() as i64)).collect()
+}
+
 /// Capture areas (`trigger_capture_area`: their brush model's bounds) and the point each caps.
 /// Payload ones are parented to the cart and move with it, so their bounds are just its start.
 fn cap_areas(data: &[u8]) -> Result<Vec<Value>> {
     let ents = entities(data)?;
     let models = lump(data, LUMP_MODELS)?;
-    let points: Vec<(String, i64)> = ents
-        .iter()
-        .filter(|e| get(e, "classname").as_deref() == Some("team_control_point"))
-        .filter_map(|e| Some((get(e, "targetname")?, get(e, "point_index")?.parse().ok()?)))
-        .collect();
+    let points = point_indices(&ents);
     Ok(ents
         .iter()
         .filter(|e| get(e, "classname").as_deref() == Some("trigger_capture_area"))
@@ -206,12 +216,7 @@ fn cap_areas(data: &[u8]) -> Result<Vec<Value>> {
 pub fn spawns(data: &[u8]) -> Result<Value> {
     let ents = entities(data)?;
     let models = lump(data, LUMP_MODELS)?;
-    // team_control_point targetname -> point index
-    let points: Vec<(String, i64)> = ents
-        .iter()
-        .filter(|e| get(e, "classname").as_deref() == Some("team_control_point"))
-        .filter_map(|e| Some((get(e, "targetname")?, get(e, "point_index")?.parse().ok()?)))
-        .collect();
+    let points = point_indices(&ents);
     let mut rooms = Vec::new();
     let mut spawn_points = Vec::new();
     for e in &ents {
@@ -573,6 +578,18 @@ mod tests {
         assert_eq!(count("blue", 0), 16);
         assert_eq!((count("red", 2), count("red", 1)), (3, 3));
         assert_eq!((count("blue", 2), count("blue", 3)), (3, 3));
+    }
+
+    #[test]
+    fn gullywash_points_numbered_from_one_map_to_the_games_indices() {
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/cache/cp_gullywash_f9.bsp");
+        let Ok(data) = std::fs::read(path) else { return eprintln!("{path} not downloaded; skipped") };
+        let g = geometry(&data).unwrap();
+        // Blu's last point is index 0, at x 3768; red's last is 4, at x -3766.
+        let x = |i: i64| g["cap_areas"].as_array().unwrap().iter().find(|a| a["point"] == i).map(|a| a["min"][0].as_f64().unwrap());
+        assert!(x(0).unwrap() > 3000.0 && x(4).unwrap() < -3000.0);
+        let points = spawns(&data).unwrap()["points"].as_array().unwrap().clone();
+        assert!(points.iter().all(|p| p["point"].as_i64().is_none_or(|i| (0..5).contains(&i))));
     }
 
     #[test]
