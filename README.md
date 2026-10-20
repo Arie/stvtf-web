@@ -184,7 +184,7 @@ not been downloaded yet (run the viewer on a cp_process match once, or
 
 ## Development
 
-The toolchain is pinned in `rust-toolchain.toml`; rustup installs it on first use.
+`rust-toolchain.toml` picks the latest stable (as do CI and the Docker build); run `rustup update` now and then.
 Before pushing, run what CI runs:
 
 ```

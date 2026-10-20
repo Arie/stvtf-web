@@ -1,5 +1,4 @@
-# Everyone (and CI) builds with the same compiler, so clippy and rustfmt agree.
-# Bump it deliberately and fix any new lints in the same commit.
+# Latest stable everywhere (locally, CI and the Docker build); fix new lints as they come.
 [toolchain]
-channel = "1.93.1"
+channel = "stable"
 components = ["rustfmt", "clippy"]

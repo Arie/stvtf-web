@@ -469,7 +469,7 @@ mod tests {
         let Some(mut data) = process() else { return };
         // Every face claims the same 65535 edges; the rewritten lump goes, unpacked, at the end.
         let mut faces = lump(&data, LUMP_FACES).unwrap();
-        for face in faces.chunks_exact_mut(56) {
+        for face in faces.as_chunks_mut::<56>().0 {
             face[4..8].fill(0);
             face[8..10].copy_from_slice(&u16::MAX.to_le_bytes());
         }

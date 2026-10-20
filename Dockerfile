@@ -1,6 +1,6 @@
 # Built with the directory holding both repositories as context (stvtf-web depends on ../stvtf):
 #   docker build -f stvtf-web/Dockerfile .
-FROM rust:1.93.1-bookworm AS build
+FROM rust:1-bookworm AS build
 WORKDIR /src
 COPY stvtf ./stvtf
 COPY stvtf-web ./stvtf-web

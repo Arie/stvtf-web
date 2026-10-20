@@ -71,7 +71,7 @@ const FASTDL: &str = "https://fastdl.serveme.tf/maps/";
 const MAX_BSP: u64 = 512 << 20;
 const DEMOSTF: &str = "https://maps.demos.tf/";
 const MAX_OVERVIEW: u64 = 8 << 20;
-const DAY: Duration = Duration::from_secs(86400);
+const DAY: Duration = Duration::from_hours(24);
 /// Request line and headers together; the pages send far less.
 const MAX_REQUEST: u64 = 16 << 10;
 /// Open connections, browsers on `/events` included; more are closed straight away.
@@ -1050,7 +1050,7 @@ mod tests {
         send.resize(64 << 10, b'a');
         let (result, response) = request(&send);
         assert!(result.is_err());
-        assert!(response.is_empty());
+        assert_eq!(response, "");
     }
 
     #[test]
