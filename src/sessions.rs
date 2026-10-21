@@ -28,6 +28,10 @@ pub struct Session {
     /// Set when the watcher gave up (a wrong password, say) or was stopped.
     done: AtomicBool,
     viewers: AtomicUsize,
+    /// For the log: the most viewers at once, and how many streams were opened in all.
+    peak: AtomicUsize,
+    views: AtomicUsize,
+    started: Instant,
     idle_since: Mutex<Option<Instant>>,
     thread: Mutex<Option<JoinHandle<()>>>,
 }
@@ -37,6 +41,22 @@ impl Session {
     pub fn watched(&self) -> bool {
         self.viewers.load(Ordering::Relaxed) > 0
     }
+
+    /// The start of the id (the whole id is the link) and the map.
+    fn label(&self) -> String {
+        let map = self.hub.lock().unwrap_or_else(PoisonError::into_inner).map.clone();
+        format!("{} {}", &self.id[..self.id.len().min(8)], map.as_deref().unwrap_or("-"))
+    }
+
+    fn ended(&self, why: &str) {
+        eprintln!(
+            "stvtf-web: match {} ended ({why}) after {} min, peak {} viewers, {} views",
+            self.label(),
+            self.started.elapsed().as_secs() / 60,
+            self.peak.load(Ordering::Relaxed),
+            self.views.load(Ordering::Relaxed),
+        );
+    }
 }
 
 /// Counts a browser on a session's event stream until dropped.
@@ -44,7 +64,10 @@ pub struct Viewer(Arc<Session>);
 
 impl Viewer {
     pub fn new(s: Arc<Session>) -> Self {
-        s.viewers.fetch_add(1, Ordering::Relaxed);
+        let n = s.viewers.fetch_add(1, Ordering::Relaxed) + 1;
+        s.peak.fetch_max(n, Ordering::Relaxed);
+        s.views.fetch_add(1, Ordering::Relaxed);
+        eprintln!("stvtf-web: match {} viewers {n}", s.label());
         *s.idle_since.lock().unwrap_or_else(PoisonError::into_inner) = None;
         Viewer(s)
     }
@@ -52,7 +75,9 @@ impl Viewer {
 
 impl Drop for Viewer {
     fn drop(&mut self) {
-        if self.0.viewers.fetch_sub(1, Ordering::Relaxed) == 1 {
+        let n = self.0.viewers.fetch_sub(1, Ordering::Relaxed) - 1;
+        eprintln!("stvtf-web: match {} viewers {n}", self.0.label());
+        if n == 0 {
             *self.0.idle_since.lock().unwrap_or_else(PoisonError::into_inner) = Some(Instant::now());
         }
     }
@@ -149,6 +174,7 @@ impl Sessions {
             for id in previous {
                 if let Some(p) = map.remove(&id) {
                     p.stop.store(true, Ordering::Relaxed);
+                    p.ended("replaced");
                     if let Some(store) = &self.store {
                         store.forget(&id);
                     }
@@ -159,6 +185,7 @@ impl Sessions {
             bail!("already watching {} matches, the most this server does", self.max);
         }
         let s = self.start(&mut map, random_id(), server, password, owner.map(str::to_string), SharedHub::default());
+        eprintln!("stvtf-web: match {} started on {server}, owner {}", s.label(), owner.unwrap_or("-"));
         if let Some(store) = &self.store
             && let Err(e) = store.save(&s)
         {
@@ -187,6 +214,9 @@ impl Sessions {
             stop: AtomicBool::new(false),
             done: AtomicBool::new(false),
             viewers: AtomicUsize::new(0),
+            peak: AtomicUsize::new(0),
+            views: AtomicUsize::new(0),
+            started: Instant::now(),
             idle_since: Mutex::new(Some(Instant::now())),
             thread: Mutex::new(None),
         });
@@ -195,6 +225,7 @@ impl Sessions {
             let mut w = Watch::new(&server.to_string(), &watcher.password);
             w.snapshot_hz = hz;
             if let Err(e) = watch::watch(&w, &watcher.stop, &mut |v| publish(&watcher.hub, &v)) {
+                eprintln!("stvtf-web: match {} gave up: {e}", watcher.label());
                 publish(&watcher.hub, &serde_json::json!({"type": "status", "state": "gave_up", "reason": e.to_string()}));
             }
             watcher.done.store(true, Ordering::Relaxed);
@@ -262,6 +293,9 @@ impl Sessions {
             stop: AtomicBool::new(false),
             done: AtomicBool::new(false),
             viewers: AtomicUsize::new(0),
+            peak: AtomicUsize::new(0),
+            views: AtomicUsize::new(0),
+            started: Instant::now(),
             idle_since: Mutex::new(None),
             thread: Mutex::new(None),
         });
@@ -285,6 +319,7 @@ impl Sessions {
         };
         for s in idle {
             s.stop.store(true, Ordering::Relaxed);
+            s.ended("unwatched");
             if let Some(store) = &self.store {
                 store.forget(&s.id);
             }
