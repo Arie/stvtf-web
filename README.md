@@ -89,6 +89,13 @@ Query options, e.g. `/overlay?names=1&score=1&panel=0.6`:
 | `ui=<factor>` | scale all markers (default 1; marker size already follows the panel size) |
 | `dot=<px>` | fixed player dot radius instead |
 
+## Delay
+
+A number of seconds after the last `/` holds the match back by that much, to line up with a
+stream of it (Twitch runs a few seconds behind SourceTV): `/w/<id>/5`, `/w/<id>/overlay/4.5`,
+or `/5` and `/overlay/5` for a single server, up to 60. The page handles everything from the
+server that much later, so it also starts that much later; `o` keeps the delay.
+
 ## What it shows
 
 - A spectator HUD over the map like TF2's: BLU down the left, RED down the right.

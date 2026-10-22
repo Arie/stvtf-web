@@ -1,4 +1,4 @@
-import { $, state, observeTick, setStatus } from "./core.js";
+import { $, DELAY_MS, PAGE, state, observeTick, setStatus } from "./core.js";
 import { killiconsLoaded, CHAT_TYPES, chat, feedEvent } from "./feed.js";
 import { hudNodes } from "./hud.js";
 import { setFollow } from "./input.js";
@@ -8,7 +8,10 @@ import { loadMap } from "./view.js";
 
 // ---------- incoming stream
 // Next to the page, so a match at /w/<id>/ (and its /w/<id>/overlay) reads its own events.
-const EVENTS_URL = location.pathname.replace(/(overlay|index\.html)?$/, "") + "events";
+const EVENTS_URL = PAGE.replace(/(overlay\/?|index\.html)?$/, "") + "events";
+// With a delay, everything from the stream is handled that much later, in the order it came
+// (timers with the same delay run in order): map changes and the feed so far as well as snapshots.
+const later = fn => (DELAY_MS ? setTimeout(fn, DELAY_MS) : fn());
 // Every (re)connect starts with the whole feed and chat so far: replace what is shown rather
 // than adding it twice (a deploy or a network blip reconnects).
 let opened = false;
@@ -16,11 +19,11 @@ let es = null;
 export function openStream() {
   es?.close();
   const s = es = new EventSource(EVENTS_URL + (detailNeeded() ? "?detail=1" : ""));
-  s.onmessage = e => handle(JSON.parse(e.data));
-  s.onopen = () => {
+  s.onmessage = e => later(() => handle(JSON.parse(e.data)));
+  s.onopen = () => later(() => {
     if (opened) { $("feed").replaceChildren(); $("chat").replaceChildren(); }
     opened = true;
-  };
+  });
   s.onerror = () => setStatus("stream lost, retrying", false);
 }
 

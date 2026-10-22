@@ -79,6 +79,8 @@ const MAX_CONNECTIONS: usize = 512;
 /// Event streams from one address, so a single client cannot take all the connections. A LAN
 /// event or an office behind one address stays well under it.
 const MAX_STREAMS_PER_CLIENT: usize = 32;
+/// The longest delay a page can ask for after its last `/`, to line up with a stream of the match.
+const MAX_DELAY_S: f64 = 60.0;
 
 /// The latest match state for browsers that join late, and a queue per browser.
 #[derive(Default)]
@@ -460,7 +462,9 @@ fn serve(mut s: TcpStream, app: &App) -> Result<()> {
     let html = "text/html; charset=utf-8";
     match (&app.matches, path) {
         (_, "/up") => respond(&mut s, "200 OK", "text/plain", b"ok")?,
-        (Matches::One(_), "/" | "/index.html" | "/overlay") => respond(&mut s, "200 OK", html, &app.page(INDEX))?,
+        (Matches::One(_), p) if p == "/index.html" || p.strip_prefix('/').is_some_and(is_page) => {
+            respond(&mut s, "200 OK", html, &app.page(INDEX))?;
+        }
         (Matches::One(hub), "/events") => match app.stream_slot(client) {
             Some(_slot) => stream(s, hub, gzip, wants_detail(query))?,
             None => too_many_streams(&mut s)?,
@@ -496,7 +500,7 @@ fn serve(mut s: TcpStream, app: &App) -> Result<()> {
                 (Some(_), "") if !p.ends_with('/') => {
                     app.redirect(&mut s, "308 Permanent Redirect", &format!("{p}/"))?;
                 }
-                (Some(_), "" | "overlay") => respond(&mut s, "200 OK", html, &app.page(INDEX))?,
+                (Some(_), rest) if is_page(rest) => respond(&mut s, "200 OK", html, &app.page(INDEX))?,
                 (Some(m), "events") => match app.stream_slot(client) {
                     Some(_slot) => {
                         let _viewer = Viewer::new(m.clone());
@@ -644,6 +648,17 @@ fn start(app: &App, sessions: &Sessions, query: &str) -> Result<Arc<sessions::Se
     let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs());
     let t = keys.open(token, now)?;
     sessions.open(&t.connect, t.owner.as_deref())
+}
+
+/// The page or its overlay, either with a delay in seconds after it: `5`, `overlay/4.5`.
+fn is_page(rest: &str) -> bool {
+    let delay =
+        |d: &str| !d.is_empty() && d.bytes().all(|b| b.is_ascii_digit() || b == b'.') && d.parse::<f64>().is_ok_and(|s| s <= MAX_DELAY_S);
+    match rest.split_once('/') {
+        None => matches!(rest, "" | "overlay") || delay(rest),
+        Some(("overlay", d)) => delay(d),
+        _ => false,
+    }
 }
 
 fn wants_detail(query: &str) -> bool {
@@ -992,6 +1007,20 @@ mod tests {
         let bare = request_to(&app, format!("GET {} HTTP/1.1\r\n\r\n", location.trim_end_matches('/')).as_bytes()).1;
         assert!(bare.starts_with("HTTP/1.1 308"), "{bare}");
         assert!(request_to(&app, b"GET /w/nope/ HTTP/1.1\r\n\r\n").1.starts_with("HTTP/1.1 404"));
+        // A delay after the last /, for the page and the overlay.
+        for (rest, status) in [
+            ("5", "200"),
+            ("overlay/4.5", "200"),
+            ("60", "200"),
+            ("61", "404"),
+            ("1.2.3", "404"),
+            ("5/", "404"),
+            ("overlay/", "404"),
+            ("x", "404"),
+        ] {
+            let page = request_to(&app, format!("GET {location}{rest} HTTP/1.1\r\n\r\n").as_bytes()).1;
+            assert!(page.starts_with(&format!("HTTP/1.1 {status}")), "{rest}: {page}");
+        }
         if let Matches::Many(s) = &app.matches {
             s.stop_all();
         }

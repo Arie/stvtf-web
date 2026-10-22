@@ -11,9 +11,16 @@ export const ICONS = {};
 for (const c of CLASS_ORDER) { if (c !== "unknown") { ICONS[c] = new Image(); ICONS[c].src = `icons/${c}.svg`; } }
 export const icon = c => ICONS[c]?.complete && ICONS[c].naturalWidth ? ICONS[c] : null;
 
+// Seconds after the last / (/w/<id>/5, /w/<id>/overlay/5) hold the match back by that much, to line
+// up with a stream of it. PAGE is the path without them: /w/<id>/ or /w/<id>/overlay/.
+const DELAY_PART = /\/([\d.]+)$/;
+export const DELAY = location.pathname.match(DELAY_PART)?.[1] ?? "";
+export const DELAY_MS = (Number(DELAY) || 0) * 1000;
+export const PAGE = location.pathname.replace(DELAY_PART, "/");
+
 // /overlay: a fixed, transparent minimap for broadcasts. Options in the query string:
 // names=1, score=1, panel=0..1 (background opacity), rotate=auto|<degrees>, dot=<px>.
-export const OVERLAY = /\/overlay\/?$/.test(location.pathname);
+export const OVERLAY = /\/overlay\/?$/.test(PAGE);
 export const OPT = new URLSearchParams(location.search);
 if (OVERLAY) {
   document.documentElement.classList.add("overlay");

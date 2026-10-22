@@ -1,4 +1,4 @@
-import { $, OVERLAY, canvas, uiScale, applyScale, state } from "./core.js";
+import { $, DELAY, OVERLAY, PAGE, canvas, uiScale, applyScale, state } from "./core.js";
 import { layerOn, setLayer, setOverkill, overkillOn } from "./layers.js";
 import { viewCy, frameMap, toScreen } from "./view.js";
 
@@ -51,7 +51,7 @@ window.addEventListener("keydown", e => {
     case "s": toggle("noscore"); break;
     case "e": setSidebar(document.documentElement.classList.contains("noside")); break;
     case "g": if (!$("bgtoggle").hidden) document.querySelector("#bgtoggle button:not(.on)").click(); break;
-    case "o": location.replace(OVERLAY ? location.pathname.replace(/overlay\/?$/, "") : location.pathname.replace(/(index\.html)?$/, "overlay")); break;
+    case "o": location.replace(OVERLAY ? PAGE.replace(/overlay\/?$/, "") + DELAY : PAGE.replace(/(index\.html)?$/, "overlay") + (DELAY && "/" + DELAY)); break;
   }
 });
 for (const cls of ["nohud", "noscore"]) {
