@@ -12,7 +12,7 @@ use anyhow::{Context, Result, anyhow, bail};
 use flate2::Compression;
 use flate2::write::GzEncoder;
 use serde::Serialize;
-use serde_json::Value;
+use serde::de::IgnoredAny;
 use sessions::{Sessions, Viewer};
 use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::io::{BufRead, BufReader, Read, Write};
@@ -394,11 +394,12 @@ fn overview(cache: &Path, file: &str) -> Result<Vec<u8>> {
 }
 
 /// The maps demos.tf has an overview of, from its `boundaries.json`.
+#[expect(clippy::zero_sized_map_values, reason = "only the keys are read; the values are skipped unparsed")]
 fn demostf_maps(cache: &Path) -> Vec<String> {
     overview(cache, "boundaries.json")
         .ok()
-        .and_then(|b| serde_json::from_slice::<serde_json::Map<String, Value>>(&b).ok())
-        .map(|m| m.into_iter().map(|(k, _)| k).collect())
+        .and_then(|b| serde_json::from_slice::<BTreeMap<String, IgnoredAny>>(&b).ok())
+        .map(|m| m.into_keys().collect())
         .unwrap_or_default()
 }
 
@@ -1002,6 +1003,7 @@ fn main() -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::Value;
     use stvtf::output::{self, PlayerId, Team};
 
     #[test]
