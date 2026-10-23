@@ -6,10 +6,14 @@ out to any number of browsers over Server-Sent Events.
 
 ```
 cargo build --release
-./target/release/stvtf-web [--public] [--max-matches 20] [--listen 127.0.0.1:8080] [--hz 20] [--cache DIR] [--backpack DIR]
+./target/release/stvtf-web [--public] [--max-matches 20] [--base-path /live] [--home URL] [--sessions DIR]
+                           [--demo MATCH.jsonl[.gz]] [--demos DIR] [--listen 127.0.0.1:8080] [--hz 20] [--cache DIR] [--backpack DIR]
 ./target/release/stvtf-web HOST:TVPORT [--password tv] [--listen 127.0.0.1:8080] [--hz 20] [--cache DIR] [--backpack DIR]
 ./target/release/stvtf-web --replay FILE.jsonl [--listen 127.0.0.1:8080]
 ```
+
+Options take their value as `--name value` or `--name=value`. An unknown or repeated option
+is an error rather than quietly falling back to its default; `--help` lists them all.
 
 Without a server, open `http://127.0.0.1:8080/` and paste a SourceTV connect string (or paste
 it into the terminal). Each match gets its own link, `/w/<id>/` with its overlay at
@@ -32,9 +36,10 @@ a restart or deploy is then a pause of a second or two for the people watching. 
 Ctrl-C, disconnects every match cleanly first.
 
 With any number of matches, it fetches the demos.tf overviews and builds the geometry of the
-maps in `maps.txt` (the most played on serveme.tf) when it starts, so their first viewer does not wait for the BSP download; other
-maps are built when a match on them is first viewed (and no others, so nobody can fill the cache
-with every map on fastdl). Only the geometry stays in the cache, not the BSP.
+maps in `maps.txt` (the most played on serveme.tf) when it starts, so their first viewer does
+not wait for the BSP download; other maps are built when a match on them is first viewed (and
+no others, so nobody can fill the cache with every map on fastdl). Different maps are built at
+the same time, each map once. Only the geometry stays in the cache, not the BSP.
 
 `--demo MATCH.jsonl[.gz]` adds a fixed match at `/w/demo/`: a saved `stvtf` output played on
 a loop, to show the viewer off without a live game. It needs no token, is never disconnected,
@@ -63,7 +68,8 @@ The map zooms to where the players are fighting. Dragging or scrolling takes ove
 the camera; the "Auto zoom" button hands it back.
 
 Stop it with Ctrl-C: the first one disconnects every match from SourceTV cleanly (otherwise the
-server holds the slot for 300 s), a second one exits at once.
+server holds the slot for 300 s), a second one exits at once. With `--replay` there is nothing
+to disconnect, and it takes the second one.
 
 ## Broadcast overlay
 
@@ -186,7 +192,8 @@ sets the directory (default `backpack`, `/usr/share/stvtf/backpack` in the Docke
 ## Layout
 
 - `src/main.rs`: starting up: what to watch, housekeeping of the matches, accepting connections.
-- `src/http.rs`: a small HTTP server (the page, `/events`, `/map/NAME`, starting matches).
+- `src/http.rs`: a small HTTP server: the page and overlay, `/events`, `/map/NAME`,
+  `/overview/`, `/backpack/`, `/start` and the connect form, and `/up`.
 - `src/hub.rs`: a match's latest state and feed, and the queue of each page watching it.
 - `src/sessions.rs`: many matches in one process, and saving them across a deploy.
 - `src/cache.rs`: map geometry and demos.tf's overviews, fetched once and kept in `--cache`.
@@ -201,9 +208,12 @@ sets the directory (default `backpack`, `/usr/share/stvtf/backpack` in the Docke
 cargo test --release
 ```
 
-The BSP tests run against `cache/cp_process_f12.bsp` and are skipped when it has
-not been downloaded yet (run the viewer on a cp_process match once, or
+The BSP tests run against maps in `cache/` (`cp_process_f12`, `cp_gullywash_f9`,
+`pl_upward_f12`, `pl_swiftwater_final1`, `mge_training_v8_beta4b`) and each is skipped when its
+map has not been downloaded yet (run the viewer on a match on it once, or for example
 `curl -o cache/cp_process_f12.bsp https://fastdl.serveme.tf/maps/cp_process_f12.bsp`).
+Tests that write files do so in a temporary directory that is removed afterwards, also when
+they fail.
 
 ## Development
 
