@@ -14,14 +14,12 @@ mod sessions;
 mod token;
 
 use crate::cache::{WARM, demostf_maps, map_geometry, overview};
-use crate::cli::DEFAULT_TV_PASSWORD;
-use crate::cli::{USAGE, parse_args, parse_connect};
+use crate::cli::{DEFAULT_TV_PASSWORD, Options, USAGE, parse_connect};
 use crate::http::{MAX_STREAMS_PER_CLIENT, app_version, serve};
-use crate::hub::SharedHub;
-use crate::hub::watch_into;
+use crate::hub::{SharedHub, watch_into};
 use crate::replay::replay;
 use crate::sessions::Sessions;
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result};
 use std::collections::HashMap;
 use std::net::{IpAddr, TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
@@ -35,6 +33,8 @@ const LINGER: Duration = Duration::from_secs(180);
 
 /// Open connections, browsers on `/events` included; more are closed straight away.
 const MAX_CONNECTIONS: usize = 512;
+/// The exit status for a command line that does not say what to watch.
+const EXIT_USAGE: i32 = 2;
 
 /// Whether `s` is a name safe to use in a path: letters, digits and the bytes in `extra`.
 fn is_name(s: &str, extra: &[u8]) -> bool {
@@ -62,7 +62,8 @@ struct App {
     cache: PathBuf,
     /// The backpack pictures and `items.json`.
     backpack: PathBuf,
-    maps: Mutex<()>,
+    /// One build of each map at a time; a map being built does not hold up the others.
+    maps: Mutex<HashMap<String, Arc<Mutex<()>>>>,
     overviews: Mutex<()>,
     /// Where a proxy serves us, like `/live`; empty at the root.
     base: String,
@@ -105,6 +106,11 @@ impl App {
         }
     }
 
+    /// The lock around building map `name`.
+    fn map_lock(&self, name: &str) -> Arc<Mutex<()>> {
+        lock(&self.maps).entry(name.to_string()).or_default().clone()
+    }
+
     /// A slot for one more event stream from `client`, or None when it has too many open.
     fn stream_slot(&self, client: IpAddr) -> Option<Stream<'_>> {
         let mut streams = lock(&self.streams);
@@ -135,7 +141,8 @@ fn warm(app: &App) {
         }
     }
     for name in WARM.lines().filter(|l| !l.is_empty() && !l.starts_with('#')) {
-        let _one_at_a_time = lock(&app.maps);
+        let map_lock = app.map_lock(name);
+        let _one_at_a_time = lock(&map_lock);
         if let Err(e) = map_geometry(&app.cache, name, true) {
             eprintln!("stvtf-web: {name}: {e}");
         }
@@ -162,23 +169,21 @@ impl Drop for Connection {
     }
 }
 
-/// Any number of matches: the hub's options, the matches a previous process left, the demo.
-fn many(flags: &HashMap<String, String>, hz: f32, keys: Option<&Arc<token::Keys>>) -> Result<Sessions> {
-    let get = |k: &str| flags.get(k).map(String::as_str);
-    let max = get("max-matches").map(|n| n.parse().with_context(|| format!("--max-matches {n}: not a number"))).transpose()?.unwrap_or(20);
-    let mut sessions = Sessions::new(flags.contains_key("public"), max, hz);
-    if let Some(dir) = get("sessions") {
-        sessions.store = Some(sessions::Store { dir: PathBuf::from(dir), keys: keys.cloned() });
+/// Any number of matches: the hub's options, the matches a previous process left, the demos.
+fn many(options: &Options, keys: Option<&Arc<token::Keys>>) -> Result<Sessions> {
+    let mut sessions = Sessions::new(options.public, options.max_matches, options.hz);
+    if let Some(dir) = &options.sessions {
+        sessions.store = Some(sessions::Store { dir: dir.clone(), keys: keys.cloned() });
         let restored = sessions.restore();
         if restored > 0 {
             eprintln!("stvtf-web: picked up {restored} running matches");
         }
     }
-    if let Some(file) = get("demo") {
-        pin_demo(&sessions, "demo", PathBuf::from(file));
+    if let Some(file) = &options.demo {
+        pin_demo(&sessions, "demo", file.clone());
     }
-    if let Some(dir) = get("demos") {
-        for (id, file) in demo_files(Path::new(dir))? {
+    if let Some(dir) = &options.demos {
+        for (id, file) in demo_files(dir)? {
             pin_demo(&sessions, &id, file);
         }
     }
@@ -226,102 +231,69 @@ fn prompt(app: &App, url: &str) {
         }
         match sessions.open(&line, None) {
             Ok(m) => eprintln!("watching: {url}/w/{}/  (overlay: {url}/w/{}/overlay)", m.id, m.id),
-            Err(e) => eprintln!("{e}"),
+            Err(e) => eprintln!("{e:#}"),
         }
     }
 }
 
-fn main() -> Result<()> {
-    static STOP: AtomicBool = AtomicBool::new(false);
-    static OPEN: AtomicUsize = AtomicUsize::new(0);
-    if std::env::args().skip(1).any(|a| a == "--help" || a == "-h") {
-        println!("{USAGE}");
-        return Ok(());
-    }
-    let (positional, flags) = parse_args(std::env::args().skip(1))?;
-    let get = |k: &str| flags.get(k).map(String::as_str);
-    let listen = get("listen").unwrap_or("127.0.0.1:8080").to_string();
-    let hz = get("hz").map_or(Ok(stvtf::DEFAULT_SNAPSHOT_HZ), stvtf::parse_snapshot_hz)?;
-    watch::stop_on_ctrl_c(&STOP)?;
-
-    let keys = std::env::var("STVTF_TOKEN_KEY").ok().map(|k| token::Keys::from_hex(&k).map(Arc::new)).transpose()?;
-    let matches = if let Some(file) = get("replay") {
-        let (hub, file) = (SharedHub::default(), PathBuf::from(file));
-        let replayed = hub.clone();
+/// What the options ask to watch: a saved match, one server, or any number of them.
+fn matches(options: &Options, keys: Option<&Arc<token::Keys>>, stop: &'static AtomicBool) -> Result<Matches> {
+    let hub = SharedHub::default();
+    let fed = hub.clone();
+    if let Some(file) = options.replay.clone() {
         std::thread::spawn(move || {
-            if let Err(e) = replay(&replayed, &file, &|| true) {
+            if let Err(e) = replay(&fed, &file, &|| true) {
                 eprintln!("replay: {e}");
             }
         });
-        Matches::One(hub)
-    } else if !positional.is_empty() {
-        let Some((target, password)) = parse_connect(&positional.join(" ")) else {
+    } else if let Some(connect) = &options.connect {
+        let Some((target, password)) = parse_connect(connect) else {
             eprintln!("{USAGE}");
-            std::process::exit(2);
+            std::process::exit(EXIT_USAGE);
         };
-        let password = get("password").or(password.as_deref()).unwrap_or(DEFAULT_TV_PASSWORD).to_string();
-        let hub = SharedHub::default();
-        let watched = hub.clone();
+        let password = options.password.clone().or(password).unwrap_or_else(|| DEFAULT_TV_PASSWORD.to_string());
+        let hz = options.hz;
         std::thread::spawn(move || {
-            if let Err(e) = watch_into(&watched, &target, &password, hz, &STOP) {
+            if let Err(e) = watch_into(&fed, &target, &password, hz, stop) {
                 eprintln!("stvtf-web: {e}");
             }
-            if STOP.load(Ordering::Relaxed) {
+            if stop.load(Ordering::Relaxed) {
                 std::process::exit(0);
             }
         });
-        Matches::One(hub)
     } else {
-        Matches::Many(many(&flags, hz, keys.as_ref())?)
-    };
-    let base = get("base-path").unwrap_or("").trim_end_matches('/').to_string();
-    if !base.is_empty() && !base.starts_with('/') {
-        bail!("--base-path {base}: must start with /");
+        return Ok(Matches::Many(many(options, keys)?));
     }
-    let console_prompt = keys.is_none() && std::io::IsTerminal::is_terminal(&std::io::stdin());
-    let app = Arc::new(App {
-        matches,
-        cache: PathBuf::from(get("cache").unwrap_or("cache")),
-        backpack: PathBuf::from(get("backpack").unwrap_or("backpack")),
-        maps: Mutex::new(()),
-        overviews: Mutex::new(()),
-        base,
-        keys,
-        home: get("home").map(str::to_string),
-        streams: Mutex::default(),
-    });
+    Ok(Matches::One(hub))
+}
 
-    if let Matches::Many(_) = app.matches {
-        // Stop idle matches, and on Ctrl-C disconnect them all cleanly before exiting.
-        let reaper = app.clone();
-        std::thread::spawn(move || {
-            let Matches::Many(sessions) = &reaper.matches else { return };
-            for round in 0u64.. {
-                if STOP.load(Ordering::Relaxed) {
-                    sessions.stop_all();
-                    std::process::exit(0);
-                }
-                sessions.reap(LINGER);
-                // What a deploy's next container picks up, feed included.
-                if round % PERSIST_ROUNDS == 0 {
-                    sessions.persist();
-                }
-                std::thread::sleep(HOUSEKEEPING);
+/// Stops idle matches and saves the running ones, and on Ctrl-C disconnects them all cleanly
+/// before exiting.
+fn keep_house(app: Arc<App>, stop: &'static AtomicBool) {
+    std::thread::spawn(move || {
+        let Matches::Many(sessions) = &app.matches else { return };
+        for round in 0u64.. {
+            if stop.load(Ordering::Relaxed) {
+                sessions.stop_all();
+                std::process::exit(0);
             }
-        });
-        let warming = app.clone();
-        std::thread::spawn(move || warm(&warming));
-        if console_prompt {
-            let (console, url) = (app.clone(), format!("http://{listen}{}", app.base));
-            std::thread::spawn(move || prompt(&console, &url));
+            sessions.reap(LINGER);
+            // What a deploy's next container picks up, feed included.
+            if round % PERSIST_ROUNDS == 0 {
+                sessions.persist();
+            }
+            std::thread::sleep(HOUSEKEEPING);
         }
-    }
+    });
+}
 
-    let listener = TcpListener::bind(&listen)?;
+/// Serves each connection on its own thread, up to `MAX_CONNECTIONS` at once.
+fn accept(listen: &str, app: &Arc<App>, open: &'static AtomicUsize) -> Result<()> {
+    let listener = TcpListener::bind(listen)?;
     eprintln!("stvtf-web: http://{listen}/");
     for conn in listener.incoming() {
         let Ok(s) = conn else { continue };
-        let Some(open) = Connection::open(&OPEN) else { continue };
+        let Some(open) = Connection::open(open) else { continue };
         let app = app.clone();
         std::thread::spawn(move || {
             let _open = open;
@@ -329,6 +301,39 @@ fn main() -> Result<()> {
         });
     }
     Ok(())
+}
+
+fn main() -> Result<()> {
+    static STOP: AtomicBool = AtomicBool::new(false);
+    static OPEN: AtomicUsize = AtomicUsize::new(0);
+    let Some(options) = Options::parse(std::env::args().skip(1))? else {
+        println!("{USAGE}");
+        return Ok(());
+    };
+    watch::stop_on_ctrl_c(&STOP)?;
+    let keys = std::env::var("STVTF_TOKEN_KEY").ok().map(|k| token::Keys::from_hex(&k).map(Arc::new)).transpose()?;
+    let console_prompt = keys.is_none() && std::io::IsTerminal::is_terminal(&std::io::stdin());
+    let app = Arc::new(App {
+        matches: matches(&options, keys.as_ref(), &STOP)?,
+        cache: options.cache.clone(),
+        backpack: options.backpack.clone(),
+        maps: Mutex::default(),
+        overviews: Mutex::new(()),
+        base: options.base_path.clone(),
+        keys,
+        home: options.home.clone(),
+        streams: Mutex::default(),
+    });
+    if let Matches::Many(_) = app.matches {
+        keep_house(app.clone(), &STOP);
+        let warming = app.clone();
+        std::thread::spawn(move || warm(&warming));
+        if console_prompt {
+            let (console, url) = (app.clone(), format!("http://{}{}", options.listen, app.base));
+            std::thread::spawn(move || prompt(&console, &url));
+        }
+    }
+    accept(&options.listen, &app, &OPEN)
 }
 
 #[cfg(test)]
@@ -342,7 +347,7 @@ mod testing {
             matches,
             cache: PathBuf::from("unused"),
             backpack: PathBuf::from("unused"),
-            maps: Mutex::new(()),
+            maps: Mutex::default(),
             overviews: Mutex::new(()),
             base: String::new(),
             keys: None,

@@ -303,8 +303,11 @@ fn serve_cached(s: &mut TcpStream, app: &App, p: &str) -> std::io::Result<()> {
         let _one_at_a_time = lock(&app.overviews);
         overview(&app.cache, file)
     } else if let Some(name) = p.strip_prefix("/map/") {
+        // Only a map being watched is built, so only those are locked: any other is read from the
+        // cache, which is written whole or not at all.
         let fetch = app.on_map(name);
-        let _one_at_a_time = lock(&app.maps);
+        let map_lock = fetch.then(|| app.map_lock(name));
+        let _one_at_a_time = map_lock.as_deref().map(lock);
         map_geometry(&app.cache, name, fetch)
     } else {
         return not_found(s);

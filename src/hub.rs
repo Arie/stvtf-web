@@ -18,8 +18,7 @@ pub(crate) struct Hub {
     server: Option<Arc<str>>,
     world: Option<Arc<str>>,
     snapshot: Option<Arc<str>>,
-    /// With whether the page asked for detail lines.
-    clients: Vec<(SyncSender<Arc<str>>, bool)>,
+    clients: Vec<Client>,
     pub(crate) map: Option<String>,
     /// Feed events of the current map, so a page opened late still shows kills and chat.
     pub(crate) history: VecDeque<Arc<str>>,
@@ -36,6 +35,13 @@ pub(crate) struct Hub {
 /// Seconds per tick of a server that has not said yet.
 pub(crate) fn default_tick_interval() -> f64 {
     f64::from(stvtf::DEFAULT_TICK_INTERVAL)
+}
+
+/// A page's queue of lines.
+struct Client {
+    tx: SyncSender<Arc<str>>,
+    /// Whether the page asked for detail lines.
+    detail: bool,
 }
 
 /// A player's name and team, as last seen in a snapshot.
@@ -220,8 +226,8 @@ pub(crate) fn publish(hub: &SharedHub, line: &Line) {
     }
     // A browser that cannot keep up is dropped; it reconnects and resyncs from the latest state.
     let detail = route == Route::Detail;
-    h.clients.retain(|(c, wants)| {
-        (detail && !wants) || !matches!(c.try_send(json.clone()), Err(TrySendError::Full(_) | TrySendError::Disconnected(_)))
+    h.clients.retain(|c| {
+        (detail && !c.detail) || !matches!(c.tx.try_send(json.clone()), Err(TrySendError::Full(_) | TrySendError::Disconnected(_)))
     });
 }
 
@@ -253,7 +259,7 @@ pub(crate) fn subscribe(hub: &SharedHub, detail: bool) -> Receiver<Arc<str>> {
         let age = DataAge { ms: at.elapsed().as_millis() as u64 };
         let _ = tx.try_send(serde_json::to_string(&age).expect("a number serializes").into());
     }
-    h.clients.push((tx, detail));
+    h.clients.push(Client { tx, detail });
     rx
 }
 

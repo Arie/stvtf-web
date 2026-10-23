@@ -1,7 +1,8 @@
 //! The command line and connect strings.
 
-use anyhow::{Result, anyhow, bail};
+use anyhow::{Context, Result, anyhow, bail};
 use std::collections::HashMap;
+use std::path::PathBuf;
 
 /// The `tv_password` tried when a connect string has none.
 pub(crate) const DEFAULT_TV_PASSWORD: &str = "tv";
@@ -20,26 +21,97 @@ stvtf-web: live top-down viewer of a TF2 match in the browser
 const FLAGS: [&str; 12] =
     ["password", "listen", "hz", "cache", "backpack", "replay", "max-matches", "base-path", "demo", "demos", "sessions", "home"];
 const SWITCHES: [&str; 1] = ["public"];
+const DEFAULT_LISTEN: &str = "127.0.0.1:8080";
+const DEFAULT_MAX_MATCHES: usize = 20;
+const DEFAULT_CACHE: &str = "cache";
+const DEFAULT_BACKPACK: &str = "backpack";
 
-/// Positional arguments and `--name value` options; a mistyped option is an error rather than
-/// silently falling back to its default.
-pub(crate) fn parse_args(args: impl IntoIterator<Item = String>) -> Result<(Vec<String>, HashMap<String, String>)> {
+/// The command line's options, or their defaults.
+pub(crate) struct Options {
+    /// The server to watch, as given (`HOST:PORT tv`, a connect string): one match at `/`.
+    pub(crate) connect: Option<String>,
+    pub(crate) password: Option<String>,
+    pub(crate) listen: String,
+    pub(crate) hz: f32,
+    pub(crate) cache: PathBuf,
+    pub(crate) backpack: PathBuf,
+    pub(crate) replay: Option<PathBuf>,
+    pub(crate) max_matches: usize,
+    /// Where a proxy serves us, like `/live`, without a trailing `/`; empty at the root.
+    pub(crate) base_path: String,
+    pub(crate) demo: Option<PathBuf>,
+    pub(crate) demos: Option<PathBuf>,
+    pub(crate) sessions: Option<PathBuf>,
+    pub(crate) home: Option<String>,
+    pub(crate) public: bool,
+}
+
+impl Options {
+    /// The options in `args`; None when they ask for help.
+    pub(crate) fn parse(args: impl IntoIterator<Item = String>) -> Result<Option<Self>> {
+        let Some(Args { positional, mut flags }) = parse_args(args)? else { return Ok(None) };
+        let mut take = |name: &str| flags.remove(name);
+        let base_path = take("base-path").unwrap_or_default().trim_end_matches('/').to_string();
+        if !base_path.is_empty() && !base_path.starts_with('/') {
+            bail!("--base-path {base_path}: must start with /");
+        }
+        Ok(Some(Options {
+            connect: (!positional.is_empty()).then(|| positional.join(" ")),
+            password: take("password"),
+            listen: take("listen").unwrap_or_else(|| DEFAULT_LISTEN.into()),
+            hz: take("hz").map_or(Ok(stvtf::DEFAULT_SNAPSHOT_HZ), |hz| stvtf::parse_snapshot_hz(&hz))?,
+            cache: take("cache").unwrap_or_else(|| DEFAULT_CACHE.into()).into(),
+            backpack: take("backpack").unwrap_or_else(|| DEFAULT_BACKPACK.into()).into(),
+            replay: take("replay").map(PathBuf::from),
+            max_matches: take("max-matches")
+                .map(|n| n.parse().with_context(|| format!("--max-matches {n}: not a number")))
+                .transpose()?
+                .unwrap_or(DEFAULT_MAX_MATCHES),
+            base_path,
+            demo: take("demo").map(PathBuf::from),
+            demos: take("demos").map(PathBuf::from),
+            sessions: take("sessions").map(PathBuf::from),
+            home: take("home"),
+            public: take("public").is_some(),
+        }))
+    }
+}
+
+/// The command line as given: positional arguments and options by name.
+struct Args {
+    positional: Vec<String>,
+    flags: HashMap<String, String>,
+}
+
+/// Positional arguments and `--name value` (or `--name=value`) options; None for `--help`. A
+/// mistyped or repeated option is an error rather than silently falling back to its default.
+fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Option<Args>> {
     let (mut positional, mut flags) = (Vec::new(), HashMap::new());
     let mut it = args.into_iter();
     while let Some(a) = it.next() {
-        match a.strip_prefix("--") {
-            Some(name) if FLAGS.contains(&name) => {
-                let value = it.next().ok_or_else(|| anyhow!("--{name} needs a value"))?;
-                flags.insert(name.to_string(), value);
+        if a == "-h" || a == "--help" {
+            return Ok(None);
+        }
+        let Some(option) = a.strip_prefix("--") else {
+            positional.push(a);
+            continue;
+        };
+        let (name, inline) = option.split_once('=').map_or((option, None), |(n, v)| (n, Some(v.to_string())));
+        let value = if FLAGS.contains(&name) {
+            match inline {
+                Some(v) => v,
+                None => it.next().ok_or_else(|| anyhow!("--{name} needs a value"))?,
             }
-            Some(name) if SWITCHES.contains(&name) => {
-                flags.insert(name.to_string(), String::new());
-            }
-            Some(name) => bail!("unknown option --{name}\n\n{USAGE}"),
-            None => positional.push(a),
+        } else if SWITCHES.contains(&name) && inline.is_none() {
+            String::new()
+        } else {
+            bail!("unknown option --{option}\n\n{USAGE}");
+        };
+        if flags.insert(name.to_string(), value).is_some() {
+            bail!("--{name} given twice");
         }
     }
-    Ok((positional, flags))
+    Ok(Some(Args { positional, flags }))
 }
 
 /// Liberal in what it takes: `connect HOST:PORT; password "tv"`, `HOST:PORT tv`, `HOST; password tv`
@@ -89,21 +161,36 @@ mod tests {
         assert_eq!(parse_connect("  \n"), None);
     }
 
-    fn args(a: &[&str]) -> Result<(Vec<String>, HashMap<String, String>)> {
-        parse_args(a.iter().map(ToString::to_string))
+    fn options(a: &[&str]) -> Result<Option<Options>> {
+        Options::parse(a.iter().map(ToString::to_string))
     }
 
     #[test]
     fn parses_options() {
-        let (positional, flags) = args(&["host:27020", "--listen", "0.0.0.0:80", "--hz", "10"]).unwrap();
-        assert_eq!(positional, ["host:27020"]);
-        assert_eq!(flags["listen"], "0.0.0.0:80");
-        assert_eq!(flags["hz"], "10");
+        let o = options(&["host:27020", "--listen", "0.0.0.0:80", "--hz=10", "--public"]).unwrap().unwrap();
+        assert_eq!(o.connect.as_deref(), Some("host:27020"));
+        assert_eq!((o.listen.as_str(), o.hz, o.public), ("0.0.0.0:80", 10.0, true));
+        let defaults = options(&[]).unwrap().unwrap();
+        assert_eq!((defaults.listen.as_str(), defaults.max_matches, defaults.public), (DEFAULT_LISTEN, DEFAULT_MAX_MATCHES, false));
+        assert_eq!(options(&["--base-path", "/live/"]).unwrap().unwrap().base_path, "/live");
+        assert!(options(&["--help"]).unwrap().is_none());
     }
 
     #[test]
-    fn unknown_or_incomplete_options_are_errors() {
-        assert!(args(&["host:27020", "--lisen", "0.0.0.0:80"]).is_err());
-        assert!(args(&["host:27020", "--listen"]).is_err());
+    fn unknown_repeated_or_incomplete_options_are_errors() {
+        assert!(options(&["host:27020", "--lisen", "0.0.0.0:80"]).is_err());
+        assert!(options(&["host:27020", "--listen"]).is_err());
+        assert!(options(&["--hz", "1", "--hz", "2"]).is_err());
+        assert!(options(&["--hz", "-1"]).is_err());
+        assert!(options(&["--public=yes"]).is_err());
+        assert!(options(&["--base-path", "live"]).is_err());
+    }
+
+    #[test]
+    fn the_usage_names_every_option_and_default() {
+        for name in FLAGS.iter().chain(&SWITCHES) {
+            assert!(USAGE.contains(&format!("--{name}")), "--{name}");
+        }
+        assert!(USAGE.contains(DEFAULT_LISTEN) && USAGE.contains(&format!("--max-matches {DEFAULT_MAX_MATCHES}")));
     }
 }
