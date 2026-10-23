@@ -6,6 +6,7 @@ use crate::{SharedHub, parse_connect, publish, token, write_atomic};
 use aes_gcm::aead::OsRng;
 use aes_gcm::aead::rand_core::RngCore;
 use anyhow::{Result, anyhow, bail};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::net::{IpAddr, SocketAddr, ToSocketAddrs};
 use std::path::PathBuf;
@@ -101,6 +102,19 @@ pub struct Store {
     pub keys: Option<Arc<token::Keys>>,
 }
 
+/// A running match as saved for the next process: what it takes to watch it again, and its feed.
+#[derive(Debug, Serialize, Deserialize)]
+struct SavedMatch {
+    server: SocketAddr,
+    password: String,
+    owner: Option<String>,
+    #[serde(default)]
+    map: Option<String>,
+    /// The feed's history lines, as sent to pages.
+    #[serde(default)]
+    history: Vec<String>,
+}
+
 impl Store {
     fn path(&self, id: &str) -> PathBuf {
         self.dir.join(id)
@@ -109,13 +123,10 @@ impl Store {
     fn save(&self, s: &Session) -> Result<()> {
         let (map, history) = {
             let h = s.hub.lock().unwrap_or_else(PoisonError::into_inner);
-            (h.map.clone(), h.history.iter().map(ToString::to_string).collect::<Vec<_>>())
+            (h.map.clone(), h.history.iter().map(ToString::to_string).collect())
         };
-        let plain = serde_json::json!({
-            "server": s.server.to_string(), "password": s.password, "owner": s.owner, "map": map, "history": history,
-        })
-        .to_string()
-        .into_bytes();
+        let saved = SavedMatch { server: s.server, password: s.password.clone(), owner: s.owner.clone(), map, history };
+        let plain = serde_json::to_vec(&saved)?;
         std::fs::create_dir_all(&self.dir)?;
         let data = self.keys.as_ref().map_or_else(|| plain.clone(), |k| k.seal(&plain));
         Ok(write_atomic(&self.path(&s.id), &data)?)
@@ -125,7 +136,7 @@ impl Store {
         let _ = std::fs::remove_file(self.path(id));
     }
 
-    fn load(&self, data: &[u8]) -> Result<serde_json::Value> {
+    fn load(&self, data: &[u8]) -> Result<SavedMatch> {
         let plain = match &self.keys {
             Some(k) => k.unseal(data)?,
             None => data.to_vec(),
@@ -250,11 +261,7 @@ impl Sessions {
                 continue;
             }
             let saved = std::fs::read(entry.path()).map_err(anyhow::Error::from).and_then(|d| store.load(&d));
-            let parsed = saved.ok().and_then(|v| {
-                let server: SocketAddr = v["server"].as_str()?.parse().ok()?;
-                Some((server, v["password"].as_str()?.to_string(), v["owner"].as_str().map(str::to_string), v))
-            });
-            let Some((server, password, owner, v)) = parsed else {
+            let Ok(saved) = saved else {
                 eprintln!("stvtf-web: dropping unreadable saved match {id}");
                 store.forget(&id);
                 continue;
@@ -262,10 +269,10 @@ impl Sessions {
             let hub = SharedHub::default();
             {
                 let mut h = hub.lock().unwrap_or_else(PoisonError::into_inner);
-                h.map = v["map"].as_str().map(str::to_string);
-                h.history = v["history"].as_array().into_iter().flatten().filter_map(|l| l.as_str().map(Into::into)).collect();
+                h.map = saved.map;
+                h.history = saved.history.into_iter().map(Into::into).collect();
             }
-            self.start(&mut map, id, server, password, owner, hub);
+            self.start(&mut map, id, saved.server, saved.password, saved.owner, hub);
             restored += 1;
         }
         restored
@@ -471,6 +478,28 @@ mod tests {
         after.reap(Duration::ZERO);
         assert!(!dir.join(&m.id).exists(), "a dropped match is forgotten");
         after.stop_all();
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_match_saved_by_the_running_release_is_picked_up() {
+        let dir = std::env::temp_dir().join(format!("stvtf-sessions-{}", random_id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let (id, broken) = (random_id(), random_id());
+        let saved = r#"{"server":"192.0.2.1:27020","password":"tv","owner":null,"map":"cp_badlands","history":["{\"type\":\"kill\"}"]}"#;
+        std::fs::write(dir.join(&id), saved).unwrap();
+        std::fs::write(dir.join(&broken), r#"{"server":"192.0.2.1:27020"}"#).unwrap();
+        let mut s = Sessions::new(false, 4, 20.0);
+        s.store = Some(Store { dir: dir.clone(), keys: None });
+        assert_eq!(s.restore(), 1);
+        let m = s.get(&id).expect("same link");
+        assert_eq!((m.password.as_str(), m.owner.as_deref()), ("tv", None));
+        let hub = m.hub.lock().unwrap();
+        assert_eq!(hub.map.as_deref(), Some("cp_badlands"));
+        assert_eq!(hub.history.iter().map(ToString::to_string).collect::<Vec<_>>(), [r#"{"type":"kill"}"#]);
+        drop(hub);
+        assert!(!dir.join(&broken).exists(), "an unreadable one is dropped");
+        s.stop_all();
         let _ = std::fs::remove_dir_all(&dir);
     }
 

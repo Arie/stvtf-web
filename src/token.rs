@@ -8,7 +8,15 @@ use aes_gcm::{Aes256Gcm, Nonce};
 use anyhow::{Result, anyhow, bail};
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
-use serde_json::Value;
+use serde::Deserialize;
+
+/// What a site's token says: the match to watch, for whom, and until when (Unix seconds).
+#[derive(Deserialize)]
+struct Claims {
+    connect: String,
+    owner: Option<String>,
+    exp: u64,
+}
 
 #[derive(Debug)]
 pub struct Start {
@@ -52,12 +60,11 @@ impl Keys {
     pub fn open(&self, token: &str, now: u64) -> Result<Start> {
         let raw = URL_SAFE_NO_PAD.decode(token.trim()).map_err(|_| anyhow!("malformed token"))?;
         let plain = self.unseal(&raw).map_err(|_| anyhow!("invalid token"))?;
-        let v: Value = serde_json::from_slice(&plain).map_err(|_| anyhow!("invalid token"))?;
-        if v["exp"].as_u64().is_none_or(|exp| exp < now) {
+        let claims: Claims = serde_json::from_slice(&plain).map_err(|_| anyhow!("invalid token"))?;
+        if claims.exp < now {
             bail!("this link has expired; open the match again from the site");
         }
-        let connect = v["connect"].as_str().ok_or_else(|| anyhow!("invalid token"))?.to_string();
-        Ok(Start { connect, owner: v["owner"].as_str().map(str::to_string) })
+        Ok(Start { connect: claims.connect, owner: claims.owner })
     }
 }
 
@@ -109,6 +116,9 @@ mod tests {
         let other = Keys::from_hex(&"ff".repeat(32)).unwrap();
         assert!(other.open(&t, 0).is_err());
         assert!(keys.open("not a token", 0).is_err());
+        for incomplete in [r#"{"exp":2000}"#, r#"{"connect":"1.2.3.4:27020"}"#, r#"{"connect":7,"exp":2000}"#] {
+            assert!(keys.open(&seal(incomplete, [2; 12]), 0).is_err(), "{incomplete}");
+        }
         assert!(Keys::from_hex("abc").is_err());
     }
 }
