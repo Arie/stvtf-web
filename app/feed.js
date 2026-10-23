@@ -21,9 +21,11 @@ const BANNER = { buff_banner: "Buff Banner", battalions_backup: "Battalion's Bac
 const PROJECTILE_WEAPON = /rocket|quake_rl|directhit|liberty|blackbox|airstrike|mangler|dumpster|pipe|bomb|loch|cannon|resistance|huntsman|arrow|crossbow|flare|detonator|scorch/;
 export const teamName = t => t === "red" ? "RED" : t === "blue" ? "BLU" : "";
 export const pointName = ev => ev.name && !ev.name.startsWith("#") ? ev.name : "point " + (ev.point + 1);
-// A team's flag is its intelligence; a neutral one is special delivery's Australium or a ball.
-export const flagName = team => team === "red" || team === "blue" ? `the ${teamName(team)} intelligence`
-  : state.map?.startsWith("sd_") ? "the Australium" : "the ball";
+// A team's flag is its intelligence (Mann vs. Machine's bomb is the robots'); a neutral one is special delivery's Australium, player
+// destruction's pickups (each player carries their own) or a ball.
+export const flagName = team => state.map?.startsWith("mvm_") ? "the bomb"
+  : team === "red" || team === "blue" ? `the ${teamName(team)} intelligence`
+  : state.map?.startsWith("sd_") ? "the Australium" : state.map?.startsWith("pd_") ? "pickups" : "the ball";
 const chip = (cls, text) => `<span class="chip ${cls}">${text}</span>`;
 
 export const CHAT_TYPES = new Set(["chat", "voice_command", "server_text"]);
@@ -99,6 +101,8 @@ export function feedEvent(ev, p) {
       const what = esc(flagName(ev.team));
       if (ev.event === "captured") { cls = `big ${p(ev.player)?.team || "none"}`; html = `${name(ev.player)} <span>captured ${what}</span>`; }
       else if (ev.event === "defended") html = `${name(ev.player)}<span class="w">stopped</span>${name(ev.carrier)}<span class="w">with ${what}</span>`;
+      // Player destruction: players pick up the dropped pickups all the time.
+      else if (ev.event === "pickup" && state.map?.startsWith("pd_")) { if (!layerOn("flow")) return; cls = "minor"; html = `${name(ev.player)} <span>collected ${what}</span>`; }
       else if (ev.event === "pickup") { cls = "minor"; html = `${name(ev.player)} <span>picked up ${what}</span>`; }
       else if (ev.event === "dropped") { cls = "minor"; html = `${name(ev.player)} <span>dropped ${what}</span>`; }
       else if (ev.event === "returned") { cls = "minor"; html = `<span>${what[0].toUpperCase() + what.slice(1)} went home</span>`; }

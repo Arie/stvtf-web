@@ -222,6 +222,26 @@ function drawBall(o, players, tick) {
   ctx.restore();
 }
 
+// A player destruction stack of pickups: a disc with how many points it holds, on its carrier
+// or where it was dropped (with the seconds until it goes).
+function drawPickups(o, carrier, snap, tick) {
+  let [x, y] = toScreen(...(carrier ? carrier.pos : o.pos).slice(0, 2));
+  const r = OVERLAY ? overlayUnit() * 0.6 : px(22, 8);
+  if (carrier) { const pr = playerRad(); x += pr * 0.9; y -= pr * 0.9; }
+  ctx.save();
+  ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2);
+  ctx.fillStyle = "#7bd88f"; ctx.fill(); ctx.lineWidth = Math.max(1.5, r * 0.18); ctx.strokeStyle = "#000"; ctx.stroke();
+  ctx.fillStyle = "#0b0c0e"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.font = `800 ${Math.round(Math.max(9, r * 1.2))}px system-ui`; ctx.fillText(String(o.points), x, y + 0.5);
+  if (o.status === "dropped" && o.returns_in != null) {
+    const left = Math.max(0, Math.ceil(o.returns_in - Math.max(0, tick - snap.tick) * MS_PER_TICK / 1000));
+    ctx.font = `700 ${Math.round(Math.max(10 * uiScale(), r * 0.9))}px "HUD Condensed", system-ui`;
+    ctx.textBaseline = "top"; ctx.lineJoin = "round"; ctx.lineWidth = 3; ctx.strokeStyle = "#000";
+    ctx.strokeText(String(left), x, y + r + 2); ctx.fillStyle = "#fff"; ctx.fillText(String(left), x, y + r + 2);
+  }
+  ctx.restore();
+}
+
 // The intelligence as a briefcase in its team's colour (a neutral flag, such as the bball ball,
 // in yellow): at home, dropped with the seconds until it goes home, or riding on its carrier.
 export function drawFlags(snap, players, tick) {
@@ -229,6 +249,7 @@ export function drawFlags(snap, players, tick) {
     if (o.kind === "ball") { drawBall(o, players, tick); continue; }
     if (o.kind !== "flag") continue;
     const carrier = o.status === "carried" ? players.find(p => p.id === o.carrier && p.alive && p.pos) : null;
+    if (o.points != null && o.team !== "red" && o.team !== "blue") { drawPickups(o, carrier, snap, tick); continue; }
     const pos = carrier ? carrier.pos : o.pos;
     let [x, y] = toScreen(pos[0], pos[1]);
     const s = OVERLAY ? overlayUnit() * 1.3 : px(48, 17);
