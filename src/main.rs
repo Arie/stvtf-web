@@ -281,32 +281,52 @@ fn replay(hub: &SharedHub, path: &Path, play: &dyn Fn() -> bool) -> Result<()> {
             std::thread::sleep(Duration::from_secs(3));
             publish(hub, &Line::Status(Status::MapChange));
         }
-        let file = std::fs::File::open(path).with_context(|| format!("opening {}", path.display()))?;
-        let reader: Box<dyn Read> =
-            if path.extension().is_some_and(|e| e == "gz") { Box::new(flate2::read::GzDecoder::new(file)) } else { Box::new(file) };
-        let (mut last, mut timed): (Option<u64>, bool) = (None, false);
-        for line in BufReader::new(reader).lines() {
-            while !play() {
-                std::thread::sleep(Duration::from_millis(250));
-            }
-            let stamped: Stamped = serde_json::from_str(&line?)?;
-            // Each line waits for the gap since the previous one, capped so map loads and
-            // tick resets do not stall the replay.
-            if let Some(t) = line_time(&stamped) {
-                if let Some(prev) = last {
-                    std::thread::sleep(Duration::from_millis(t.saturating_sub(prev).min(1000)));
-                }
-                last = Some(t);
-                timed = true;
-            }
-            publish(hub, &stamped.line);
-        }
-        // Without any, the loop would replay the file as fast as it can, forever.
-        if !timed {
-            bail!("{}: no line has a time or tick", path.display());
+        let skipped = play_once(hub, path, play)?;
+        if pass == 0 && skipped > 0 {
+            eprintln!("{}: skipped {skipped} lines this stvtf-web cannot read", path.display());
         }
     }
     Ok(())
+}
+
+/// Plays the file once at its recorded speed. A line that does not read as a line of today's
+/// stvtf (a recording from an older one, or a non-finite number written as null) is skipped;
+/// returns how many were.
+fn play_once(hub: &SharedHub, path: &Path, play: &dyn Fn() -> bool) -> Result<usize> {
+    let file = std::fs::File::open(path).with_context(|| format!("opening {}", path.display()))?;
+    let reader: Box<dyn Read> =
+        if path.extension().is_some_and(|e| e == "gz") { Box::new(flate2::read::GzDecoder::new(file)) } else { Box::new(file) };
+    let (mut last, mut timed, mut skipped): (Option<u64>, bool, usize) = (None, false, 0);
+    for (n, line) in BufReader::new(reader).lines().enumerate() {
+        while !play() {
+            std::thread::sleep(Duration::from_millis(250));
+        }
+        let stamped: Stamped = match serde_json::from_str(&line?) {
+            Ok(s) => s,
+            Err(e) => {
+                if skipped == 0 {
+                    eprintln!("{}:{}: {e}", path.display(), n + 1);
+                }
+                skipped += 1;
+                continue;
+            }
+        };
+        // Each line waits for the gap since the previous one, capped so map loads and
+        // tick resets do not stall the replay.
+        if let Some(t) = line_time(&stamped) {
+            if let Some(prev) = last {
+                std::thread::sleep(Duration::from_millis(t.saturating_sub(prev).min(1000)));
+            }
+            last = Some(t);
+            timed = true;
+        }
+        publish(hub, &stamped.line);
+    }
+    // Without any, the loop would replay the file as fast as it can, forever.
+    if !timed {
+        bail!("{}: no line has a time or tick", path.display());
+    }
+    Ok(skipped)
 }
 
 /// When a saved line happened, in milliseconds: live output has wall-clock `time`, offline output
@@ -1182,6 +1202,26 @@ mod tests {
             std::fs::write(&path, contents).unwrap();
             assert!(replay(&SharedHub::default(), &path, &|| true).is_err(), "{contents:?}");
         }
+        std::fs::remove_file(&path).unwrap();
+    }
+
+    /// A recording from an older stvtf (a field it did not have yet, a line type since renamed)
+    /// or with a non-finite number (written as null) still plays: such a line is skipped.
+    #[test]
+    fn replays_skip_lines_they_cannot_read() {
+        let path = std::env::temp_dir().join(format!("stvtf-web-skip-{}.jsonl", std::process::id()));
+        let good = serde_json::to_string(&server("cp_badlands")).unwrap().replace(r#""tick":0"#, r#""tick":6"#);
+        let lines = [
+            r#"{"type":"status","state":"new"}"#,
+            r#"{"type":"server","tick":5,"map":"cp_old"}"#,
+            r#"{"type":"retired_line","tick":5}"#,
+            r#"{"type":"mark","tick":5,"pos":[null,0.0,0.0]}"#,
+            &good,
+        ];
+        std::fs::write(&path, lines.join("\n")).unwrap();
+        let hub = SharedHub::default();
+        assert_eq!(play_once(&hub, &path, &|| true).unwrap(), 3, "lines skipped");
+        assert_eq!(hub.lock().unwrap().map.as_deref(), Some("cp_badlands"), "the lines after them still play");
         std::fs::remove_file(&path).unwrap();
     }
 
