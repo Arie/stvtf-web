@@ -6,6 +6,11 @@ import { detailNeeded } from "./layers.js";
 import { cartState } from "./objectives.js";
 import { loadMap } from "./view.js";
 
+// Ticks going back this far are a new map or a server restart, not jitter.
+const TICK_RESET = 200;
+// Snapshots kept to interpolate in (3 s at 20 a second).
+const SNAPS_KEPT = 60;
+
 // ---------- incoming stream
 // Next to the page, so a match at /w/<id>/ (and its /w/<id>/overlay) reads its own events.
 const EVENTS_URL = PAGE.replace(/(overlay\/?|index\.html)?$/, "") + "events";
@@ -65,13 +70,13 @@ function handle(m) {
       state.lastData = performance.now() - m.ms;
       break;
     case "snapshot":
-      if (m.tick < state.lastTick - 200) resetMatch();
+      if (m.tick < state.lastTick - TICK_RESET) resetMatch();
       state.lastTick = m.tick;
       state.lastData = performance.now();
       if ($("status").textContent !== "live") setStatus("live", true);
       observeTick(m.tick);
       state.snaps.push(m);
-      if (state.snaps.length > 60) state.snaps.shift();
+      if (state.snaps.length > SNAPS_KEPT) state.snaps.shift();
       for (const p of m.players) state.players.set(p.id, p);
       $("empty").style.display = "none";
       break;

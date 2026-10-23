@@ -2,6 +2,13 @@ import { MS_PER_TICK, TEAM, CLASS, byClass, ICONS, $, OVERLAY, OPT, state } from
 import { layerOn } from "./layers.js";
 import { esc } from "./feed.js";
 
+// The player panels redraw at most this often.
+const PANEL_MS = 250;
+// A full medigun charge, in percent.
+const FULL_CHARGE = 100;
+// A timer turns red with this many seconds left, like TF2's HUD.
+const LOW_SECONDS = 30;
+
 // ---------- HUD and header, refreshed a few times per second
 const UBER_LABEL = { uber: "ÜBER", kritz: "KRITZ", quickfix: "QUICK-FIX", vaccinator_bullet: "VACC · BULLET", vaccinator_blast: "VACC · BLAST", vaccinator_fire: "VACC · FIRE" };
 export const MEDIGUN_NAME = { medigun: "Medi Gun", kritzkrieg: "Kritzkrieg", quickfix: "Quick-Fix", vaccinator: "Vaccinator" };
@@ -65,11 +72,11 @@ function chargeMeter(p) {
   const el = node(`c${p.id}`, `<div class="charge"><div class="bar"></div><i class="segs"></i><span></span><span style="opacity:.75"></span><span class="pct"></span></div>`);
   const g = p.medigun || { kind: "medigun" };
   const pct = Math.round(p.uber ?? 0);
-  setClass(el, ["charge", !p.alive && "dead", g.releasing && "releasing", !g.releasing && pct >= 100 && "ready"].filter(Boolean).join(" "));
+  setClass(el, ["charge", !p.alive && "dead", g.releasing && "releasing", !g.releasing && pct >= FULL_CHARGE && "ready"].filter(Boolean).join(" "));
   setStyle(el.children[0], "clipPath", `inset(0px ${100 - pct}% 0px 0px)`);
   // The Vaccinator charges in four 25% pips; the others in one bar.
   setHTML(el.children[1], g.kind === "vaccinator" ? [25, 50, 75].map(x => `<i class="seg" style="left:${x}%"></i>`).join("") : "");
-  setText2(el.children[2], g.releasing ? "ACTIVE" : pct >= 100 ? "READY" : "ÜBERCHARGE");
+  setText2(el.children[2], g.releasing ? "ACTIVE" : pct >= FULL_CHARGE ? "READY" : "ÜBERCHARGE");
   setText2(el.children[3], (MEDIGUN_NAME[g.kind] || g.kind) + (g.kind === "vaccinator" && g.resist ? ` · ${g.resist}` : ""));
   setText2(el.children[4], `${pct}%`);
   return el;
@@ -83,7 +90,7 @@ function placeChildren(box, nodes) {
 
 export function updatePanel(players, snap) {
   const now = performance.now();
-  if (now - state.lastPanel < 250) return;
+  if (now - state.lastPanel < PANEL_MS) return;
   state.lastPanel = now;
   for (const team of ["blue", "red"]) {
     const list = players.filter(p => p.team === team).sort(byClass);
@@ -153,7 +160,7 @@ export function renderScoreboard(snap, tick) {
     const running = ["blue", "red"].some(t => !byTeam(t).paused);
     setHTML($("timer-main"), ["blue", "red"].map(t => {
       const tm = byTeam(t), s = left(tm);
-      return `<em class="kt ${t}${running && tm.paused ? " idle" : ""}${!tm.paused && s <= 30 ? " low" : ""}">${clock(s)}</em>`;
+      return `<em class="kt ${t}${running && tm.paused ? " idle" : ""}${!tm.paused && s <= LOW_SECONDS ? " low" : ""}">${clock(s)}</em>`;
     }).join(""));
   } else setText("timer-main", main ? clock(left(main)) : mapLeft != null ? clock(mapLeft) : "");
   $("scoreboard").classList.toggle("koth", Boolean(koth));
@@ -170,7 +177,7 @@ export function renderScoreboard(snap, tick) {
   // A paused round timer is not a paused game (KotH, no match started): it just stands still.
   setText("round-label", label || (main && !main.paused && left(main) <= 0 ? "OVERTIME" : ""));
   const shown = main && !main.paused ? left(main) : !main ? mapLeft : null;
-  $("timer-main").parentElement.classList.toggle("low", shown != null && shown <= 30);
+  $("timer-main").parentElement.classList.toggle("low", shown != null && shown <= LOW_SECONDS);
 }
 function renderPoints(snap) {
   const html = (snap.objectives || []).filter(o => o.kind === "control_point").map(o => {

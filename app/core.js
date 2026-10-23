@@ -1,5 +1,7 @@
 export const MS_PER_TICK = 15;
 const BUFFER_TICKS = 10;
+// The tick clock jumps instead of easing when it is off by this much (a stall, a seek).
+const CLOCK_JUMP_TICKS = 40;
 export const TEAM = { red: "#d0453f", blue: "#4f8fc0", none: "#9a9a9a", spectator: "#9a9a9a" };
 export const CLASS = { scout: "Sc", soldier: "So", pyro: "Py", demoman: "De", heavy: "He", engineer: "En", medic: "Me", sniper: "Sn", spy: "Sp", unknown: "?" };
 // logs.tf order, as on serveme; same-class players by name so rows don't swap between snapshots.
@@ -64,7 +66,7 @@ function nowTick() {
 }
 export function observeTick(tick) {
   const est = tick - performance.now() / MS_PER_TICK;
-  if (state.tickOffset == null || Math.abs(est - state.tickOffset) > 40) state.tickOffset = est;
+  if (state.tickOffset == null || Math.abs(est - state.tickOffset) > CLOCK_JUMP_TICKS) state.tickOffset = est;
   else state.tickOffset = Math.max(state.tickOffset * 0.97 + est * 0.03, state.tickOffset - 0.5);
 }
 export function renderTick() { return nowTick() - BUFFER_TICKS; }

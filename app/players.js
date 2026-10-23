@@ -4,6 +4,8 @@ import { toScreen, screenAngle, px, playerRad, drawText } from "./view.js";
 
 // Rockets leave a trail of smoke puffs that shrink, darken and fade, and linger after the rocket.
 const PUFF_SPACING = 30, PUFF_LIFE = 800, PUFF_CAP = 500;
+// World units: a hitscan tracer's length, and a sentry's range (its shot when the target is unknown).
+const SHOT_TRACER = 900, SENTRY_RANGE = 1100;
 const puffs = [], lastPuff = new Map();
 function drawSmoke(list, size) {
   const now = performance.now(), seen = new Set();
@@ -399,7 +401,7 @@ export function drawEffects(byId) {
     ctx.globalAlpha = 1 - k;
     if (e.kind === "shot") {
       const [x, y] = toScreen(e.ev.origin[0], e.ev.origin[1]);
-      const a = screenAngle(e.ev.yaw), len = 900 * Math.cos(e.ev.pitch * Math.PI / 180) * state.view.scale;
+      const a = screenAngle(e.ev.yaw), len = SHOT_TRACER * Math.cos(e.ev.pitch * Math.PI / 180) * state.view.scale;
       ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + Math.cos(a) * len, y + Math.sin(a) * len);
       ctx.strokeStyle = e.team === "red" ? "#ffb3a8" : e.team === "blue" ? "#b3dcff" : "#ffe9a8"; ctx.lineWidth = 1.2; ctx.stroke();
     } else if (e.kind === "sentryshot") {
@@ -407,7 +409,7 @@ export function drawEffects(byId) {
       const t = byId.get(e.target);
       let [tx, ty] = [0, 0];
       if (t?.pos) [tx, ty] = toScreen(t.pos[0], t.pos[1]);
-      else { const a = screenAngle(e.aim || 0); [tx, ty] = [x + Math.cos(a) * 1100 * state.view.scale, y + Math.sin(a) * 1100 * state.view.scale]; }
+      else { const a = screenAngle(e.aim || 0); [tx, ty] = [x + Math.cos(a) * SENTRY_RANGE * state.view.scale, y + Math.sin(a) * SENTRY_RANGE * state.view.scale]; }
       ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(tx, ty);
       ctx.strokeStyle = "#ffe9a8"; ctx.lineWidth = 1.5; ctx.stroke();
       ctx.beginPath(); ctx.arc(x, y, px(14, 5), 0, Math.PI * 2); ctx.fillStyle = "#ffd36a"; ctx.fill();

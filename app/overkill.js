@@ -25,14 +25,14 @@ export function addScorch(pos, t0) {
   const h = Math.abs(Math.imul(Math.round(pos[0]) * 73856093 ^ Math.round(pos[1]) * 19349663, 2654435761)) >>> 0;
   state.scorches.push({ pos, t0, v: h % scorchSprites.length });
   if (state.scorches.length > SCORCH_CAP) state.scorches.splice(0, state.scorches.length - SCORCH_CAP);
-  state.marks = state.marks.filter(m => !(Math.abs(m.t0 - t0) < 500 && Math.hypot(m.pos[0] - pos[0], m.pos[1] - pos[1]) < 40));
+  state.marks = state.marks.filter(m => !(Math.abs(m.t0 - t0) < SAME_BLAST_MS && Math.hypot(m.pos[0] - pos[0], m.pos[1] - pos[1]) < SAME_BLAST_UNITS));
 }
 // The explosion's own blast decal would put a dot on its crater.
 export function nearFreshScorch(pos, now) {
   for (let i = state.scorches.length - 1; i >= 0; i--) {
     const s = state.scorches[i];
-    if (now - s.t0 > 500) break;
-    if (Math.hypot(s.pos[0] - pos[0], s.pos[1] - pos[1]) < 40) return true;
+    if (now - s.t0 > SAME_BLAST_MS) break;
+    if (Math.hypot(s.pos[0] - pos[0], s.pos[1] - pos[1]) < SAME_BLAST_UNITS) return true;
   }
   return false;
 }
@@ -165,28 +165,32 @@ function drawPack(g, k, x, y, s, taken) {
   }
 }
 
-const TELEPORT = 250;
+// A decal this near a scorch this soon after it is the explosion's own.
+const SAME_BLAST_MS = 500, SAME_BLAST_UNITS = 40;
+// Jump trails: a longer step in one frame is a teleport; a trail lasts at most JUMP_MAX_MS,
+// fades over TRAIL_FADE_MS, keeps a point per TRAIL_STEP units and at most TRAIL_POINTS of them.
+const TELEPORT = 250, JUMP_MAX_MS = 6000, TRAIL_FADE_MS = 2000, TRAIL_STEP = 8, TRAIL_POINTS = 400;
 
 // Blast-jump trails from the interpolated positions: dark team shade off the ground to a bright one at the peak.
 export function drawJumpTrails(players) {
   const now = performance.now(), byId = new Map(players.map(p => [p.id, p]));
-  state.trails = state.trails.filter(t => !t.end || now - t.end < 2000);
+  state.trails = state.trails.filter(t => !t.end || now - t.end < TRAIL_FADE_MS);
   ctx.save(); ctx.lineCap = "round"; ctx.lineJoin = "round";
   for (const t of state.trails) {
     if (!t.end) {
       const p = byId.get(t.id);
       const last = t.pts.at(-1), step = last && p?.pos ? Math.hypot(p.pos[0] - last[0], p.pos[1] - last[1]) : 0;
       // A step no jump makes in one frame is a teleport (a respawn at round reset): the trail ends there.
-      if (!p || !p.alive || now - t.t0 > 6000 || step > TELEPORT) t.end = now;
+      if (!p || !p.alive || now - t.t0 > JUMP_MAX_MS || step > TELEPORT) t.end = now;
       else {
-        if (!last || step > 8) t.pts.push([p.pos[0], p.pos[1], p.pos[2]]);
+        if (!last || step > TRAIL_STEP) t.pts.push([p.pos[0], p.pos[1], p.pos[2]]);
         else last[2] = p.pos[2];
-        if (t.pts.length > 400) t.pts.shift();
+        if (t.pts.length > TRAIL_POINTS) t.pts.shift();
       }
     }
     if (t.pts.length < 2) continue;
     const peak = Math.max(1, ...t.pts.map(q => q[2] - t.z0));
-    ctx.globalAlpha = t.end ? 1 - (now - t.end) / 2000 : 1;
+    ctx.globalAlpha = t.end ? 1 - (now - t.end) / TRAIL_FADE_MS : 1;
     ctx.lineWidth = Math.max(2, px(14, 2));
     const hue = t.team === "red" ? 4 : 212, segs = [];
     for (let i = 1; i < t.pts.length; i++) {

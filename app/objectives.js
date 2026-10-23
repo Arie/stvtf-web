@@ -5,6 +5,11 @@ import { layerOn } from "./layers.js";
 // The payload cart: a mine cart in the pushing team's colour carrying TF2's big black bomb, facing
 // along the track. Heading comes from movement (kept while stopped); rolling back still faces forward.
 export const cartState = new Map();
+// The cart turns to face where it went once it moved this many units; a longer move at once is a
+// round reset, not travel.
+const CART_MIN_MOVE = 6, CART_RESET_JUMP = 300;
+// A capture area belongs to the point standing in it, or one at most this many units outside.
+const CAP_AREA_REACH = 256;
 // Where a moving objective (cart, ball, robot, tank) is between the snapshots around `tick`.
 function objPos(o, tick) {
   const s = state.snaps;
@@ -23,8 +28,8 @@ function drawCart(o, tick) {
   const dx = wx - cs.x, dy = wy - cs.y;
   const moved = Math.hypot(dx, dy);
   // A jump (round reset back to the start) is not travel: keep the heading.
-  if (moved > 300) { cs.x = wx; cs.y = wy; }
-  else if (moved > 6) {
+  if (moved > CART_RESET_JUMP) { cs.x = wx; cs.y = wy; }
+  else if (moved > CART_MIN_MOVE) {
     cs.h = Math.atan2(dy, dx) * 180 / Math.PI + (o.speed < 0 ? 180 : 0);
     cs.x = wx; cs.y = wy;
   }
@@ -196,7 +201,7 @@ export function drawCapAreas(snap) {
   const near = (a, p) => Math.hypot(Math.max(a.min[0] - p[0], 0, p[0] - a.max[0]), Math.max(a.min[1] - p[1], 0, p[1] - a.max[1]));
   for (const a of areas) {
     const cp = cps.reduce((b, o) => (!b || near(a, o.pos) < near(a, b.pos) ? o : b), null);
-    if (!cp || near(a, cp.pos) > 256) continue;
+    if (!cp || near(a, cp.pos) > CAP_AREA_REACH) continue;
     ctx.save();
     ctx.beginPath();
     [[a.min[0], a.min[1]], [a.max[0], a.min[1]], [a.max[0], a.max[1]], [a.min[0], a.max[1]]].forEach(([x, y], i) => { const [sx, sy] = toScreen(x, y); (i ? ctx.lineTo : ctx.moveTo).call(ctx, sx, sy); });
@@ -315,7 +320,9 @@ export function drawBuildings(snap) {
 // forward one: the one farthest from its main spawn (the room with the most spawn points).
 // Once a team has been seen spawning since the last change of ownership, that room wins.
 let ownersKey = "", ownersChanged = 0;
-const inRoom = (r, p) => p[0] >= r.min[0] && p[0] <= r.max[0] && p[1] >= r.min[1] && p[1] <= r.max[1] && p[2] >= r.min[2] - 64 && p[2] <= r.max[2] + 64;
+// Spawn points stand up to SPAWN_SLACK above or below their room's box (as in bsp.rs).
+const SPAWN_SLACK = 64;
+const inRoom = (r, p) => p[0] >= r.min[0] && p[0] <= r.max[0] && p[1] >= r.min[1] && p[1] <= r.max[1] && p[2] >= r.min[2] - SPAWN_SLACK && p[2] <= r.max[2] + SPAWN_SLACK;
 const centre = r => [(r.min[0] + r.max[0]) / 2, (r.min[1] + r.max[1]) / 2];
 export function noteSpawn(ev) {
   const rooms = state.spawns?.rooms || [];

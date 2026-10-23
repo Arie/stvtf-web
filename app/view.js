@@ -1,5 +1,14 @@
 import { $, OVERLAY, OPT, overlayUnit, canvas, uiScale, ctx, state, canvasSize } from "./core.js";
 
+// Map geometry: at least this many world units per pixel, and a canvas at most this wide;
+// bsp.rs pads the bounds' top this far above the highest point or pickup (its PAD), floors are
+// kept up to this far above that, and a wall counts from this far below its top.
+const MIN_UNITS_PER_PIXEL = 4, MAX_CANVAS = 4096, GEOMETRY_PAD = 1536, ROOF_ABOVE = 400, WALL_BASE = 64;
+// The HUD's player columns (shown on screens wider than this) and the scoreboard, in CSS pixels.
+const HUD_MIN_WIDTH = 800, HUD_COLUMN = 268, SCOREBOARD_HEIGHT = 140;
+// World units kept around the spawns and points when framing the map.
+const FRAME_PAD = 600;
+
 // ---------- map backgrounds
 let boundaries = null;
 async function demostfBoundaries() {
@@ -51,14 +60,15 @@ export async function loadMap(map) {
 function renderGeometry(g) {
   const [lo, hi] = g.bounds;
   // World units per pixel; huge maps (MGE) get coarser so the canvas stays within browser limits.
-  const res = Math.max(4, Math.max(hi[0] - lo[0], hi[1] - lo[1]) / 4096);
+  const res = Math.max(MIN_UNITS_PER_PIXEL, Math.max(hi[0] - lo[0], hi[1] - lo[1]) / MAX_CANVAS);
   const w = Math.ceil((hi[0] - lo[0]) / res), h = Math.ceil((hi[1] - lo[1]) / res);
   const oc = document.createElement("canvas"); oc.width = w; oc.height = h;
   const c = oc.getContext("2d");
   const zs = g.floors.map(f => f.z);
   const zlo = zs.length ? zs[Math.floor(zs.length * 0.02)] : 0, zhi = zs.length ? zs[Math.floor(zs.length * 0.98)] : 1;
-  // Roofs hide what is under them; keep floors up to a little above the highest pickup/point level.
-  const cut = hi[2] - 1536 + 400;
+  // Roofs hide what is under them; keep floors up to a little above the highest pickup/point
+  // level, which the bounds' top is GEOMETRY_PAD above.
+  const cut = hi[2] - GEOMETRY_PAD + ROOF_ABOVE;
   const X = x => (x - lo[0]) / res, Y = y => (hi[1] - y) / res;
   for (const f of g.floors) {
     if (f.z > cut) continue;
@@ -72,7 +82,7 @@ function renderGeometry(g) {
   c.strokeStyle = "#0b0c0e"; c.lineWidth = 1.2;
   c.beginPath();
   for (const wl of g.walls) {
-    if (wl.z - 64 > cut) continue;
+    if (wl.z - WALL_BASE > cut) continue;
     c.moveTo(X(wl.p[0]), Y(wl.p[1])); c.lineTo(X(wl.p[2]), Y(wl.p[3]));
   }
   c.stroke();
@@ -91,7 +101,7 @@ function fitTo(min, max) {
   const c = Math.abs(Math.cos(v.rot)), s = Math.abs(Math.sin(v.rot));
   const w = max.x - min.x, h = max.y - min.y, rw = w * c + h * s, rh = w * s + h * c;
   // Keep the map clear of the HUD columns on both sides.
-  const hud = shown("hud") && r.width > 800 ? 2 * 268 * uiScale() : 0;
+  const hud = shown("hud") && r.width > HUD_MIN_WIDTH ? 2 * HUD_COLUMN * uiScale() : 0;
   v.scale = Math.min((r.width - hud) / rw, r.height / rh) * (OVERLAY ? 0.96 : 0.95);
   state.fitted = true;
 }
@@ -103,7 +113,7 @@ function fitTo(min, max) {
 // and the scoreboard; the overlay uses its whole panel. Framings are centred in it.
 function viewArea() {
   const r = canvasSize();
-  const side = shown("hud") && r.width > 800 ? 268 * uiScale() : 0, top = shown("score") ? 140 * uiScale() : 0;
+  const side = shown("hud") && r.width > HUD_MIN_WIDTH ? HUD_COLUMN * uiScale() : 0, top = shown("score") ? SCOREBOARD_HEIGHT * uiScale() : 0;
   return { w: r.width - 2 * side, h: r.height - top, top };
 }
 // Framings are kept as the world point at the centre of the free area; the view centre sits
@@ -115,7 +125,7 @@ export function frameMap(keepView = false) {
   for (const p of state.spawns?.points || []) pts.push(p.pos);
   for (const o of state.snaps.at(-1)?.objectives || []) if (o.pos) pts.push(o.pos);
   if (pts.length < 3) return false;
-  const v = state.view, pad = 600, { w, h } = viewArea();
+  const v = state.view, pad = FRAME_PAD, { w, h } = viewArea();
   // Centre and scale for a rotation, measuring the points along the rotated axes.
   const fit = rot => {
     const c = Math.cos(rot), sn = Math.sin(rot);

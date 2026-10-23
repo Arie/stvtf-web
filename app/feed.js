@@ -208,9 +208,11 @@ function coloured(ev, pl, drop) {
     return /^[0-9A-F]{6}$/.test(c ?? "") ? `<span style="color:#${c}">${text}</span>` : text;
   }).join("");
 }
-function prepend(box, el) { box.prepend(el); while (box.children.length > 60) box.lastChild.remove(); }
+// Rows kept in the feed and the chat, and how long a banner shows.
+const ROWS_KEPT = 60, BANNER_MS = 3500;
+function prepend(box, el) { box.prepend(el); while (box.children.length > ROWS_KEPT) box.lastChild.remove(); }
 let bannerTimer;
 export function banner(text, team) {
   const b = $("banner"); b.textContent = text; b.style.color = TEAM[team] || "#fff"; b.style.opacity = 1;
-  clearTimeout(bannerTimer); bannerTimer = setTimeout(() => b.style.opacity = 0, 3500);
+  clearTimeout(bannerTimer); bannerTimer = setTimeout(() => b.style.opacity = 0, BANNER_MS);
 }

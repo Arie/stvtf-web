@@ -33,7 +33,7 @@ function frameAt(tick) {
     if (!q) return p;
     const dx = p.pos[0] - q.pos[0], dy = p.pos[1] - q.pos[1];
     return { ...p, pos: [0, 1, 2].map(k => q.pos[k] + (p.pos[k] - q.pos[k]) * t),
-      heading: Math.hypot(dx, dy) > 4 ? Math.atan2(dy, dx) * 180 / Math.PI : null };
+      heading: Math.hypot(dx, dy) > MIN_HEADING_STEP ? Math.atan2(dy, dx) * 180 / Math.PI : null };
   });
   return { snap: t < 0.5 ? a : b, players, projectiles };
 }
@@ -41,12 +41,15 @@ function frameAt(tick) {
 // At most 60 fps: the data comes 20 times a second, and a 120 or 240 Hz screen would otherwise
 // redraw the whole map 2 to 4 times as often for nothing.
 // A frame is drawn when the next 60 fps slot is nearer than the refresh after it.
-const FRAME_MS = 1000 / 60;
+const FRAME_MS = 1000 / 60, MAX_REFRESH_MS = 50, REFRESH_SMOOTHING = 0.1;
+// A projectile faces where it moved, once it moved this many units between snapshots.
+const MIN_HEADING_STEP = 4;
 let lastDraw = -Infinity, lastRefresh = 0, refreshMs = FRAME_MS;
 function frame(now) {
   const gap = now - lastRefresh;
   lastRefresh = now;
-  if (gap > 0 && gap < 50) refreshMs += (gap - refreshMs) * 0.1;
+  // The screen's refresh interval, smoothed; a gap this long is a stall, not a refresh.
+  if (gap > 0 && gap < MAX_REFRESH_MS) refreshMs += (gap - refreshMs) * REFRESH_SMOOTHING;
   if (now - lastDraw + refreshMs / 2 >= FRAME_MS) {
     lastDraw = now;
     try { draw(); } catch (e) { console.error(e); }
