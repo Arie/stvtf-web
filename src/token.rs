@@ -36,7 +36,8 @@ impl Keys {
     /// The shared key as 64 hex digits.
     pub fn from_hex(hex: &str) -> Result<Self> {
         let hex = hex.trim();
-        if hex.len() != 2 * KEY_BYTES {
+        // Checked first: slicing a non-ASCII key into pairs of bytes would panic.
+        if hex.len() != 2 * KEY_BYTES || !hex.bytes().all(|b| b.is_ascii_hexdigit()) {
             bail!("the token key must be {} hex digits ({KEY_BYTES} bytes)", 2 * KEY_BYTES);
         }
         let bytes = (0..KEY_BYTES)
@@ -125,5 +126,6 @@ mod tests {
             assert!(keys.open(&seal(incomplete, [2; 12]), 0).is_err(), "{incomplete}");
         }
         assert!(Keys::from_hex("abc").is_err());
+        assert!(Keys::from_hex(&format!("é{}", "0".repeat(62))).is_err(), "non-ASCII, 64 bytes long");
     }
 }

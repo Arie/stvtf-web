@@ -20,10 +20,10 @@ use std::net::{IpAddr, TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::mpsc::{Receiver, RecvTimeoutError, SyncSender, TrySendError, sync_channel};
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
 use stvtf::Line;
-use stvtf::output::{PlayerId, Stamped, Status, Team};
+use stvtf::output::{PlayerId, Stamped, Status, Team, round1};
 use stvtf::watch::{self, Watch};
 
 const USAGE: &str = "\
@@ -56,8 +56,9 @@ const APP: [(&str, &str, &[u8]); 13] = [
     ("hud.js", JS, include_bytes!("../app/hud.js")),
     ("main.js", JS, include_bytes!("../app/main.js")),
 ];
-/// How long a match nobody watches keeps its `SourceTV` connection.
+/// The most played maps, built when the server starts.
 const WARM: &str = include_str!("../maps.txt");
+/// How long a match nobody watches keeps its `SourceTV` connection.
 const LINGER: Duration = Duration::from_secs(180);
 const ICONS: [(&str, &[u8]); 9] = [
     ("scout", include_bytes!("../icons/scout.svg")),
@@ -103,6 +104,19 @@ struct Hub {
     snapshot_at: Option<Instant>,
     /// Name and team of everyone seen on this map: the feed keeps them for players who left.
     names: HashMap<PlayerId, Seen>,
+    /// Seconds per tick, from the server line.
+    tick_interval: Option<f64>,
+}
+
+/// Seconds per tick of a server that has not said yet.
+fn default_tick_interval() -> f64 {
+    f64::from(stvtf::DEFAULT_TICK_INTERVAL)
+}
+
+/// Locks `m` even when a thread panicked while holding it: nothing here leaves its data
+/// half-changed, so one failed request must not fail every later one.
+fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
+    m.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
 /// A player's name and team, as last seen in a snapshot.
@@ -113,9 +127,6 @@ struct Seen {
 }
 
 const HISTORY: usize = 1000;
-/// TF2's tick (66.67 per second): the hub times lines by tick without knowing the server's rate.
-const SECONDS_PER_TICK: f64 = 0.015;
-const MS_PER_TICK: u64 = 15;
 /// Lines queued for a page; one that falls this far behind is dropped and reconnects.
 const PAGE_QUEUE: usize = 4096;
 /// A replay's pause between passes, how often a paused one checks for viewers, and the longest
@@ -255,7 +266,7 @@ type SharedHub = Arc<Mutex<Hub>>;
 fn publish(hub: &SharedHub, line: &Line) {
     let json: Arc<str> = serde_json::to_string(line).expect("a line serializes").into();
     let route = route(line);
-    let mut h = hub.lock().unwrap();
+    let mut h = lock(hub);
     match line {
         Line::Status(status) => {
             if *status == Status::MapChange {
@@ -273,6 +284,7 @@ fn publish(hub: &SharedHub, line: &Line) {
                 h.map = Some(server.map.clone());
             }
             (h.server, h.snapshot, h.round_clock) = (Some(json.clone()), None, None);
+            h.tick_interval = Some(server.tick_interval).filter(|i| *i > 0.0);
         }
         Line::World(_) => h.world = Some(json.clone()),
         Line::Snapshot(snapshot) => {
@@ -287,8 +299,9 @@ fn publish(hub: &SharedHub, line: &Line) {
             }
         }
         _ if route == Route::Feed => {
+            let interval = h.tick_interval.unwrap_or_else(default_tick_interval);
             let at = h.round_clock.zip(line.tick()).map(|((tick, time), at)| {
-                let seconds = time + (f64::from(at) - f64::from(tick)) * SECONDS_PER_TICK;
+                let seconds = time + (f64::from(at) - f64::from(tick)) * interval;
                 round1(seconds).max(0.0)
             });
             let names = line.players().filter_map(|id| Some((id, h.names.get(&id)?))).collect();
@@ -309,7 +322,7 @@ fn publish(hub: &SharedHub, line: &Line) {
 
 fn subscribe(hub: &SharedHub, detail: bool) -> Receiver<Arc<str>> {
     let (tx, rx) = sync_channel(PAGE_QUEUE);
-    let mut h = hub.lock().unwrap();
+    let mut h = lock(hub);
     // The snapshot goes before the history so the page knows the players' names.
     for line in [&h.status, &h.server, &h.world, &h.snapshot].into_iter().flatten().chain(&h.history) {
         let _ = tx.try_send(line.clone());
@@ -348,6 +361,7 @@ fn play_once(hub: &SharedHub, path: &Path, play: &dyn Fn() -> bool) -> Result<us
     let reader: Box<dyn Read> =
         if path.extension().is_some_and(|e| e == "gz") { Box::new(flate2::read::GzDecoder::new(file)) } else { Box::new(file) };
     let (mut last, mut timed, mut skipped): (Option<u64>, bool, usize) = (None, false, 0);
+    let mut interval = default_tick_interval();
     for (n, line) in BufReader::new(reader).lines().enumerate() {
         while !play() {
             std::thread::sleep(REPLAY_POLL);
@@ -362,9 +376,14 @@ fn play_once(hub: &SharedHub, path: &Path, play: &dyn Fn() -> bool) -> Result<us
                 continue;
             }
         };
+        if let Line::Server(server) = &stamped.line
+            && server.tick_interval > 0.0
+        {
+            interval = server.tick_interval;
+        }
         // Each line waits for the gap since the previous one, capped so map loads and
         // tick resets do not stall the replay.
-        if let Some(t) = line_time(&stamped) {
+        if let Some(t) = line_time(&stamped, interval) {
             if let Some(prev) = last {
                 std::thread::sleep(Duration::from_millis(t.saturating_sub(prev).min(MAX_REPLAY_GAP_MS)));
             }
@@ -381,14 +400,10 @@ fn play_once(hub: &SharedHub, path: &Path, play: &dyn Fn() -> bool) -> Result<us
 }
 
 /// When a saved line happened, in milliseconds: live output has wall-clock `time`, offline output
-/// (`stvtf replay`) only ticks of 15 ms. Tick 0 is a map load, not a time.
-/// To a tenth.
-fn round1(f: f64) -> f64 {
-    (f * 10.0).round() / 10.0
-}
-
-fn line_time(stamped: &Stamped) -> Option<u64> {
-    stamped.time.or_else(|| stamped.line.tick().filter(|&t| t > 0).map(|t| u64::from(t) * MS_PER_TICK))
+/// (`stvtf replay`) only ticks, of `interval` seconds each. Tick 0 is a map load, not a time.
+fn line_time(stamped: &Stamped, interval: f64) -> Option<u64> {
+    const MS_PER_SECOND: f64 = 1000.0;
+    stamped.time.or_else(|| stamped.line.tick().filter(|&t| t > 0).map(|t| (f64::from(t) * interval * MS_PER_SECOND).round() as u64))
 }
 
 /// Builds a map that is not in the cache yet only when `fetch`: otherwise anyone could have every
@@ -525,7 +540,7 @@ struct Stream<'a>(&'a App, IpAddr);
 
 impl Drop for Stream<'_> {
     fn drop(&mut self) {
-        let mut streams = self.0.streams.lock().unwrap_or_else(PoisonError::into_inner);
+        let mut streams = lock(&self.0.streams);
         if let Some(n) = streams.get_mut(&self.1) {
             *n -= 1;
             if *n == 0 {
@@ -546,14 +561,14 @@ impl App {
     /// Whether a match being watched is on `map`: only those maps are fetched and built on request.
     fn on_map(&self, map: &str) -> bool {
         match &self.matches {
-            Matches::One(hub) => hub.lock().unwrap_or_else(PoisonError::into_inner).map.as_deref() == Some(map),
+            Matches::One(hub) => lock(hub).map.as_deref() == Some(map),
             Matches::Many(sessions) => sessions.on_map(map),
         }
     }
 
     /// A slot for one more event stream from `client`, or None when it has too many open.
     fn stream_slot(&self, client: IpAddr) -> Option<Stream<'_>> {
-        let mut streams = self.streams.lock().unwrap_or_else(PoisonError::into_inner);
+        let mut streams = lock(&self.streams);
         let n = streams.entry(client).or_default();
         if *n >= MAX_STREAMS_PER_CLIENT {
             return None;
@@ -715,11 +730,11 @@ fn too_many_streams(s: &mut TcpStream) -> std::io::Result<()> {
 fn serve_cached(s: &mut TcpStream, app: &App, p: &str) -> std::io::Result<()> {
     // The locks guard nothing, so a panic in an earlier request (poisoning them) does not matter.
     let result = if let Some(file) = p.strip_prefix("/overview/") {
-        let _one_at_a_time = app.overviews.lock().unwrap_or_else(PoisonError::into_inner);
+        let _one_at_a_time = lock(&app.overviews);
         overview(&app.cache, file)
     } else if let Some(name) = p.strip_prefix("/map/") {
         let fetch = app.on_map(name);
-        let _one_at_a_time = app.maps.lock().unwrap_or_else(PoisonError::into_inner);
+        let _one_at_a_time = lock(&app.maps);
         map_geometry(&app.cache, name, fetch)
     } else {
         return respond(s, "404 Not Found", "text/plain", b"not found");
@@ -750,19 +765,18 @@ fn serve_backpack(s: &mut TcpStream, app: &App, file: &str) -> std::io::Result<(
 
 /// Fetches demos.tf's overviews and builds the most played maps, so their first viewer does not wait.
 fn warm(app: &App) {
-    let lock = || app.overviews.lock().unwrap_or_else(PoisonError::into_inner);
     let known = {
-        let _one_at_a_time = lock();
+        let _one_at_a_time = lock(&app.overviews);
         demostf_maps(&app.cache)
     };
     for map in known {
-        let _one_at_a_time = lock();
+        let _one_at_a_time = lock(&app.overviews);
         if let Err(e) = overview(&app.cache, &format!("{map}.webp")) {
             eprintln!("stvtf-web: overview of {map}: {e}");
         }
     }
     for name in WARM.lines().filter(|l| !l.is_empty() && !l.starts_with('#')) {
-        let _one_at_a_time = app.maps.lock().unwrap_or_else(PoisonError::into_inner);
+        let _one_at_a_time = lock(&app.maps);
         if let Err(e) = map_geometry(&app.cache, name, true) {
             eprintln!("stvtf-web: {name}: {e}");
         }
@@ -1021,7 +1035,7 @@ fn main() -> Result<()> {
     let (positional, flags) = parse_args(std::env::args().skip(1))?;
     let get = |k: &str| flags.get(k).map(String::as_str);
     let listen = get("listen").unwrap_or("127.0.0.1:8080").to_string();
-    let hz = get("hz").map(|hz| hz.parse().with_context(|| format!("--hz {hz}: not a number"))).transpose()?.unwrap_or(20.0);
+    let hz = get("hz").map_or(Ok(stvtf::DEFAULT_SNAPSHOT_HZ), stvtf::parse_snapshot_hz)?;
     watch::stop_on_ctrl_c(&STOP)?;
 
     let keys = std::env::var("STVTF_TOKEN_KEY").ok().map(|k| token::Keys::from_hex(&k).map(Arc::new)).transpose()?;
@@ -1299,8 +1313,6 @@ mod tests {
         std::fs::remove_file(&path).unwrap();
     }
 
-    /// A recording from an older stvtf (a field it did not have yet, a line type since renamed)
-    /// or with a non-finite number (written as null) still plays: such a line is skipped.
     #[test]
     fn a_demo_folder_gives_one_match_per_recording() {
         let dir = std::env::temp_dir().join(format!("stvtf-web-demos-{}", std::process::id()));
@@ -1319,6 +1331,8 @@ mod tests {
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
+    /// A recording from an older stvtf (a field it did not have yet, a line type since renamed)
+    /// or with a non-finite number (written as null) still plays: such a line is skipped.
     #[test]
     fn replays_skip_lines_they_cannot_read() {
         let path = std::env::temp_dir().join(format!("stvtf-web-skip-{}.jsonl", std::process::id()));
@@ -1468,13 +1482,15 @@ mod tests {
     #[test]
     fn replays_keep_the_recorded_timing() {
         let live: Stamped = serde_json::from_str(r#"{"type":"round_active","tick":500,"time":1700000000123}"#).unwrap();
-        assert_eq!(line_time(&live), Some(1_700_000_000_123), "live output: its receive time");
+        let tick = default_tick_interval();
+        assert_eq!(line_time(&live, tick), Some(1_700_000_000_123), "live output: its receive time");
         let offline: Stamped = serde_json::from_str(r#"{"type":"round_active","tick":500}"#).unwrap();
-        assert_eq!(line_time(&offline), Some(7500), "offline output: its tick, 15 ms each");
+        assert_eq!(line_time(&offline, tick), Some(7500), "offline output: its tick, 15 ms each");
+        assert_eq!(line_time(&offline, 1.0 / 128.0), Some(3906), "on a 128-tick server");
         let status: Stamped = serde_json::from_str(r#"{"type":"status","state":"map_change"}"#).unwrap();
-        assert_eq!(line_time(&status), None);
+        assert_eq!(line_time(&status, tick), None);
         let loading: Stamped = serde_json::from_str(r#"{"type":"round_active","tick":0}"#).unwrap();
-        assert_eq!(line_time(&loading), None, "tick 0 is a map load, not a time");
+        assert_eq!(line_time(&loading, tick), None, "tick 0 is a map load, not a time");
     }
 
     #[test]

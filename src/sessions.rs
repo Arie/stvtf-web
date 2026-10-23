@@ -2,7 +2,7 @@
 //! it and stopped a while after its last viewer leaves. With a store, the matches outlive the
 //! process: a deploy's new container picks them up under the same links.
 
-use crate::{SharedHub, parse_connect, publish, token, write_atomic};
+use crate::{SharedHub, lock, parse_connect, publish, token, write_atomic};
 use aes_gcm::aead::OsRng;
 use aes_gcm::aead::rand_core::RngCore;
 use anyhow::{Result, anyhow, bail};
@@ -11,7 +11,7 @@ use std::collections::HashMap;
 use std::net::{IpAddr, SocketAddr, ToSocketAddrs};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 use stvtf::Line;
@@ -52,7 +52,7 @@ impl Session {
 
     /// The start of the id (the whole id is the link) and the map.
     fn label(&self) -> String {
-        let map = self.hub.lock().unwrap_or_else(PoisonError::into_inner).map.clone();
+        let map = lock(&self.hub).map.clone();
         format!("{} {}", &self.id[..self.id.len().min(LABEL_ID_LEN)], map.as_deref().unwrap_or("-"))
     }
 
@@ -76,7 +76,7 @@ impl Viewer {
         s.peak.fetch_max(n, Ordering::Relaxed);
         s.views.fetch_add(1, Ordering::Relaxed);
         eprintln!("stvtf-web: match {} viewers {n}", s.label());
-        *s.idle_since.lock().unwrap_or_else(PoisonError::into_inner) = None;
+        *lock(&s.idle_since) = None;
         Viewer(s)
     }
 }
@@ -86,7 +86,7 @@ impl Drop for Viewer {
         let n = self.0.viewers.fetch_sub(1, Ordering::Relaxed) - 1;
         eprintln!("stvtf-web: match {} viewers {n}", self.0.label());
         if n == 0 {
-            *self.0.idle_since.lock().unwrap_or_else(PoisonError::into_inner) = Some(Instant::now());
+            *lock(&self.0.idle_since) = Some(Instant::now());
         }
     }
 }
@@ -127,7 +127,7 @@ impl Store {
 
     fn save(&self, s: &Session) -> Result<()> {
         let (map, history) = {
-            let h = s.hub.lock().unwrap_or_else(PoisonError::into_inner);
+            let h = lock(&s.hub);
             (h.map.clone(), h.history.iter().map(ToString::to_string).collect())
         };
         let saved = SavedMatch { server: s.server, password: s.password.clone(), owner: s.owner.clone(), map, history };
@@ -156,7 +156,7 @@ impl Sessions {
     }
 
     fn lock(&self) -> std::sync::MutexGuard<'_, HashMap<String, Arc<Session>>> {
-        self.map.lock().unwrap_or_else(PoisonError::into_inner)
+        lock(&self.map)
     }
 
     pub fn get(&self, id: &str) -> Option<Arc<Session>> {
@@ -165,7 +165,7 @@ impl Sessions {
 
     /// Whether any match, the demo included, is on `map`.
     pub fn on_map(&self, map: &str) -> bool {
-        self.lock().values().any(|s| s.hub.lock().unwrap_or_else(PoisonError::into_inner).map.as_deref() == Some(map))
+        self.lock().values().any(|s| lock(&s.hub).map.as_deref() == Some(map))
     }
 
     /// The session for a connect string, joining one already watching that server. An `owner`
@@ -248,7 +248,7 @@ impl Sessions {
             }
             watcher.done.store(true, Ordering::Relaxed);
         });
-        *s.thread.lock().unwrap_or_else(PoisonError::into_inner) = Some(thread);
+        *lock(&s.thread) = Some(thread);
         map.insert(s.id.clone(), s.clone());
         s
     }
@@ -273,7 +273,7 @@ impl Sessions {
             };
             let hub = SharedHub::default();
             {
-                let mut h = hub.lock().unwrap_or_else(PoisonError::into_inner);
+                let mut h = lock(&hub);
                 h.map = saved.map;
                 h.history = saved.history.into_iter().map(Into::into).collect();
             }
@@ -326,7 +326,7 @@ impl Sessions {
             let idle: Vec<String> = map
                 .values()
                 .filter(|s| !s.pinned)
-                .filter(|s| s.idle_since.lock().unwrap_or_else(PoisonError::into_inner).is_some_and(|t| t.elapsed() >= linger))
+                .filter(|s| lock(&s.idle_since).is_some_and(|t| t.elapsed() >= linger))
                 .map(|s| s.id.clone())
                 .collect();
             idle.iter().filter_map(|id| map.remove(id)).collect()
@@ -348,7 +348,7 @@ impl Sessions {
             s.stop.store(true, Ordering::Relaxed);
         }
         for s in all {
-            if let Some(t) = s.thread.lock().unwrap_or_else(PoisonError::into_inner).take() {
+            if let Some(t) = lock(&s.thread).take() {
                 let _ = t.join();
             }
         }
