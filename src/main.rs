@@ -344,7 +344,7 @@ fn map_geometry(cache: &Path, name: &str, fetch: bool) -> Result<Vec<u8>> {
         d
     };
     let body = match bsp::geometry(&data) {
-        Ok(g) => g.to_string().into_bytes(),
+        Ok(g) => serde_json::to_vec(&g)?,
         Err(e) => {
             // A broken download would otherwise fail every request for this map; the next one fetches it again.
             let _ = std::fs::remove_file(&bsp_path);

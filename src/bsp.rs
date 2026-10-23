@@ -4,7 +4,8 @@
 //! the 3D skybox out of the picture.
 
 use anyhow::{Result, anyhow, bail};
-use serde_json::{Value, json};
+use serde::Serialize;
+use stvtf::output::{PickupItem, PickupSize, Team};
 
 const LUMP_ENTITIES: usize = 0;
 const LUMP_PLANES: usize = 1;
@@ -26,6 +27,90 @@ const PAD: f32 = 1536.0;
 const MAX_LUMP: usize = 16 << 20;
 
 type Vec3 = [f32; 3];
+/// A position as served, to a tenth of a unit.
+type Position = [f64; 3];
+
+/// A map's top-down geometry, as `/map/NAME` serves it.
+#[derive(Debug, Serialize)]
+pub struct Geometry {
+    pub spawns: Spawns,
+    pub packs: Vec<Pack>,
+    pub cap_areas: Vec<CapArea>,
+    /// The playable area: lowest and highest corner, unrounded (widened from f32, as served before).
+    pub bounds: Option<[[f64; 3]; 2]>,
+    /// Upward faces, from low to high.
+    pub floors: Vec<Floor>,
+    pub walls: Vec<Wall>,
+}
+
+/// An upward face: its height and outline (`x, y, x, y, …`).
+#[derive(Debug, Serialize)]
+pub struct Floor {
+    pub z: f64,
+    pub p: Vec<f64>,
+}
+
+/// A wall seen from above: its top and its two ends (`x1, y1, x2, y2`).
+#[derive(Debug, Serialize)]
+pub struct Wall {
+    pub z: f64,
+    pub p: [f64; 4],
+}
+
+/// A health or ammo pack.
+#[derive(Debug, Serialize)]
+pub struct Pack {
+    pub kind: PickupItem,
+    pub size: PickupSize,
+    pub pos: Position,
+}
+
+/// A capture area's bounds, and the point it captures (by the game's index).
+#[derive(Debug, Serialize)]
+pub struct CapArea {
+    pub point: Option<i64>,
+    pub min: Position,
+    pub max: Position,
+}
+
+#[derive(Debug, Serialize)]
+pub struct Spawns {
+    pub rooms: Vec<SpawnRoom>,
+    pub points: Vec<SpawnPoint>,
+}
+
+/// A spawn room (`func_respawnroom`).
+#[derive(Debug, Serialize)]
+pub struct SpawnRoom {
+    pub name: String,
+    pub team: Team,
+    pub min: Position,
+    pub max: Position,
+    pub disabled: bool,
+}
+
+impl SpawnRoom {
+    /// Whether `p` is in the room, with some room above and below for where spawn points stand.
+    fn holds(&self, p: Position) -> bool {
+        (0..3).all(|k| {
+            let slack = if k == 2 { 64.0 } else { 0.0 };
+            p[k] >= self.min[k] - slack && p[k] <= self.max[k] + slack
+        })
+    }
+
+    fn centre(&self) -> Position {
+        [0, 1, 2].map(|k| f64::midpoint(self.min[k], self.max[k]))
+    }
+}
+
+/// A spawn point (`info_player_teamspawn`), with the control point it belongs to.
+#[derive(Debug, Serialize)]
+pub struct SpawnPoint {
+    pub team: Team,
+    pub pos: Position,
+    pub point: Option<i64>,
+    pub disabled: bool,
+}
 
 // Maps come from fastdl and can be broken, so every read is checked: a panic would take down
 // the request and poison the lock around map loading.
@@ -126,11 +211,11 @@ pub fn playable_bounds(data: &[u8]) -> Result<Option<(Vec3, Vec3)>> {
     Ok(Some(bounds_of(&core, PAD)))
 }
 
-fn team(v: Option<&str>) -> &'static str {
+fn team(v: Option<&str>) -> Team {
     match v {
-        Some("2") => "red",
-        Some("3") => "blue",
-        _ => "none",
+        Some("2") => Team::Red,
+        Some("3") => Team::Blue,
+        _ => Team::Unassigned,
     }
 }
 
@@ -161,19 +246,22 @@ fn brush_bounds(models: &[u8], e: &[(String, String)]) -> Option<(Vec3, Vec3)> {
 }
 
 /// Health and ammo packs by size.
-fn packs(ents: &[Vec<(String, String)>]) -> Vec<Value> {
+fn packs(ents: &[Vec<(String, String)>]) -> Vec<Pack> {
     ents.iter()
         .filter_map(|e| {
             let class = e.iter().find(|(k, _)| k.eq_ignore_ascii_case("classname"))?.1.as_str();
             let (kind, size) = class
                 .strip_prefix("item_healthkit_")
-                .map(|s| ("health", s))
-                .or_else(|| class.strip_prefix("item_ammopack_").map(|s| ("ammo", s)))?;
-            if !["small", "medium", "full"].contains(&size) {
-                return None;
-            }
+                .map(|s| (PickupItem::Health, s))
+                .or_else(|| class.strip_prefix("item_ammopack_").map(|s| (PickupItem::Ammo, s)))?;
+            let size = match size {
+                "small" => PickupSize::Small,
+                "medium" => PickupSize::Medium,
+                "full" => PickupSize::Full,
+                _ => return None,
+            };
             let pos = vec3(e.iter().find(|(k, _)| k.eq_ignore_ascii_case("origin"))?.1.as_str().into())?;
-            Some(json!({"kind": kind, "size": size, "pos": pos.map(r1)}))
+            Some(Pack { kind, size, pos: pos.map(r1) })
         })
         .collect()
 }
@@ -194,7 +282,7 @@ fn point_indices(ents: &[Vec<(String, String)>]) -> Vec<(String, i64)> {
 
 /// Capture areas (`trigger_capture_area`: their brush model's bounds) and the point each caps.
 /// Payload ones are parented to the cart and move with it, so their bounds are just its start.
-fn cap_areas(data: &[u8]) -> Result<Vec<Value>> {
+fn cap_areas(data: &[u8]) -> Result<Vec<CapArea>> {
     let ents = entities(data)?;
     let models = lump(data, LUMP_MODELS)?;
     let points = point_indices(&ents);
@@ -205,7 +293,7 @@ fn cap_areas(data: &[u8]) -> Result<Vec<Value>> {
         .filter_map(|e| {
             let (min, max) = brush_bounds(&models, e)?;
             let point = get(e, "area_cap_point").and_then(|cp| points.iter().find(|(name, _)| name.eq_ignore_ascii_case(&cp)).map(|p| p.1));
-            Some(json!({"point": point, "min": min.map(r1), "max": max.map(r1)}))
+            Some(CapArea { point, min: min.map(r1), max: max.map(r1) })
         })
         .collect())
 }
@@ -213,7 +301,7 @@ fn cap_areas(data: &[u8]) -> Result<Vec<Value>> {
 /// Spawn rooms (`func_respawnroom`: their brush model's bounds) and spawn points
 /// (`info_player_teamspawn`), with the control point each spawn point belongs to: TF2 enables
 /// such a spawn point for the team that owns that point.
-pub fn spawns(data: &[u8]) -> Result<Value> {
+pub fn spawns(data: &[u8]) -> Result<Spawns> {
     let ents = entities(data)?;
     let models = lump(data, LUMP_MODELS)?;
     let points = point_indices(&ents);
@@ -223,63 +311,52 @@ pub fn spawns(data: &[u8]) -> Result<Value> {
         match get(e, "classname").as_deref() {
             Some("func_respawnroom") => {
                 let Some((min, max)) = brush_bounds(&models, e) else { continue };
-                rooms.push(json!({
-                    "name": get(e, "targetname").unwrap_or_default(),
-                    "team": team(get(e, "TeamNum").as_deref()),
-                    "min": min.map(r1),
-                    "max": max.map(r1),
-                    "disabled": get(e, "StartDisabled").as_deref() == Some("1"),
-                }));
+                rooms.push(SpawnRoom {
+                    name: get(e, "targetname").unwrap_or_default(),
+                    team: team(get(e, "TeamNum").as_deref()),
+                    min: min.map(r1),
+                    max: max.map(r1),
+                    disabled: get(e, "StartDisabled").as_deref() == Some("1"),
+                });
             }
             Some("info_player_teamspawn") => {
                 let Some(pos) = vec3(get(e, "origin").as_deref()) else { continue };
                 // Team-less spawn points are unused leftovers (on cp_process far outside the map).
-                if team(get(e, "TeamNum").as_deref()) == "none" {
+                if team(get(e, "TeamNum").as_deref()) == Team::Unassigned {
                     continue;
                 }
                 let point =
                     get(e, "controlpoint").and_then(|cp| points.iter().find(|(name, _)| name.eq_ignore_ascii_case(&cp)).map(|p| p.1));
-                spawn_points.push(json!({
-                    "team": team(get(e, "TeamNum").as_deref()),
-                    "pos": pos.map(r1),
-                    "point": point,
-                    "disabled": get(e, "StartDisabled").as_deref() == Some("1"),
-                }));
+                spawn_points.push(SpawnPoint {
+                    team: team(get(e, "TeamNum").as_deref()),
+                    pos: pos.map(r1),
+                    point,
+                    disabled: get(e, "StartDisabled").as_deref() == Some("1"),
+                });
             }
             _ => {}
         }
     }
     // Some maps (pl_swiftwater) give a room its team by input: take the team of the spawn points
     // inside, else of the room around its centre.
-    let inside = |r: &Value, p: &Value| {
-        (0..3).all(|k| {
-            let (lo, hi, v) = (r["min"][k].as_f64(), r["max"][k].as_f64(), p[k].as_f64());
-            let slack = if k == 2 { 64.0 } else { 0.0 };
-            matches!((lo, hi, v), (Some(lo), Some(hi), Some(v)) if v >= lo - slack && v <= hi + slack)
-        })
-    };
-    let centre = |r: &Value| {
-        Value::from(
-            (0..3).map(|k| f64::midpoint(r["min"][k].as_f64().unwrap_or(0.0), r["max"][k].as_f64().unwrap_or(0.0))).collect::<Vec<_>>(),
-        )
-    };
     for by_points in [true, false] {
         for i in 0..rooms.len() {
-            if rooms[i]["team"] != "none" {
+            if rooms[i].team != Team::Unassigned {
                 continue;
             }
             let found = if by_points {
-                let teams: Vec<&Value> = spawn_points.iter().filter(|p| inside(&rooms[i], &p["pos"])).map(|p| &p["team"]).collect();
-                teams.first().filter(|&&t| teams.iter().all(|u| u == &t)).map(|&t| t.clone())
+                let teams: Vec<Team> = spawn_points.iter().filter(|p| rooms[i].holds(p.pos)).map(|p| p.team).collect();
+                teams.first().copied().filter(|t| teams.iter().all(|u| u == t))
             } else {
-                rooms.iter().find(|o| o["team"] != "none" && inside(o, &centre(&rooms[i]))).map(|o| o["team"].clone())
+                let centre = rooms[i].centre();
+                rooms.iter().find(|o| o.team != Team::Unassigned && o.holds(centre)).map(|o| o.team)
             };
             if let Some(team) = found {
-                rooms[i]["team"] = team;
+                rooms[i].team = team;
             }
         }
     }
-    Ok(json!({"rooms": rooms, "points": spawn_points}))
+    Ok(Spawns { rooms, points: spawn_points })
 }
 
 fn texture_names(data: &[u8]) -> Result<Vec<String>> {
@@ -302,9 +379,9 @@ fn r1(v: f32) -> f64 {
     (f64::from(v) * 10.0).round() / 10.0
 }
 
-/// `{"bounds": [[x,y,z],[x,y,z]], "floors": [{"z", "p": [x,y,...]}], "walls": [{"z", "p": [x1,y1,x2,y2]}]}`,
-/// floors sorted from low to high.
-pub fn geometry(data: &[u8]) -> Result<Value> {
+/// The map's spawns, packs, capture areas, playable bounds, floors (sorted from low to high) and
+/// walls.
+pub fn geometry(data: &[u8]) -> Result<Geometry> {
     if !data.starts_with(b"VBSP") {
         bail!("not a VBSP file");
     }
@@ -322,7 +399,7 @@ pub fn geometry(data: &[u8]) -> Result<Value> {
     let (first, count) = (index_at(&models, 40)?, index_at(&models, 44)?);
     let vertex = |i: usize| -> Result<Vec3> { Ok([f32_at(&verts, i * 12)?, f32_at(&verts, i * 12 + 4)?, f32_at(&verts, i * 12 + 8)?]) };
 
-    let mut floors: Vec<(f32, Value)> = Vec::new();
+    let mut floors: Vec<(f32, Floor)> = Vec::new();
     let mut floor_pts = Vec::new();
     let mut walls = Vec::new();
     // The world's faces each have their own edges; a crafted map could reuse the same ones in
@@ -361,7 +438,7 @@ pub fn geometry(data: &[u8]) -> Result<Value> {
         }
         if nz > 0.7 {
             let p: Vec<f64> = pts.iter().flat_map(|p| [r1(p[0]), r1(p[1])]).collect();
-            floors.push((centre[2], json!({"z": r1(centre[2]), "p": p})));
+            floors.push((centre[2], Floor { z: r1(centre[2]), p }));
             if bounds.is_none() {
                 floor_pts.extend(pts);
             }
@@ -372,7 +449,7 @@ pub fn geometry(data: &[u8]) -> Result<Value> {
             let hi = pts.iter().max_by(key).unwrap();
             if (lo[0] - hi[0]).powi(2) + (lo[1] - hi[1]).powi(2) > 4.0 {
                 let top = pts.iter().map(|p| p[2]).fold(f32::MIN, f32::max);
-                walls.push(json!({"z": r1(top), "p": [r1(lo[0]), r1(lo[1]), r1(hi[0]), r1(hi[1])]}));
+                walls.push(Wall { z: r1(top), p: [r1(lo[0]), r1(lo[1]), r1(hi[0]), r1(hi[1])] });
             }
         }
     }
@@ -384,14 +461,14 @@ pub fn geometry(data: &[u8]) -> Result<Value> {
         hi[2] += PAD - 256.0;
         (!floor_pts.is_empty()).then_some((lo, hi))
     });
-    Ok(json!({
-        "spawns": spawns(data)?,
-        "packs": packs(&entities(data)?),
-        "cap_areas": cap_areas(data)?,
-        "bounds": bounds.map(|(lo, hi)| json!([lo, hi])),
-        "floors": floors.into_iter().map(|f| f.1).collect::<Vec<_>>(),
-        "walls": walls,
-    }))
+    Ok(Geometry {
+        spawns: spawns(data)?,
+        packs: packs(&entities(data)?),
+        cap_areas: cap_areas(data)?,
+        bounds: bounds.map(|(lo, hi)| [lo.map(f64::from), hi.map(f64::from)]),
+        floors: floors.into_iter().map(|f| f.1).collect(),
+        walls,
+    })
 }
 
 #[cfg(test)]
@@ -505,15 +582,13 @@ mod tests {
     fn process_floors_within_the_playable_area() {
         let Some(data) = process() else { return eprintln!("cache/cp_process_f12.bsp not downloaded; skipped") };
         let g = geometry(&data).unwrap();
-        let b = &g["bounds"];
+        let [lo, hi] = g.bounds.unwrap();
         // cp_process is symmetric around the middle point at the origin.
-        assert!(b[0][0].as_f64().unwrap() < -5000.0 && b[1][0].as_f64().unwrap() > 5000.0, "{b}");
-        assert!(b[0][1].as_f64().unwrap() > -6000.0 && b[1][1].as_f64().unwrap() < 6000.0, "{b}");
-        let floors = g["floors"].as_array().unwrap();
-        assert!(floors.len() > 1000, "{} floors", floors.len());
-        let zs: Vec<f64> = floors.iter().map(|f| f["z"].as_f64().unwrap()).collect();
-        assert!(zs.windows(2).all(|w| w[0] <= w[1]), "floors sorted by height");
-        assert!(g["walls"].as_array().unwrap().len() > 1000);
+        assert!(lo[0] < -5000.0 && hi[0] > 5000.0, "{lo:?} {hi:?}");
+        assert!(lo[1] > -6000.0 && hi[1] < 6000.0, "{lo:?} {hi:?}");
+        assert!(g.floors.len() > 1000, "{} floors", g.floors.len());
+        assert!(g.floors.windows(2).all(|w| w[0].z <= w[1].z), "floors sorted by height");
+        assert!(g.walls.len() > 1000);
     }
 
     #[test]
@@ -521,63 +596,54 @@ mod tests {
         let path = concat!(env!("CARGO_MANIFEST_DIR"), "/cache/mge_training_v8_beta4b.bsp");
         let Ok(data) = std::fs::read(path) else { return eprintln!("{path} not downloaded; skipped") };
         let g = geometry(&data).unwrap();
-        let b = &g["bounds"];
+        let [lo, hi] = g.bounds.unwrap();
         // Players fighting in an arena, far from the one spawn point.
         for p in [[2609.0, -10118.0, -473.0], [2061.0, -9786.0, -862.0]] {
-            assert!((0..3).all(|i| b[0][i].as_f64().unwrap() <= p[i] && p[i] <= b[1][i].as_f64().unwrap()), "{b}");
+            assert!((0..3).all(|i| lo[i] <= p[i] && p[i] <= hi[i]), "{lo:?} {hi:?}");
         }
-        assert!(g["floors"].as_array().unwrap().len() > 1000);
-        assert_eq!(g["packs"], json!([]));
-        assert_eq!(g["cap_areas"], json!([]));
+        assert!(g.floors.len() > 1000);
+        assert!(g.packs.is_empty(), "{:?}", g.packs);
+        assert!(g.cap_areas.is_empty(), "{:?}", g.cap_areas);
     }
 
     #[test]
     fn process_packs_and_capture_areas() {
         let Some(data) = process() else { return eprintln!("cache/cp_process_f12.bsp not downloaded; skipped") };
         let g = geometry(&data).unwrap();
-        let areas = g["cap_areas"].as_array().unwrap();
         for i in 0..5 {
-            let n = areas.iter().filter(|a| a["point"] == i).count();
+            let n = g.cap_areas.iter().filter(|a| a.point == Some(i)).count();
             eprintln!("cap areas point {i}: {n}");
             assert!(n >= 1, "point {i}");
         }
-        assert!(areas.iter().all(|a| (0..3).all(|i| a["min"][i].as_f64() < a["max"][i].as_f64())), "{areas:?}");
-        let packs = g["packs"].as_array().unwrap();
-        let count = |k: &str| packs.iter().filter(|p| p["kind"] == k).count();
-        eprintln!("packs health {} ammo {}", count("health"), count("ammo"));
-        assert!(count("health") > 10 && count("ammo") > 10, "{packs:?}");
-        assert!(
-            packs
-                .iter()
-                .all(|p| ["small", "medium", "full"].contains(&p["size"].as_str().unwrap()) && p["pos"].as_array().unwrap().len() == 3)
-        );
+        assert!(g.cap_areas.iter().all(|a| (0..3).all(|i| a.min[i] < a.max[i])), "{:?}", g.cap_areas);
+        let count = |k: PickupItem| g.packs.iter().filter(|p| p.kind == k).count();
+        eprintln!("packs health {} ammo {}", count(PickupItem::Health), count(PickupItem::Ammo));
+        assert!(count(PickupItem::Health) > 10 && count(PickupItem::Ammo) > 10, "{:?}", g.packs);
     }
 
     #[test]
     fn payload_capture_areas_follow_the_cart_and_are_skipped() {
         let path = concat!(env!("CARGO_MANIFEST_DIR"), "/cache/pl_upward_f12.bsp");
         let Ok(data) = std::fs::read(path) else { return eprintln!("{path} not downloaded; skipped") };
-        assert_eq!(geometry(&data).unwrap()["cap_areas"], json!([]));
+        assert!(geometry(&data).unwrap().cap_areas.is_empty());
     }
 
     #[test]
     fn process_spawn_rooms_and_points() {
         let Some(data) = process() else { return };
         let s = spawns(&data).unwrap();
-        let rooms = s["rooms"].as_array().unwrap();
-        assert_eq!(rooms.len(), 6, "three spawn rooms per team");
-        assert_eq!(rooms.iter().filter(|r| r["team"] == "red").count(), 3);
+        assert_eq!(s.rooms.len(), 6, "three spawn rooms per team");
+        assert_eq!(s.rooms.iter().filter(|r| r.team == Team::Red).count(), 3);
         // cp_process is mirrored through the middle point at the origin.
-        let blue2 = rooms.iter().find(|r| r["name"] == "bluespawnroom2").unwrap();
-        assert_eq!(blue2["min"], json!([-2400.0, -3136.0, 680.0]));
-        let points = s["points"].as_array().unwrap();
-        assert_eq!(points.len(), 44, "56 minus 12 unused team-less ones");
-        let count = |team: &str, point: i64| points.iter().filter(|p| p["team"] == team && p["point"] == point).count();
+        let blue2 = s.rooms.iter().find(|r| r.name == "bluespawnroom2").unwrap();
+        assert_eq!(blue2.min, [-2400.0, -3136.0, 680.0]);
+        assert_eq!(s.points.len(), 44, "56 minus 12 unused team-less ones");
+        let count = |team: Team, point: i64| s.points.iter().filter(|p| p.team == team && p.point == Some(point)).count();
         // Last spawns belong to the team's own last point, forward spawns to mid and the enemy second.
-        assert_eq!(count("red", 4), 16);
-        assert_eq!(count("blue", 0), 16);
-        assert_eq!((count("red", 2), count("red", 1)), (3, 3));
-        assert_eq!((count("blue", 2), count("blue", 3)), (3, 3));
+        assert_eq!(count(Team::Red, 4), 16);
+        assert_eq!(count(Team::Blue, 0), 16);
+        assert_eq!((count(Team::Red, 2), count(Team::Red, 1)), (3, 3));
+        assert_eq!((count(Team::Blue, 2), count(Team::Blue, 3)), (3, 3));
     }
 
     #[test]
@@ -586,19 +652,18 @@ mod tests {
         let Ok(data) = std::fs::read(path) else { return eprintln!("{path} not downloaded; skipped") };
         let g = geometry(&data).unwrap();
         // Blu's last point is index 0, at x 3768; red's last is 4, at x -3766.
-        let x = |i: i64| g["cap_areas"].as_array().unwrap().iter().find(|a| a["point"] == i).map(|a| a["min"][0].as_f64().unwrap());
+        let x = |i: i64| g.cap_areas.iter().find(|a| a.point == Some(i)).map(|a| a.min[0]);
         assert!(x(0).unwrap() > 3000.0 && x(4).unwrap() < -3000.0);
-        let points = spawns(&data).unwrap()["points"].as_array().unwrap().clone();
-        assert!(points.iter().all(|p| p["point"].as_i64().is_none_or(|i| (0..5).contains(&i))));
+        assert!(spawns(&data).unwrap().points.iter().all(|p| p.point.is_none_or(|i| (0..5).contains(&i))));
     }
 
     #[test]
     fn swiftwater_teamless_spawn_rooms_take_their_spawn_points_team() {
         let path = concat!(env!("CARGO_MANIFEST_DIR"), "/cache/pl_swiftwater_final1.bsp");
         let Ok(data) = std::fs::read(path) else { return eprintln!("{path} not downloaded; skipped") };
-        let s = spawns(&data).unwrap();
-        let teams: Vec<&str> = s["rooms"].as_array().unwrap().iter().map(|r| r["team"].as_str().unwrap()).collect();
-        assert_eq!(teams, ["blue", "blue", "red", "red", "blue", "red"]);
+        let teams: Vec<Team> = spawns(&data).unwrap().rooms.iter().map(|r| r.team).collect();
+        let (b, r) = (Team::Blue, Team::Red);
+        assert_eq!(teams, [b, b, r, r, b, r]);
     }
 
     #[test]
