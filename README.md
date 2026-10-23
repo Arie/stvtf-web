@@ -119,7 +119,11 @@ server that much later, so it also starts that much later; `o` keeps the delay.
   (marker plus a line from the attacker), spawns, ubers, captures and round banners.
 - A TF2-style scoreboard at the top: team scores, the round timer (SETUP, ROUND OVER,
   OVERTIME; one per team on King of the Hill) and the control points with owner, lock and
-  capture progress.
+  capture progress. CTF counts captured intelligence, pass time goals, robot and player
+  destruction their points, and Mann vs. Machine shows the wave.
+- Game modes: the pass time ball (on its carrier while carried) and goals, robot destruction's
+  robots (their health as on buildings) and dropped cores, and Mann vs. Machine's tank with its
+  health.
 - Hold Tab for a scoreboard like TF2's: each team by points, with kills, deaths, assists,
   damage, healing and ping. Dead players' cards count down to their respawn, time added to
   a round timer floats under the scoreboard, and an engineer carrying a building shows it on
@@ -141,12 +145,15 @@ server that much later, so it also starts that much later; `o` keeps the delay.
 - With a demos.tf overview available, a corner switch flips between it and the map geometry.
 - Side panel: an event feed stamped with the time into the round (kills with DOMINATING, REVENGE,
   AIRSHOT and FEIGN tags, übers deployed and ready, dropped übers, captures and blocks,
-  destroyed buildings, banners, round start/win with the score, stalemate,
-  overtime, match end, joins and leaves, map changes) and chat.
+  destroyed and sapped buildings, banners, round start/win with the score, stalemate,
+  overtime, match end, joins and leaves, map changes, votes called and their result, pass time
+  goals, steals and blocks, robots destroyed, player destruction scores and team leaders killed,
+  special delivery's rocket opening) and chat.
 - The server keeps the feed and chat of the current map (up to 1000 events), so a page
   opened or reloaded mid-match starts with them.
 - `/events?detail=1` (and `/w/<id>/events?detail=1`) also streams the high-volume lines
-  (`heal`, `blast_jump`, `pickup`, `impact`, `mark`, `voice_command`, `server_text`). They are
+  (`heal`, `blast_jump`, `pickup`, `impact`, `mark`, `voice_command`, `server_text`, `hud_text`,
+  `hint`, `pass_get`, `pass_free`, `pass_caught`, `points_scored`, `stun`, `capture_started`). They are
   never kept in that history, so a page only sees them from when it connects.
 - A map change clears the HUD, scoreboard, followed player and everything else from the old map.
 
