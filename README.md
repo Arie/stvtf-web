@@ -153,7 +153,9 @@ server that much later, so it also starts that much later; `o` keeps the delay.
   opened or reloaded mid-match starts with them.
 - `/events?detail=1` (and `/w/<id>/events?detail=1`) also streams the high-volume lines
   (`heal`, `blast_jump`, `pickup`, `impact`, `mark`, `voice_command`, `server_text`, `hud_text`,
-  `hint`, `pass_get`, `pass_free`, `pass_caught`, `points_scored`, `stun`, `capture_started`). They are
+  `hint`, `pass_get`, `pass_free`, `pass_caught`, `points_scored`, `stun`, `capture_started`,
+  `round_selected`, `teleported`, `building_removed`, `building_detonated`, `det_stickies`,
+  `npc_damage`). They are
   never kept in that history, so a page only sees them from when it connects.
 - A map change clears the HUD, scoreboard, followed player and everything else from the old map.
 

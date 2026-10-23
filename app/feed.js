@@ -49,7 +49,7 @@ const VOTE_ISSUE = {
   "#TF_vote_restart_game": () => "restart the game", "#TF_vote_scramble_teams": () => "scramble the teams",
   "#TF_vote_extendlevel": () => "extend the map", "#TF_vote_td_start_round": () => "start the round",
 };
-const voteIssue = ev => (VOTE_ISSUE[ev.issue] || (d => [ev.issue.replace(/^#/, ""), d].filter(Boolean).join(" ")))(ev.details || "");
+const voteIssue = ev => (Object.hasOwn(VOTE_ISSUE, ev.issue) ? VOTE_ISSUE[ev.issue] : d => [String(ev.issue ?? "").replace(/^#/, ""), d].filter(Boolean).join(" "))(ev.details || "");
 
 // Kills by one player within 10 s of each other count as a streak: 2K, 3K, …
 const STREAK_TICKS = 10000 / MS_PER_TICK;
@@ -139,7 +139,7 @@ export function feedEvent(ev, p) {
       if (!layerOn("flow")) return;
       html = `${name(ev.attacker)}${ev.assister != null ? "+" + name(ev.assister) : ""}<span class="w">killed the ball carrier</span>${name(ev.victim)}`;
       break;
-    case "robot_killed": cls = "minor"; html = `${name(ev.attacker)} <span>destroyed a robot</span>`; break;
+    case "robot_killed": cls = "minor"; html = ev.attacker != null ? `${name(ev.attacker)} <span>destroyed a robot</span>` : "<span>A robot was destroyed</span>"; break;
     case "special_score": cls = p(ev.player)?.team || ""; html = `${name(ev.player)} <span>scored</span>`; break;
     case "team_leader_killed": html = `${name(ev.killer)}<span class="w">killed team leader</span>${name(ev.victim)}`; break;
     case "rocket_open": cls = `big ${ev.team}`; html = `${teamName(ev.team)} opened the rocket`; break;

@@ -165,7 +165,6 @@ fn route(line: &Line) -> Route {
         | Line::SpecialScore(_)
         | Line::TeamLeaderKilled(_)
         | Line::RocketOpen(_)
-        | Line::RoundSelected(_)
         | Line::PointLocked(_)
         | Line::Sapped(_)
         | Line::VoteStarted(_)
@@ -186,7 +185,13 @@ fn route(line: &Line) -> Route {
         | Line::Stun(_)
         | Line::CaptureStarted(_)
         | Line::HudText(_)
-        | Line::Hint(_) => Route::Detail,
+        | Line::Hint(_)
+        | Line::RoundSelected(_)
+        | Line::Teleported(_)
+        | Line::BuildingRemoved(_)
+        | Line::BuildingDetonated(_)
+        | Line::DetStickies(_)
+        | Line::NpcDamage(_) => Route::Detail,
         Line::Damage(_)
         | Line::Spawn(_)
         | Line::UberEnded(_)
@@ -200,12 +205,7 @@ fn route(line: &Line) -> Route {
         | Line::Explosion(_)
         | Line::SentryShot(_)
         | Line::Airblast(_)
-        | Line::Reflect(_)
-        | Line::Teleported(_)
-        | Line::BuildingRemoved(_)
-        | Line::BuildingDetonated(_)
-        | Line::DetStickies(_)
-        | Line::NpcDamage(_) => Route::Live,
+        | Line::Reflect(_) => Route::Live,
     }
 }
 
@@ -1425,8 +1425,20 @@ mod tests {
         let types = |rx: &Receiver<Arc<str>>| -> Vec<String> {
             rx.try_iter().map(|l| serde_json::from_str::<Value>(&l).unwrap()["type"].as_str().unwrap().to_string()).collect()
         };
+        // High-volume lines the page draws nothing for only go to pages that ask for detail.
+        let hit = output::NpcDamage {
+            tick: 4,
+            id: 700,
+            attacker: Some(PlayerId(3)),
+            amount: 20,
+            health: 130,
+            crit: false,
+            weapon_id: 18,
+            boss: 0,
+        };
+        publish(&hub, &Line::NpcDamage(hit));
         assert_eq!(types(&plain), ["pass_score"]);
-        assert_eq!(types(&detail), ["pass_get", "pass_score"]);
+        assert_eq!(types(&detail), ["pass_get", "pass_score", "npc_damage"]);
         let kept: Value = serde_json::from_str(hub.lock().unwrap().history.back().unwrap()).unwrap();
         assert_eq!((kept["type"].as_str(), &kept["names"]["3"]["name"]), (Some("pass_score"), &Value::from("can of tuna")));
     }
