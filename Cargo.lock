@@ -1076,6 +1076,7 @@ dependencies = [
  "base64",
  "flate2",
  "lzma-rs",
+ "serde",
  "serde_json",
  "stvtf",
  "ureq",

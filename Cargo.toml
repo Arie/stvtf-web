@@ -9,6 +9,7 @@ publish = false
 
 [dependencies]
 stvtf = { path = "../stvtf" }
+serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 anyhow = "1"
 lzma-rs = "0.3"

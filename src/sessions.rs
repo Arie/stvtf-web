@@ -13,6 +13,8 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
+use stvtf::Line;
+use stvtf::output::Status;
 use stvtf::watch::{self, Watch};
 
 pub struct Session {
@@ -224,9 +226,9 @@ impl Sessions {
         let thread = std::thread::spawn(move || {
             let mut w = Watch::new(&server.to_string(), &watcher.password);
             w.snapshot_hz = hz;
-            if let Err(e) = watch::watch(&w, &watcher.stop, &mut |v| publish(&watcher.hub, &v)) {
+            if let Err(e) = watch::watch(&w, &watcher.stop, &mut |line| publish(&watcher.hub, &line)) {
                 eprintln!("stvtf-web: match {} gave up: {e}", watcher.label());
-                publish(&watcher.hub, &serde_json::json!({"type": "status", "state": "gave_up", "reason": e.to_string()}));
+                publish(&watcher.hub, &Line::Status(Status::GaveUp { reason: e.to_string() }));
             }
             watcher.done.store(true, Ordering::Relaxed);
         });

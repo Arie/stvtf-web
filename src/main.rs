@@ -11,9 +11,10 @@ mod token;
 use anyhow::{Context, Result, anyhow, bail};
 use flate2::Compression;
 use flate2::write::GzEncoder;
+use serde::Serialize;
 use serde_json::Value;
 use sessions::{Sessions, Viewer};
-use std::collections::{HashMap, VecDeque};
+use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{IpAddr, TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
@@ -21,6 +22,8 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::mpsc::{Receiver, RecvTimeoutError, SyncSender, TrySendError, sync_channel};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant};
+use stvtf::Line;
+use stvtf::output::{PlayerId, Stamped, Status, Team};
 use stvtf::watch::{self, Watch};
 
 const USAGE: &str = "\
@@ -95,107 +98,161 @@ struct Hub {
     /// Feed events of the current map, so a page opened late still shows kills and chat.
     history: VecDeque<Arc<str>>,
     /// Tick and round time of the latest snapshot, to stamp events with time into the round.
-    round_clock: Option<(u64, f64)>,
+    round_clock: Option<(u32, f64)>,
     /// When the latest snapshot came in, so a page opened after the stream stopped can say so.
     snapshot_at: Option<Instant>,
-    /// Name and team of everyone seen on this map, by id: the feed keeps them for players who left.
-    names: HashMap<u64, Value>,
+    /// Name and team of everyone seen on this map: the feed keeps them for players who left.
+    names: HashMap<PlayerId, Seen>,
+}
+
+/// A player's name and team, as last seen in a snapshot.
+#[derive(Debug, Clone, Serialize)]
+struct Seen {
+    name: String,
+    team: Team,
 }
 
 const HISTORY: usize = 1000;
-/// Event fields that hold player ids.
-const PLAYER_FIELDS: [&str; 12] =
-    ["player", "attacker", "victim", "assister", "medic", "target", "blocker", "owner", "builder", "cappers", "carrier", "killer"];
-/// High-volume lines for pages that ask (`?detail=1`); never kept in the history.
-const DETAIL: [&str; 8] = ["heal", "blast_jump", "pickup", "impact", "mark", "voice_command", "server_text", "building_repair"];
-const FEED: [&str; 26] = [
-    "kill",
-    "flag",
-    "uber",
-    "uber_ready",
-    "medic_death",
-    "capture_blocked",
-    "building_destroyed",
-    "banner",
-    "point_captured",
-    "round_start",
-    "round_win",
-    "scores",
-    "stalemate",
-    "overtime",
-    "game_over",
-    "player_leave",
-    "team_change",
-    "chat",
-    "capture_broken",
-    "killed_capper",
-    "medic_defended",
-    "vote_options",
-    "vote_cast",
-    "tournament",
-    "announcer",
-    "time_remaining",
-];
+
+/// Where a line goes besides every page: into the latest state, the feed history, or (for the
+/// high-volume detail lines) only to pages that ask for them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Route {
+    /// Kept as the latest status, server, world or snapshot.
+    State,
+    /// Kept in the history, so a page opened late still shows kills and chat.
+    Feed,
+    /// Only for pages that ask (`?detail=1`); never kept.
+    Detail,
+    /// Passed on and not kept.
+    Live,
+}
+
+fn route(line: &Line) -> Route {
+    match line {
+        Line::Status(_) | Line::Server(_) | Line::World(_) | Line::Snapshot(_) => Route::State,
+        Line::Kill(_)
+        | Line::Flag(_)
+        | Line::Uber(_)
+        | Line::UberReady(_)
+        | Line::MedicDeath(_)
+        | Line::CaptureBlocked(_)
+        | Line::BuildingDestroyed(_)
+        | Line::Banner(_)
+        | Line::PointCaptured(_)
+        | Line::RoundStart(_)
+        | Line::RoundWin(_)
+        | Line::Scores(_)
+        | Line::Stalemate(_)
+        | Line::Overtime(_)
+        | Line::GameOver(_)
+        | Line::PlayerLeave(_)
+        | Line::TeamChange(_)
+        | Line::Chat(_)
+        | Line::CaptureBroken(_)
+        | Line::KilledCapper(_)
+        | Line::MedicDefended(_)
+        | Line::VoteOptions(_)
+        | Line::VoteCast(_)
+        | Line::Tournament(_)
+        | Line::Announcer(_)
+        | Line::TimeRemaining(_) => Route::Feed,
+        Line::Heal(_)
+        | Line::BlastJump(_)
+        | Line::Pickup(_)
+        | Line::Impact(_)
+        | Line::Mark(_)
+        | Line::VoiceCommand(_)
+        | Line::ServerText(_)
+        | Line::BuildingRepair(_) => Route::Detail,
+        Line::Damage(_)
+        | Line::Spawn(_)
+        | Line::UberEnded(_)
+        | Line::ClassChange(_)
+        | Line::Build(_)
+        | Line::BuildingUpgrade(_)
+        | Line::TimeAdded(_)
+        | Line::RoundActive(_)
+        | Line::SetupFinished(_)
+        | Line::Shot(_)
+        | Line::Explosion(_)
+        | Line::SentryShot(_)
+        | Line::Airblast(_)
+        | Line::Reflect(_) => Route::Live,
+    }
+}
+
+/// A feed line as kept in the history: marked as such, with the names of the players it names
+/// (they may have left by the time a page shows it) and its time into the round.
+#[derive(Serialize)]
+struct Past<'a> {
+    #[serde(flatten)]
+    line: &'a Line,
+    history: bool,
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    names: BTreeMap<PlayerId, &'a Seen>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    at: Option<f64>,
+}
+
+/// How long ago the latest snapshot came in, for a page that joins.
+#[derive(Serialize)]
+#[serde(tag = "type", rename = "data_age")]
+struct DataAge {
+    ms: u64,
+}
 
 type SharedHub = Arc<Mutex<Hub>>;
 
-fn publish(hub: &SharedHub, v: &Value) {
-    let line: Arc<str> = v.to_string().into();
+fn publish(hub: &SharedHub, line: &Line) {
+    let json: Arc<str> = serde_json::to_string(line).expect("a line serializes").into();
+    let route = route(line);
     let mut h = hub.lock().unwrap();
-    let detail = v["type"].as_str().is_some_and(|t| DETAIL.contains(&t));
-    match v["type"].as_str() {
-        Some("status") => {
-            if v["state"] == "map_change" {
+    match line {
+        Line::Status(status) => {
+            if *status == Status::MapChange {
                 h.snapshot = None;
                 h.history.clear();
                 h.names.clear();
             }
-            h.status = Some(line.clone());
+            h.status = Some(json.clone());
         }
-        Some("server") => {
+        Line::Server(server) => {
             // Signon restarts announce the same map again; only a new map starts a new history.
-            let map = v["map"].as_str().map(str::to_string);
-            if map != h.map {
+            if h.map.as_deref() != Some(server.map.as_str()) {
                 h.history.clear();
                 h.names.clear();
-                h.map = map;
+                h.map = Some(server.map.clone());
             }
-            (h.server, h.snapshot, h.round_clock) = (Some(line.clone()), None, None);
+            (h.server, h.snapshot, h.round_clock) = (Some(json.clone()), None, None);
         }
-        Some("world") => h.world = Some(line.clone()),
-        Some("snapshot") => {
-            h.round_clock = v["tick"].as_u64().zip(v["round_time"].as_f64());
-            h.snapshot = Some(line.clone());
+        Line::World(_) => h.world = Some(json.clone()),
+        Line::Snapshot(snapshot) => {
+            h.round_clock = snapshot.round_time.map(|t| (snapshot.tick, t));
+            h.snapshot = Some(json.clone());
             h.snapshot_at = Some(Instant::now());
-            for p in v["players"].as_array().into_iter().flatten() {
-                if let Some(id) = p["id"].as_u64() {
-                    h.names.insert(id, serde_json::json!({"name": p["name"], "team": p["team"]}));
-                }
+            for p in &snapshot.players {
+                h.names.insert(p.id, Seen { name: p.name.clone(), team: p.team });
             }
         }
-        Some(t) if FEED.contains(&t) => {
-            let mut past = v.clone();
-            past["history"] = true.into();
-            let ids = PLAYER_FIELDS.iter().flat_map(|f| v[f].as_array().cloned().unwrap_or_else(|| vec![v[f].clone()]));
-            let names: serde_json::Map<String, Value> =
-                ids.filter_map(|id| Some((id.as_u64()?.to_string(), h.names.get(&id.as_u64()?)?.clone()))).collect();
-            if !names.is_empty() {
-                past["names"] = names.into();
-            }
-            if let (Some((tick, time)), Some(at)) = (h.round_clock, v["tick"].as_u64()) {
-                let seconds = time + (at as f64 - tick as f64) * 0.015;
-                past["at"] = ((seconds * 10.0).round() / 10.0).max(0.0).into();
-            }
+        _ if route == Route::Feed => {
+            let at = h.round_clock.zip(line.tick()).map(|((tick, time), at)| {
+                let seconds = time + (f64::from(at) - f64::from(tick)) * 0.015;
+                ((seconds * 10.0).round() / 10.0).max(0.0)
+            });
+            let names = line.players().into_iter().filter_map(|id| Some((id, h.names.get(&id)?))).collect();
+            let past = serde_json::to_string(&Past { line, history: true, names, at }).expect("a line serializes");
             if h.history.len() == HISTORY {
                 h.history.pop_front();
             }
-            h.history.push_back(past.to_string().into());
+            h.history.push_back(past.into());
         }
         _ => {}
     }
     // A browser that cannot keep up is dropped; it reconnects and resyncs from the latest state.
+    let detail = route == Route::Detail;
     h.clients.retain(|(c, wants)| {
-        (detail && !wants) || !matches!(c.try_send(line.clone()), Err(TrySendError::Full(_) | TrySendError::Disconnected(_)))
+        (detail && !wants) || !matches!(c.try_send(json.clone()), Err(TrySendError::Full(_) | TrySendError::Disconnected(_)))
     });
 }
 
@@ -207,7 +264,8 @@ fn subscribe(hub: &SharedHub, detail: bool) -> Receiver<Arc<str>> {
         let _ = tx.try_send(line.clone());
     }
     if let Some(at) = h.snapshot_at {
-        let _ = tx.try_send(serde_json::json!({"type": "data_age", "ms": at.elapsed().as_millis() as u64}).to_string().into());
+        let age = DataAge { ms: at.elapsed().as_millis() as u64 };
+        let _ = tx.try_send(serde_json::to_string(&age).expect("a number serializes").into());
     }
     h.clients.push((tx, detail));
     rx
@@ -221,7 +279,7 @@ fn replay(hub: &SharedHub, path: &Path, play: &dyn Fn() -> bool) -> Result<()> {
             // A pause between passes, which also keeps a file with (almost) no timing from
             // looping flat out.
             std::thread::sleep(Duration::from_secs(3));
-            publish(hub, &serde_json::json!({"type": "status", "state": "map_change"}));
+            publish(hub, &Line::Status(Status::MapChange));
         }
         let file = std::fs::File::open(path).with_context(|| format!("opening {}", path.display()))?;
         let reader: Box<dyn Read> =
@@ -231,18 +289,17 @@ fn replay(hub: &SharedHub, path: &Path, play: &dyn Fn() -> bool) -> Result<()> {
             while !play() {
                 std::thread::sleep(Duration::from_millis(250));
             }
-            let v: Value = serde_json::from_str(&line?)?;
-            // Live output has wall-clock `time`; offline output (`stvtf replay`) only ticks.
+            let stamped: Stamped = serde_json::from_str(&line?)?;
             // Each line waits for the gap since the previous one, capped so map loads and
             // tick resets do not stall the replay.
-            if let Some(t) = v["time"].as_u64().or_else(|| v["tick"].as_u64().filter(|&t| t > 0).map(|t| t * 15)) {
+            if let Some(t) = line_time(&stamped) {
                 if let Some(prev) = last {
                     std::thread::sleep(Duration::from_millis(t.saturating_sub(prev).min(1000)));
                 }
                 last = Some(t);
                 timed = true;
             }
-            publish(hub, &v);
+            publish(hub, &stamped.line);
         }
         // Without any, the loop would replay the file as fast as it can, forever.
         if !timed {
@@ -250,6 +307,12 @@ fn replay(hub: &SharedHub, path: &Path, play: &dyn Fn() -> bool) -> Result<()> {
         }
     }
     Ok(())
+}
+
+/// When a saved line happened, in milliseconds: live output has wall-clock `time`, offline output
+/// (`stvtf replay`) only ticks of 15 ms. Tick 0 is a map load, not a time.
+fn line_time(stamped: &Stamped) -> Option<u64> {
+    stamped.time.or_else(|| stamped.line.tick().filter(|&t| t > 0).map(|t| u64::from(t) * 15))
 }
 
 /// Builds a map that is not in the cache yet only when `fetch`: otherwise anyone could have every
@@ -866,9 +929,9 @@ fn main() -> Result<()> {
         let hub = SharedHub::default();
         let watched = hub.clone();
         std::thread::spawn(move || {
-            let result = watch::watch(&w, &STOP, &mut |v| publish(&watched, &v));
+            let result = watch::watch(&w, &STOP, &mut |line| publish(&watched, &line));
             if let Err(e) = &result {
-                publish(&watched, &serde_json::json!({"type": "status", "state": "gave_up", "reason": e.to_string()}));
+                publish(&watched, &Line::Status(Status::GaveUp { reason: e.to_string() }));
                 eprintln!("stvtf-web: {e}");
             }
             if STOP.load(Ordering::Relaxed) {
@@ -939,6 +1002,7 @@ fn main() -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use stvtf::output::{self, PlayerId, Team};
 
     #[test]
     fn parses_connect_strings() {
@@ -1112,7 +1176,7 @@ mod tests {
     #[test]
     fn replay_without_times_stops() {
         let path = std::env::temp_dir().join(format!("stvtf-web-replay-{}.jsonl", std::process::id()));
-        for contents in ["", "{\"type\":\"status\"}\n"] {
+        for contents in ["", "{\"type\":\"status\",\"state\":\"new\"}\n"] {
             std::fs::write(&path, contents).unwrap();
             assert!(replay(&SharedHub::default(), &path, &|| true).is_err(), "{contents:?}");
         }
@@ -1131,17 +1195,90 @@ mod tests {
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
+    fn player(id: u16, name: &str, team: Team) -> output::Player {
+        output::Player {
+            id: PlayerId(id),
+            ent: u32::from(id),
+            name: name.to_string(),
+            steamid: "BOT".to_string(),
+            team,
+            class: output::Class::Scout,
+            alive: true,
+            hp: 125,
+            max_hp: 125,
+            pos: Some([0.0; 3]),
+            yaw: Some(0.0),
+            pitch: Some(0.0),
+            uber: 0,
+            ping: 0,
+            conds: Vec::new(),
+            ubered: None,
+            medigun: None,
+            weapon: None,
+            flames: None,
+            respawn: None,
+            score: None,
+            carrying: None,
+        }
+    }
+
+    fn snapshot(tick: u32, round_time: Option<f64>, players: Vec<output::Player>) -> Line {
+        Line::Snapshot(output::Snapshot {
+            tick,
+            players,
+            projectiles: Vec::new(),
+            buildings: Vec::new(),
+            objectives: Vec::new(),
+            round: output::Round::Running,
+            round_time,
+            time_left: None,
+            win_limit: None,
+            match_time: None,
+            score: output::Score { red: 0, blue: 0 },
+            captures: None,
+            timers: Vec::new(),
+        })
+    }
+
+    fn kill(tick: u32, attacker: u16, victim: u16) -> Line {
+        Line::Kill(output::Kill {
+            tick,
+            victim: PlayerId(victim),
+            attacker: Some(PlayerId(attacker)),
+            assister: None,
+            weapon: "scattergun".to_string(),
+            crit: false,
+            headshot: false,
+            backstab: false,
+            suicide: false,
+            dominated: false,
+            revenge: false,
+            feign: false,
+            airborne: false,
+            victim_pos: None,
+            attacker_pos: None,
+        })
+    }
+
+    fn server(map: &str) -> Line {
+        Line::Server(output::Server {
+            tick: 0,
+            map: map.to_string(),
+            hostname: "SourceTV".to_string(),
+            tick_interval: 0.015,
+            max_players: 25,
+            spawn_count: 1,
+        })
+    }
+
     #[test]
     fn the_feed_keeps_names_of_players_who_left() {
         let hub = SharedHub::default();
-        let snapshot = |players: Value| serde_json::json!({"type": "snapshot", "tick": 1, "players": players});
-        publish(
-            &hub,
-            &snapshot(serde_json::json!([{"id": 3, "name": "can of tuna", "team": "red"}, {"id": 4, "name": "silvo", "team": "blue"}])),
-        );
-        publish(&hub, &serde_json::json!({"type": "kill", "tick": 2, "attacker": 3, "victim": 4, "assister": null}));
-        publish(&hub, &serde_json::json!({"type": "point_captured", "tick": 3, "point": 0, "cappers": [3]}));
-        publish(&hub, &snapshot(serde_json::json!([])));
+        publish(&hub, &snapshot(1, None, vec![player(3, "can of tuna", Team::Red), player(4, "silvo", Team::Blue)]));
+        publish(&hub, &kill(2, 3, 4));
+        let cap = output::PointCaptured { tick: 3, point: 0, name: "#cp".to_string(), team: Team::Red, cappers: vec![Some(PlayerId(3))] };
+        publish(&hub, &Line::PointCaptured(cap));
+        publish(&hub, &snapshot(4, None, Vec::new()));
         let lines: Vec<Value> = subscribe(&hub, false).try_iter().map(|l| serde_json::from_str(&l).unwrap()).collect();
         let kill = lines.iter().find(|l| l["type"] == "kill").unwrap();
         assert_eq!(kill["names"]["3"]["name"], "can of tuna");
@@ -1151,11 +1288,47 @@ mod tests {
     }
 
     #[test]
+    fn history_entries_are_the_line_with_names_and_time_into_the_round() {
+        let hub = SharedHub::default();
+        publish(&hub, &snapshot(1000, Some(30.0), vec![player(3, "can of tuna", Team::Red)]));
+        publish(&hub, &kill(1200, 3, 9));
+        let past: Value = serde_json::from_str(&hub.lock().unwrap().history[0]).unwrap();
+        let mut expected = serde_json::to_value(kill(1200, 3, 9)).unwrap();
+        expected["history"] = true.into();
+        expected["names"] = serde_json::json!({"3": {"name": "can of tuna", "team": "red"}});
+        expected["at"] = 33.0.into();
+        assert_eq!(past, expected);
+    }
+
+    #[test]
+    fn a_page_opened_late_hears_how_old_the_data_is() {
+        let hub = SharedHub::default();
+        publish(&hub, &snapshot(1, None, Vec::new()));
+        let last: Value = serde_json::from_str(&subscribe(&hub, false).try_iter().last().unwrap()).unwrap();
+        assert_eq!(last["type"], "data_age");
+        assert!(last["ms"].as_u64().is_some_and(|ms| ms < 1000), "{last}");
+    }
+
+    #[test]
+    fn replays_keep_the_recorded_timing() {
+        let live: Stamped = serde_json::from_str(r#"{"type":"round_active","tick":500,"time":1700000000123}"#).unwrap();
+        assert_eq!(line_time(&live), Some(1_700_000_000_123), "live output: its receive time");
+        let offline: Stamped = serde_json::from_str(r#"{"type":"round_active","tick":500}"#).unwrap();
+        assert_eq!(line_time(&offline), Some(7500), "offline output: its tick, 15 ms each");
+        let status: Stamped = serde_json::from_str(r#"{"type":"status","state":"map_change"}"#).unwrap();
+        assert_eq!(line_time(&status), None);
+        let loading: Stamped = serde_json::from_str(r#"{"type":"round_active","tick":0}"#).unwrap();
+        assert_eq!(line_time(&loading), None, "tick 0 is a map load, not a time");
+    }
+
+    #[test]
     fn detail_lines_reach_only_detail_clients() {
         let hub = SharedHub::default();
         let (plain, detail) = (subscribe(&hub, false), subscribe(&hub, true));
-        publish(&hub, &serde_json::json!({"type": "heal", "tick": 1, "medic": 3, "target": 4, "amount": 20}));
-        publish(&hub, &serde_json::json!({"type": "kill", "tick": 2, "attacker": 3, "victim": 4, "assister": null}));
+        let heal =
+            output::Heal { tick: 1, patient: PlayerId(4), healer: Some(PlayerId(3)), amount: 20, source: output::HealSource::Medigun };
+        publish(&hub, &Line::Heal(heal));
+        publish(&hub, &kill(2, 3, 4));
         let types = |rx: &Receiver<Arc<str>>| -> Vec<String> {
             rx.try_iter().map(|l| serde_json::from_str::<Value>(&l).unwrap()["type"].as_str().unwrap().to_string()).collect()
         };
@@ -1261,7 +1434,7 @@ mod tests {
         let hub = SharedHub::default();
         let app = app(Matches::One(hub.clone()));
         assert!(!app.on_map("cp_process_f12"));
-        publish(&hub, &serde_json::json!({"type": "server", "map": "cp_process_f12"}));
+        publish(&hub, &server("cp_process_f12"));
         assert!(app.on_map("cp_process_f12") && !app.on_map("cp_badlands"));
     }
 
