@@ -385,6 +385,7 @@ pub fn is_public(ip: IpAddr) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::testing::TempDir;
 
     #[test]
     fn only_public_addresses_pass() {
@@ -459,9 +460,9 @@ mod tests {
 
     #[test]
     fn matches_survive_into_the_next_process() {
-        let dir = std::env::temp_dir().join(format!("stvtf-sessions-{}", random_id()));
+        let dir = TempDir::new("sessions");
         let keys = Arc::new(token::Keys::from_hex(&"42".repeat(32)).unwrap());
-        let store = || Some(Store { dir: dir.clone(), keys: Some(keys.clone()) });
+        let store = || Some(Store { dir: dir.to_path_buf(), keys: Some(keys.clone()) });
         let mut before = Sessions::new(false, 4, 20.0);
         before.store = store();
         let m = before.open("connect 192.0.2.1:27020; password \"hunter2\"", Some("u1")).unwrap();
@@ -480,19 +481,17 @@ mod tests {
         after.reap(Duration::ZERO);
         assert!(!dir.join(&m.id).exists(), "a dropped match is forgotten");
         after.stop_all();
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
     fn a_match_saved_by_the_running_release_is_picked_up() {
-        let dir = std::env::temp_dir().join(format!("stvtf-sessions-{}", random_id()));
-        std::fs::create_dir_all(&dir).unwrap();
+        let dir = TempDir::new("sessions");
         let (id, broken) = (random_id(), random_id());
         let saved = r#"{"server":"192.0.2.1:27020","password":"tv","owner":null,"map":"cp_badlands","history":["{\"type\":\"kill\"}"]}"#;
         std::fs::write(dir.join(&id), saved).unwrap();
         std::fs::write(dir.join(&broken), r#"{"server":"192.0.2.1:27020"}"#).unwrap();
         let mut s = Sessions::new(false, 4, 20.0);
-        s.store = Some(Store { dir: dir.clone(), keys: None });
+        s.store = Some(Store { dir: dir.to_path_buf(), keys: None });
         assert_eq!(s.restore(), 1);
         let m = s.get(&id).expect("same link");
         assert_eq!((m.password.as_str(), m.owner.as_deref()), ("tv", None));
@@ -502,7 +501,6 @@ mod tests {
         drop(hub);
         assert!(!dir.join(&broken).exists(), "an unreadable one is dropped");
         s.stop_all();
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

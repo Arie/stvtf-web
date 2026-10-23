@@ -269,6 +269,11 @@ mod tests {
     use serde_json::Value;
     use stvtf::output::{self, PlayerId, Team};
 
+    /// The types of the lines queued for a page.
+    fn types(rx: &Receiver<Arc<str>>) -> Vec<String> {
+        rx.try_iter().map(|l| serde_json::from_str::<Value>(&l).unwrap()["type"].as_str().unwrap().to_string()).collect()
+    }
+
     fn player(id: u16, name: &str, team: Team) -> output::Player {
         output::Player {
             id: PlayerId(id),
@@ -382,9 +387,6 @@ mod tests {
             output::Heal { tick: 1, patient: PlayerId(4), healer: Some(PlayerId(3)), amount: 20, source: output::HealSource::Medigun };
         publish(&hub, &Line::Heal(heal));
         publish(&hub, &kill(2, 3, 4));
-        let types = |rx: &Receiver<Arc<str>>| -> Vec<String> {
-            rx.try_iter().map(|l| serde_json::from_str::<Value>(&l).unwrap()["type"].as_str().unwrap().to_string()).collect()
-        };
         assert_eq!(types(&plain), ["kill"]);
         assert_eq!(types(&detail), ["heal", "kill"]);
         assert_eq!(hub.lock().unwrap().history.len(), 1);
@@ -401,9 +403,6 @@ mod tests {
         publish(&hub, &Line::PassGet(output::PassGet { tick: 2, player: PlayerId(3) }));
         let goal = output::PassScore { tick: 3, scorer: PlayerId(3), assister: None, points: 1 };
         publish(&hub, &Line::PassScore(goal));
-        let types = |rx: &Receiver<Arc<str>>| -> Vec<String> {
-            rx.try_iter().map(|l| serde_json::from_str::<Value>(&l).unwrap()["type"].as_str().unwrap().to_string()).collect()
-        };
         // High-volume lines the page draws nothing for only go to pages that ask for detail.
         let hit = output::NpcDamage {
             tick: 4,

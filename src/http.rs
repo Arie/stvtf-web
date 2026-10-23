@@ -425,6 +425,7 @@ fn form_decode(v: &str) -> String {
 mod tests {
     use super::*;
     use crate::hub::SharedHub;
+    use crate::testing::TempDir;
     use crate::testing::app;
     use crate::{App, Matches, TcpListener, token};
 
@@ -581,12 +582,11 @@ mod tests {
 
     #[test]
     fn serves_backpack_pictures() {
-        let dir = std::env::temp_dir().join(format!("stvtf-web-backpack-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
+        let dir = TempDir::new("backpack");
         std::fs::write(dir.join("scattergun.webp"), b"RIFF").unwrap();
         std::fs::write(dir.join("items.json"), b"{}").unwrap();
         let mut a = app(Matches::One(SharedHub::default()));
-        a.backpack = dir.clone();
+        a.backpack = dir.to_path_buf();
         let get = |path: &str| request_to(&a, format!("GET {path} HTTP/1.1\r\nHost: x\r\n\r\n").as_bytes()).1;
         let picture = get("/backpack/scattergun.webp");
         assert!(picture.starts_with("HTTP/1.1 200 OK"), "{picture}");
@@ -603,7 +603,6 @@ mod tests {
         ] {
             assert!(get(bad).starts_with("HTTP/1.1 404"), "{bad}");
         }
-        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

@@ -89,23 +89,25 @@ fn line_time(stamped: &Stamped, interval: f64) -> Option<u64> {
 mod tests {
     use super::*;
     use crate::hub::{SharedHub, default_tick_interval};
+    use crate::testing::TempDir;
     use crate::testing::server;
 
     #[test]
     fn replay_without_times_stops() {
-        let path = std::env::temp_dir().join(format!("stvtf-web-replay-{}.jsonl", std::process::id()));
+        let dir = TempDir::new("replay");
+        let path = dir.join("replay.jsonl");
         for contents in ["", "{\"type\":\"status\",\"state\":\"new\"}\n"] {
             std::fs::write(&path, contents).unwrap();
             assert!(replay(&SharedHub::default(), &path, &|| true).is_err(), "{contents:?}");
         }
-        std::fs::remove_file(&path).unwrap();
     }
 
     /// A recording from an older stvtf (a field it did not have yet, a line type since renamed)
     /// or with a non-finite number (written as null) still plays: such a line is skipped.
     #[test]
     fn replays_skip_lines_they_cannot_read() {
-        let path = std::env::temp_dir().join(format!("stvtf-web-skip-{}.jsonl", std::process::id()));
+        let dir = TempDir::new("skip");
+        let path = dir.join("skip.jsonl");
         let good = serde_json::to_string(&server("cp_badlands")).unwrap().replace(r#""tick":0"#, r#""tick":6"#);
         let lines = [
             r#"{"type":"status","state":"new"}"#,
@@ -118,7 +120,6 @@ mod tests {
         let hub = SharedHub::default();
         assert_eq!(play_once(&hub, &path, &|| true).unwrap(), 3, "lines skipped");
         assert_eq!(hub.lock().unwrap().map.as_deref(), Some("cp_badlands"), "the lines after them still play");
-        std::fs::remove_file(&path).unwrap();
     }
 
     #[test]

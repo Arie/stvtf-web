@@ -116,22 +116,21 @@ pub(crate) fn write_atomic(path: &Path, data: &[u8]) -> std::io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::testing::TempDir;
 
     #[test]
     fn write_atomic_replaces_the_file() {
-        let dir = std::env::temp_dir().join(format!("stvtf-web-atomic-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
+        let dir = TempDir::new("atomic");
         let path = dir.join("m.v6.json");
         std::fs::write(&path, b"old, longer contents").unwrap();
         write_atomic(&path, b"new").unwrap();
         assert_eq!(std::fs::read(&path).unwrap(), b"new");
         assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 1, "no temporary file left");
-        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
     fn only_overview_files_are_fetched() {
-        let cache = std::env::temp_dir().join(format!("stvtf-web-overview-{}", std::process::id()));
+        let cache = TempDir::new("overview");
         for bad in ["../boundaries.json", "x.json", "a/b.webp", ".webp", "boundaries.webp.json"] {
             assert!(overview(&cache, bad).is_err(), "{bad}");
         }
@@ -143,17 +142,15 @@ mod tests {
         std::fs::write(cache.join("demostf/boundaries.json"), br#"{"cp_test": {}}"#).unwrap();
         assert_eq!(demostf_maps(&cache), ["cp_test"]);
         assert!(overview(&cache, "cp_nothere.webp").is_err());
-        std::fs::remove_dir_all(&cache).unwrap();
     }
 
     #[test]
     fn only_maps_being_watched_are_built_from_fastdl() {
-        let cache = std::env::temp_dir().join(format!("stvtf-web-onmap-{}", std::process::id()));
+        let cache = TempDir::new("onmap");
         // Not cached and not being watched: an error, without asking fastdl.
         assert!(map_geometry(&cache, "cp_nothere", false).unwrap_err().to_string().contains("no match"));
         std::fs::write(cache.join("cp_cached.v6.json"), b"{}").unwrap();
         assert_eq!(map_geometry(&cache, "cp_cached", false).unwrap(), b"{}");
-        std::fs::remove_dir_all(&cache).unwrap();
     }
 
     #[test]
@@ -165,13 +162,11 @@ mod tests {
 
     #[test]
     fn broken_cached_bsp_is_removed() {
-        let cache = std::env::temp_dir().join(format!("stvtf-web-test-{}", std::process::id()));
-        std::fs::create_dir_all(&cache).unwrap();
+        let cache = TempDir::new("test");
         let bsp = cache.join("broken.bsp");
         std::fs::write(&bsp, b"VBSP\0\0\0\0").unwrap();
         assert!(map_geometry(&cache, "broken", true).is_err());
         // So the next request downloads it again instead of failing on it forever.
         assert!(!bsp.exists());
-        std::fs::remove_dir_all(&cache).unwrap();
     }
 }

@@ -339,6 +339,39 @@ fn main() -> Result<()> {
 #[cfg(test)]
 mod testing {
     use super::*;
+
+    /// A new directory under the system's temporary one, removed when dropped, also when a test fails.
+    pub(crate) struct TempDir(PathBuf);
+
+    impl TempDir {
+        pub(crate) fn new(name: &str) -> Self {
+            static MADE: AtomicUsize = AtomicUsize::new(0);
+            let n = MADE.fetch_add(1, Ordering::Relaxed);
+            let dir = std::env::temp_dir().join(format!("stvtf-web-{name}-{}-{n}", std::process::id()));
+            std::fs::create_dir_all(&dir).unwrap();
+            TempDir(dir)
+        }
+    }
+
+    impl std::ops::Deref for TempDir {
+        type Target = Path;
+
+        fn deref(&self) -> &Path {
+            &self.0
+        }
+    }
+
+    impl AsRef<Path> for TempDir {
+        fn as_ref(&self) -> &Path {
+            &self.0
+        }
+    }
+
+    impl Drop for TempDir {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
     use stvtf::Line;
     use stvtf::output;
 
@@ -373,6 +406,7 @@ mod tests {
     use super::*;
     use crate::http::MAX_STREAMS_PER_CLIENT;
     use crate::hub::{SharedHub, publish};
+    use crate::testing::TempDir;
     use crate::testing::{app, server};
 
     #[test]
@@ -386,8 +420,7 @@ mod tests {
 
     #[test]
     fn a_demo_folder_gives_one_match_per_recording() {
-        let dir = std::env::temp_dir().join(format!("stvtf-web-demos-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
+        let dir = TempDir::new("demos");
         for name in ["pass_time.jsonl.gz", "rd.jsonl", "notes.txt", "bad name.jsonl", ".jsonl", "mvm-tank.jsonl"] {
             std::fs::write(dir.join(name), "").unwrap();
         }
@@ -399,7 +432,6 @@ mod tests {
         let expected = [("mvm-tank", "mvm-tank.jsonl"), ("pass_time", "pass_time.jsonl.gz"), ("rd", "rd.jsonl")];
         assert_eq!(found, expected.map(|(a, b)| (a.to_string(), b.to_string())));
         assert!(demo_files(&dir.join("missing")).is_err(), "a missing folder is an error, not no demos");
-        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
