@@ -1,6 +1,6 @@
 //! Map geometry built from fastdl's BSPs and demos.tf's overviews, kept on disk.
 
-use crate::bsp;
+use crate::{bsp, is_name};
 use anyhow::{Result, bail};
 use serde::de::IgnoredAny;
 use std::collections::BTreeMap;
@@ -19,7 +19,7 @@ const DAY: Duration = Duration::from_hours(24);
 /// Builds a map that is not in the cache yet only when `fetch`: otherwise anyone could have every
 /// map on fastdl downloaded and kept here.
 pub(crate) fn map_geometry(cache: &Path, name: &str, fetch: bool) -> Result<Vec<u8>> {
-    if name.is_empty() || !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+    if !is_name(name, b"_") {
         bail!("bad map name");
     }
     std::fs::create_dir_all(cache)?;
@@ -64,7 +64,7 @@ pub(crate) fn map_geometry(cache: &Path, name: &str, fetch: bool) -> Result<Vec<
 pub(crate) fn overview(cache: &Path, file: &str) -> Result<Vec<u8>> {
     let image = match file.strip_suffix(".webp") {
         _ if file == "boundaries.json" => None,
-        Some(map) if !map.is_empty() && map.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') => Some(map),
+        Some(map) if is_name(map, b"_") => Some(map),
         _ => bail!("no such overview"),
     };
     let remote = if image.is_some() { format!("images/{file}") } else { file.to_string() };
@@ -160,7 +160,7 @@ mod tests {
     fn warm_maps_are_valid_names() {
         let names: Vec<&str> = WARM.lines().filter(|l| !l.is_empty() && !l.starts_with('#')).collect();
         assert!(names.len() > 10);
-        assert!(names.iter().all(|n| n.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')), "{names:?}");
+        assert!(names.iter().all(|n| is_name(n, b"_")), "{names:?}");
     }
 
     #[test]

@@ -2,8 +2,8 @@
 
 use crate::cache::{map_geometry, overview};
 use crate::hub::{SharedHub, subscribe};
-use crate::sessions::{Sessions, Viewer};
-use crate::{App, Matches, lock, sessions};
+use crate::sessions::{Session, Sessions, Viewer};
+use crate::{App, Matches, is_name, lock, sessions};
 use anyhow::{Result, anyhow, bail};
 use flate2::Compression;
 use flate2::write::GzEncoder;
@@ -15,8 +15,14 @@ use std::time::Duration;
 
 const INDEX: &str = include_str!("../index.html");
 const LANDING: &str = include_str!("../landing.html");
+const HTML: &str = "text/html; charset=utf-8";
 const CSS: &str = "text/css; charset=utf-8";
 const JS: &str = "text/javascript; charset=utf-8";
+const TEXT: &str = "text/plain";
+const JSON: &str = "application/json";
+const WEBP: &str = "image/webp";
+const SVG: &str = "image/svg+xml";
+const TTF: &str = "font/ttf";
 
 /// The page's stylesheet and modules, served at `/app/<version>/`: `main.js` imports the rest.
 const APP: [(&str, &str, &[u8]); 13] = [
@@ -66,13 +72,95 @@ const STREAM_GZIP: u32 = 5;
 /// An event stream with nothing to send sends a comment this often, so proxies keep it open.
 const KEEPALIVE: Duration = Duration::from_secs(15);
 
-fn respond(s: &mut TcpStream, status: &str, ctype: &str, body: &[u8]) -> std::io::Result<()> {
-    write!(
-        s,
-        "HTTP/1.1 {status}\r\nContent-Type: {ctype}\r\nContent-Length: {}\r\nX-Content-Type-Options: nosniff\r\nConnection: close\r\n\r\n",
-        body.len()
-    )?;
+/// After a restart (a deploy), browsers come back after this instead of their default 3 s.
+const RECONNECT_AFTER: Duration = Duration::from_secs(1);
+
+/// How long a browser keeps a file that does not change for a given build.
+const CACHE_FOR: Duration = Duration::from_hours(24);
+
+/// FNV-1a, 64 bits.
+const FNV_OFFSET_BASIS: u64 = 0xcbf2_9ce4_8422_2325;
+const FNV_PRIME: u64 = 0x0100_0000_01b3;
+
+/// What the server needs of a request; the body, if any, is still to be read.
+struct Request {
+    method: String,
+    path: String,
+    query: String,
+    length: usize,
+    gzip: bool,
+    /// The client's address as the proxy in front says it.
+    forwarded: Option<IpAddr>,
+}
+
+/// The request line and headers.
+fn read_request(reader: &mut impl BufRead) -> Result<Request> {
+    let mut line = String::new();
+    reader.read_line(&mut line)?;
+    let mut words = line.split_whitespace();
+    let method = words.next().unwrap_or("GET").to_string();
+    let target = words.next().unwrap_or("/");
+    let (path, query) = target.split_once('?').unwrap_or((target, ""));
+    let mut request = Request { method, path: path.to_string(), query: query.to_string(), length: 0, gzip: false, forwarded: None };
+    loop {
+        let mut header = String::new();
+        if reader.read_line(&mut header)? == 0 {
+            bail!("request incomplete or over {MAX_REQUEST} bytes");
+        }
+        if header == "\r\n" {
+            return Ok(request);
+        }
+        let Some((name, value)) = header.split_once(':') else { continue };
+        if name.eq_ignore_ascii_case("content-length") {
+            request.length = value.trim().parse().unwrap_or(0);
+        } else if name.eq_ignore_ascii_case("x-forwarded-for") {
+            // The proxy in front adds the address it saw last; earlier ones are the client's say-so.
+            request.forwarded = value.rsplit(',').next().and_then(|a| a.trim().parse::<IpAddr>().ok());
+        } else if name.eq_ignore_ascii_case("accept-encoding") {
+            request.gzip = value.split(',').any(|e| e.split(';').next().is_some_and(|e| e.trim().eq_ignore_ascii_case("gzip")));
+        }
+    }
+}
+
+/// A query string's or form's value for `name`, undecoded.
+fn param<'a>(query: &'a str, name: &str) -> Option<&'a str> {
+    query.split('&').find_map(|kv| kv.split_once('=').filter(|(k, _)| *k == name).map(|(_, v)| v))
+}
+
+/// The status line and headers; every response says `nosniff`.
+fn write_head(s: &mut impl Write, status: &str, headers: &[(&str, &str)]) -> std::io::Result<()> {
+    write!(s, "HTTP/1.1 {status}\r\n")?;
+    for (name, value) in headers {
+        write!(s, "{name}: {value}\r\n")?;
+    }
+    write!(s, "X-Content-Type-Options: nosniff\r\n\r\n")
+}
+
+/// A whole response, after which the connection closes.
+fn respond_with(s: &mut TcpStream, status: &str, headers: &[(&str, &str)], body: &[u8]) -> std::io::Result<()> {
+    let length = body.len().to_string();
+    let mut all = headers.to_vec();
+    all.extend([("Content-Length", length.as_str()), ("Connection", "close")]);
+    write_head(s, status, &all)?;
     s.write_all(body)
+}
+
+fn respond(s: &mut TcpStream, status: &str, ctype: &str, body: &[u8]) -> std::io::Result<()> {
+    respond_with(s, status, &[("Content-Type", ctype)], body)
+}
+
+/// A file that never changes for a given build, so the browser keeps it.
+fn respond_cached(s: &mut TcpStream, ctype: &str, body: &[u8]) -> std::io::Result<()> {
+    let max_age = format!("max-age={}", CACHE_FOR.as_secs());
+    respond_with(s, "200 OK", &[("Content-Type", ctype), ("Cache-Control", &max_age)], body)
+}
+
+fn not_found(s: &mut TcpStream) -> std::io::Result<()> {
+    respond(s, "404 Not Found", TEXT, b"not found")
+}
+
+pub(crate) fn redirect(s: &mut TcpStream, status: &str, location: &str) -> std::io::Result<()> {
+    respond_with(s, status, &[("Location", location)], b"")
 }
 
 pub(crate) fn serve(mut s: TcpStream, app: &App) -> Result<()> {
@@ -80,86 +168,79 @@ pub(crate) fn serve(mut s: TcpStream, app: &App) -> Result<()> {
     s.set_read_timeout(Some(READ_TIMEOUT))?;
     s.set_write_timeout(Some(WRITE_TIMEOUT))?;
     let mut reader = BufReader::new(s.try_clone()?.take(MAX_REQUEST));
-    let mut request = String::new();
-    reader.read_line(&mut request)?;
-    let (mut length, mut gzip, mut forwarded) = (0, false, None);
-    loop {
-        let mut header = String::new();
-        if reader.read_line(&mut header)? == 0 {
-            bail!("request incomplete or over {MAX_REQUEST} bytes");
-        }
-        if header == "\r\n" {
-            break;
-        }
-        if let Some((name, value)) = header.split_once(':') {
-            if name.eq_ignore_ascii_case("content-length") {
-                length = value.trim().parse().unwrap_or(0);
-            } else if name.eq_ignore_ascii_case("x-forwarded-for") {
-                // The proxy in front adds the address it saw last; earlier ones are the client's say-so.
-                forwarded = value.rsplit(',').next().and_then(|a| a.trim().parse::<IpAddr>().ok());
-            } else if name.eq_ignore_ascii_case("accept-encoding") {
-                gzip = value.split(',').any(|e| e.split(';').next().is_some_and(|e| e.trim().eq_ignore_ascii_case("gzip")));
-            }
-        }
-    }
+    let request = read_request(&mut reader)?;
     let peer = s.peer_addr()?.ip();
-    let client = client_key(forwarded.filter(|_| on_our_network(peer)).unwrap_or(peer));
-    let method = request.split_whitespace().next().unwrap_or("GET");
-    let target = request.split_whitespace().nth(1).unwrap_or("/");
-    let (path, query) = target.split_once('?').unwrap_or((target, ""));
-    let html = "text/html; charset=utf-8";
-    match (&app.matches, path) {
-        (_, "/up") => respond(&mut s, "200 OK", "text/plain", b"ok")?,
-        (Matches::One(_), p) if p == "/index.html" || p.strip_prefix('/').is_some_and(is_page) => {
-            respond(&mut s, "200 OK", html, &app.page(INDEX))?;
-        }
-        (Matches::One(hub), "/events") => match app.stream_slot(client) {
-            Some(_slot) => stream(s, hub, gzip, wants_detail(query))?,
+    let client = client_key(request.forwarded.filter(|_| on_our_network(peer)).unwrap_or(peer));
+    match &app.matches {
+        _ if request.path == "/up" => respond(&mut s, "200 OK", TEXT, b"ok")?,
+        Matches::One(hub) => serve_one(s, app, hub, &request, client)?,
+        Matches::Many(sessions) => serve_many(s, &mut reader, app, sessions, &request, client)?,
+    }
+    Ok(())
+}
+
+/// The one match a server given a server address watches, at `/`.
+fn serve_one(mut s: TcpStream, app: &App, hub: &SharedHub, request: &Request, client: IpAddr) -> Result<()> {
+    match request.path.as_str() {
+        p if p == "/index.html" || p.strip_prefix('/').is_some_and(is_page) => respond(&mut s, "200 OK", HTML, &app.page(INDEX))?,
+        "/events" => match app.stream_slot(client) {
+            Some(_slot) => stream(s, hub, request.gzip, wants_detail(&request.query))?,
             None => too_many_streams(&mut s)?,
         },
-        (Matches::Many(_), "/" | "/watch") if app.keys.is_some() => front_door(&mut s, app, path)?,
-        (Matches::Many(sessions), "/start") => match start(app, sessions, query) {
-            Ok(m) => app.redirect(&mut s, "303 See Other", &format!("/w/{}/", m.id))?,
-            Err(e) => respond(&mut s, "400 Bad Request", "text/plain", e.to_string().as_bytes())?,
+        path => serve_file(&mut s, app, path)?,
+    }
+    Ok(())
+}
+
+/// Any number of matches, each at `/w/<id>/`, and the ways to start one.
+fn serve_many(mut s: TcpStream, reader: &mut impl Read, app: &App, sessions: &Sessions, request: &Request, client: IpAddr) -> Result<()> {
+    let started = |s: &mut TcpStream, m: &Session| app.redirect(s, "303 See Other", &format!("/w/{}/", m.id));
+    match (request.path.as_str(), request.method.as_str()) {
+        (path @ ("/" | "/watch"), _) if app.keys.is_some() => front_door(&mut s, app, path)?,
+        ("/start", _) => match start(app, sessions, &request.query) {
+            Ok(m) => started(&mut s, &m)?,
+            Err(e) => respond(&mut s, "400 Bad Request", TEXT, e.to_string().as_bytes())?,
         },
-        (Matches::Many(_), "/") if method == "GET" => respond(&mut s, "200 OK", html, &app.page(&landing("")))?,
-        (Matches::Many(sessions), "/watch") if method == "POST" => {
-            let mut body = vec![0; length.min(MAX_REQUEST as usize)];
+        ("/", "GET") => respond(&mut s, "200 OK", HTML, &app.page(&landing("")))?,
+        ("/watch", "POST") => {
+            let mut body = vec![0; request.length.min(MAX_REQUEST as usize)];
             reader.read_exact(&mut body)?;
             let form = String::from_utf8_lossy(&body);
-            let line = form.split('&').find_map(|kv| kv.strip_prefix("connect=")).map(form_decode).unwrap_or_default();
+            let line = param(&form, "connect").map(form_decode).unwrap_or_default();
             match sessions.open(&line, None) {
-                Ok(m) => app.redirect(&mut s, "303 See Other", &format!("/w/{}/", m.id))?,
-                Err(e) => respond(&mut s, "400 Bad Request", html, &app.page(&landing(&e.to_string())))?,
+                Ok(m) => started(&mut s, &m)?,
+                Err(e) => respond(&mut s, "400 Bad Request", HTML, &app.page(&landing(&e.to_string())))?,
             }
         }
-        (Matches::Many(sessions), p) if let Some(path) = p.strip_prefix("/w/") => {
-            let (id, rest) = path.split_once('/').unwrap_or((path, ""));
-            match (sessions.get(id), rest) {
-                (None, _) if app.keys.is_some() => {
-                    respond(&mut s, "404 Not Found", "text/plain", b"That match is no longer being watched; open it again from the site.")?;
-                }
-                (None, _) => respond(
-                    &mut s,
-                    "404 Not Found",
-                    html,
-                    &app.page(&landing("That match is no longer being watched; paste its connect string to watch it again.")),
-                )?,
-                (Some(_), "") if !p.ends_with('/') => {
-                    app.redirect(&mut s, "308 Permanent Redirect", &format!("{p}/"))?;
-                }
-                (Some(_), rest) if is_page(rest) => respond(&mut s, "200 OK", html, &app.page(INDEX))?,
-                (Some(m), "events") => match app.stream_slot(client) {
-                    Some(_slot) => {
-                        let _viewer = Viewer::new(m.clone());
-                        stream(s, &m.hub, gzip, wants_detail(query))?;
-                    }
-                    None => too_many_streams(&mut s)?,
-                },
-                _ => respond(&mut s, "404 Not Found", "text/plain", b"not found")?,
-            }
+        (p, _) if let Some(path) = p.strip_prefix("/w/") => serve_match(s, app, sessions, request, path, client)?,
+        (path, _) => serve_file(&mut s, app, path)?,
+    }
+    Ok(())
+}
+
+/// A match's page and event stream: `path` is what follows `/w/`.
+fn serve_match(mut s: TcpStream, app: &App, sessions: &Sessions, request: &Request, path: &str, client: IpAddr) -> Result<()> {
+    let (id, rest) = path.split_once('/').unwrap_or((path, ""));
+    match (sessions.get(id), rest) {
+        (None, _) if app.keys.is_some() => {
+            respond(&mut s, "404 Not Found", TEXT, b"That match is no longer being watched; open it again from the site.")?;
         }
-        _ => serve_file(&mut s, app, path)?,
+        (None, _) => {
+            let gone = landing("That match is no longer being watched; paste its connect string to watch it again.");
+            respond(&mut s, "404 Not Found", HTML, &app.page(&gone))?;
+        }
+        (Some(_), "") if !path.ends_with('/') => {
+            app.redirect(&mut s, "308 Permanent Redirect", &format!("{}/", request.path))?;
+        }
+        (Some(_), rest) if is_page(rest) => respond(&mut s, "200 OK", HTML, &app.page(INDEX))?,
+        (Some(m), "events") => match app.stream_slot(client) {
+            Some(_slot) => {
+                let _viewer = Viewer::new(m.clone());
+                stream(s, &m.hub, request.gzip, wants_detail(&request.query))?;
+            }
+            None => too_many_streams(&mut s)?,
+        },
+        _ => not_found(&mut s)?,
     }
     Ok(())
 }
@@ -167,42 +248,39 @@ pub(crate) fn serve(mut s: TcpStream, app: &App) -> Result<()> {
 /// The page's files, pictures and maps.
 fn serve_file(s: &mut TcpStream, app: &App, path: &str) -> std::io::Result<()> {
     match path {
-        "/fonts/RobotoCondensed-Regular.ttf" => {
-            respond_cached(s, "font/ttf", include_bytes!("../fonts/RobotoCondensed-Regular.ttf"))?;
-        }
-        "/fonts/RobotoCondensed-Bold.ttf" => respond_cached(s, "font/ttf", include_bytes!("../fonts/RobotoCondensed-Bold.ttf"))?,
-        "/killicons.css" => respond(s, "200 OK", "text/css", include_bytes!("../killicons/killicons.css"))?,
-        "/killicons.webp" => respond(s, "200 OK", "image/webp", include_bytes!("../killicons/killicons.webp"))?,
+        "/fonts/RobotoCondensed-Regular.ttf" => respond_cached(s, TTF, include_bytes!("../fonts/RobotoCondensed-Regular.ttf")),
+        "/fonts/RobotoCondensed-Bold.ttf" => respond_cached(s, TTF, include_bytes!("../fonts/RobotoCondensed-Bold.ttf")),
+        "/killicons.css" => respond(s, "200 OK", CSS, include_bytes!("../killicons/killicons.css")),
+        "/killicons.webp" => respond(s, "200 OK", WEBP, include_bytes!("../killicons/killicons.webp")),
         p if let Some(file) = p.strip_prefix("/icons/") => match ICONS.iter().find(|(name, _)| file.strip_suffix(".svg") == Some(name)) {
-            Some((_, svg)) => respond(s, "200 OK", "image/svg+xml", svg)?,
-            None => respond(s, "404 Not Found", "text/plain", b"not found")?,
+            Some((_, svg)) => respond(s, "200 OK", SVG, svg),
+            None => not_found(s),
         },
         p if let Some(file) = p.strip_prefix("/app/") => {
             match APP.iter().find(|(name, ..)| file.split_once('/').is_some_and(|(_, n)| n == *name)) {
-                Some((_, ctype, body)) => respond_cached(s, ctype, body)?,
-                None => respond(s, "404 Not Found", "text/plain", b"not found")?,
+                Some((_, ctype, body)) => respond_cached(s, ctype, body),
+                None => not_found(s),
             }
         }
-        p if let Some(file) = p.strip_prefix("/backpack/") => serve_backpack(s, app, file)?,
-        p if p.starts_with("/overview/") || p.starts_with("/map/") => serve_cached(s, app, p)?,
-        _ => respond(s, "404 Not Found", "text/plain", b"not found")?,
+        p if let Some(file) = p.strip_prefix("/backpack/") => serve_backpack(s, app, file),
+        p if p.starts_with("/overview/") || p.starts_with("/map/") => serve_cached(s, app, p),
+        _ => not_found(s),
     }
-    Ok(())
 }
 
 /// Matches start only from the site's links: `/` sends visitors to it (`--home`), and the form to
 /// watch any server is closed.
 fn front_door(s: &mut TcpStream, app: &App, path: &str) -> std::io::Result<()> {
     match app.home.as_deref().filter(|_| path == "/") {
-        Some(home) => write!(s, "HTTP/1.1 302 Found\r\nLocation: {home}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"),
-        None => respond(s, "403 Forbidden", "text/plain", b"Start watching a match from the site that sent you here."),
+        Some(home) => redirect(s, "302 Found", home),
+        None => respond(s, "403 Forbidden", TEXT, b"Start watching a match from the site that sent you here."),
     }
 }
 
 /// Only a proxy on our own network (kamal-proxy) is believed about who the client is.
 fn on_our_network(ip: IpAddr) -> bool {
     match ip.to_canonical() {
-        IpAddr::V4(_) => !sessions::is_public(ip.to_canonical()),
+        v4 @ IpAddr::V4(_) => !sessions::is_public(v4),
         IpAddr::V6(v6) => v6.is_loopback() || v6.is_unique_local(),
     }
 }
@@ -216,12 +294,11 @@ fn client_key(ip: IpAddr) -> IpAddr {
 }
 
 fn too_many_streams(s: &mut TcpStream) -> std::io::Result<()> {
-    respond(s, "429 Too Many Requests", "text/plain", b"too many matches open from your address")
+    respond(s, "429 Too Many Requests", TEXT, b"too many matches open from your address")
 }
 
 /// A map's geometry, or a demos.tf overview, from the cache (fetched and made on a miss).
 fn serve_cached(s: &mut TcpStream, app: &App, p: &str) -> std::io::Result<()> {
-    // The locks guard nothing, so a panic in an earlier request (poisoning them) does not matter.
     let result = if let Some(file) = p.strip_prefix("/overview/") {
         let _one_at_a_time = lock(&app.overviews);
         overview(&app.cache, file)
@@ -230,29 +307,26 @@ fn serve_cached(s: &mut TcpStream, app: &App, p: &str) -> std::io::Result<()> {
         let _one_at_a_time = lock(&app.maps);
         map_geometry(&app.cache, name, fetch)
     } else {
-        return respond(s, "404 Not Found", "text/plain", b"not found");
+        return not_found(s);
     };
     match result {
-        Ok(body) if p.starts_with("/map/") => respond(s, "200 OK", "application/json", &body),
-        Ok(body) if p == "/overview/boundaries.json" => respond_cached(s, "application/json", &body),
-        Ok(body) => respond_cached(s, "image/webp", &body),
-        Err(e) => respond(s, "404 Not Found", "text/plain", e.to_string().as_bytes()),
+        Ok(body) if p.starts_with("/map/") => respond(s, "200 OK", JSON, &body),
+        Ok(body) if p == "/overview/boundaries.json" => respond_cached(s, JSON, &body),
+        Ok(body) => respond_cached(s, WEBP, &body),
+        Err(e) => respond(s, "404 Not Found", TEXT, e.to_string().as_bytes()),
     }
 }
 
 /// A backpack picture or `items.json`; the name is checked so it cannot leave the directory.
 fn serve_backpack(s: &mut TcpStream, app: &App, file: &str) -> std::io::Result<()> {
-    let (stem, ctype) = match file.rsplit_once('.') {
-        Some((stem, "webp")) => (stem, "image/webp"),
-        Some(("items", "json")) => ("items", "application/json"),
-        _ => ("", ""),
+    let found = match file.rsplit_once('.') {
+        Some((stem, "webp")) if is_name(stem, b"_") => Some(WEBP),
+        Some(("items", "json")) => Some(JSON),
+        _ => None,
     };
-    if stem.is_empty() || !stem.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_') {
-        return respond(s, "404 Not Found", "text/plain", b"not found");
-    }
-    match std::fs::read(app.backpack.join(file)) {
-        Ok(body) => respond_cached(s, ctype, &body),
-        Err(_) => respond(s, "404 Not Found", "text/plain", b"not found"),
+    match found.and_then(|ctype| Some((ctype, std::fs::read(app.backpack.join(file)).ok()?))) {
+        Some((ctype, body)) => respond_cached(s, ctype, &body),
+        None => not_found(s),
     }
 }
 
@@ -261,28 +335,15 @@ fn serve_backpack(s: &mut TcpStream, app: &App, file: &str) -> std::io::Result<(
 pub(crate) fn app_version() -> &'static str {
     static VERSION: std::sync::OnceLock<String> = std::sync::OnceLock::new();
     VERSION.get_or_init(|| {
-        let mut h: u64 = 0xcbf2_9ce4_8422_2325;
-        for b in APP.iter().flat_map(|(.., body)| body.iter()) {
-            h = (h ^ u64::from(*b)).wrapping_mul(0x0100_0000_01b3);
-        }
-        format!("{h:016x}")
+        let hash = APP.iter().flat_map(|(.., body)| body.iter()).fold(FNV_OFFSET_BASIS, |h, b| (h ^ u64::from(*b)).wrapping_mul(FNV_PRIME));
+        format!("{hash:016x}")
     })
 }
 
-/// A file that never changes for a given build, so the browser keeps it for a day.
-fn respond_cached(s: &mut TcpStream, ctype: &str, body: &[u8]) -> std::io::Result<()> {
-    write!(
-        s,
-        "HTTP/1.1 200 OK\r\nContent-Type: {ctype}\r\nContent-Length: {}\r\nCache-Control: max-age=86400\r\nX-Content-Type-Options: nosniff\r\nConnection: close\r\n\r\n",
-        body.len()
-    )?;
-    s.write_all(body)
-}
-
 /// The match a site's `/start?t=` token asks for.
-fn start(app: &App, sessions: &Sessions, query: &str) -> Result<Arc<sessions::Session>> {
+fn start(app: &App, sessions: &Sessions, query: &str) -> Result<Arc<Session>> {
     let keys = app.keys.as_ref().ok_or_else(|| anyhow!("this server starts matches from its own page"))?;
-    let token = query.split('&').find_map(|kv| kv.strip_prefix("t=")).unwrap_or_default();
+    let token = param(query, "t").unwrap_or_default();
     let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs());
     let t = keys.open(token, now)?;
     sessions.open(&t.connect, t.owner.as_deref())
@@ -300,21 +361,20 @@ fn is_page(rest: &str) -> bool {
 }
 
 fn wants_detail(query: &str) -> bool {
-    query.split('&').any(|kv| kv == "detail=1")
+    param(query, "detail") == Some("1")
 }
 
 /// A match's events to one browser, until it goes away.
 /// Snapshots are 20 a second of very similar JSON: gzip, flushed after each batch so nothing waits,
 /// brings a viewer from about 110 KB/s down to a few.
 fn stream(mut s: TcpStream, hub: &SharedHub, gzip: bool, detail: bool) -> Result<()> {
-    write!(
-        s,
-        "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nCache-Control: no-cache\r\nX-Accel-Buffering: no\r\nX-Content-Type-Options: nosniff\r\n{}\r\n",
-        if gzip { "Content-Encoding: gzip\r\n" } else { "" }
-    )?;
+    let mut headers = vec![("Content-Type", "text/event-stream"), ("Cache-Control", "no-cache"), ("X-Accel-Buffering", "no")];
+    if gzip {
+        headers.push(("Content-Encoding", "gzip"));
+    }
+    write_head(&mut s, "200 OK", &headers)?;
     let mut out: Box<dyn Write> = if gzip { Box::new(GzEncoder::new(s, Compression::new(STREAM_GZIP))) } else { Box::new(s) };
-    // After a restart (a deploy), browsers come back after 1 s instead of their default 3 s.
-    write!(out, "retry: 1000\n\n")?;
+    write!(out, "retry: {}\n\n", RECONNECT_AFTER.as_millis())?;
     let rx = subscribe(hub, detail);
     loop {
         match rx.recv_timeout(KEEPALIVE) {

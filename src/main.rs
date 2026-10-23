@@ -21,7 +21,6 @@ use crate::replay::replay;
 use crate::sessions::Sessions;
 use anyhow::{Context, Result, bail};
 use std::collections::HashMap;
-use std::io::Write;
 use std::net::{IpAddr, TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -36,6 +35,11 @@ const LINGER: Duration = Duration::from_secs(180);
 
 /// Open connections, browsers on `/events` included; more are closed straight away.
 const MAX_CONNECTIONS: usize = 512;
+
+/// Whether `s` is a name safe to use in a path: letters, digits and the bytes in `extra`.
+fn is_name(s: &str, extra: &[u8]) -> bool {
+    !s.is_empty() && s.bytes().all(|b| b.is_ascii_alphanumeric() || extra.contains(&b))
+}
 
 /// Locks `m` even when a thread panicked while holding it: nothing here leaves its data
 /// half-changed, so one failed request must not fail every later one.
@@ -112,8 +116,9 @@ impl App {
         Some(Stream(self, client))
     }
 
+    /// A redirect to `path` under `base`.
     fn redirect(&self, s: &mut TcpStream, status: &str, path: &str) -> std::io::Result<()> {
-        write!(s, "HTTP/1.1 {status}\r\nLocation: {}{path}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n", self.base)
+        http::redirect(s, status, &format!("{}{path}", self.base))
     }
 }
 
@@ -198,7 +203,7 @@ fn demo_files(dir: &Path) -> Result<Vec<(String, PathBuf)>> {
         let path = entry?.path();
         let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
         let Some(id) = name.strip_suffix(".jsonl.gz").or_else(|| name.strip_suffix(".jsonl")) else { continue };
-        if !id.is_empty() && id.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-') {
+        if is_name(id, b"_-") {
             found.push((id.to_string(), path));
         }
     }
