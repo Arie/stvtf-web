@@ -156,7 +156,21 @@ fn route(line: &Line) -> Route {
         | Line::VoteCast(_)
         | Line::Tournament(_)
         | Line::Announcer(_)
-        | Line::TimeRemaining(_) => Route::Feed,
+        | Line::TimeRemaining(_)
+        | Line::PassScore(_)
+        | Line::PassStolen(_)
+        | Line::PassBlocked(_)
+        | Line::BallCarrierKilled(_)
+        | Line::RobotKilled(_)
+        | Line::SpecialScore(_)
+        | Line::TeamLeaderKilled(_)
+        | Line::RocketOpen(_)
+        | Line::RoundSelected(_)
+        | Line::PointLocked(_)
+        | Line::Sapped(_)
+        | Line::VoteStarted(_)
+        | Line::VotePassed(_)
+        | Line::VoteFailed(_) => Route::Feed,
         Line::Heal(_)
         | Line::BlastJump(_)
         | Line::Pickup(_)
@@ -164,7 +178,15 @@ fn route(line: &Line) -> Route {
         | Line::Mark(_)
         | Line::VoiceCommand(_)
         | Line::ServerText(_)
-        | Line::BuildingRepair(_) => Route::Detail,
+        | Line::BuildingRepair(_)
+        | Line::PassGet(_)
+        | Line::PassFree(_)
+        | Line::PassCaught(_)
+        | Line::PointsScored(_)
+        | Line::Stun(_)
+        | Line::CaptureStarted(_)
+        | Line::HudText(_)
+        | Line::Hint(_) => Route::Detail,
         Line::Damage(_)
         | Line::Spawn(_)
         | Line::UberEnded(_)
@@ -178,7 +200,12 @@ fn route(line: &Line) -> Route {
         | Line::Explosion(_)
         | Line::SentryShot(_)
         | Line::Airblast(_)
-        | Line::Reflect(_) => Route::Live,
+        | Line::Reflect(_)
+        | Line::Teleported(_)
+        | Line::BuildingRemoved(_)
+        | Line::BuildingDetonated(_)
+        | Line::DetStickies(_)
+        | Line::NpcDamage(_) => Route::Live,
     }
 }
 
@@ -1281,6 +1308,8 @@ mod tests {
             match_time: None,
             score: output::Score { red: 0, blue: 0 },
             captures: None,
+            points: None,
+            mvm: None,
             timers: Vec::new(),
         })
     }
@@ -1381,6 +1410,25 @@ mod tests {
         assert_eq!(types(&detail), ["heal", "kill"]);
         assert_eq!(hub.lock().unwrap().history.len(), 1);
         assert_eq!(types(&subscribe(&hub, true)), ["kill"], "detail is not replayed");
+    }
+
+    #[test]
+    fn pass_time_goals_are_kept_and_ball_pickups_are_detail() {
+        let hub = SharedHub::default();
+        publish(&hub, &snapshot(1, None, vec![player(3, "can of tuna", Team::Red)]));
+        let (plain, detail) = (subscribe(&hub, false), subscribe(&hub, true));
+        // What a page joining gets first: the snapshot and its age.
+        assert_eq!((plain.try_iter().count(), detail.try_iter().count()), (2, 2));
+        publish(&hub, &Line::PassGet(output::PassGet { tick: 2, player: PlayerId(3) }));
+        let goal = output::PassScore { tick: 3, scorer: PlayerId(3), assister: None, points: 1 };
+        publish(&hub, &Line::PassScore(goal));
+        let types = |rx: &Receiver<Arc<str>>| -> Vec<String> {
+            rx.try_iter().map(|l| serde_json::from_str::<Value>(&l).unwrap()["type"].as_str().unwrap().to_string()).collect()
+        };
+        assert_eq!(types(&plain), ["pass_score"]);
+        assert_eq!(types(&detail), ["pass_get", "pass_score"]);
+        let kept: Value = serde_json::from_str(hub.lock().unwrap().history.back().unwrap()).unwrap();
+        assert_eq!((kept["type"].as_str(), &kept["names"]["3"]["name"]), (Some("pass_score"), &Value::from("can of tuna")));
     }
 
     #[test]
