@@ -1,4 +1,4 @@
-import { $, DELAY_MS, PAGE, state, observeTick, setStatus } from "./core.js";
+import { $, DELAY, DELAY_MS, PAGE, state, observeTick, setStatus } from "./core.js";
 import { killiconsLoaded, CHAT_TYPES, chat, feedEvent } from "./feed.js";
 import { hudNodes } from "./hud.js";
 import { setFollow } from "./input.js";
@@ -24,7 +24,7 @@ let es = null;
 export function openStream() {
   es?.close();
   const s = es = new EventSource(EVENTS_URL + (detailNeeded() ? "?detail=1" : ""));
-  s.onmessage = e => later(() => handle(JSON.parse(e.data)));
+  s.onmessage = e => { const m = JSON.parse(e.data); waiting(m); later(() => handle(m)); };
   s.onopen = () => later(() => {
     if (opened) { $("feed").replaceChildren(); $("chat").replaceChildren(); }
     opened = true;
@@ -40,6 +40,22 @@ setInterval(() => {
   $("age").textContent = age < 5 ? "" : `last data ${t} ago`;
   if (age >= 5 && $("status").textContent === "live") setStatus("no data", false);
 }, 1000);
+
+// Until the first snapshot shows, say what the page is actually waiting for. The first data only
+// comes tv_delay late when SourceTV has just started broadcasting (connected, nothing yet); a match
+// under way sends its latest snapshot straight away, so then it is only the stream delay, if any.
+function waiting(m) {
+  const empty = $("empty");
+  if (empty.style.display === "none") return;
+  if (m.type === "snapshot") {
+    if (DELAY_MS) empty.textContent = `holding the match back ${DELAY}s to line up with the stream…`;
+  } else if (m.type === "status") {
+    empty.textContent =
+      m.state === "full" ? "SourceTV has just started: its first data comes tv_delay after that…"
+      : m.reason ? `SourceTV ${m.state.replaceAll("_", " ")}: ${m.reason}`
+      : "connecting to SourceTV…";
+  }
+}
 
 function handle(m) {
   // Feed events from before the page opened: straight into the feed and chat, no map effects.
