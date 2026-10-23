@@ -5,7 +5,7 @@
 
 use anyhow::{Result, anyhow, bail};
 use serde::Serialize;
-use stvtf::output::{PickupItem, PickupSize, Team};
+use stvtf::output::{PickupItem, PickupSize, Team, round1};
 
 const LUMP_ENTITIES: usize = 0;
 const LUMP_PLANES: usize = 1;
@@ -19,8 +19,15 @@ const LUMP_MODELS: usize = 14;
 const LUMP_TEXDATA_STRING_DATA: usize = 43;
 const LUMP_TEXDATA_STRING_TABLE: usize = 44;
 
-// sky2d, sky, trigger, nodraw, hint, skip
-const SKIP_FLAGS: i32 = 0x2 | 0x4 | 0x40 | 0x80 | 0x100 | 0x200;
+/// `SURF_*` texture flags of faces that are not drawn as part of the world.
+const SURF_SKY2D: i32 = 0x2;
+const SURF_SKY: i32 = 0x4;
+const SURF_TRIGGER: i32 = 0x40;
+const SURF_NODRAW: i32 = 0x80;
+const SURF_HINT: i32 = 0x100;
+const SURF_SKIP: i32 = 0x200;
+const SKIP_FLAGS: i32 = SURF_SKY2D | SURF_SKY | SURF_TRIGGER | SURF_NODRAW | SURF_HINT | SURF_SKIP;
+/// Room around the points, packs and spawns that frame the playable area.
 const PAD: f32 = 1536.0;
 // The lumps read here are under 2 MB on real maps; a crafted one could otherwise claim 512 MB
 // unpacked for each, from a few KB of LZMA.
@@ -28,10 +35,16 @@ const MAX_LUMP: usize = 16 << 20;
 /// The lump directory follows the `VBSP` id and version: offset, length, version and id per lump.
 const LUMP_DIRECTORY: usize = 8;
 const LUMP_ENTRY: usize = 16;
+const LUMP_OFFSET: usize = 0;
+const LUMP_LENGTH: usize = 4;
 /// Valve's LZMA lump header: `LZMA`, actual size (u32), packed size (u32), 5 property bytes.
+const LZMA_MAGIC: &[u8] = b"LZMA";
 const LZMA_ACTUAL_SIZE: usize = 4;
 const LZMA_PROPERTIES: usize = 12;
 const LZMA_HEADER: usize = 17;
+/// The sizes of the fields read.
+const F32_SIZE: usize = 4;
+const U16_SIZE: usize = 2;
 /// Record sizes and field offsets of the lumps read (`dplane_t`, `dface_t`, …).
 const PLANE_SIZE: usize = 20;
 const PLANE_NORMAL_Z: usize = 8;
@@ -66,6 +79,11 @@ const SPAWN_SLACK: f64 = 64.0;
 const SPAWN_REACH: f32 = 4096.0;
 /// The margin around the floors when no points or packs frame the map.
 const FLOOR_MARGIN: f32 = 256.0;
+/// Texture names of tool brushes (clips, triggers, …), which are not drawn.
+const TOOL_TEXTURES: &str = "tools/";
+/// `TeamNum` of an entity on each team.
+const TEAM_RED: &str = "2";
+const TEAM_BLUE: &str = "3";
 
 type Vec3 = [f32; 3];
 /// A position as served, to a tenth of a unit.
@@ -153,6 +171,35 @@ pub struct SpawnPoint {
     pub disabled: bool,
 }
 
+/// A box: its lowest and highest corner.
+#[derive(Debug, Clone, Copy)]
+struct Bounds {
+    lo: Vec3,
+    hi: Vec3,
+}
+
+impl Bounds {
+    /// The box around `pts`, `pad` wider on every side.
+    fn around(pts: &[Vec3], pad: f32) -> Self {
+        let mut b = Bounds { lo: [f32::MAX; 3], hi: [f32::MIN; 3] };
+        for p in pts {
+            for (i, v) in p.iter().enumerate() {
+                b.lo[i] = b.lo[i].min(v - pad);
+                b.hi[i] = b.hi[i].max(v + pad);
+            }
+        }
+        b
+    }
+
+    fn contains(&self, p: &Vec3) -> bool {
+        (0..3).all(|i| self.lo[i] <= p[i] && p[i] <= self.hi[i])
+    }
+
+    fn rounded(&self) -> (Position, Position) {
+        (self.lo.map(round1), self.hi.map(round1))
+    }
+}
+
 // Maps come from fastdl and can be broken, so every read is checked: a panic would take down
 // the request and poison the lock around map loading.
 fn bytes<const N: usize>(b: &[u8], o: usize) -> Result<[u8; N]> {
@@ -170,20 +217,29 @@ fn i32_at(b: &[u8], o: usize) -> Result<i32> {
 fn f32_at(b: &[u8], o: usize) -> Result<f32> {
     Ok(f32::from_le_bytes(bytes(b, o)?))
 }
+/// Three floats in a row: a point or a direction.
+fn vec3_at(b: &[u8], o: usize) -> Result<Vec3> {
+    Ok([f32_at(b, o)?, f32_at(b, o + F32_SIZE)?, f32_at(b, o + 2 * F32_SIZE)?])
+}
 /// An offset, count or index stored as an i32; negative ones are an error.
 fn index_at(b: &[u8], o: usize) -> Result<usize> {
     let v = i32_at(b, o)?;
     usize::try_from(v).map_err(|_| anyhow!("negative index {v} at {o}"))
 }
 
+/// Where lump `index`'s entry is in the lump directory.
+fn lump_entry(index: usize) -> usize {
+    LUMP_DIRECTORY + LUMP_ENTRY * index
+}
+
 fn lump(data: &[u8], index: usize) -> Result<Vec<u8>> {
-    let h = LUMP_DIRECTORY + LUMP_ENTRY * index;
-    let (ofs, len) = (index_at(data, h)?, index_at(data, h + 4)?);
+    let h = lump_entry(index);
+    let (ofs, len) = (index_at(data, h + LUMP_OFFSET)?, index_at(data, h + LUMP_LENGTH)?);
     let Some(raw) = data.get(ofs..ofs + len) else { bail!("lump {index} out of range") };
     if len > MAX_LUMP {
         bail!("lump {index}: {len} bytes");
     }
-    if !raw.starts_with(b"LZMA") {
+    if !raw.starts_with(LZMA_MAGIC) {
         return Ok(raw.to_vec());
     }
     let actual = u32::from_le_bytes(bytes(raw, LZMA_ACTUAL_SIZE)?) as usize;
@@ -200,192 +256,192 @@ fn lump(data: &[u8], index: usize) -> Result<Vec<u8>> {
     Ok(out)
 }
 
-pub fn entities(data: &[u8]) -> Result<Vec<Vec<(String, String)>>> {
+/// One entity of the entity lump: its keys and values.
+struct Entity(Vec<(String, String)>);
+
+impl Entity {
+    /// The value of `key`; Hammer keys are not case-sensitive.
+    fn get(&self, key: &str) -> Option<&str> {
+        self.0.iter().find(|(k, _)| k.eq_ignore_ascii_case(key)).map(|(_, v)| v.as_str())
+    }
+
+    fn class(&self) -> &str {
+        self.get("classname").unwrap_or_default()
+    }
+
+    fn origin(&self) -> Option<Vec3> {
+        let v: Vec<f32> = self.get("origin")?.split_whitespace().filter_map(|s| s.parse().ok()).collect();
+        <Vec3>::try_from(v.as_slice()).ok()
+    }
+
+    fn team(&self) -> Team {
+        match self.get("TeamNum") {
+            Some(TEAM_RED) => Team::Red,
+            Some(TEAM_BLUE) => Team::Blue,
+            _ => Team::Unassigned,
+        }
+    }
+
+    fn start_disabled(&self) -> bool {
+        self.get("StartDisabled") == Some("1")
+    }
+}
+
+fn entities(data: &[u8]) -> Result<Vec<Entity>> {
     let text = String::from_utf8_lossy(&lump(data, LUMP_ENTITIES)?).into_owned();
     let mut out = Vec::new();
     for block in text.split('{').skip(1) {
         let body = block.split('}').next().unwrap_or("");
         let quoted: Vec<&str> = body.split('"').skip(1).step_by(2).collect();
-        out.push(quoted.chunks(2).filter(|kv| kv.len() == 2).map(|kv| (kv[0].to_string(), kv[1].to_string())).collect());
+        out.push(Entity(quoted.chunks(2).filter(|kv| kv.len() == 2).map(|kv| (kv[0].to_string(), kv[1].to_string())).collect()));
     }
     Ok(out)
 }
 
-fn bounds_of(pts: &[Vec3], pad: f32) -> (Vec3, Vec3) {
-    let mut lo = [f32::MAX; 3];
-    let mut hi = [f32::MIN; 3];
-    for p in pts {
-        for i in 0..3 {
-            lo[i] = lo[i].min(p[i] - pad);
-            hi[i] = hi[i].max(p[i] + pad);
-        }
-    }
-    (lo, hi)
+/// What the spawns, packs and capture areas come from: the entities, the brush models some of
+/// them are, and the game's index of each control point.
+struct Entities {
+    list: Vec<Entity>,
+    models: Vec<u8>,
+    /// `team_control_point` targetname -> the point's index in the game, which is its rank by
+    /// `point_index` (`cp_gullywash` numbers its points from 1).
+    points: Vec<(String, i64)>,
 }
 
-fn inside(p: &Vec3, b: &(Vec3, Vec3)) -> bool {
-    (0..3).all(|i| b.0[i] <= p[i] && p[i] <= b.1[i])
+impl Entities {
+    fn read(data: &[u8]) -> Result<Self> {
+        let list = entities(data)?;
+        let mut points: Vec<(String, i64)> = list
+            .iter()
+            .filter(|e| e.class() == "team_control_point")
+            .filter_map(|e| Some((e.get("targetname")?.to_string(), e.get("point_index")?.parse().ok()?)))
+            .collect();
+        points.sort_by_key(|p| p.1);
+        let mut ranks: Vec<i64> = points.iter().map(|p| p.1).collect();
+        ranks.dedup();
+        let points = points.into_iter().map(|(name, i)| (name, ranks.iter().position(|&r| r == i).unwrap_or_default() as i64)).collect();
+        Ok(Entities { list, models: lump(data, LUMP_MODELS)?, points })
+    }
+
+    fn of_class<'a>(&'a self, class: &'a str) -> impl Iterator<Item = &'a Entity> {
+        self.list.iter().filter(move |e| e.class() == class)
+    }
+
+    /// The control point a key of `e` names, by the game's index.
+    fn point(&self, e: &Entity, key: &str) -> Option<i64> {
+        let target = e.get(key)?;
+        self.points.iter().find(|(name, _)| name.eq_ignore_ascii_case(target)).map(|p| p.1)
+    }
+
+    /// A brush entity's bounds: its model's box moved by its origin.
+    fn brush_bounds(&self, e: &Entity) -> Option<Bounds> {
+        let m = usize::from(e.get("model")?.strip_prefix('*')?.parse::<u16>().ok()?);
+        let model = self.models.get(m * MODEL_SIZE..(m + 1) * MODEL_SIZE)?;
+        let origin = e.origin().unwrap_or([0.0; 3]);
+        let corner = |o: usize| -> Option<Vec3> {
+            let v = vec3_at(model, o).ok()?;
+            Some([0, 1, 2].map(|i| origin[i] + v[i]))
+        };
+        Some(Bounds { lo: corner(MODEL_MINS)?, hi: corner(MODEL_MAXS)? })
+    }
 }
 
 /// Points, pickups and the spawns near them; maps also hide unused spawns far away. None for a
 /// map without points or pickups (MGE, jump maps): its spawns frame no more than a spawn room.
-pub fn playable_bounds(data: &[u8]) -> Result<Option<(Vec3, Vec3)>> {
+fn playable_bounds(ents: &[Entity]) -> Option<Bounds> {
     let (mut core, mut spawns) = (Vec::new(), Vec::new());
-    for ent in entities(data)? {
-        let get = |k: &str| ent.iter().find(|(key, _)| key == k).map(|(_, v)| v.as_str());
-        let Some(origin) = get("origin") else { continue };
-        let v: Vec<f32> = origin.split_whitespace().filter_map(|s| s.parse().ok()).collect();
-        let Ok(p) = <Vec3>::try_from(v.as_slice()) else { continue };
-        let class = get("classname").unwrap_or("");
-        if class == "team_control_point" || class.starts_with("item_healthkit_") || class.starts_with("item_ammopack_") {
+    for ent in ents {
+        let Some(p) = ent.origin() else { continue };
+        let class = ent.class();
+        if class == "team_control_point" || pack_of(class).is_some() {
             core.push(p);
         } else if class == "info_player_teamspawn" {
             spawns.push(p);
         }
     }
     if core.is_empty() {
-        return Ok(None);
-    }
-    let near = bounds_of(&core, SPAWN_REACH);
-    core.extend(spawns.into_iter().filter(|s| inside(s, &near)));
-    Ok(Some(bounds_of(&core, PAD)))
-}
-
-fn team(v: Option<&str>) -> Team {
-    match v {
-        Some("2") => Team::Red,
-        Some("3") => Team::Blue,
-        _ => Team::Unassigned,
-    }
-}
-
-fn vec3(v: Option<&str>) -> Option<Vec3> {
-    let v: Vec<f32> = v?.split_whitespace().filter_map(|s| s.parse().ok()).collect();
-    <Vec3>::try_from(v.as_slice()).ok()
-}
-
-fn get(e: &[(String, String)], k: &str) -> Option<String> {
-    e.iter().find(|(key, _)| key.eq_ignore_ascii_case(k)).map(|(_, v)| v.clone())
-}
-
-/// A brush entity's bounds: its model's box moved by its origin.
-fn brush_bounds(models: &[u8], e: &[(String, String)]) -> Option<(Vec3, Vec3)> {
-    let m = usize::from(get(e, "model")?.strip_prefix('*')?.parse::<u16>().ok()?);
-    if (m + 1) * MODEL_SIZE > models.len() {
         return None;
     }
-    let origin = vec3(get(e, "origin").as_deref()).unwrap_or([0.0; 3]);
-    let corner = |o: usize| -> Option<Vec3> {
-        let mut c = origin;
-        for (i, v) in c.iter_mut().enumerate() {
-            *v += f32_at(models, m * MODEL_SIZE + o + i * 4).ok()?;
-        }
-        Some(c)
-    };
-    Some((corner(MODEL_MINS)?, corner(MODEL_MAXS)?))
+    let near = Bounds::around(&core, SPAWN_REACH);
+    core.extend(spawns.into_iter().filter(|s| near.contains(s)));
+    Some(Bounds::around(&core, PAD))
+}
+
+/// A health or ammo pack's kind and its size's name, from its class.
+fn pack_of(class: &str) -> Option<(PickupItem, &str)> {
+    class
+        .strip_prefix("item_healthkit_")
+        .map(|s| (PickupItem::Health, s))
+        .or_else(|| class.strip_prefix("item_ammopack_").map(|s| (PickupItem::Ammo, s)))
 }
 
 /// Health and ammo packs by size.
-fn packs(ents: &[Vec<(String, String)>]) -> Vec<Pack> {
+fn packs(ents: &[Entity]) -> Vec<Pack> {
     ents.iter()
         .filter_map(|e| {
-            let class = e.iter().find(|(k, _)| k.eq_ignore_ascii_case("classname"))?.1.as_str();
-            let (kind, size) = class
-                .strip_prefix("item_healthkit_")
-                .map(|s| (PickupItem::Health, s))
-                .or_else(|| class.strip_prefix("item_ammopack_").map(|s| (PickupItem::Ammo, s)))?;
+            let (kind, size) = pack_of(e.class())?;
             let size = match size {
                 "small" => PickupSize::Small,
                 "medium" => PickupSize::Medium,
                 "full" => PickupSize::Full,
                 _ => return None,
             };
-            let pos = vec3(e.iter().find(|(k, _)| k.eq_ignore_ascii_case("origin"))?.1.as_str().into())?;
-            Some(Pack { kind, size, pos: pos.map(r1) })
+            Some(Pack { kind, size, pos: e.origin()?.map(round1) })
         })
         .collect()
 }
 
-/// `team_control_point` targetname -> the point's index in the game, which is its rank by
-/// `point_index` (`cp_gullywash` numbers its points from 1).
-fn point_indices(ents: &[Vec<(String, String)>]) -> Vec<(String, i64)> {
-    let mut points: Vec<(String, i64)> = ents
-        .iter()
-        .filter(|e| get(e, "classname").as_deref() == Some("team_control_point"))
-        .filter_map(|e| Some((get(e, "targetname")?, get(e, "point_index")?.parse().ok()?)))
-        .collect();
-    points.sort_by_key(|p| p.1);
-    let mut ranks: Vec<i64> = points.iter().map(|p| p.1).collect();
-    ranks.dedup();
-    points.into_iter().map(|(name, i)| (name, ranks.iter().position(|&r| r == i).unwrap_or_default() as i64)).collect()
-}
-
 /// Capture areas (`trigger_capture_area`: their brush model's bounds) and the point each caps.
 /// Payload ones are parented to the cart and move with it, so their bounds are just its start.
-fn cap_areas(data: &[u8]) -> Result<Vec<CapArea>> {
-    let ents = entities(data)?;
-    let models = lump(data, LUMP_MODELS)?;
-    let points = point_indices(&ents);
-    Ok(ents
-        .iter()
-        .filter(|e| get(e, "classname").as_deref() == Some("trigger_capture_area"))
-        .filter(|e| get(e, "parentname").is_none_or(|p| p.is_empty()))
+fn cap_areas(map: &Entities) -> Vec<CapArea> {
+    map.of_class("trigger_capture_area")
+        .filter(|e| e.get("parentname").is_none_or(str::is_empty))
         .filter_map(|e| {
-            let (min, max) = brush_bounds(&models, e)?;
-            let point = get(e, "area_cap_point").and_then(|cp| points.iter().find(|(name, _)| name.eq_ignore_ascii_case(&cp)).map(|p| p.1));
-            Some(CapArea { point, min: min.map(r1), max: max.map(r1) })
+            let (min, max) = map.brush_bounds(e)?.rounded();
+            Some(CapArea { point: map.point(e, "area_cap_point"), min, max })
         })
-        .collect())
+        .collect()
 }
 
 /// Spawn rooms (`func_respawnroom`: their brush model's bounds) and spawn points
 /// (`info_player_teamspawn`), with the control point each spawn point belongs to: TF2 enables
 /// such a spawn point for the team that owns that point.
-pub fn spawns(data: &[u8]) -> Result<Spawns> {
-    let ents = entities(data)?;
-    let models = lump(data, LUMP_MODELS)?;
-    let points = point_indices(&ents);
-    let mut rooms = Vec::new();
-    let mut spawn_points = Vec::new();
-    for e in &ents {
-        match get(e, "classname").as_deref() {
-            Some("func_respawnroom") => {
-                let Some((min, max)) = brush_bounds(&models, e) else { continue };
-                rooms.push(SpawnRoom {
-                    name: get(e, "targetname").unwrap_or_default(),
-                    team: team(get(e, "TeamNum").as_deref()),
-                    min: min.map(r1),
-                    max: max.map(r1),
-                    disabled: get(e, "StartDisabled").as_deref() == Some("1"),
-                });
-            }
-            Some("info_player_teamspawn") => {
-                let Some(pos) = vec3(get(e, "origin").as_deref()) else { continue };
-                // Team-less spawn points are unused leftovers (on cp_process far outside the map).
-                if team(get(e, "TeamNum").as_deref()) == Team::Unassigned {
-                    continue;
-                }
-                let point =
-                    get(e, "controlpoint").and_then(|cp| points.iter().find(|(name, _)| name.eq_ignore_ascii_case(&cp)).map(|p| p.1));
-                spawn_points.push(SpawnPoint {
-                    team: team(get(e, "TeamNum").as_deref()),
-                    pos: pos.map(r1),
-                    point,
-                    disabled: get(e, "StartDisabled").as_deref() == Some("1"),
-                });
-            }
-            _ => {}
-        }
-    }
-    // Some maps (pl_swiftwater) give a room its team by input: take the team of the spawn points
-    // inside, else of the room around its centre.
+fn spawns(map: &Entities) -> Spawns {
+    let mut rooms: Vec<SpawnRoom> = map
+        .of_class("func_respawnroom")
+        .filter_map(|e| {
+            let (min, max) = map.brush_bounds(e)?.rounded();
+            let name = e.get("targetname").unwrap_or_default().to_string();
+            Some(SpawnRoom { name, team: e.team(), min, max, disabled: e.start_disabled() })
+        })
+        .collect();
+    let points: Vec<SpawnPoint> = map
+        .of_class("info_player_teamspawn")
+        // Team-less spawn points are unused leftovers (on cp_process far outside the map).
+        .filter(|e| e.team() != Team::Unassigned)
+        .filter_map(|e| {
+            Some(SpawnPoint {
+                team: e.team(),
+                pos: e.origin()?.map(round1),
+                point: map.point(e, "controlpoint"),
+                disabled: e.start_disabled(),
+            })
+        })
+        .collect();
+    give_rooms_teams(&mut rooms, &points);
+    Spawns { rooms, points }
+}
+
+/// Some maps (`pl_swiftwater`) give a room its team by input: take the team of the spawn points
+/// inside, else of the room around its centre.
+fn give_rooms_teams(rooms: &mut [SpawnRoom], points: &[SpawnPoint]) {
     for by_points in [true, false] {
         for i in 0..rooms.len() {
             if rooms[i].team != Team::Unassigned {
                 continue;
             }
             let found = if by_points {
-                let teams: Vec<Team> = spawn_points.iter().filter(|p| rooms[i].holds(p.pos)).map(|p| p.team).collect();
+                let teams: Vec<Team> = points.iter().filter(|p| rooms[i].holds(p.pos)).map(|p| p.team).collect();
                 teams.first().copied().filter(|t| teams.iter().all(|u| u == t))
             } else {
                 let centre = rooms[i].centre();
@@ -396,7 +452,6 @@ pub fn spawns(data: &[u8]) -> Result<Spawns> {
             }
         }
     }
-    Ok(Spawns { rooms, points: spawn_points })
 }
 
 fn texture_names(data: &[u8]) -> Result<Vec<String>> {
@@ -415,8 +470,79 @@ fn texture_names(data: &[u8]) -> Result<Vec<String>> {
         .collect()
 }
 
-fn r1(v: f32) -> f64 {
-    (f64::from(v) * 10.0).round() / 10.0
+/// The lumps the world's faces are read from.
+struct World {
+    planes: Vec<u8>,
+    verts: Vec<u8>,
+    texinfo: Vec<u8>,
+    faces: Vec<u8>,
+    edges: Vec<u8>,
+    surfedges: Vec<u8>,
+    textures: Vec<String>,
+}
+
+/// A face of the world as seen from above: its corners and how far its normal points up.
+struct Face {
+    pts: Vec<Vec3>,
+    normal_z: f32,
+}
+
+impl World {
+    fn read(data: &[u8]) -> Result<Self> {
+        Ok(World {
+            planes: lump(data, LUMP_PLANES)?,
+            verts: lump(data, LUMP_VERTEXES)?,
+            texinfo: lump(data, LUMP_TEXINFO)?,
+            faces: lump(data, LUMP_FACES)?,
+            edges: lump(data, LUMP_EDGES)?,
+            surfedges: lump(data, LUMP_SURFEDGES)?,
+            textures: texture_names(data)?,
+        })
+    }
+
+    /// Face `f`, or None for one that is not drawn. `edges_left` is how many of the map's edges
+    /// are not used yet: the world's faces each have their own, and a crafted map could reuse the
+    /// same ones in every face to have this build gigabytes of points.
+    fn face(&self, f: usize, edges_left: &mut usize) -> Result<Option<Face>> {
+        let o = f * FACE_SIZE;
+        let (plane, [side]) = (usize::from(u16_at(&self.faces, o)?), bytes(&self.faces, o + FACE_SIDE)?);
+        let first_edge = index_at(&self.faces, o + FACE_FIRST_EDGE)?;
+        let num_edges = usize::from(u16_at(&self.faces, o + FACE_NUM_EDGES)?);
+        let tex = i16_at(&self.faces, o + FACE_TEXINFO)?;
+        *edges_left = edges_left.checked_sub(num_edges).ok_or_else(|| anyhow!("faces use more edges than the map has"))?;
+        let Ok(tex) = usize::try_from(tex) else { return Ok(None) };
+        let t = tex * TEXINFO_SIZE;
+        let (flags, tdata) = (i32_at(&self.texinfo, t + TEXINFO_FLAGS)?, i32_at(&self.texinfo, t + TEXINFO_TEXDATA)?);
+        if flags & SKIP_FLAGS != 0 || self.textures.get(tdata as usize).is_some_and(|n| n.starts_with(TOOL_TEXTURES)) {
+            return Ok(None);
+        }
+        let mut normal_z = f32_at(&self.planes, plane * PLANE_SIZE + PLANE_NORMAL_Z)?;
+        if side != 0 {
+            normal_z = -normal_z;
+        }
+        let pts = (first_edge..first_edge + num_edges)
+            .map(|e| {
+                let se = i32_at(&self.surfedges, e * SURFEDGE_SIZE)?;
+                // A negative surfedge is the edge walked backwards: from its second vertex.
+                let eo = se.unsigned_abs() as usize * EDGE_SIZE + if se >= 0 { 0 } else { U16_SIZE };
+                vec3_at(&self.verts, usize::from(u16_at(&self.edges, eo)?) * VERTEX_SIZE)
+            })
+            .collect::<Result<_>>()?;
+        Ok(Some(Face { pts, normal_z }))
+    }
+}
+
+/// A wall's top and ends seen from above, or None for one too short to draw.
+fn wall(pts: &[Vec3]) -> Option<Wall> {
+    // total_cmp: a broken map can have NaN coordinates.
+    let key = |a: &&Vec3, b: &&Vec3| a[0].total_cmp(&b[0]).then(a[1].total_cmp(&b[1]));
+    let lo = pts.iter().min_by(key)?;
+    let hi = pts.iter().max_by(key)?;
+    if (lo[0] - hi[0]).powi(2) + (lo[1] - hi[1]).powi(2) <= MIN_WALL_LENGTH.powi(2) {
+        return None;
+    }
+    let top = pts.iter().map(|p| p[2]).fold(f32::MIN, f32::max);
+    Some(Wall { z: round1(top), p: [round1(lo[0]), round1(lo[1]), round1(hi[0]), round1(hi[1])] })
 }
 
 /// The map's spawns, packs, capture areas, playable bounds, floors (sorted from low to high) and
@@ -425,93 +551,49 @@ pub fn geometry(data: &[u8]) -> Result<Geometry> {
     if !data.starts_with(b"VBSP") {
         bail!("not a VBSP file");
     }
-    let planes = lump(data, LUMP_PLANES)?;
-    let verts = lump(data, LUMP_VERTEXES)?;
-    let texinfo = lump(data, LUMP_TEXINFO)?;
-    let faces = lump(data, LUMP_FACES)?;
-    let edges = lump(data, LUMP_EDGES)?;
-    let surfedges = lump(data, LUMP_SURFEDGES)?;
-    let models = lump(data, LUMP_MODELS)?;
-    let names = texture_names(data)?;
-    let bounds = playable_bounds(data)?;
+    let world = World::read(data)?;
+    let map = Entities::read(data)?;
+    let bounds = playable_bounds(&map.list);
 
     // Only the world model: brush entities (doors, triggers, func_brush) are separate models.
-    let (first, count) = (index_at(&models, MODEL_FIRST_FACE)?, index_at(&models, MODEL_NUM_FACES)?);
-    let vertex = |i: usize| -> Result<Vec3> {
-        let o = i * VERTEX_SIZE;
-        Ok([f32_at(&verts, o)?, f32_at(&verts, o + 4)?, f32_at(&verts, o + 8)?])
-    };
-
+    let (first, count) = (index_at(&map.models, MODEL_FIRST_FACE)?, index_at(&map.models, MODEL_NUM_FACES)?);
     let mut floors: Vec<(f32, Floor)> = Vec::new();
     let mut floor_pts = Vec::new();
     let mut walls = Vec::new();
-    // The world's faces each have their own edges; a crafted map could reuse the same ones in
-    // every face and have the loop below build gigabytes of points.
-    let mut edges_left = surfedges.len() / SURFEDGE_SIZE;
+    let mut edges_left = world.surfedges.len() / SURFEDGE_SIZE;
     for f in first..first + count {
-        let o = f * FACE_SIZE;
-        let (plane, [side]) = (usize::from(u16_at(&faces, o)?), bytes(&faces, o + FACE_SIDE)?);
-        let first_edge = index_at(&faces, o + FACE_FIRST_EDGE)?;
-        let num_edges = usize::from(u16_at(&faces, o + FACE_NUM_EDGES)?);
-        let tex = i16_at(&faces, o + FACE_TEXINFO)?;
-        edges_left = edges_left.checked_sub(num_edges).ok_or_else(|| anyhow!("faces use more edges than the map has"))?;
-        if tex < 0 {
+        let Some(face) = world.face(f, &mut edges_left)? else { continue };
+        if face.pts.len() < 3 {
             continue;
         }
-        let t = tex as usize * TEXINFO_SIZE;
-        let (flags, tdata) = (i32_at(&texinfo, t + TEXINFO_FLAGS)?, i32_at(&texinfo, t + TEXINFO_TEXDATA)?);
-        if flags & SKIP_FLAGS != 0 || names.get(tdata as usize).is_some_and(|n| n.starts_with("tools/")) {
+        let n = face.pts.len() as f32;
+        let centre = [0, 1, 2].map(|i| face.pts.iter().map(|p| p[i]).sum::<f32>() / n);
+        if bounds.is_some_and(|b| !b.contains(&centre)) {
             continue;
         }
-        let mut nz = f32_at(&planes, plane * PLANE_SIZE + PLANE_NORMAL_Z)?;
-        if side != 0 {
-            nz = -nz;
-        }
-        let pts: Vec<Vec3> = (first_edge..first_edge + num_edges)
-            .map(|e| {
-                let se = i32_at(&surfedges, e * SURFEDGE_SIZE)?;
-                let eo = se.unsigned_abs() as usize * EDGE_SIZE;
-                vertex(usize::from(if se >= 0 { u16_at(&edges, eo)? } else { u16_at(&edges, eo + 2)? }))
-            })
-            .collect::<Result<_>>()?;
-        if pts.len() < 3 {
-            continue;
-        }
-        let n = pts.len() as f32;
-        let centre = [0, 1, 2].map(|i| pts.iter().map(|p| p[i]).sum::<f32>() / n);
-        if bounds.as_ref().is_some_and(|b| !inside(&centre, b)) {
-            continue;
-        }
-        if nz > FLOOR_MIN_NORMAL_Z {
-            let p: Vec<f64> = pts.iter().flat_map(|p| [r1(p[0]), r1(p[1])]).collect();
-            floors.push((centre[2], Floor { z: r1(centre[2]), p }));
+        if face.normal_z > FLOOR_MIN_NORMAL_Z {
+            let p: Vec<f64> = face.pts.iter().flat_map(|p| [round1(p[0]), round1(p[1])]).collect();
+            floors.push((centre[2], Floor { z: round1(centre[2]), p }));
             if bounds.is_none() {
-                floor_pts.extend(pts);
+                floor_pts.extend(face.pts);
             }
-        } else if nz.abs() < WALL_MAX_NORMAL_Z {
-            // total_cmp: a broken map can have NaN coordinates.
-            let key = |a: &&Vec3, b: &&Vec3| a[0].total_cmp(&b[0]).then(a[1].total_cmp(&b[1]));
-            let lo = pts.iter().min_by(key).unwrap();
-            let hi = pts.iter().max_by(key).unwrap();
-            if (lo[0] - hi[0]).powi(2) + (lo[1] - hi[1]).powi(2) > MIN_WALL_LENGTH.powi(2) {
-                let top = pts.iter().map(|p| p[2]).fold(f32::MIN, f32::max);
-                walls.push(Wall { z: r1(top), p: [r1(lo[0]), r1(lo[1]), r1(hi[0]), r1(hi[1])] });
-            }
+        } else if face.normal_z.abs() < WALL_MAX_NORMAL_Z {
+            walls.extend(wall(&face.pts));
         }
     }
     floors.sort_by(|a, b| a.0.total_cmp(&b.0));
     // Without points or pickups, the floors frame the map; the top keeps the PAD above the
     // highest floor that the viewer's roof cut expects.
     let bounds = bounds.or_else(|| {
-        let (lo, mut hi) = bounds_of(&floor_pts, FLOOR_MARGIN);
-        hi[2] += PAD - FLOOR_MARGIN;
-        (!floor_pts.is_empty()).then_some((lo, hi))
+        let mut b = Bounds::around(&floor_pts, FLOOR_MARGIN);
+        b.hi[2] += PAD - FLOOR_MARGIN;
+        (!floor_pts.is_empty()).then_some(b)
     });
     Ok(Geometry {
-        spawns: spawns(data)?,
-        packs: packs(&entities(data)?),
-        cap_areas: cap_areas(data)?,
-        bounds: bounds.map(|(lo, hi)| [lo.map(f64::from), hi.map(f64::from)]),
+        spawns: spawns(&map),
+        packs: packs(&map.list),
+        cap_areas: cap_areas(&map),
+        bounds: bounds.map(|b| [b.lo.map(f64::from), b.hi.map(f64::from)]),
         floors: floors.into_iter().map(|f| f.1).collect(),
         walls,
     })
@@ -530,11 +612,14 @@ mod tests {
         assert!(geometry(b"not a map").is_err());
     }
 
-    /// A VBSP header (64 lumps) with every lump empty.
+    /// The lumps a VBSP header has.
+    const LUMPS: usize = 64;
+
+    /// A VBSP header with every lump empty.
     fn empty_bsp() -> Vec<u8> {
         let mut b = b"VBSP".to_vec();
         b.extend_from_slice(&20i32.to_le_bytes());
-        b.resize(8 + 64 * 16 + 4, 0);
+        b.resize(lump_entry(LUMPS) + 4, 0);
         b
     }
 
@@ -559,8 +644,8 @@ mod tests {
     fn lump_out_of_range_is_an_error() {
         for (ofs, len) in [(-1, 4), (4, -1), (i32::MAX, i32::MAX), (1000, 1_000_000)] {
             let mut b = empty_bsp();
-            set_i32(&mut b, 8 + 16 * LUMP_MODELS, ofs);
-            set_i32(&mut b, 8 + 16 * LUMP_MODELS + 4, len);
+            set_i32(&mut b, lump_entry(LUMP_MODELS), ofs);
+            set_i32(&mut b, lump_entry(LUMP_MODELS) + LUMP_LENGTH, len);
             assert!(geometry(&b).is_err(), "ofs {ofs} len {len}");
         }
     }
@@ -572,8 +657,8 @@ mod tests {
         b.extend_from_slice(b"LZMA");
         b.extend_from_slice(&u32::MAX.to_le_bytes());
         b.extend_from_slice(&[0; 9]);
-        set_i32(&mut b, 8 + 16 * LUMP_PLANES, ofs as i32);
-        set_i32(&mut b, 8 + 16 * LUMP_PLANES + 4, 17);
+        set_i32(&mut b, lump_entry(LUMP_PLANES), ofs as i32);
+        set_i32(&mut b, lump_entry(LUMP_PLANES) + LUMP_LENGTH, LZMA_HEADER as i32);
         assert!(geometry(&b).is_err());
     }
 
@@ -582,8 +667,8 @@ mod tests {
         let mut b = empty_bsp();
         let ofs = b.len();
         b.resize(ofs + MAX_LUMP + 1, 0);
-        set_i32(&mut b, 8 + 16 * LUMP_PLANES, ofs as i32);
-        set_i32(&mut b, 8 + 16 * LUMP_PLANES + 4, (MAX_LUMP + 1) as i32);
+        set_i32(&mut b, lump_entry(LUMP_PLANES), ofs as i32);
+        set_i32(&mut b, lump_entry(LUMP_PLANES) + LUMP_LENGTH, (MAX_LUMP + 1) as i32);
         assert!(lump(&b, LUMP_PLANES).unwrap_err().to_string().contains("bytes"));
     }
 
@@ -592,15 +677,15 @@ mod tests {
         let Some(mut data) = process() else { return };
         // Every face claims the same 65535 edges; the rewritten lump goes, unpacked, at the end.
         let mut faces = lump(&data, LUMP_FACES).unwrap();
-        for face in faces.as_chunks_mut::<56>().0 {
-            face[4..8].fill(0);
-            face[8..10].copy_from_slice(&u16::MAX.to_le_bytes());
+        for face in faces.as_chunks_mut::<FACE_SIZE>().0 {
+            face[FACE_FIRST_EDGE..FACE_NUM_EDGES].fill(0);
+            face[FACE_NUM_EDGES..FACE_TEXINFO].copy_from_slice(&u16::MAX.to_le_bytes());
         }
-        let h = 8 + 16 * LUMP_FACES;
+        let h = lump_entry(LUMP_FACES);
         let (ofs, len) = (data.len() as i32, faces.len() as i32);
         data.extend_from_slice(&faces);
         set_i32(&mut data, h, ofs);
-        set_i32(&mut data, h + 4, len);
+        set_i32(&mut data, h + LUMP_LENGTH, len);
         assert!(geometry(&data).unwrap_err().to_string().contains("more edges"));
     }
 
@@ -611,14 +696,14 @@ mod tests {
             let _ = geometry(&data[..n]);
         }
         for index in [LUMP_PLANES, LUMP_TEXDATA, LUMP_VERTEXES, LUMP_TEXINFO, LUMP_FACES, LUMP_EDGES, LUMP_SURFEDGES, LUMP_MODELS] {
-            let h = LUMP_DIRECTORY + LUMP_ENTRY * index;
-            let (ofs, len) = (index_at(&data, h).unwrap(), index_at(&data, h + 4).unwrap());
+            let h = lump_entry(index);
+            let (ofs, len) = (index_at(&data, h + LUMP_OFFSET).unwrap(), index_at(&data, h + LUMP_LENGTH).unwrap());
             // Too short, and the contents overwritten (out of range indices, NaN coordinates).
             let mut b = data.clone();
-            set_i32(&mut b, h + 4, (len / 2) as i32);
+            set_i32(&mut b, h + LUMP_LENGTH, (len / 2) as i32);
             let _ = geometry(&b);
             let mut b = data.clone();
-            let start = ofs + if b[ofs..].starts_with(b"LZMA") { 17 } else { 0 };
+            let start = ofs + if b[ofs..].starts_with(LZMA_MAGIC) { LZMA_HEADER } else { 0 };
             b[start..(start + 4096).min(ofs + len)].fill(0xFF);
             let _ = geometry(&b);
         }
@@ -677,7 +762,7 @@ mod tests {
     #[test]
     fn process_spawn_rooms_and_points() {
         let Some(data) = process() else { return };
-        let s = spawns(&data).unwrap();
+        let s = spawns(&Entities::read(&data).unwrap());
         assert_eq!(s.rooms.len(), 6, "three spawn rooms per team");
         assert_eq!(s.rooms.iter().filter(|r| r.team == Team::Red).count(), 3);
         // cp_process is mirrored through the middle point at the origin.
@@ -700,14 +785,14 @@ mod tests {
         // Blu's last point is index 0, at x 3768; red's last is 4, at x -3766.
         let x = |i: i64| g.cap_areas.iter().find(|a| a.point == Some(i)).map(|a| a.min[0]);
         assert!(x(0).unwrap() > 3000.0 && x(4).unwrap() < -3000.0);
-        assert!(spawns(&data).unwrap().points.iter().all(|p| p.point.is_none_or(|i| (0..5).contains(&i))));
+        assert!(spawns(&Entities::read(&data).unwrap()).points.iter().all(|p| p.point.is_none_or(|i| (0..5).contains(&i))));
     }
 
     #[test]
     fn swiftwater_teamless_spawn_rooms_take_their_spawn_points_team() {
         let path = concat!(env!("CARGO_MANIFEST_DIR"), "/cache/pl_swiftwater_final1.bsp");
         let Ok(data) = std::fs::read(path) else { return eprintln!("{path} not downloaded; skipped") };
-        let teams: Vec<Team> = spawns(&data).unwrap().rooms.iter().map(|r| r.team).collect();
+        let teams: Vec<Team> = spawns(&Entities::read(&data).unwrap()).rooms.iter().map(|r| r.team).collect();
         let (b, r) = (Team::Blue, Team::Red);
         assert_eq!(teams, [b, b, r, r, b, r]);
     }
@@ -715,7 +800,7 @@ mod tests {
     #[test]
     fn process_spawns_far_away_are_ignored() {
         let Some(data) = process() else { return };
-        let (lo, hi) = playable_bounds(&data).unwrap().unwrap();
+        let Bounds { lo, hi } = playable_bounds(&Entities::read(&data).unwrap().list).unwrap();
         assert!(lo[0] > -8000.0 && hi[1] < 8000.0, "{lo:?} {hi:?}");
     }
 }
