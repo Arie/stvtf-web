@@ -130,10 +130,13 @@ export function mmss(secs) { return `${Math.floor(secs / 60)}:${String(Math.floo
 function setText(id, text) { const el = $(id); if (el.textContent !== text) el.textContent = text; }
 export function renderScoreboard(snap, tick) {
   $("scoreboard").hidden = OVERLAY && OPT.get("score") !== "1";
-  // CTF counts the round in captured intelligence, like TF2's CTF HUD; maps with a neutral flag
-  // (bball, special delivery) keep the team score.
-  const ctf = snap.captures && (snap.objectives || []).some(o => o.kind === "flag" && (o.team === "red" || o.team === "blue"));
-  const scores = ctf ? snap.captures : snap.score;
+  // CTF counts the round in captured intelligence, like TF2's CTF HUD, and pass time in goals;
+  // maps with a neutral flag (bball, special delivery) keep the team score. Robot and player
+  // destruction count points (other maps that reuse their logic count something else with it).
+  const objectives = snap.objectives || [];
+  const ctf = snap.captures && objectives.some(o => (o.kind === "flag" && (o.team === "red" || o.team === "blue")) || o.kind === "goal");
+  const destruction = snap.points && /^(rd|pd)_/.test(state.map || "");
+  const scores = destruction ? snap.points : ctf ? snap.captures : snap.score;
   setText("score-blue", String(scores?.blue ?? 0));
   setText("score-red", String(scores?.red ?? 0));
   const timers = snap.timers || [];
@@ -160,7 +163,8 @@ export function renderScoreboard(snap, tick) {
   state.clock = into == null ? "" : mmss(into);
   setText("timer-blue", !koth && byTeam("blue") ? clock(left(byTeam("blue"))) : "");
   setText("timer-red", !koth && byTeam("red") ? clock(left(byTeam("red"))) : "");
-  const label = main?.setup ? "SETUP" : ROUND_LABEL[snap.round] ?? "";
+  // Mann vs. Machine: the wave, like its HUD.
+  const label = main?.setup ? "SETUP" : snap.mvm ? `WAVE ${snap.mvm.wave} / ${snap.mvm.waves}` : ROUND_LABEL[snap.round] ?? "";
   // A paused round timer is not a paused game (KotH, no match started): it just stands still.
   setText("round-label", label || (main && !main.paused && left(main) <= 0 ? "OVERTIME" : ""));
   const shown = main && !main.paused ? left(main) : !main ? mapLeft : null;

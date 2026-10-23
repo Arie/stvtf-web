@@ -41,6 +41,15 @@ const ANNOUNCER = {
   "Announcer.RoundEnds1seconds": "1 second remains"
 };
 let voteOptions = [];
+// What a call vote is about, from its localisation token and argument.
+const VOTE_ISSUE = {
+  "#TF_vote_nextlevel": d => `next map ${d}`, "#TF_vote_changelevel": d => `change the map to ${d}`,
+  "#TF_vote_kick_player_other": d => `kick ${d}`, "#TF_vote_kick_player_idle": d => `kick ${d} (idle)`,
+  "#TF_vote_kick_player_cheating": d => `kick ${d} (cheating)`, "#TF_vote_kick_player_scamming": d => `kick ${d} (scamming)`,
+  "#TF_vote_restart_game": () => "restart the game", "#TF_vote_scramble_teams": () => "scramble the teams",
+  "#TF_vote_extendlevel": () => "extend the map", "#TF_vote_td_start_round": () => "start the round",
+};
+const voteIssue = ev => (VOTE_ISSUE[ev.issue] || (d => [ev.issue.replace(/^#/, ""), d].filter(Boolean).join(" ")))(ev.details || "");
 
 // Kills by one player within 10 s of each other count as a streak: 2K, 3K, …
 const STREAK_TICKS = 10000 / MS_PER_TICK;
@@ -119,6 +128,29 @@ export function feedEvent(ev, p) {
       cls = `minor ${ev.team === "red" || ev.team === "blue" ? ev.team : ""}`; html = `<span>${ANNOUNCER[ev.sound]}</span>`;
       break;
     case "time_remaining": if (!layerOn("flow") || !(ev.seconds > 0)) return; cls = "minor"; html = `<span>${mmss(ev.seconds)} remaining</span>`; break;
+    case "pass_score": {
+      cls = `big ${p(ev.scorer)?.team || "none"}`;
+      html = `${name(ev.scorer)}${ev.assister != null ? "+" + name(ev.assister) : ""} <span>scored${ev.points > 1 ? ` ${ev.points} points` : ""}</span>`;
+      break;
+    }
+    case "pass_stolen": html = `${name(ev.attacker)}<span class="w">stole the ball from</span>${name(ev.victim)}`; break;
+    case "pass_blocked": cls = "minor"; html = `${name(ev.blocker)}<span class="w">blocked a pass from</span>${name(ev.owner)}`; break;
+    case "ball_carrier_killed":
+      if (!layerOn("flow")) return;
+      html = `${name(ev.attacker)}${ev.assister != null ? "+" + name(ev.assister) : ""}<span class="w">killed the ball carrier</span>${name(ev.victim)}`;
+      break;
+    case "robot_killed": cls = "minor"; html = `${name(ev.attacker)} <span>destroyed a robot</span>`; break;
+    case "special_score": cls = p(ev.player)?.team || ""; html = `${name(ev.player)} <span>scored</span>`; break;
+    case "team_leader_killed": html = `${name(ev.killer)}<span class="w">killed team leader</span>${name(ev.victim)}`; break;
+    case "rocket_open": cls = `big ${ev.team}`; html = `${teamName(ev.team)} opened the rocket`; break;
+    case "point_locked": if (!layerOn("flow")) return; cls = "minor"; html = `<span>${esc(pointName(ev))} ${ev.locked ? "locked" : "unlocked"}</span>`; break;
+    case "sapped": cls = "minor"; html = `${name(ev.player)}<span class="w">sapped</span>${name(ev.owner)}<span class="w">'s ${BUILDING[ev.object] || esc(ev.object)}</span>`; break;
+    case "vote_started":
+      if (!layerOn("flow")) return;
+      cls = "minor"; html = `${ev.caller != null ? name(ev.caller) + " " : ""}<span>called a vote: ${esc(voteIssue(ev))}</span>`;
+      break;
+    case "vote_passed": if (!layerOn("flow")) return; cls = "minor"; html = "<span>Vote passed</span>"; break;
+    case "vote_failed": if (!layerOn("flow")) return; cls = "minor"; html = "<span>Vote failed</span>"; break;
     case "round_start": cls = "big none"; html = "Round start"; break;
     case "round_win": cls = `big ${ev.team}`; html = `${teamName(ev.team)} wins the round${state.lastScores ? ` · BLU ${state.lastScores.blue} – ${state.lastScores.red} RED` : ""}`; break;
     case "scores": state.lastScores = ev; if (ev.game_over) { cls = "big none"; html = `Match over · BLU ${ev.blue} – ${ev.red} RED`; } break;

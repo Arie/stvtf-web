@@ -5,18 +5,19 @@ import { layerOn } from "./layers.js";
 // The payload cart: a mine cart in the pushing team's colour carrying TF2's big black bomb, facing
 // along the track. Heading comes from movement (kept while stopped); rolling back still faces forward.
 export const cartState = new Map();
-function cartPos(o, tick) {
+// Where a moving objective (cart, ball, robot, tank) is between the snapshots around `tick`.
+function objPos(o, tick) {
   const s = state.snaps;
   const i = s.findIndex(x => x.tick > tick);
   if (i < 1) return o.pos;
-  const a = s[i - 1].objectives?.find(q => q.kind === "cart" && q.id === o.id);
-  const b = s[i].objectives?.find(q => q.kind === "cart" && q.id === o.id);
+  const a = s[i - 1].objectives?.find(q => q.kind === o.kind && q.id === o.id);
+  const b = s[i].objectives?.find(q => q.kind === o.kind && q.id === o.id);
   if (!a || !b) return o.pos;
   const t = (tick - s[i - 1].tick) / (s[i].tick - s[i - 1].tick);
   return [a.pos[0] + (b.pos[0] - a.pos[0]) * t, a.pos[1] + (b.pos[1] - a.pos[1]) * t];
 }
 function drawCart(o, tick) {
-  const [wx, wy] = cartPos(o, tick);
+  const [wx, wy] = objPos(o, tick);
   let cs = cartState.get(o.id);
   if (!cs) cartState.set(o.id, cs = { x: wx, y: wy, h: null });
   const dx = wx - cs.x, dy = wy - cs.y;
@@ -70,10 +71,68 @@ function drawCart(o, tick) {
   ctx.restore();
 }
 
+// Pass time goals: a ring in the colour of the team that scores there.
+function drawGoal(o) {
+  const [x, y] = toScreen(o.pos[0], o.pos[1]), r = OVERLAY ? overlayUnit() * 1.4 : px(90, 14);
+  const col = TEAM[o.team] || TEAM.none;
+  ctx.save();
+  ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2);
+  ctx.fillStyle = col + "33"; ctx.fill();
+  ctx.lineWidth = OVERLAY ? Math.max(2, r * 0.14) : 3; ctx.strokeStyle = col; ctx.stroke();
+  ctx.fillStyle = "#fff"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.font = `800 ${Math.round(Math.max(9 * uiScale(), r * 0.55))}px system-ui`;
+  ctx.lineWidth = 3; ctx.strokeStyle = "#0b0c0e"; ctx.strokeText("GOAL", x, y + 0.5); ctx.fillText("GOAL", x, y + 0.5);
+  ctx.restore();
+}
+// Robot destruction robots like buildings: the team colour drains from the top as health drops.
+function drawRobot(o, tick) {
+  const [wx, wy] = objPos(o, tick);
+  const [x, y] = toScreen(wx, wy), s = OVERLAY ? overlayUnit() * 1.6 : px(40, 15);
+  const hpf = Math.max(0, Math.min(1, o.hp / (o.max_hp || 1)));
+  ctx.save();
+  ctx.beginPath(); ctx.arc(x, y, s / 2, 0, Math.PI * 2);
+  ctx.fillStyle = "rgba(11,12,14,0.6)"; ctx.fill();
+  ctx.save(); ctx.clip();
+  ctx.fillStyle = TEAM[o.team] || TEAM.none; ctx.fillRect(x - s / 2, y + s / 2 - s * hpf, s, s * hpf);
+  ctx.restore();
+  ctx.lineWidth = 1.5; ctx.strokeStyle = "#000"; ctx.stroke();
+  ctx.fillStyle = "#fff"; ctx.font = `800 ${Math.round(Math.max(9, s * 0.5))}px system-ui`;
+  ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText("R", x, y + 0.5);
+  ctx.restore();
+}
+// A dropped robot destruction core: a small diamond in its team's colour.
+function drawCore(o) {
+  const [x, y] = toScreen(o.pos[0], o.pos[1]), s = OVERLAY ? overlayUnit() * 0.7 : px(24, 7);
+  ctx.save();
+  ctx.beginPath(); ctx.moveTo(x, y - s); ctx.lineTo(x + s, y); ctx.lineTo(x, y + s); ctx.lineTo(x - s, y); ctx.closePath();
+  ctx.fillStyle = TEAM[o.team] || TEAM.none; ctx.fill();
+  ctx.lineWidth = 1.5; ctx.strokeStyle = "#000"; ctx.stroke();
+  ctx.restore();
+}
+// A Mann vs. Machine tank: a big dark hull with its health above.
+function drawTank(o, tick) {
+  const [wx, wy] = objPos(o, tick);
+  const [x, y] = toScreen(wx, wy), L = OVERLAY ? overlayUnit() * 3.2 : px(200, 26), W = L * 0.6;
+  ctx.save();
+  ctx.beginPath(); ctx.roundRect(x - L / 2, y - W / 2, L, W, W * 0.2);
+  ctx.fillStyle = "#3b4a35"; ctx.fill(); ctx.lineWidth = 2; ctx.strokeStyle = "#0b0c0e"; ctx.stroke();
+  const bw = L, bh = Math.max(4, W * 0.16), by = y - W / 2 - bh - 3;
+  ctx.fillStyle = "#0b0c0e"; ctx.fillRect(x - bw / 2, by, bw, bh);
+  ctx.fillStyle = TEAM.blue; ctx.fillRect(x - bw / 2, by, bw * Math.max(0, Math.min(1, o.health)), bh);
+  ctx.fillStyle = "#fff"; ctx.font = `800 ${Math.round(Math.max(10, W * 0.4))}px system-ui`;
+  ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText("TANK", x, y + 0.5);
+  ctx.restore();
+}
+
 export function drawObjectives(snap, tick) {
   for (const o of snap.objectives || []) {
-    if (o.kind === "flag") continue;
     if (o.kind === "cart") { drawCart(o, tick); continue; }
+    if (o.kind === "goal") { drawGoal(o); continue; }
+    if (o.kind === "robot") { drawRobot(o, tick); continue; }
+    if (o.kind === "core") { drawCore(o); continue; }
+    if (o.kind === "tank") { drawTank(o, tick); continue; }
+    // The flag and the pass time ball go on top of the players (drawFlags).
+    if (o.kind !== "control_point") continue;
     const [x, y] = toScreen(o.pos[0], o.pos[1]);
     // Points are squares like TF2's HUD, so they never read as players: the owner's colour,
     // filled left to right in the capping team's colour while a capture is under way.
@@ -126,10 +185,27 @@ export function drawCapAreas(snap) {
   }
 }
 
+// The pass time ball: a ball in the colour of the team that has it (yellow while neutral),
+// riding on its carrier.
+function drawBall(o, players, tick) {
+  const carrier = o.carrier != null ? players.find(p => p.id === o.carrier && p.alive && p.pos) : null;
+  const at = carrier ? carrier.pos : objPos(o, tick);
+  let [x, y] = toScreen(at[0], at[1]);
+  const r = OVERLAY ? overlayUnit() * 0.55 : px(18, 7);
+  if (carrier) { const pr = playerRad(); x += pr * 0.9; y -= pr * 0.9; }
+  ctx.save();
+  ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2);
+  ctx.fillStyle = o.team === "red" || o.team === "blue" ? TEAM[o.team] : "#f2c94c"; ctx.fill();
+  ctx.lineWidth = Math.max(1.5, r * 0.22); ctx.strokeStyle = "#000"; ctx.stroke();
+  ctx.fillStyle = "#ffffff88"; ctx.beginPath(); ctx.arc(x - r * 0.3, y - r * 0.3, r * 0.3, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+}
+
 // The intelligence as a briefcase in its team's colour (a neutral flag, such as the bball ball,
 // in yellow): at home, dropped with the seconds until it goes home, or riding on its carrier.
 export function drawFlags(snap, players, tick) {
   for (const o of snap.objectives || []) {
+    if (o.kind === "ball") { drawBall(o, players, tick); continue; }
     if (o.kind !== "flag") continue;
     const carrier = o.status === "carried" ? players.find(p => p.id === o.carrier && p.alive && p.pos) : null;
     const pos = carrier ? carrier.pos : o.pos;
