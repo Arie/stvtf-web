@@ -185,7 +185,12 @@ sets the directory (default `backpack`, `/usr/share/stvtf/backpack` in the Docke
 
 ## Layout
 
-- `src/main.rs`: the SourceTV watcher thread, a small HTTP server (page, `/events`, `/map/NAME`).
+- `src/main.rs`: starting up: what to watch, housekeeping of the matches, accepting connections.
+- `src/http.rs`: a small HTTP server (the page, `/events`, `/map/NAME`, starting matches).
+- `src/hub.rs`: a match's latest state and feed, and the queue of each page watching it.
+- `src/sessions.rs`: many matches in one process, and saving them across a deploy.
+- `src/cache.rs`: map geometry and demos.tf's overviews, fetched once and kept in `--cache`.
+- `src/replay.rs`, `src/cli.rs`, `src/token.rs`: saved matches, the command line, the site's start tokens.
 - `src/bsp.rs`: BSP reading (including LZMA-compressed lumps), top-down geometry, and the
   spawn rooms and spawn points (with their control point) served with it on `/map/NAME`.
 - `index.html` and `app/`: the page, its stylesheet and ES modules (canvas, no build step), embedded in the binary.
