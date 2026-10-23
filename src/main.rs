@@ -232,7 +232,10 @@ fn publish(hub: &SharedHub, line: &Line) {
             h.snapshot = Some(json.clone());
             h.snapshot_at = Some(Instant::now());
             for p in &snapshot.players {
-                h.names.insert(p.id, Seen { name: p.name.clone(), team: p.team });
+                // Every snapshot names everyone: reuse the string rather than allocate a new one.
+                let seen = h.names.entry(p.id).or_insert_with(|| Seen { name: String::new(), team: p.team });
+                seen.name.clone_from(&p.name);
+                seen.team = p.team;
             }
         }
         _ if route == Route::Feed => {
@@ -240,7 +243,7 @@ fn publish(hub: &SharedHub, line: &Line) {
                 let seconds = time + (f64::from(at) - f64::from(tick)) * 0.015;
                 ((seconds * 10.0).round() / 10.0).max(0.0)
             });
-            let names = line.players().into_iter().filter_map(|id| Some((id, h.names.get(&id)?))).collect();
+            let names = line.players().filter_map(|id| Some((id, h.names.get(&id)?))).collect();
             let past = serde_json::to_string(&Past { line, history: true, names, at }).expect("a line serializes");
             if h.history.len() == HISTORY {
                 h.history.pop_front();
