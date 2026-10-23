@@ -18,6 +18,11 @@ use stvtf::Line;
 use stvtf::output::Status;
 use stvtf::watch::{self, Watch};
 
+/// A match id: this many random bytes, as hex in links and file names.
+const ID_BYTES: usize = 16;
+/// How much of the id the log shows.
+const LABEL_ID_LEN: usize = 8;
+
 pub struct Session {
     pub id: String,
     pub hub: SharedHub,
@@ -48,7 +53,7 @@ impl Session {
     /// The start of the id (the whole id is the link) and the map.
     fn label(&self) -> String {
         let map = self.hub.lock().unwrap_or_else(PoisonError::into_inner).map.clone();
-        format!("{} {}", &self.id[..self.id.len().min(8)], map.as_deref().unwrap_or("-"))
+        format!("{} {}", &self.id[..self.id.len().min(LABEL_ID_LEN)], map.as_deref().unwrap_or("-"))
     }
 
     fn ended(&self, why: &str) {
@@ -257,7 +262,7 @@ impl Sessions {
         let mut restored = 0;
         for entry in entries.flatten() {
             let id = entry.file_name().to_string_lossy().into_owned();
-            if id.len() != 32 || !id.chars().all(|c| c.is_ascii_hexdigit()) || map.contains_key(&id) {
+            if id.len() != 2 * ID_BYTES || !id.chars().all(|c| c.is_ascii_hexdigit()) || map.contains_key(&id) {
                 continue;
             }
             let saved = std::fs::read(entry.path()).map_err(anyhow::Error::from).and_then(|d| store.load(&d));
@@ -350,9 +355,9 @@ impl Sessions {
     }
 }
 
-/// 128 random bits from the OS as hex; the link to a match is all it takes to watch it.
+/// Random bits from the OS as hex; the link to a match is all it takes to watch it.
 fn random_id() -> String {
-    let mut id = [0u8; 16];
+    let mut id = [0u8; ID_BYTES];
     OsRng.fill_bytes(&mut id);
     format!("{:032x}", u128::from_be_bytes(id))
 }

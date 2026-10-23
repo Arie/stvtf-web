@@ -27,14 +27,19 @@ pub struct Start {
 
 pub struct Keys(Aes256Gcm);
 
+/// AES-256-GCM: the key, and the nonce before and tag after the ciphertext in a token.
+const KEY_BYTES: usize = 32;
+const NONCE_BYTES: usize = 12;
+const TAG_BYTES: usize = 16;
+
 impl Keys {
     /// The shared key as 64 hex digits.
     pub fn from_hex(hex: &str) -> Result<Self> {
         let hex = hex.trim();
-        if hex.len() != 64 {
-            bail!("the token key must be 64 hex digits (32 bytes)");
+        if hex.len() != 2 * KEY_BYTES {
+            bail!("the token key must be {} hex digits ({KEY_BYTES} bytes)", 2 * KEY_BYTES);
         }
-        let bytes = (0..32)
+        let bytes = (0..KEY_BYTES)
             .map(|i| u8::from_str_radix(&hex[i * 2..i * 2 + 2], 16))
             .collect::<Result<Vec<u8>, _>>()
             .map_err(|_| anyhow!("the token key must be hex"))?;
@@ -50,10 +55,10 @@ impl Keys {
     }
 
     pub fn unseal(&self, sealed: &[u8]) -> Result<Vec<u8>> {
-        if sealed.len() < 12 + 16 {
+        if sealed.len() < NONCE_BYTES + TAG_BYTES {
             bail!("too short");
         }
-        let (nonce, data) = sealed.split_at(12);
+        let (nonce, data) = sealed.split_at(NONCE_BYTES);
         self.0.decrypt(Nonce::from_slice(nonce), data).map_err(|_| anyhow!("does not decrypt with this key"))
     }
 

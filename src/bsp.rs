@@ -25,6 +25,47 @@ const PAD: f32 = 1536.0;
 // The lumps read here are under 2 MB on real maps; a crafted one could otherwise claim 512 MB
 // unpacked for each, from a few KB of LZMA.
 const MAX_LUMP: usize = 16 << 20;
+/// The lump directory follows the `VBSP` id and version: offset, length, version and id per lump.
+const LUMP_DIRECTORY: usize = 8;
+const LUMP_ENTRY: usize = 16;
+/// Valve's LZMA lump header: `LZMA`, actual size (u32), packed size (u32), 5 property bytes.
+const LZMA_ACTUAL_SIZE: usize = 4;
+const LZMA_PROPERTIES: usize = 12;
+const LZMA_HEADER: usize = 17;
+/// Record sizes and field offsets of the lumps read (`dplane_t`, `dface_t`, …).
+const PLANE_SIZE: usize = 20;
+const PLANE_NORMAL_Z: usize = 8;
+const VERTEX_SIZE: usize = 12;
+const EDGE_SIZE: usize = 4;
+const SURFEDGE_SIZE: usize = 4;
+const TEXINFO_SIZE: usize = 72;
+const TEXINFO_FLAGS: usize = 64;
+const TEXINFO_TEXDATA: usize = 68;
+const TEXDATA_SIZE: usize = 32;
+const TEXDATA_NAME: usize = 12;
+const STRING_TABLE_ENTRY: usize = 4;
+const FACE_SIZE: usize = 56;
+const FACE_SIDE: usize = 2;
+const FACE_FIRST_EDGE: usize = 4;
+const FACE_NUM_EDGES: usize = 8;
+const FACE_TEXINFO: usize = 10;
+const MODEL_SIZE: usize = 48;
+const MODEL_MINS: usize = 0;
+const MODEL_MAXS: usize = 12;
+const MODEL_FIRST_FACE: usize = 40;
+const MODEL_NUM_FACES: usize = 44;
+/// A face is a floor when its normal points up at least this much (within about 45°), a wall
+/// when it is within this of horizontal (within about 17° of upright).
+const FLOOR_MIN_NORMAL_Z: f32 = 0.7;
+const WALL_MAX_NORMAL_Z: f32 = 0.3;
+/// Walls shorter than this (in units) are left out.
+const MIN_WALL_LENGTH: f32 = 2.0;
+/// Spawn points stand up to this far above or below their room's box.
+const SPAWN_SLACK: f64 = 64.0;
+/// Spawns frame the map when they are this near the points and packs.
+const SPAWN_REACH: f32 = 4096.0;
+/// The margin around the floors when no points or packs frame the map.
+const FLOOR_MARGIN: f32 = 256.0;
 
 type Vec3 = [f32; 3];
 /// A position as served, to a tenth of a unit.
@@ -93,7 +134,7 @@ impl SpawnRoom {
     /// Whether `p` is in the room, with some room above and below for where spawn points stand.
     fn holds(&self, p: Position) -> bool {
         (0..3).all(|k| {
-            let slack = if k == 2 { 64.0 } else { 0.0 };
+            let slack = if k == 2 { SPAWN_SLACK } else { 0.0 };
             p[k] >= self.min[k] - slack && p[k] <= self.max[k] + slack
         })
     }
@@ -136,7 +177,7 @@ fn index_at(b: &[u8], o: usize) -> Result<usize> {
 }
 
 fn lump(data: &[u8], index: usize) -> Result<Vec<u8>> {
-    let h = 8 + 16 * index;
+    let h = LUMP_DIRECTORY + LUMP_ENTRY * index;
     let (ofs, len) = (index_at(data, h)?, index_at(data, h + 4)?);
     let Some(raw) = data.get(ofs..ofs + len) else { bail!("lump {index} out of range") };
     if len > MAX_LUMP {
@@ -145,15 +186,14 @@ fn lump(data: &[u8], index: usize) -> Result<Vec<u8>> {
     if !raw.starts_with(b"LZMA") {
         return Ok(raw.to_vec());
     }
-    // Valve's LZMA lump header: id, actual size, packed size, 5 property bytes.
-    let actual = u32::from_le_bytes(bytes(raw, 4)?) as usize;
+    let actual = u32::from_le_bytes(bytes(raw, LZMA_ACTUAL_SIZE)?) as usize;
     if actual > MAX_LUMP {
         bail!("lump {index}: {actual} bytes unpacked");
     }
-    let props: [u8; 5] = bytes(raw, 12)?;
+    let props: [u8; 5] = bytes(raw, LZMA_PROPERTIES)?;
     let mut alone = props.to_vec();
     alone.extend_from_slice(&(actual as u64).to_le_bytes());
-    alone.extend_from_slice(&raw[17..]);
+    alone.extend_from_slice(&raw[LZMA_HEADER..]);
     let mut out = Vec::with_capacity(actual);
     lzma_rs::lzma_decompress(&mut &alone[..], &mut out).map_err(|e| anyhow!("lump {index}: {e:?}"))?;
     out.truncate(actual);
@@ -206,7 +246,7 @@ pub fn playable_bounds(data: &[u8]) -> Result<Option<(Vec3, Vec3)>> {
     if core.is_empty() {
         return Ok(None);
     }
-    let near = bounds_of(&core, 4096.0);
+    let near = bounds_of(&core, SPAWN_REACH);
     core.extend(spawns.into_iter().filter(|s| inside(s, &near)));
     Ok(Some(bounds_of(&core, PAD)))
 }
@@ -228,21 +268,21 @@ fn get(e: &[(String, String)], k: &str) -> Option<String> {
     e.iter().find(|(key, _)| key.eq_ignore_ascii_case(k)).map(|(_, v)| v.clone())
 }
 
-/// A brush entity's bounds: its model's box (models lump, 48 bytes each) moved by its origin.
+/// A brush entity's bounds: its model's box moved by its origin.
 fn brush_bounds(models: &[u8], e: &[(String, String)]) -> Option<(Vec3, Vec3)> {
     let m = usize::from(get(e, "model")?.strip_prefix('*')?.parse::<u16>().ok()?);
-    if (m + 1) * 48 > models.len() {
+    if (m + 1) * MODEL_SIZE > models.len() {
         return None;
     }
     let origin = vec3(get(e, "origin").as_deref()).unwrap_or([0.0; 3]);
     let corner = |o: usize| -> Option<Vec3> {
         let mut c = origin;
         for (i, v) in c.iter_mut().enumerate() {
-            *v += f32_at(models, m * 48 + o + i * 4).ok()?;
+            *v += f32_at(models, m * MODEL_SIZE + o + i * 4).ok()?;
         }
         Some(c)
     };
-    Some((corner(0)?, corner(12)?))
+    Some((corner(MODEL_MINS)?, corner(MODEL_MAXS)?))
 }
 
 /// Health and ammo packs by size.
@@ -363,11 +403,11 @@ fn texture_names(data: &[u8]) -> Result<Vec<String>> {
     let table = lump(data, LUMP_TEXDATA_STRING_TABLE)?;
     let strings = lump(data, LUMP_TEXDATA_STRING_DATA)?;
     let texdata = lump(data, LUMP_TEXDATA)?;
-    (0..texdata.len() / 32)
+    (0..texdata.len() / TEXDATA_SIZE)
         .map(|i| {
-            let id = index_at(&texdata, i * 32 + 12)?;
+            let id = index_at(&texdata, i * TEXDATA_SIZE + TEXDATA_NAME)?;
             // A name missing from the tables is only used to skip tool textures, so it is left empty.
-            let start = index_at(&table, id * 4).unwrap_or(0);
+            let start = index_at(&table, id * STRING_TABLE_ENTRY).unwrap_or(0);
             let s = strings.get(start..).unwrap_or_default();
             let s = &s[..s.iter().position(|&c| c == 0).unwrap_or(s.len())];
             Ok(String::from_utf8_lossy(s).to_lowercase())
@@ -396,35 +436,41 @@ pub fn geometry(data: &[u8]) -> Result<Geometry> {
     let bounds = playable_bounds(data)?;
 
     // Only the world model: brush entities (doors, triggers, func_brush) are separate models.
-    let (first, count) = (index_at(&models, 40)?, index_at(&models, 44)?);
-    let vertex = |i: usize| -> Result<Vec3> { Ok([f32_at(&verts, i * 12)?, f32_at(&verts, i * 12 + 4)?, f32_at(&verts, i * 12 + 8)?]) };
+    let (first, count) = (index_at(&models, MODEL_FIRST_FACE)?, index_at(&models, MODEL_NUM_FACES)?);
+    let vertex = |i: usize| -> Result<Vec3> {
+        let o = i * VERTEX_SIZE;
+        Ok([f32_at(&verts, o)?, f32_at(&verts, o + 4)?, f32_at(&verts, o + 8)?])
+    };
 
     let mut floors: Vec<(f32, Floor)> = Vec::new();
     let mut floor_pts = Vec::new();
     let mut walls = Vec::new();
     // The world's faces each have their own edges; a crafted map could reuse the same ones in
     // every face and have the loop below build gigabytes of points.
-    let mut edges_left = surfedges.len() / 4;
+    let mut edges_left = surfedges.len() / SURFEDGE_SIZE;
     for f in first..first + count {
-        let o = f * 56;
-        let (plane, [side]) = (usize::from(u16_at(&faces, o)?), bytes(&faces, o + 2)?);
-        let (first_edge, num_edges, tex) = (index_at(&faces, o + 4)?, usize::from(u16_at(&faces, o + 8)?), i16_at(&faces, o + 10)?);
+        let o = f * FACE_SIZE;
+        let (plane, [side]) = (usize::from(u16_at(&faces, o)?), bytes(&faces, o + FACE_SIDE)?);
+        let first_edge = index_at(&faces, o + FACE_FIRST_EDGE)?;
+        let num_edges = usize::from(u16_at(&faces, o + FACE_NUM_EDGES)?);
+        let tex = i16_at(&faces, o + FACE_TEXINFO)?;
         edges_left = edges_left.checked_sub(num_edges).ok_or_else(|| anyhow!("faces use more edges than the map has"))?;
         if tex < 0 {
             continue;
         }
-        let (flags, tdata) = (i32_at(&texinfo, tex as usize * 72 + 64)?, i32_at(&texinfo, tex as usize * 72 + 68)?);
+        let t = tex as usize * TEXINFO_SIZE;
+        let (flags, tdata) = (i32_at(&texinfo, t + TEXINFO_FLAGS)?, i32_at(&texinfo, t + TEXINFO_TEXDATA)?);
         if flags & SKIP_FLAGS != 0 || names.get(tdata as usize).is_some_and(|n| n.starts_with("tools/")) {
             continue;
         }
-        let mut nz = f32_at(&planes, plane * 20 + 8)?;
+        let mut nz = f32_at(&planes, plane * PLANE_SIZE + PLANE_NORMAL_Z)?;
         if side != 0 {
             nz = -nz;
         }
         let pts: Vec<Vec3> = (first_edge..first_edge + num_edges)
             .map(|e| {
-                let se = i32_at(&surfedges, e * 4)?;
-                let eo = se.unsigned_abs() as usize * 4;
+                let se = i32_at(&surfedges, e * SURFEDGE_SIZE)?;
+                let eo = se.unsigned_abs() as usize * EDGE_SIZE;
                 vertex(usize::from(if se >= 0 { u16_at(&edges, eo)? } else { u16_at(&edges, eo + 2)? }))
             })
             .collect::<Result<_>>()?;
@@ -436,18 +482,18 @@ pub fn geometry(data: &[u8]) -> Result<Geometry> {
         if bounds.as_ref().is_some_and(|b| !inside(&centre, b)) {
             continue;
         }
-        if nz > 0.7 {
+        if nz > FLOOR_MIN_NORMAL_Z {
             let p: Vec<f64> = pts.iter().flat_map(|p| [r1(p[0]), r1(p[1])]).collect();
             floors.push((centre[2], Floor { z: r1(centre[2]), p }));
             if bounds.is_none() {
                 floor_pts.extend(pts);
             }
-        } else if nz.abs() < 0.3 {
+        } else if nz.abs() < WALL_MAX_NORMAL_Z {
             // total_cmp: a broken map can have NaN coordinates.
             let key = |a: &&Vec3, b: &&Vec3| a[0].total_cmp(&b[0]).then(a[1].total_cmp(&b[1]));
             let lo = pts.iter().min_by(key).unwrap();
             let hi = pts.iter().max_by(key).unwrap();
-            if (lo[0] - hi[0]).powi(2) + (lo[1] - hi[1]).powi(2) > 4.0 {
+            if (lo[0] - hi[0]).powi(2) + (lo[1] - hi[1]).powi(2) > MIN_WALL_LENGTH.powi(2) {
                 let top = pts.iter().map(|p| p[2]).fold(f32::MIN, f32::max);
                 walls.push(Wall { z: r1(top), p: [r1(lo[0]), r1(lo[1]), r1(hi[0]), r1(hi[1])] });
             }
@@ -457,8 +503,8 @@ pub fn geometry(data: &[u8]) -> Result<Geometry> {
     // Without points or pickups, the floors frame the map; the top keeps the PAD above the
     // highest floor that the viewer's roof cut expects.
     let bounds = bounds.or_else(|| {
-        let (lo, mut hi) = bounds_of(&floor_pts, 256.0);
-        hi[2] += PAD - 256.0;
+        let (lo, mut hi) = bounds_of(&floor_pts, FLOOR_MARGIN);
+        hi[2] += PAD - FLOOR_MARGIN;
         (!floor_pts.is_empty()).then_some((lo, hi))
     });
     Ok(Geometry {
@@ -565,7 +611,7 @@ mod tests {
             let _ = geometry(&data[..n]);
         }
         for index in [LUMP_PLANES, LUMP_TEXDATA, LUMP_VERTEXES, LUMP_TEXINFO, LUMP_FACES, LUMP_EDGES, LUMP_SURFEDGES, LUMP_MODELS] {
-            let h = 8 + 16 * index;
+            let h = LUMP_DIRECTORY + LUMP_ENTRY * index;
             let (ofs, len) = (index_at(&data, h).unwrap(), index_at(&data, h + 4).unwrap());
             // Too short, and the contents overwritten (out of range indices, NaN coordinates).
             let mut b = data.clone();

@@ -113,6 +113,26 @@ struct Seen {
 }
 
 const HISTORY: usize = 1000;
+/// TF2's tick (66.67 per second): the hub times lines by tick without knowing the server's rate.
+const SECONDS_PER_TICK: f64 = 0.015;
+const MS_PER_TICK: u64 = 15;
+/// Lines queued for a page; one that falls this far behind is dropped and reconnects.
+const PAGE_QUEUE: usize = 4096;
+/// A replay's pause between passes, how often a paused one checks for viewers, and the longest
+/// gap it waits out between two lines (map loads and tick resets would stall it).
+const REPLAY_PAUSE: Duration = Duration::from_secs(3);
+const REPLAY_POLL: Duration = Duration::from_millis(250);
+const MAX_REPLAY_GAP_MS: u64 = 1000;
+/// A request must arrive in this time, and a response (or an event) be taken in this time.
+const READ_TIMEOUT: Duration = Duration::from_secs(10);
+const WRITE_TIMEOUT: Duration = Duration::from_secs(30);
+/// The event stream's gzip level: most of the size win at little CPU.
+const STREAM_GZIP: u32 = 5;
+/// An event stream with nothing to send sends a comment this often, so proxies keep it open.
+const KEEPALIVE: Duration = Duration::from_secs(15);
+/// How often the sessions are reaped, and every how many rounds of that they are saved (5 s).
+const HOUSEKEEPING: Duration = Duration::from_millis(250);
+const PERSIST_ROUNDS: u64 = 20;
 
 /// Where a line goes besides every page: into the latest state, the feed history, or (for the
 /// high-volume detail lines) only to pages that ask for them.
@@ -268,8 +288,8 @@ fn publish(hub: &SharedHub, line: &Line) {
         }
         _ if route == Route::Feed => {
             let at = h.round_clock.zip(line.tick()).map(|((tick, time), at)| {
-                let seconds = time + (f64::from(at) - f64::from(tick)) * 0.015;
-                ((seconds * 10.0).round() / 10.0).max(0.0)
+                let seconds = time + (f64::from(at) - f64::from(tick)) * SECONDS_PER_TICK;
+                round1(seconds).max(0.0)
             });
             let names = line.players().filter_map(|id| Some((id, h.names.get(&id)?))).collect();
             let past = serde_json::to_string(&Past { line, history: true, names, at }).expect("a line serializes");
@@ -288,7 +308,7 @@ fn publish(hub: &SharedHub, line: &Line) {
 }
 
 fn subscribe(hub: &SharedHub, detail: bool) -> Receiver<Arc<str>> {
-    let (tx, rx) = sync_channel(4096);
+    let (tx, rx) = sync_channel(PAGE_QUEUE);
     let mut h = hub.lock().unwrap();
     // The snapshot goes before the history so the page knows the players' names.
     for line in [&h.status, &h.server, &h.world, &h.snapshot].into_iter().flatten().chain(&h.history) {
@@ -309,7 +329,7 @@ fn replay(hub: &SharedHub, path: &Path, play: &dyn Fn() -> bool) -> Result<()> {
         if pass > 0 {
             // A pause between passes, which also keeps a file with (almost) no timing from
             // looping flat out.
-            std::thread::sleep(Duration::from_secs(3));
+            std::thread::sleep(REPLAY_PAUSE);
             publish(hub, &Line::Status(Status::MapChange));
         }
         let skipped = play_once(hub, path, play)?;
@@ -330,7 +350,7 @@ fn play_once(hub: &SharedHub, path: &Path, play: &dyn Fn() -> bool) -> Result<us
     let (mut last, mut timed, mut skipped): (Option<u64>, bool, usize) = (None, false, 0);
     for (n, line) in BufReader::new(reader).lines().enumerate() {
         while !play() {
-            std::thread::sleep(Duration::from_millis(250));
+            std::thread::sleep(REPLAY_POLL);
         }
         let stamped: Stamped = match serde_json::from_str(&line?) {
             Ok(s) => s,
@@ -346,7 +366,7 @@ fn play_once(hub: &SharedHub, path: &Path, play: &dyn Fn() -> bool) -> Result<us
         // tick resets do not stall the replay.
         if let Some(t) = line_time(&stamped) {
             if let Some(prev) = last {
-                std::thread::sleep(Duration::from_millis(t.saturating_sub(prev).min(1000)));
+                std::thread::sleep(Duration::from_millis(t.saturating_sub(prev).min(MAX_REPLAY_GAP_MS)));
             }
             last = Some(t);
             timed = true;
@@ -362,8 +382,13 @@ fn play_once(hub: &SharedHub, path: &Path, play: &dyn Fn() -> bool) -> Result<us
 
 /// When a saved line happened, in milliseconds: live output has wall-clock `time`, offline output
 /// (`stvtf replay`) only ticks of 15 ms. Tick 0 is a map load, not a time.
+/// To a tenth.
+fn round1(f: f64) -> f64 {
+    (f * 10.0).round() / 10.0
+}
+
 fn line_time(stamped: &Stamped) -> Option<u64> {
-    stamped.time.or_else(|| stamped.line.tick().filter(|&t| t > 0).map(|t| u64::from(t) * 15))
+    stamped.time.or_else(|| stamped.line.tick().filter(|&t| t > 0).map(|t| u64::from(t) * MS_PER_TICK))
 }
 
 /// Builds a map that is not in the cache yet only when `fetch`: otherwise anyone could have every
@@ -544,8 +569,8 @@ impl App {
 
 fn serve(mut s: TcpStream, app: &App) -> Result<()> {
     // A client that sends nothing, or stops reading `/events`, does not keep its thread forever.
-    s.set_read_timeout(Some(Duration::from_secs(10)))?;
-    s.set_write_timeout(Some(Duration::from_secs(30)))?;
+    s.set_read_timeout(Some(READ_TIMEOUT))?;
+    s.set_write_timeout(Some(WRITE_TIMEOUT))?;
     let mut reader = BufReader::new(s.try_clone()?.take(MAX_REQUEST));
     let mut request = String::new();
     reader.read_line(&mut request)?;
@@ -600,8 +625,8 @@ fn serve(mut s: TcpStream, app: &App) -> Result<()> {
                 Err(e) => respond(&mut s, "400 Bad Request", html, &app.page(&landing(&e.to_string())))?,
             }
         }
-        (Matches::Many(sessions), p) if p.starts_with("/w/") => {
-            let (id, rest) = p[3..].split_once('/').unwrap_or((&p[3..], ""));
+        (Matches::Many(sessions), p) if let Some(path) = p.strip_prefix("/w/") => {
+            let (id, rest) = path.split_once('/').unwrap_or((path, ""));
             match (sessions.get(id), rest) {
                 (None, _) if app.keys.is_some() => {
                     respond(&mut s, "404 Not Found", "text/plain", b"That match is no longer being watched; open it again from the site.")?;
@@ -626,23 +651,33 @@ fn serve(mut s: TcpStream, app: &App) -> Result<()> {
                 _ => respond(&mut s, "404 Not Found", "text/plain", b"not found")?,
             }
         }
-        (_, "/fonts/RobotoCondensed-Regular.ttf") => {
-            respond_cached(&mut s, "font/ttf", include_bytes!("../fonts/RobotoCondensed-Regular.ttf"))?;
+        _ => serve_file(&mut s, app, path)?,
+    }
+    Ok(())
+}
+
+/// The page's files, pictures and maps.
+fn serve_file(s: &mut TcpStream, app: &App, path: &str) -> std::io::Result<()> {
+    match path {
+        "/fonts/RobotoCondensed-Regular.ttf" => {
+            respond_cached(s, "font/ttf", include_bytes!("../fonts/RobotoCondensed-Regular.ttf"))?;
         }
-        (_, "/fonts/RobotoCondensed-Bold.ttf") => respond_cached(&mut s, "font/ttf", include_bytes!("../fonts/RobotoCondensed-Bold.ttf"))?,
-        (_, "/killicons.css") => respond(&mut s, "200 OK", "text/css", include_bytes!("../killicons/killicons.css"))?,
-        (_, "/killicons.webp") => respond(&mut s, "200 OK", "image/webp", include_bytes!("../killicons/killicons.webp"))?,
-        (_, p) if p.starts_with("/icons/") => match ICONS.iter().find(|(name, _)| p[7..].strip_suffix(".svg") == Some(name)) {
-            Some((_, svg)) => respond(&mut s, "200 OK", "image/svg+xml", svg)?,
-            None => respond(&mut s, "404 Not Found", "text/plain", b"not found")?,
+        "/fonts/RobotoCondensed-Bold.ttf" => respond_cached(s, "font/ttf", include_bytes!("../fonts/RobotoCondensed-Bold.ttf"))?,
+        "/killicons.css" => respond(s, "200 OK", "text/css", include_bytes!("../killicons/killicons.css"))?,
+        "/killicons.webp" => respond(s, "200 OK", "image/webp", include_bytes!("../killicons/killicons.webp"))?,
+        p if let Some(file) = p.strip_prefix("/icons/") => match ICONS.iter().find(|(name, _)| file.strip_suffix(".svg") == Some(name)) {
+            Some((_, svg)) => respond(s, "200 OK", "image/svg+xml", svg)?,
+            None => respond(s, "404 Not Found", "text/plain", b"not found")?,
         },
-        (_, p) if p.starts_with("/app/") => match APP.iter().find(|(name, ..)| p[5..].split_once('/').is_some_and(|(_, n)| n == *name)) {
-            Some((_, ctype, body)) => respond_cached(&mut s, ctype, body)?,
-            None => respond(&mut s, "404 Not Found", "text/plain", b"not found")?,
-        },
-        (_, p) if p.starts_with("/backpack/") => serve_backpack(&mut s, app, &p[10..])?,
-        (_, p) if p.starts_with("/overview/") || p.starts_with("/map/") => serve_cached(&mut s, app, p)?,
-        _ => respond(&mut s, "404 Not Found", "text/plain", b"not found")?,
+        p if let Some(file) = p.strip_prefix("/app/") => {
+            match APP.iter().find(|(name, ..)| file.split_once('/').is_some_and(|(_, n)| n == *name)) {
+                Some((_, ctype, body)) => respond_cached(s, ctype, body)?,
+                None => respond(s, "404 Not Found", "text/plain", b"not found")?,
+            }
+        }
+        p if let Some(file) = p.strip_prefix("/backpack/") => serve_backpack(s, app, file)?,
+        p if p.starts_with("/overview/") || p.starts_with("/map/") => serve_cached(s, app, p)?,
+        _ => respond(s, "404 Not Found", "text/plain", b"not found")?,
     }
     Ok(())
 }
@@ -682,11 +717,12 @@ fn serve_cached(s: &mut TcpStream, app: &App, p: &str) -> std::io::Result<()> {
     let result = if let Some(file) = p.strip_prefix("/overview/") {
         let _one_at_a_time = app.overviews.lock().unwrap_or_else(PoisonError::into_inner);
         overview(&app.cache, file)
-    } else {
-        let name = &p[5..];
+    } else if let Some(name) = p.strip_prefix("/map/") {
         let fetch = app.on_map(name);
         let _one_at_a_time = app.maps.lock().unwrap_or_else(PoisonError::into_inner);
         map_geometry(&app.cache, name, fetch)
+    } else {
+        return respond(s, "404 Not Found", "text/plain", b"not found");
     };
     match result {
         Ok(body) if p.starts_with("/map/") => respond(s, "200 OK", "application/json", &body),
@@ -789,12 +825,12 @@ fn stream(mut s: TcpStream, hub: &SharedHub, gzip: bool, detail: bool) -> Result
         "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nCache-Control: no-cache\r\nX-Accel-Buffering: no\r\nX-Content-Type-Options: nosniff\r\n{}\r\n",
         if gzip { "Content-Encoding: gzip\r\n" } else { "" }
     )?;
-    let mut out: Box<dyn Write> = if gzip { Box::new(GzEncoder::new(s, Compression::new(5))) } else { Box::new(s) };
+    let mut out: Box<dyn Write> = if gzip { Box::new(GzEncoder::new(s, Compression::new(STREAM_GZIP))) } else { Box::new(s) };
     // After a restart (a deploy), browsers come back after 1 s instead of their default 3 s.
     write!(out, "retry: 1000\n\n")?;
     let rx = subscribe(hub, detail);
     loop {
-        match rx.recv_timeout(Duration::from_secs(15)) {
+        match rx.recv_timeout(KEEPALIVE) {
             Ok(line) => {
                 write!(out, "data: {line}\n\n")?;
                 // Whatever else is already queued goes out in the same flush.
@@ -863,9 +899,10 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<(Vec<String>, Ha
 /// Liberal in what it takes: `connect HOST:PORT; password "tv"`, `HOST:PORT tv`, `HOST; password tv`
 /// or just `HOST`. Without a port, `SourceTV`'s default 27020; quotes and `connect` are optional.
 fn parse_connect(line: &str) -> Option<(String, Option<String>)> {
+    const CONNECT: &str = "connect ";
     let mut line = line.trim();
-    if line.get(..8).is_some_and(|c| c.eq_ignore_ascii_case("connect ")) {
-        line = line[8..].trim_start();
+    if line.get(..CONNECT.len()).is_some_and(|c| c.eq_ignore_ascii_case(CONNECT)) {
+        line = line[CONNECT.len()..].trim_start();
     }
     let unquote = |s: &str| s.trim().trim_matches('"').to_string();
     let mut parts = line.split(';');
@@ -1048,11 +1085,11 @@ fn main() -> Result<()> {
                     std::process::exit(0);
                 }
                 sessions.reap(LINGER);
-                // Every 5 s: what a deploy's next container picks up, feed included.
-                if round % 20 == 0 {
+                // What a deploy's next container picks up, feed included.
+                if round % PERSIST_ROUNDS == 0 {
                     sessions.persist();
                 }
-                std::thread::sleep(Duration::from_millis(250));
+                std::thread::sleep(HOUSEKEEPING);
             }
         });
         let warming = app.clone();
