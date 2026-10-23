@@ -14,9 +14,11 @@ mod sessions;
 mod token;
 
 use crate::cache::{WARM, demostf_maps, map_geometry, overview};
+use crate::cli::DEFAULT_TV_PASSWORD;
 use crate::cli::{USAGE, parse_args, parse_connect};
 use crate::http::{MAX_STREAMS_PER_CLIENT, app_version, serve};
-use crate::hub::{SharedHub, publish};
+use crate::hub::SharedHub;
+use crate::hub::watch_into;
 use crate::replay::replay;
 use crate::sessions::Sessions;
 use anyhow::{Context, Result, bail};
@@ -26,9 +28,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
-use stvtf::Line;
-use stvtf::output::Status;
-use stvtf::watch::{self, Watch};
+use stvtf::watch::{self};
 
 /// How long a match nobody watches keeps its `SourceTV` connection.
 const LINGER: Duration = Duration::from_secs(180);
@@ -259,14 +259,11 @@ fn main() -> Result<()> {
             eprintln!("{USAGE}");
             std::process::exit(2);
         };
-        let mut w = Watch::new(&target, get("password").or(password.as_deref()).unwrap_or("tv"));
-        w.snapshot_hz = hz;
+        let password = get("password").or(password.as_deref()).unwrap_or(DEFAULT_TV_PASSWORD).to_string();
         let hub = SharedHub::default();
         let watched = hub.clone();
         std::thread::spawn(move || {
-            let result = watch::watch(&w, &STOP, &mut |line| publish(&watched, &line));
-            if let Err(e) = &result {
-                publish(&watched, &Line::Status(Status::GaveUp { reason: e.to_string() }));
+            if let Err(e) = watch_into(&watched, &target, &password, hz, &STOP) {
                 eprintln!("stvtf-web: {e}");
             }
             if STOP.load(Ordering::Relaxed) {
@@ -337,6 +334,7 @@ fn main() -> Result<()> {
 #[cfg(test)]
 mod testing {
     use super::*;
+    use stvtf::Line;
     use stvtf::output;
 
     pub(crate) fn app(matches: Matches) -> App {

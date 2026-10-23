@@ -199,7 +199,7 @@ fn serve_many(mut s: TcpStream, reader: &mut impl Read, app: &App, sessions: &Se
         (path @ ("/" | "/watch"), _) if app.keys.is_some() => front_door(&mut s, app, path)?,
         ("/start", _) => match start(app, sessions, &request.query) {
             Ok(m) => started(&mut s, &m)?,
-            Err(e) => respond(&mut s, "400 Bad Request", TEXT, e.to_string().as_bytes())?,
+            Err(e) => respond(&mut s, "400 Bad Request", TEXT, format!("{e:#}").as_bytes())?,
         },
         ("/", "GET") => respond(&mut s, "200 OK", HTML, &app.page(&landing("")))?,
         ("/watch", "POST") => {
@@ -209,7 +209,7 @@ fn serve_many(mut s: TcpStream, reader: &mut impl Read, app: &App, sessions: &Se
             let line = param(&form, "connect").map(form_decode).unwrap_or_default();
             match sessions.open(&line, None) {
                 Ok(m) => started(&mut s, &m)?,
-                Err(e) => respond(&mut s, "400 Bad Request", HTML, &app.page(&landing(&e.to_string())))?,
+                Err(e) => respond(&mut s, "400 Bad Request", HTML, &app.page(&landing(&format!("{e:#}"))))?,
             }
         }
         (p, _) if let Some(path) = p.strip_prefix("/w/") => serve_match(s, app, sessions, request, path, client)?,

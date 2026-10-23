@@ -3,11 +3,13 @@
 use crate::lock;
 use serde::Serialize;
 use std::collections::{BTreeMap, HashMap, VecDeque};
+use std::sync::atomic::AtomicBool;
 use std::sync::mpsc::{Receiver, SyncSender, TrySendError, sync_channel};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 use stvtf::Line;
 use stvtf::output::{PlayerId, Status, Team, round1};
+use stvtf::watch::Watch;
 
 /// The latest match state for browsers that join late, and a queue per browser.
 #[derive(Default)]
@@ -221,6 +223,23 @@ pub(crate) fn publish(hub: &SharedHub, line: &Line) {
     h.clients.retain(|(c, wants)| {
         (detail && !wants) || !matches!(c.try_send(json.clone()), Err(TrySendError::Full(_) | TrySendError::Disconnected(_)))
     });
+}
+
+/// Watches a `SourceTV` server into `hub` until `stop`; a watch that gives up says so to the pages.
+pub(crate) fn watch_into(
+    hub: &SharedHub,
+    target: &str,
+    password: &str,
+    hz: f32,
+    stop: &AtomicBool,
+) -> Result<(), stvtf::watch::WatchError> {
+    let mut w = Watch::new(target, password);
+    w.snapshot_hz = hz;
+    let result = stvtf::watch::watch(&w, stop, &mut |line| publish(hub, &line));
+    if let Err(e) = &result {
+        publish(hub, &Line::Status(Status::GaveUp { reason: e.to_string() }));
+    }
+    result
 }
 
 pub(crate) fn subscribe(hub: &SharedHub, detail: bool) -> Receiver<Arc<str>> {

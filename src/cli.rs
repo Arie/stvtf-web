@@ -3,6 +3,11 @@
 use anyhow::{Result, anyhow, bail};
 use std::collections::HashMap;
 
+/// The `tv_password` tried when a connect string has none.
+pub(crate) const DEFAULT_TV_PASSWORD: &str = "tv";
+/// `SourceTV`'s port when a connect string has none.
+const DEFAULT_TV_PORT: u16 = 27020;
+
 pub(crate) const USAGE: &str = "\
 stvtf-web: live top-down viewer of a TF2 match in the browser
 
@@ -59,7 +64,7 @@ pub(crate) fn parse_connect(line: &str) -> Option<(String, Option<String>)> {
     if host.is_empty() {
         return None;
     }
-    let target = if host.contains(':') { host.to_string() } else { format!("{host}:27020") };
+    let target = if host.contains(':') { host.to_string() } else { format!("{host}:{DEFAULT_TV_PORT}") };
     Some((target, password.filter(|p| !p.is_empty())))
 }
 

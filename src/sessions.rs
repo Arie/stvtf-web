@@ -3,23 +3,21 @@
 //! process: a deploy's new container picks them up under the same links.
 
 use crate::cache::write_atomic;
-use crate::cli::parse_connect;
-use crate::hub::{SharedHub, publish};
+use crate::cli::{DEFAULT_TV_PASSWORD, parse_connect};
+use crate::hub::{SharedHub, watch_into};
 use crate::{lock, token};
 use aes_gcm::aead::OsRng;
 use aes_gcm::aead::rand_core::RngCore;
 use anyhow::{Result, anyhow, bail};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::net::{IpAddr, SocketAddr, ToSocketAddrs};
+use std::fmt::Write as _;
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
-use stvtf::Line;
-use stvtf::output::Status;
-use stvtf::watch::{self, Watch};
 
 /// A match id: this many random bytes, as hex in links and file names.
 const ID_BYTES: usize = 16;
@@ -48,6 +46,26 @@ pub struct Session {
 }
 
 impl Session {
+    /// A session not watched yet; a pinned one is never idle, so never reaped.
+    fn new(id: String, hub: SharedHub, server: SocketAddr, password: String, owner: Option<String>, pinned: bool) -> Self {
+        Session {
+            id,
+            hub,
+            server,
+            password,
+            owner,
+            pinned,
+            stop: AtomicBool::new(false),
+            done: AtomicBool::new(false),
+            viewers: AtomicUsize::new(0),
+            peak: AtomicUsize::new(0),
+            views: AtomicUsize::new(0),
+            started: Instant::now(),
+            idle_since: Mutex::new((!pinned).then(Instant::now)),
+            thread: Mutex::new(None),
+        }
+    }
+
     /// Whether any browser has its event stream open.
     pub fn watched(&self) -> bool {
         self.viewers.load(Ordering::Relaxed) > 0
@@ -175,13 +193,9 @@ impl Sessions {
     /// watches one match at a time: starting another stops the one they started before.
     pub fn open(&self, line: &str, owner: Option<&str>) -> Result<Arc<Session>> {
         let (target, password) = parse_connect(line).ok_or_else(|| anyhow!("no server address"))?;
-        let password = password.unwrap_or_else(|| "tv".into());
+        let password = password.unwrap_or_else(|| DEFAULT_TV_PASSWORD.into());
         // Connect to the address that was checked, not whatever the name resolves to later.
-        let server = target
-            .to_socket_addrs()
-            .map_err(|e| anyhow!("{target}: {e}"))?
-            .find(SocketAddr::is_ipv4)
-            .ok_or_else(|| anyhow!("no IPv4 address for {target}"))?;
+        let server = stvtf::watch::resolve(&target)?;
         if self.public && !is_public(server.ip()) {
             bail!("{target} is not a public address");
         }
@@ -192,14 +206,8 @@ impl Sessions {
         }
         if let Some(o) = owner {
             let previous: Vec<String> = map.values().filter(|s| s.owner.as_deref() == Some(o)).map(|s| s.id.clone()).collect();
-            for id in previous {
-                if let Some(p) = map.remove(&id) {
-                    p.stop.store(true, Ordering::Relaxed);
-                    p.ended("replaced");
-                    if let Some(store) = &self.store {
-                        store.forget(&id);
-                    }
-                }
+            for p in previous.iter().filter_map(|id| map.remove(id)) {
+                self.end(&p, "replaced");
             }
         }
         if map.values().filter(|s| !s.pinned).count() >= self.max {
@@ -225,29 +233,11 @@ impl Sessions {
         owner: Option<String>,
         hub: SharedHub,
     ) -> Arc<Session> {
-        let s = Arc::new(Session {
-            id,
-            hub,
-            server,
-            password,
-            owner,
-            pinned: false,
-            stop: AtomicBool::new(false),
-            done: AtomicBool::new(false),
-            viewers: AtomicUsize::new(0),
-            peak: AtomicUsize::new(0),
-            views: AtomicUsize::new(0),
-            started: Instant::now(),
-            idle_since: Mutex::new(Some(Instant::now())),
-            thread: Mutex::new(None),
-        });
+        let s = Arc::new(Session::new(id, hub, server, password, owner, false));
         let (watcher, hz) = (s.clone(), self.hz);
         let thread = std::thread::spawn(move || {
-            let mut w = Watch::new(&server.to_string(), &watcher.password);
-            w.snapshot_hz = hz;
-            if let Err(e) = watch::watch(&w, &watcher.stop, &mut |line| publish(&watcher.hub, &line)) {
+            if let Err(e) = watch_into(&watcher.hub, &server.to_string(), &watcher.password, hz, &watcher.stop) {
                 eprintln!("stvtf-web: match {} gave up: {e}", watcher.label());
-                publish(&watcher.hub, &Line::Status(Status::GaveUp { reason: e.to_string() }));
             }
             watcher.done.store(true, Ordering::Relaxed);
         });
@@ -300,22 +290,9 @@ impl Sessions {
     /// A fixed session at `/w/<id>/` fed by `feed` (a recorded match on a loop, say). It is never
     /// reaped and nothing waits for its thread.
     pub fn pin(&self, id: &str, feed: impl FnOnce(&Session) + Send + 'static) {
-        let s = Arc::new(Session {
-            id: id.to_string(),
-            hub: SharedHub::default(),
-            server: SocketAddr::from(([0, 0, 0, 0], 0)),
-            password: String::new(),
-            owner: None,
-            pinned: true,
-            stop: AtomicBool::new(false),
-            done: AtomicBool::new(false),
-            viewers: AtomicUsize::new(0),
-            peak: AtomicUsize::new(0),
-            views: AtomicUsize::new(0),
-            started: Instant::now(),
-            idle_since: Mutex::new(None),
-            thread: Mutex::new(None),
-        });
+        // It watches no server.
+        let nowhere = SocketAddr::from((Ipv4Addr::UNSPECIFIED, 0));
+        let s = Arc::new(Session::new(id.to_string(), SharedHub::default(), nowhere, String::new(), None, true));
         let session = s.clone();
         std::thread::spawn(move || feed(&session));
         self.lock().insert(id.to_string(), s);
@@ -335,11 +312,16 @@ impl Sessions {
             idle.iter().filter_map(|id| map.remove(id)).collect()
         };
         for s in idle {
-            s.stop.store(true, Ordering::Relaxed);
-            s.ended("unwatched");
-            if let Some(store) = &self.store {
-                store.forget(&s.id);
-            }
+            self.end(&s, "unwatched");
+        }
+    }
+
+    /// Stops a session already taken out of the map, and forgets its saved file.
+    fn end(&self, s: &Session, why: &str) {
+        s.stop.store(true, Ordering::Relaxed);
+        s.ended(why);
+        if let Some(store) = &self.store {
+            store.forget(&s.id);
         }
     }
 
@@ -362,7 +344,25 @@ impl Sessions {
 fn random_id() -> String {
     let mut id = [0u8; ID_BYTES];
     OsRng.fill_bytes(&mut id);
-    format!("{:032x}", u128::from_be_bytes(id))
+    id.iter().fold(String::with_capacity(2 * ID_BYTES), |mut hex, b| {
+        let _ = write!(hex, "{b:02x}");
+        hex
+    })
+}
+
+/// IPv4 ranges that are not on the internet and that `Ipv4Addr`'s own checks leave out: "this
+/// network", carrier-grade NAT (Tailscale), IETF protocol assignments, benchmarking and reserved.
+const NOT_PUBLIC_V4: [(Ipv4Addr, u32); 5] = [
+    (Ipv4Addr::UNSPECIFIED, 8),
+    (Ipv4Addr::new(100, 64, 0, 0), 10),
+    (Ipv4Addr::new(192, 0, 0, 0), 24),
+    (Ipv4Addr::new(198, 18, 0, 0), 15),
+    (Ipv4Addr::new(240, 0, 0, 0), 4),
+];
+
+/// Whether `ip` is in the network `net`/`prefix`.
+fn in_network(ip: Ipv4Addr, (net, prefix): (Ipv4Addr, u32)) -> bool {
+    ip.to_bits() >> (u32::BITS - prefix) == net.to_bits() >> (u32::BITS - prefix)
 }
 
 /// Not loopback, private, link-local, carrier-grade NAT (Tailscale), IETF protocol
@@ -370,19 +370,13 @@ fn random_id() -> String {
 pub fn is_public(ip: IpAddr) -> bool {
     match ip {
         IpAddr::V4(v4) => {
-            let [a, b, ..] = v4.octets();
             !(v4.is_private()
                 || v4.is_loopback()
                 || v4.is_link_local()
-                || v4.is_unspecified()
                 || v4.is_broadcast()
                 || v4.is_documentation()
                 || v4.is_multicast()
-                || a == 0
-                || a >= 240
-                || (a == 100 && (64..128).contains(&b))
-                || (a, b, v4.octets()[2]) == (192, 0, 0)
-                || (a == 198 && (b == 18 || b == 19)))
+                || NOT_PUBLIC_V4.into_iter().any(|net| in_network(v4, net)))
         }
         IpAddr::V6(_) => false,
     }
