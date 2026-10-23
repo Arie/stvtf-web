@@ -21,6 +21,17 @@ function objPos(o, tick) {
   const t = (tick - s[i - 1].tick) / (s[i].tick - s[i - 1].tick);
   return [a.pos[0] + (b.pos[0] - a.pos[0]) * t, a.pos[1] + (b.pos[1] - a.pos[1]) * t];
 }
+// TF2's big black bomb with a lit fuse, of radius R: on the payload cart, and Mann vs. Machine's.
+function drawBomb(x, y, R, lw) {
+  ctx.save();
+  ctx.fillStyle = "#15171a"; ctx.strokeStyle = "#0b0c0e"; ctx.lineWidth = lw;
+  ctx.beginPath(); ctx.arc(x, y, R, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+  ctx.strokeStyle = "#8a8f96"; ctx.lineCap = "round";
+  ctx.beginPath(); ctx.moveTo(x + R * 0.45, y - R * 0.8); ctx.quadraticCurveTo(x + R * 0.75, y - R * 1.3, x + R * 1.1, y - R * 1.15); ctx.stroke();
+  ctx.fillStyle = "#ffd25a"; ctx.beginPath(); ctx.arc(x + R * 1.1, y - R * 1.15, Math.max(1.2, R * 0.16), 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = "#ffffff55"; ctx.beginPath(); ctx.ellipse(x - R * 0.35, y - R * 0.35, R * 0.28, R * 0.18, -Math.PI / 4, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+}
 function drawCart(o, tick) {
   const [wx, wy] = objPos(o, tick);
   let cs = cartState.get(o.id);
@@ -55,13 +66,7 @@ function drawCart(o, tick) {
   ctx.fillStyle = team; ctx.fill(); ctx.strokeStyle = dark; ctx.stroke();
   ctx.restore();
   ctx.save();
-  const R = W * 0.36;
-  ctx.fillStyle = "#15171a"; ctx.strokeStyle = dark; ctx.lineWidth = lw;
-  ctx.beginPath(); ctx.arc(x, y, R, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
-  ctx.strokeStyle = "#8a8f96"; ctx.lineCap = "round";
-  ctx.beginPath(); ctx.moveTo(x + R * 0.45, y - R * 0.8); ctx.quadraticCurveTo(x + R * 0.75, y - R * 1.3, x + R * 1.1, y - R * 1.15); ctx.stroke();
-  ctx.fillStyle = "#ffd25a"; ctx.beginPath(); ctx.arc(x + R * 1.1, y - R * 1.15, Math.max(1.2, R * 0.16), 0, Math.PI * 2); ctx.fill();
-  ctx.fillStyle = "#ffffff55"; ctx.beginPath(); ctx.ellipse(x - R * 0.35, y - R * 0.35, R * 0.28, R * 0.18, -Math.PI / 4, 0, Math.PI * 2); ctx.fill();
+  drawBomb(x, y, W * 0.36, lw);
   if (o.cappers > 0) {
     // A pill centred under the cart's lowest edge in screen space, touching it.
     const t = `×${o.cappers}`, th = screenAngle(cs.h ?? 0), fs = Math.round(OVERLAY ? u * 1.1 : Math.max(12 * uiScale(), L * 0.42));
@@ -248,7 +253,8 @@ function drawPickups(o, carrier, snap, tick) {
 }
 
 // The intelligence as a briefcase in its team's colour (a neutral flag, such as the bball ball,
-// in yellow): at home, dropped with the seconds until it goes home, or riding on its carrier.
+// in yellow; Mann vs. Machine's bomb as a bomb): at home, dropped with the seconds until it goes
+// home, or riding on its carrier.
 export function drawFlags(snap, players, tick) {
   for (const o of snap.objectives || []) {
     if (o.kind === "ball") { drawBall(o, players, tick); continue; }
@@ -260,10 +266,13 @@ export function drawFlags(snap, players, tick) {
     const s = OVERLAY ? overlayUnit() * 1.3 : px(48, 17);
     if (carrier) { const r = playerRad(); x += r * 0.9; y -= r * 0.9; }
     ctx.save();
-    ctx.lineWidth = Math.max(1.5, s * 0.12); ctx.strokeStyle = "#000";
-    ctx.beginPath(); ctx.roundRect(x - s * 0.25, y - s * 0.62, s * 0.5, s * 0.36, s * 0.1); ctx.stroke();
-    ctx.beginPath(); ctx.roundRect(x - s * 0.6, y - s * 0.35, s * 1.2, s * 0.8, s * 0.14);
-    ctx.fillStyle = o.team === "red" || o.team === "blue" ? TEAM[o.team] : "#f2c94c"; ctx.fill(); ctx.stroke();
+    if (state.map?.startsWith("mvm_")) drawBomb(x, y, s * 0.45, Math.max(1.5, s * 0.1));
+    else {
+      ctx.lineWidth = Math.max(1.5, s * 0.12); ctx.strokeStyle = "#000";
+      ctx.beginPath(); ctx.roundRect(x - s * 0.25, y - s * 0.62, s * 0.5, s * 0.36, s * 0.1); ctx.stroke();
+      ctx.beginPath(); ctx.roundRect(x - s * 0.6, y - s * 0.35, s * 1.2, s * 0.8, s * 0.14);
+      ctx.fillStyle = o.team === "red" || o.team === "blue" ? TEAM[o.team] : "#f2c94c"; ctx.fill(); ctx.stroke();
+    }
     if (o.status === "dropped" && o.returns_in != null) {
       const left = Math.max(0, Math.ceil(o.returns_in - Math.max(0, tick - snap.tick) * MS_PER_TICK / 1000));
       ctx.font = `700 ${Math.round(Math.max(11 * uiScale(), s * 0.7))}px "HUD Condensed", system-ui`;
