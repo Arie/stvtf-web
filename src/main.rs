@@ -31,7 +31,7 @@ stvtf-web: live top-down viewer of a TF2 match in the browser
 
   stvtf-web HOST:TVPORT [--password tv] [--listen 127.0.0.1:8080] [--hz 20] [--cache DIR] [--backpack DIR]
   stvtf-web HOST[:PORT] [tv] / 'connect HOST:PORT; password \"tv\"'
-  stvtf-web [--public] [--max-matches 20] [--base-path /live] [--demo MATCH.jsonl[.gz]] [--sessions DIR]   (watch any server: paste a connect string on the page)
+  stvtf-web [--public] [--max-matches 20] [--base-path /live] [--demo MATCH.jsonl[.gz]] [--demos DIR] [--sessions DIR]   (watch any server: paste a connect string on the page)
      With STVTF_TOKEN_KEY (64 hex digits) set, matches start only from a site's encrypted /start?t= links;
      --home URL then sends visitors of / to that site.
   stvtf-web --replay FILE.jsonl [--listen 127.0.0.1:8080]   (stvtf output, at game speed)";
@@ -835,8 +835,8 @@ fn form_decode(v: &str) -> String {
     String::from_utf8_lossy(&out).into_owned()
 }
 
-const FLAGS: [&str; 11] =
-    ["password", "listen", "hz", "cache", "backpack", "replay", "max-matches", "base-path", "demo", "sessions", "home"];
+const FLAGS: [&str; 12] =
+    ["password", "listen", "hz", "cache", "backpack", "replay", "max-matches", "base-path", "demo", "demos", "sessions", "home"];
 const SWITCHES: [&str; 1] = ["public"];
 
 /// Positional arguments and `--name value` options; a mistyped option is an error rather than
@@ -918,14 +918,40 @@ fn many(flags: &HashMap<String, String>, hz: f32, keys: Option<&Arc<token::Keys>
         }
     }
     if let Some(file) = get("demo") {
-        let file = PathBuf::from(file);
-        sessions.pin("demo", move |s| {
-            if let Err(e) = replay(&s.hub, &file, &|| s.watched()) {
-                eprintln!("demo: {e:#}");
-            }
-        });
+        pin_demo(&sessions, "demo", PathBuf::from(file));
+    }
+    if let Some(dir) = get("demos") {
+        for (id, file) in demo_files(Path::new(dir))? {
+            pin_demo(&sessions, &id, file);
+        }
     }
     Ok(sessions)
+}
+
+/// A fixed match at `/w/<id>/` playing a saved `stvtf` output on a loop while someone watches.
+fn pin_demo(sessions: &Sessions, id: &str, file: PathBuf) {
+    let name = id.to_string();
+    sessions.pin(id, move |s| {
+        if let Err(e) = replay(&s.hub, &file, &|| s.watched()) {
+            eprintln!("{name}: {e:#}");
+        }
+    });
+}
+
+/// The recordings in a folder of demos (`NAME.jsonl` or `NAME.jsonl.gz`, NAME of letters, digits,
+/// `_` and `-`), by NAME, sorted.
+fn demo_files(dir: &Path) -> Result<Vec<(String, PathBuf)>> {
+    let mut found = Vec::new();
+    for entry in std::fs::read_dir(dir).with_context(|| format!("--demos {}", dir.display()))? {
+        let path = entry?.path();
+        let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
+        let Some(id) = name.strip_suffix(".jsonl.gz").or_else(|| name.strip_suffix(".jsonl")) else { continue };
+        if !id.is_empty() && id.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-') {
+            found.push((id.to_string(), path));
+        }
+    }
+    found.sort();
+    Ok(found)
 }
 
 /// A connect string pasted in the terminal works like one pasted on the page.
@@ -1238,6 +1264,24 @@ mod tests {
 
     /// A recording from an older stvtf (a field it did not have yet, a line type since renamed)
     /// or with a non-finite number (written as null) still plays: such a line is skipped.
+    #[test]
+    fn a_demo_folder_gives_one_match_per_recording() {
+        let dir = std::env::temp_dir().join(format!("stvtf-web-demos-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        for name in ["pass_time.jsonl.gz", "rd.jsonl", "notes.txt", "bad name.jsonl", ".jsonl", "mvm-tank.jsonl"] {
+            std::fs::write(dir.join(name), "").unwrap();
+        }
+        let found: Vec<(String, String)> = demo_files(&dir)
+            .unwrap()
+            .into_iter()
+            .map(|(id, path)| (id, path.file_name().unwrap().to_string_lossy().into_owned()))
+            .collect();
+        let expected = [("mvm-tank", "mvm-tank.jsonl"), ("pass_time", "pass_time.jsonl.gz"), ("rd", "rd.jsonl")];
+        assert_eq!(found, expected.map(|(a, b)| (a.to_string(), b.to_string())));
+        assert!(demo_files(&dir.join("missing")).is_err(), "a missing folder is an error, not no demos");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
     #[test]
     fn replays_skip_lines_they_cannot_read() {
         let path = std::env::temp_dir().join(format!("stvtf-web-skip-{}.jsonl", std::process::id()));

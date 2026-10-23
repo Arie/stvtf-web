@@ -39,6 +39,8 @@ with every map on fastdl). Only the geometry stays in the cache, not the BSP.
 `--demo MATCH.jsonl[.gz]` adds a fixed match at `/w/demo/`: a saved `stvtf` output played on
 a loop, to show the viewer off without a live game. It needs no token, is never disconnected,
 does not count towards `--max-matches` and holds still while nobody is watching.
+`--demos DIR` does the same for every `NAME.jsonl[.gz]` in a folder, at `/w/NAME/` (NAME of
+letters, digits, `_` and `-`).
 
 stv.tf runs this way: `config/deploy.yml` is its Kamal config (`kamal deploy -d eu|na|au|sea`),
 one app per region on the serveme.tf web hosts, with `STVTF_TOKEN_KEY` read from
