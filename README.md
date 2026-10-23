@@ -123,7 +123,7 @@ server that much later, so it also starts that much later; `o` keeps the delay.
   destruction their points, and Mann vs. Machine shows the wave.
 - Game modes: the pass time ball (on its carrier while carried) and goals, robot destruction's
   robots (their health as on buildings) and dropped cores, and Mann vs. Machine's tank with its
-  health.
+  health, revive markers, money on the ground and the robots left in the wave.
 - Hold Tab for a scoreboard like TF2's: each team by points, with kills, deaths, assists,
   damage, healing and ping. Dead players' cards count down to their respawn, time added to
   a round timer floats under the scoreboard, and an engineer carrying a building shows it on
@@ -155,7 +155,7 @@ server that much later, so it also starts that much later; `o` keeps the delay.
   (`heal`, `blast_jump`, `pickup`, `impact`, `mark`, `voice_command`, `server_text`, `hud_text`,
   `hint`, `pass_get`, `pass_free`, `pass_caught`, `points_scored`, `stun`, `capture_started`,
   `round_selected`, `teleported`, `building_removed`, `building_detonated`, `det_stickies`,
-  `npc_damage`). They are
+  `npc_damage`, `upgrade`). They are
   never kept in that history, so a page only sees them from when it connects.
 - A map change clears the HUD, scoreboard, followed player and everything else from the old map.
 

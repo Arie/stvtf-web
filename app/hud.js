@@ -157,7 +157,9 @@ export function renderScoreboard(snap, tick) {
     }).join(""));
   } else setText("timer-main", main ? clock(left(main)) : mapLeft != null ? clock(mapLeft) : "");
   $("scoreboard").classList.toggle("koth", Boolean(koth));
-  setText("timer-map", (main || koth) && mapLeft != null ? `MAP ${clock(mapLeft)}` : "");
+  // Mann vs. Machine: the robots left in the wave where the map time would go.
+  const robots = snap.mvm ? (snap.mvm.classes || []).filter(c => !c.support).reduce((n, c) => n + c.count, 0) : 0;
+  setText("timer-map", (main || koth) && mapLeft != null ? `MAP ${clock(mapLeft)}` : robots > 0 ? `${robots} ROBOTS` : "");
   // Events are stamped with time into the round, which (unlike the round timer) never jumps.
   const into = snap.round_time == null ? null : snap.round_time + (snap.round === "running" ? Math.max(0, tick - snap.tick) * MS_PER_TICK / 1000 : 0);
   state.clock = into == null ? "" : mmss(into);

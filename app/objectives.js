@@ -109,6 +109,25 @@ function drawCore(o) {
   ctx.lineWidth = 1.5; ctx.strokeStyle = "#000"; ctx.stroke();
   ctx.restore();
 }
+// A Mann vs. Machine revive marker: a cross in the dead player's team colour.
+function drawRevive(o) {
+  const [x, y] = toScreen(o.pos[0], o.pos[1]), s = OVERLAY ? overlayUnit() * 0.8 : px(30, 9);
+  const team = state.lastPlayers.find(p => p.id === o.owner)?.team;
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(x - s / 3, y - s, s * 2 / 3, s * 2); ctx.rect(x - s, y - s / 3, s * 2, s * 2 / 3);
+  ctx.fillStyle = TEAM[team] || TEAM.none; ctx.fill();
+  ctx.lineWidth = 1.5; ctx.strokeStyle = "#000"; ctx.stroke();
+  ctx.restore();
+}
+// Mann vs. Machine money on the ground: a small green note.
+function drawMoney(o) {
+  const [x, y] = toScreen(o.pos[0], o.pos[1]), s = OVERLAY ? overlayUnit() * 0.45 : px(16, 5);
+  ctx.save();
+  ctx.beginPath(); ctx.roundRect(x - s, y - s * 0.6, s * 2, s * 1.2, s * 0.2);
+  ctx.fillStyle = "#57b35a"; ctx.fill(); ctx.lineWidth = 1; ctx.strokeStyle = "#0b0c0e"; ctx.stroke();
+  ctx.restore();
+}
 // A Mann vs. Machine tank: a big dark hull with its health above.
 function drawTank(o, tick) {
   const [wx, wy] = objPos(o, tick);
@@ -131,6 +150,8 @@ export function drawObjectives(snap, tick) {
     if (o.kind === "robot") { drawRobot(o, tick); continue; }
     if (o.kind === "core") { drawCore(o); continue; }
     if (o.kind === "tank") { drawTank(o, tick); continue; }
+    if (o.kind === "revive") { drawRevive(o); continue; }
+    if (o.kind === "money") { drawMoney(o); continue; }
     // The flag and the pass time ball go on top of the players (drawFlags).
     if (o.kind !== "control_point") continue;
     const [x, y] = toScreen(o.pos[0], o.pos[1]);

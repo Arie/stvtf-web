@@ -191,7 +191,8 @@ fn route(line: &Line) -> Route {
         | Line::BuildingRemoved(_)
         | Line::BuildingDetonated(_)
         | Line::DetStickies(_)
-        | Line::NpcDamage(_) => Route::Detail,
+        | Line::NpcDamage(_)
+        | Line::Upgrade(_) => Route::Detail,
         Line::Damage(_)
         | Line::Spawn(_)
         | Line::UberEnded(_)
