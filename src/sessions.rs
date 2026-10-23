@@ -2,7 +2,10 @@
 //! it and stopped a while after its last viewer leaves. With a store, the matches outlive the
 //! process: a deploy's new container picks them up under the same links.
 
-use crate::{SharedHub, lock, parse_connect, publish, token, write_atomic};
+use crate::cache::write_atomic;
+use crate::cli::parse_connect;
+use crate::hub::{SharedHub, publish};
+use crate::{lock, token};
 use aes_gcm::aead::OsRng;
 use aes_gcm::aead::rand_core::RngCore;
 use anyhow::{Result, anyhow, bail};
