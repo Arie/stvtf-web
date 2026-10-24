@@ -38,7 +38,7 @@ function frameAt(tick) {
   return { snap: t < 0.5 ? a : b, players, projectiles };
 }
 
-// At most 60 fps: the data comes 20 times a second, and a 120 or 240 Hz screen would otherwise
+// At most 60 fps: the data comes about 17 times a second, and a 120 or 240 Hz screen would otherwise
 // redraw the whole map 2 to 4 times as often for nothing.
 // A frame is drawn when the next 60 fps slot is nearer than the refresh after it.
 const FRAME_MS = 1000 / 60, MAX_REFRESH_MS = 50, REFRESH_SMOOTHING = 0.1;

@@ -8,7 +8,7 @@ import { loadMap } from "./view.js";
 
 // Ticks going back this far are a new map or a server restart, not jitter.
 const TICK_RESET = 200;
-// Snapshots kept to interpolate in (3 s at 20 a second).
+// Snapshots kept to interpolate in (3.6 s at stvtf's default of 16.7 a second).
 const SNAPS_KEPT = 60;
 
 // ---------- incoming stream

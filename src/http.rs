@@ -368,8 +368,8 @@ fn wants_detail(query: &str) -> bool {
 }
 
 /// A match's events to one browser, until it goes away.
-/// Snapshots are 20 a second of very similar JSON: gzip, flushed after each batch so nothing waits,
-/// brings a viewer from about 110 KB/s down to a few.
+/// Snapshots are about 17 a second of very similar JSON: gzip, flushed after each batch so nothing
+/// waits, brings a viewer from about 95 KB/s down to a few.
 fn stream(mut s: TcpStream, hub: &SharedHub, gzip: bool, detail: bool) -> Result<()> {
     let mut headers = vec![("Content-Type", "text/event-stream"), ("Cache-Control", "no-cache"), ("X-Accel-Buffering", "no")];
     if gzip {
