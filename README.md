@@ -27,7 +27,8 @@ it with `--public --base-path /live` and `STVTF_TOKEN_KEY` (64 hex digits) share
 site. Matches then start only from the site's `/start?t=TOKEN` links: the token is AES-256-GCM
 (`base64url(12-byte nonce | ciphertext | tag)` of `{"connect", "owner", "exp"}`), so the
 SourceTV password in it is never readable in a URL, and a user (`owner`) watches one match at
-a time; a null owner is unlimited. `--home URL` sends visitors of `/` to the site (each
+a time: starting another stops the previous one, unless someone else opened it too, in which
+case it is left running for them. A null owner is unlimited. `--home URL` sends visitors of `/` to the site (each
 serveme.tf region uses its own `/stv` page); without it `/` answers 403.
 
 `--sessions DIR` keeps a file per running match there (encrypted with `STVTF_TOKEN_KEY` when

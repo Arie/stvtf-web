@@ -30,7 +30,10 @@ pub struct Session {
     server: SocketAddr,
     password: String,
     /// Who started it, for the one-match-per-user limit; None is unlimited.
-    owner: Option<String>,
+    owner: Mutex<Option<String>>,
+    /// Someone besides its owner opened it: starting another match releases it from the owner's
+    /// limit rather than stopping it under the others watching.
+    shared: AtomicBool,
     /// A fixed session (the demo): always there, outside the match limit.
     pinned: bool,
     stop: AtomicBool,
@@ -57,7 +60,8 @@ impl Session {
             hub,
             server,
             password,
-            owner,
+            owner: Mutex::new(owner),
+            shared: AtomicBool::new(false),
             pinned,
             stop: AtomicBool::new(false),
             done: AtomicBool::new(false),
@@ -69,6 +73,10 @@ impl Session {
             thread: Mutex::new(None),
             saving: Mutex::new(None),
         }
+    }
+
+    fn owner(&self) -> Option<String> {
+        lock(&self.owner).clone()
     }
 
     /// Whether any browser has its event stream open.
@@ -140,6 +148,8 @@ struct SavedMatch {
     password: String,
     owner: Option<String>,
     #[serde(default)]
+    shared: bool,
+    #[serde(default)]
     map: Option<String>,
     /// The feed's history lines, as sent to pages.
     #[serde(default)]
@@ -165,7 +175,14 @@ impl Store {
             }
             (h.changes, h.map.clone(), h.history.iter().map(ToString::to_string).collect())
         };
-        let saved = SavedMatch { server: s.server, password: s.password.clone(), owner: s.owner.clone(), map, history };
+        let saved = SavedMatch {
+            server: s.server,
+            password: s.password.clone(),
+            owner: s.owner(),
+            shared: s.shared.load(Ordering::Relaxed),
+            map,
+            history,
+        };
         let plain = serde_json::to_vec(&saved)?;
         std::fs::create_dir_all(&self.dir)?;
         let data = self.keys.as_ref().map_or_else(|| plain.clone(), |k| k.seal(&plain));
@@ -206,7 +223,8 @@ impl Sessions {
     }
 
     /// The session for a connect string, joining one already watching that server. An `owner`
-    /// watches one match at a time: starting another stops the one they started before.
+    /// watches one match at a time: starting another stops the one they started before, or, if
+    /// someone else opened that one too, leaves it to them.
     pub fn open(&self, line: &str, owner: Option<&str>) -> Result<Arc<Session>> {
         let (target, password) = parse_connect(line).ok_or_else(|| anyhow!("no server address"))?;
         let password = password.unwrap_or_else(|| DEFAULT_TV_PASSWORD.into());
@@ -218,12 +236,23 @@ impl Sessions {
         let mut map = self.lock();
         if let Some(s) = map.values().find(|s| !s.pinned && s.server == server && s.password == password && !s.done.load(Ordering::Relaxed))
         {
+            if s.owner().as_deref() != owner {
+                s.shared.store(true, Ordering::Relaxed);
+            }
             return Ok(s.clone());
         }
         if let Some(o) = owner {
-            let previous: Vec<String> = map.values().filter(|s| s.owner.as_deref() == Some(o)).map(|s| s.id.clone()).collect();
-            for p in previous.iter().filter_map(|id| map.remove(id)) {
-                self.end(&p, "replaced");
+            let previous: Vec<String> = map.values().filter(|s| s.owner().as_deref() == Some(o)).map(|s| s.id.clone()).collect();
+            for id in previous {
+                if map[&id].shared.load(Ordering::Relaxed) {
+                    let p = &map[&id];
+                    *lock(&p.owner) = None;
+                    // Saved again with no owner, though its feed has not changed.
+                    *lock(&p.saving) = None;
+                    eprintln!("stvtf-web: match {} released by owner {o}", p.label());
+                } else if let Some(p) = map.remove(&id) {
+                    self.end(&p, "replaced");
+                }
             }
         }
         if map.values().filter(|s| !s.pinned).count() >= self.max {
@@ -286,7 +315,8 @@ impl Sessions {
                 h.map = saved.map;
                 h.history = saved.history.into_iter().map(Into::into).collect();
             }
-            self.start(&mut map, id, saved.server, saved.password, saved.owner, hub);
+            let s = self.start(&mut map, id, saved.server, saved.password, saved.owner, hub);
+            s.shared.store(saved.shared, Ordering::Relaxed);
             restored += 1;
         }
         restored
@@ -456,6 +486,21 @@ mod tests {
     }
 
     #[test]
+    fn a_match_someone_else_opened_is_left_to_them() {
+        let s = Sessions::new(false, 8, 20.0);
+        let a = s.open("192.0.2.1:27020 tv", Some("u1")).unwrap();
+        // A caster joins u1's match and shares the link.
+        assert_eq!(s.open("192.0.2.1:27020 tv", None).unwrap().id, a.id);
+        let b = s.open("192.0.2.2:27020 tv", Some("u1")).unwrap();
+        assert!(s.get(&a.id).is_some(), "still watched for the caster");
+        assert_eq!(a.owner(), None, "and no longer u1's");
+        s.open("192.0.2.3:27020 tv", Some("u1")).unwrap();
+        assert!(s.get(&b.id).is_none(), "a match only u1 opened is replaced");
+        assert!(s.get(&a.id).is_some());
+        s.stop_all();
+    }
+
+    #[test]
     fn a_session_knows_whether_it_is_watched() {
         let s = Sessions::new(false, 1, 20.0);
         s.pin("demo", |_| {});
@@ -500,7 +545,7 @@ mod tests {
         after.store = store();
         assert_eq!(after.restore(), 1);
         let again = after.get(&m.id).expect("same link");
-        assert_eq!((again.server, again.password.as_str(), again.owner.as_deref()), (m.server, "hunter2", Some("u1")));
+        assert_eq!((again.server, again.password.as_str(), again.owner().as_deref()), (m.server, "hunter2", Some("u1")));
         assert_eq!(again.hub.lock().unwrap().history.len(), 1, "feed so far");
         after.reap(Duration::ZERO);
         assert!(!dir.join(&m.id).exists(), "a dropped match is forgotten");
@@ -548,7 +593,7 @@ mod tests {
         s.store = Some(Store { dir: dir.to_path_buf(), keys: None });
         assert_eq!(s.restore(), 1);
         let m = s.get(&id).expect("same link");
-        assert_eq!((m.password.as_str(), m.owner.as_deref()), ("tv", None));
+        assert_eq!((m.password.as_str(), m.owner().as_deref()), ("tv", None));
         let hub = m.hub.lock().unwrap();
         assert_eq!(hub.map.as_deref(), Some("cp_badlands"));
         assert_eq!(hub.history.iter().map(ToString::to_string).collect::<Vec<_>>(), [r#"{"type":"kill"}"#]);
