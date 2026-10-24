@@ -7,7 +7,7 @@ use crate::{App, Matches, is_name, lock, sessions};
 use anyhow::{Result, anyhow, bail};
 use flate2::Compression;
 use flate2::write::GzEncoder;
-use std::io::{BufRead, BufReader, Read, Write};
+use std::io::{BufRead, BufReader, Read, Take, Write};
 use std::net::{IpAddr, TcpStream};
 use std::sync::Arc;
 use std::sync::mpsc::RecvTimeoutError;
@@ -193,7 +193,14 @@ fn serve_one(mut s: TcpStream, app: &App, hub: &SharedHub, request: &Request, cl
 }
 
 /// Any number of matches, each at `/w/<id>/`, and the ways to start one.
-fn serve_many(mut s: TcpStream, reader: &mut impl Read, app: &App, sessions: &Sessions, request: &Request, client: IpAddr) -> Result<()> {
+fn serve_many(
+    mut s: TcpStream,
+    reader: &mut BufReader<Take<TcpStream>>,
+    app: &App,
+    sessions: &Sessions,
+    request: &Request,
+    client: IpAddr,
+) -> Result<()> {
     let started = |s: &mut TcpStream, m: &Session| app.redirect(s, "303 See Other", &format!("/w/{}/", m.id));
     match (request.path.as_str(), request.method.as_str()) {
         (path @ ("/" | "/watch"), _) if app.keys.is_some() => front_door(&mut s, app, path)?,
@@ -202,8 +209,14 @@ fn serve_many(mut s: TcpStream, reader: &mut impl Read, app: &App, sessions: &Se
             Err(e) => respond(&mut s, "400 Bad Request", TEXT, format!("{e:#}").as_bytes())?,
         },
         ("/", "GET") => respond(&mut s, "200 OK", HTML, &app.page(&landing("")))?,
+        ("/watch", "POST") if request.length as u64 > MAX_REQUEST => {
+            respond(&mut s, "413 Content Too Large", TEXT, format!("over {MAX_REQUEST} bytes").as_bytes())?;
+        }
         ("/watch", "POST") => {
-            let mut body = vec![0; request.length.min(MAX_REQUEST as usize)];
+            // The body has an allowance of its own: the headers may have used up most of theirs.
+            let buffered = reader.buffer().len() as u64;
+            reader.get_mut().set_limit((request.length as u64).saturating_sub(buffered));
+            let mut body = vec![0; request.length];
             reader.read_exact(&mut body)?;
             let form = String::from_utf8_lossy(&body);
             let line = param(&form, "connect").map(form_decode).unwrap_or_default();
@@ -479,6 +492,24 @@ mod tests {
             let page = request_to(&app, format!("GET {location}{rest} HTTP/1.1\r\n\r\n").as_bytes()).1;
             assert!(page.starts_with(&format!("HTTP/1.1 {status}")), "{rest}: {page}");
         }
+        if let Matches::Many(s) = &app.matches {
+            s.stop_all();
+        }
+    }
+
+    #[test]
+    fn a_form_after_long_headers_still_starts_a_match() {
+        let app = app(Matches::Many(Sessions::new(false, 4, 20.0)));
+        let body = "connect=192.0.2.1%3A27020+tv";
+        // Headers ending just short of MAX_REQUEST, so the body takes it over.
+        let head = |cookie: &str| format!("POST /watch HTTP/1.1\r\nCookie: {cookie}\r\nContent-Length: {}\r\n\r\n", body.len());
+        let cookie = "c".repeat(MAX_REQUEST as usize - head("").len() - 10);
+        let send = head(&cookie) + body;
+        assert!(send.len() as u64 > MAX_REQUEST && (head(&cookie).len() as u64) < MAX_REQUEST);
+        let response = request_to(&app, send.as_bytes()).1;
+        assert!(response.starts_with("HTTP/1.1 303"), "{response}");
+        let huge = format!("POST /watch HTTP/1.1\r\nContent-Length: {}\r\n\r\n", 17 << 10);
+        assert!(request_to(&app, huge.as_bytes()).1.starts_with("HTTP/1.1 413"));
         if let Matches::Many(s) = &app.matches {
             s.stop_all();
         }
