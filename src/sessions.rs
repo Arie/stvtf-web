@@ -43,6 +43,9 @@ pub struct Session {
     started: Instant,
     idle_since: Mutex<Option<Instant>>,
     thread: Mutex<Option<JoinHandle<()>>>,
+    /// Held while the match is saved and while it is ended, so a save that started before the
+    /// match ended cannot write its file back after `end` deleted it.
+    saving: Mutex<()>,
 }
 
 impl Session {
@@ -63,6 +66,7 @@ impl Session {
             started: Instant::now(),
             idle_since: Mutex::new((!pinned).then(Instant::now)),
             thread: Mutex::new(None),
+            saving: Mutex::new(()),
         }
     }
 
@@ -146,7 +150,12 @@ impl Store {
         self.dir.join(id)
     }
 
+    /// Saves a match, unless it was stopped (ended, or all of them stopped at exit).
     fn save(&self, s: &Session) -> Result<()> {
+        let _saving = lock(&s.saving);
+        if s.stop.load(Ordering::Relaxed) {
+            return Ok(());
+        }
         let (map, history) = {
             let h = lock(&s.hub);
             (h.map.clone(), h.history.iter().map(ToString::to_string).collect())
@@ -318,7 +327,11 @@ impl Sessions {
 
     /// Stops a session already taken out of the map, and forgets its saved file.
     fn end(&self, s: &Session, why: &str) {
-        s.stop.store(true, Ordering::Relaxed);
+        // Stopped once a save in progress is done, so no save writes the file again once forgotten.
+        {
+            let _saving = lock(&s.saving);
+            s.stop.store(true, Ordering::Relaxed);
+        }
         s.ended(why);
         if let Some(store) = &self.store {
             store.forget(&s.id);
@@ -481,6 +494,21 @@ mod tests {
         after.reap(Duration::ZERO);
         assert!(!dir.join(&m.id).exists(), "a dropped match is forgotten");
         after.stop_all();
+    }
+
+    #[test]
+    fn a_replaced_match_is_not_saved_again() {
+        let dir = TempDir::new("sessions");
+        let mut s = Sessions::new(false, 4, 20.0);
+        s.store = Some(Store { dir: dir.to_path_buf(), keys: None });
+        let a = s.open("192.0.2.1:27020 tv", Some("u1")).unwrap();
+        assert!(dir.join(&a.id).exists());
+        // persist() took `a` from the list just before u1 started another match.
+        s.open("192.0.2.2:27020 tv", Some("u1")).unwrap();
+        assert!(!dir.join(&a.id).exists(), "the replaced match is forgotten");
+        s.store.as_ref().unwrap().save(&a).unwrap();
+        assert!(!dir.join(&a.id).exists(), "and stays forgotten");
+        s.stop_all();
     }
 
     #[test]
