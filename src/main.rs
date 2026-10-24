@@ -274,6 +274,8 @@ fn keep_house(app: Arc<App>, stop: &'static AtomicBool) {
         let Matches::Many(sessions) = &app.matches else { return };
         for round in 0u64.. {
             if stop.load(Ordering::Relaxed) {
+                // The feed up to now, for the process that takes over.
+                sessions.persist();
                 sessions.stop_all();
                 std::process::exit(0);
             }

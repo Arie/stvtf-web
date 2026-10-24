@@ -22,6 +22,8 @@ pub(crate) struct Hub {
     pub(crate) map: Option<String>,
     /// Feed events of the current map, so a page opened late still shows kills and chat.
     pub(crate) history: VecDeque<Arc<str>>,
+    /// Counts changes to `map` and `history`, so a match is saved only when they changed.
+    pub(crate) changes: u64,
     /// Tick and round time of the latest snapshot, to stamp events with time into the round.
     round_clock: Option<(u32, f64)>,
     /// When the latest snapshot came in, so a page opened after the stream stopped can say so.
@@ -184,6 +186,7 @@ pub(crate) fn publish(hub: &SharedHub, line: &Line) {
                 h.snapshot = None;
                 h.history.clear();
                 h.names.clear();
+                h.changes += 1;
             }
             h.status = Some(json.clone());
         }
@@ -193,6 +196,7 @@ pub(crate) fn publish(hub: &SharedHub, line: &Line) {
                 h.history.clear();
                 h.names.clear();
                 h.map = Some(server.map.clone());
+                h.changes += 1;
             }
             (h.server, h.snapshot, h.round_clock) = (Some(json.clone()), None, None);
             h.tick_interval = Some(server.tick_interval).filter(|i| *i > 0.0);
@@ -221,6 +225,7 @@ pub(crate) fn publish(hub: &SharedHub, line: &Line) {
                 h.history.pop_front();
             }
             h.history.push_back(past.into());
+            h.changes += 1;
         }
         _ => {}
     }

@@ -43,9 +43,10 @@ pub struct Session {
     started: Instant,
     idle_since: Mutex<Option<Instant>>,
     thread: Mutex<Option<JoinHandle<()>>>,
-    /// Held while the match is saved and while it is ended, so a save that started before the
-    /// match ended cannot write its file back after `end` deleted it.
-    saving: Mutex<()>,
+    /// The hub's `changes` when the match was last saved. Held while it is saved and while it is
+    /// ended, so a save that started before the match ended cannot write its file back after
+    /// `end` deleted it.
+    saving: Mutex<Option<u64>>,
 }
 
 impl Session {
@@ -66,7 +67,7 @@ impl Session {
             started: Instant::now(),
             idle_since: Mutex::new((!pinned).then(Instant::now)),
             thread: Mutex::new(None),
-            saving: Mutex::new(()),
+            saving: Mutex::new(None),
         }
     }
 
@@ -150,21 +151,27 @@ impl Store {
         self.dir.join(id)
     }
 
-    /// Saves a match, unless it was stopped (ended, or all of them stopped at exit).
+    /// Saves a match, unless it was stopped (ended, or all of them stopped at exit) or its map
+    /// and feed are as last saved.
     fn save(&self, s: &Session) -> Result<()> {
-        let _saving = lock(&s.saving);
+        let mut last_saved = lock(&s.saving);
         if s.stop.load(Ordering::Relaxed) {
             return Ok(());
         }
-        let (map, history) = {
+        let (changes, map, history) = {
             let h = lock(&s.hub);
-            (h.map.clone(), h.history.iter().map(ToString::to_string).collect())
+            if *last_saved == Some(h.changes) {
+                return Ok(());
+            }
+            (h.changes, h.map.clone(), h.history.iter().map(ToString::to_string).collect())
         };
         let saved = SavedMatch { server: s.server, password: s.password.clone(), owner: s.owner.clone(), map, history };
         let plain = serde_json::to_vec(&saved)?;
         std::fs::create_dir_all(&self.dir)?;
         let data = self.keys.as_ref().map_or_else(|| plain.clone(), |k| k.seal(&plain));
-        Ok(write_atomic(&self.path(&s.id), &data)?)
+        write_atomic(&self.path(&s.id), &data)?;
+        *last_saved = Some(changes);
+        Ok(())
     }
 
     fn forget(&self, id: &str) {
@@ -479,7 +486,11 @@ mod tests {
         let mut before = Sessions::new(false, 4, 20.0);
         before.store = store();
         let m = before.open("connect 192.0.2.1:27020; password \"hunter2\"", Some("u1")).unwrap();
-        m.hub.lock().unwrap().history.push_back(r#"{"type":"kill","history":true}"#.into());
+        {
+            let mut h = m.hub.lock().unwrap();
+            h.history.push_back(r#"{"type":"kill","history":true}"#.into());
+            h.changes += 1;
+        }
         before.persist();
         let file = std::fs::read(dir.join(&m.id)).unwrap();
         assert!(!String::from_utf8_lossy(&file).contains("hunter2"), "saved encrypted");
@@ -494,6 +505,21 @@ mod tests {
         after.reap(Duration::ZERO);
         assert!(!dir.join(&m.id).exists(), "a dropped match is forgotten");
         after.stop_all();
+    }
+
+    #[test]
+    fn only_changed_matches_are_saved_again() {
+        let dir = TempDir::new("sessions");
+        let mut s = Sessions::new(false, 4, 20.0);
+        s.store = Some(Store { dir: dir.to_path_buf(), keys: None });
+        let m = s.open("192.0.2.1:27020 tv", None).unwrap();
+        std::fs::remove_file(dir.join(&m.id)).unwrap();
+        s.persist();
+        assert!(!dir.join(&m.id).exists(), "unchanged since it was saved");
+        m.hub.lock().unwrap().changes += 1;
+        s.persist();
+        assert!(dir.join(&m.id).exists());
+        s.stop_all();
     }
 
     #[test]
