@@ -1,7 +1,9 @@
 // Milliseconds per server tick, from the server line (15 on a 66-tick server, which TF2 runs).
 export let msPerTick = 15;
 export function setTickInterval(seconds) { if (seconds > 0) msPerTick = seconds * 1000; }
-const BUFFER_TICKS = 10;
+// Playback runs this far behind the newest snapshot beyond the spacing between snapshots, so a
+// late one still arrives before it is needed.
+const JITTER_MS = 105;
 // The tick clock jumps instead of easing when it is off by this much (a stall, a seek).
 const CLOCK_JUMP_TICKS = 40;
 export const TEAM = { red: "#d0453f", blue: "#4f8fc0", none: "#9a9a9a", spectator: "#9a9a9a" };
@@ -66,11 +68,17 @@ export const state = {
 function nowTick() {
   return state.tickOffset == null ? 0 : performance.now() / msPerTick + state.tickOffset;
 }
+// Ticks between snapshots, smoothed: stvtf's rate cap and the STV's tv_snapshotrate set it.
+let lastSnapTick = null, snapGap = 4;
 export function observeTick(tick) {
+  if (state.tickOffset == null) lastSnapTick = null;
+  const gap = lastSnapTick == null ? 0 : tick - lastSnapTick;
+  if (gap > 0 && gap < CLOCK_JUMP_TICKS) snapGap = snapGap * 0.9 + gap * 0.1;
+  lastSnapTick = tick;
   const est = tick - performance.now() / msPerTick;
   if (state.tickOffset == null || Math.abs(est - state.tickOffset) > CLOCK_JUMP_TICKS) state.tickOffset = est;
   else state.tickOffset = Math.max(state.tickOffset * 0.97 + est * 0.03, state.tickOffset - 0.5);
 }
-export function renderTick() { return nowTick() - BUFFER_TICKS; }
+export function renderTick() { return nowTick() - snapGap - JITTER_MS / msPerTick; }
 
 export function setStatus(text, ok) { const s = $("status"); s.textContent = text; s.className = ok ? "ok" : "bad"; }
