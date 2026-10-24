@@ -1,4 +1,6 @@
-export const MS_PER_TICK = 15;
+// Milliseconds per server tick, from the server line (15 on a 66-tick server, which TF2 runs).
+export let msPerTick = 15;
+export function setTickInterval(seconds) { if (seconds > 0) msPerTick = seconds * 1000; }
 const BUFFER_TICKS = 10;
 // The tick clock jumps instead of easing when it is off by this much (a stall, a seek).
 const CLOCK_JUMP_TICKS = 40;
@@ -62,10 +64,10 @@ export const state = {
 
 // ---------- tick clock: server tick at a local instant, smoothed over snapshot arrivals
 function nowTick() {
-  return state.tickOffset == null ? 0 : performance.now() / MS_PER_TICK + state.tickOffset;
+  return state.tickOffset == null ? 0 : performance.now() / msPerTick + state.tickOffset;
 }
 export function observeTick(tick) {
-  const est = tick - performance.now() / MS_PER_TICK;
+  const est = tick - performance.now() / msPerTick;
   if (state.tickOffset == null || Math.abs(est - state.tickOffset) > CLOCK_JUMP_TICKS) state.tickOffset = est;
   else state.tickOffset = Math.max(state.tickOffset * 0.97 + est * 0.03, state.tickOffset - 0.5);
 }

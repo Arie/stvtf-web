@@ -1,4 +1,4 @@
-import { MS_PER_TICK, TEAM, $, state } from "./core.js";
+import { msPerTick, TEAM, $, state } from "./core.js";
 import { MEDIGUN_NAME, mmss } from "./hud.js";
 import { layerOn } from "./layers.js";
 
@@ -54,11 +54,11 @@ const VOTE_ISSUE = {
 const voteIssue = ev => (Object.hasOwn(VOTE_ISSUE, ev.issue) ? VOTE_ISSUE[ev.issue] : d => [String(ev.issue ?? "").replace(/^#/, ""), d].filter(Boolean).join(" "))(ev.details || "");
 
 // Kills by one player within 10 s of each other count as a streak: 2K, 3K, …
-const STREAK_TICKS = 10000 / MS_PER_TICK;
+const STREAK_MS = 10000;
 const streaks = new Map();
 function streak(ev) {
   const s = streaks.get(ev.attacker), gap = s ? ev.tick - s.tick : -1;
-  const n = gap >= 0 && gap <= STREAK_TICKS ? s.n + 1 : 1;
+  const n = gap >= 0 && gap * msPerTick <= STREAK_MS ? s.n + 1 : 1;
   streaks.set(ev.attacker, { tick: ev.tick, n });
   return n;
 }

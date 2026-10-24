@@ -1,4 +1,4 @@
-import { MS_PER_TICK, TEAM, CLASS, byClass, ICONS, $, OVERLAY, OPT, state } from "./core.js";
+import { msPerTick, TEAM, CLASS, byClass, ICONS, $, OVERLAY, OPT, state } from "./core.js";
 import { layerOn } from "./layers.js";
 import { esc } from "./feed.js";
 
@@ -147,12 +147,12 @@ export function renderScoreboard(snap, tick) {
   setText("score-blue", String(scores?.blue ?? 0));
   setText("score-red", String(scores?.red ?? 0));
   const timers = snap.timers || [];
-  const left = t => t.paused ? t.remaining : t.remaining - Math.max(0, tick - snap.tick) * MS_PER_TICK / 1000;
+  const left = t => t.paused ? t.remaining : t.remaining - Math.max(0, tick - snap.tick) * msPerTick / 1000;
   const main = timers.find(t => t.team === "none") || (timers.length === 1 ? timers[0] : null);
   const byTeam = team => timers.find(t => t.team === team && t !== main);
   // Like TF2's HUD: the round timer when one is active, else the map's mp_timelimit; with
   // both, the map time goes underneath.
-  const mapLeft = snap.time_left == null ? null : snap.time_left - Math.max(0, tick - snap.tick) * MS_PER_TICK / 1000;
+  const mapLeft = snap.time_left == null ? null : snap.time_left - Math.max(0, tick - snap.tick) * msPerTick / 1000;
   // King of the hill: each team's timer, side by side in the middle like TF2's HUD; the one
   // ticking (the team holding the point) bright, the other dimmed.
   const koth = !main && byTeam("blue") && byTeam("red");
@@ -168,7 +168,7 @@ export function renderScoreboard(snap, tick) {
   const robots = snap.mvm ? (snap.mvm.classes || []).filter(c => !c.support).reduce((n, c) => n + c.count, 0) : 0;
   setText("timer-map", (main || koth) && mapLeft != null ? `MAP ${clock(mapLeft)}` : robots > 0 ? `${robots} ROBOT${robots === 1 ? "" : "S"}` : "");
   // Events are stamped with time into the round, which (unlike the round timer) never jumps.
-  const into = snap.round_time == null ? null : snap.round_time + (snap.round === "running" ? Math.max(0, tick - snap.tick) * MS_PER_TICK / 1000 : 0);
+  const into = snap.round_time == null ? null : snap.round_time + (snap.round === "running" ? Math.max(0, tick - snap.tick) * msPerTick / 1000 : 0);
   state.clock = into == null ? "" : mmss(into);
   setText("timer-blue", !koth && byTeam("blue") ? clock(left(byTeam("blue"))) : "");
   setText("timer-red", !koth && byTeam("red") ? clock(left(byTeam("red"))) : "");

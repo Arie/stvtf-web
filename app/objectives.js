@@ -1,4 +1,4 @@
-import { MS_PER_TICK, TEAM, OVERLAY, overlayUnit, uiScale, ctx, state } from "./core.js";
+import { msPerTick, TEAM, OVERLAY, overlayUnit, uiScale, ctx, state } from "./core.js";
 import { toScreen, screenAngle, px, playerRad, drawText } from "./view.js";
 import { layerOn } from "./layers.js";
 
@@ -171,7 +171,7 @@ export function drawObjectives(snap, tick) {
     const half = OVERLAY ? u * 1.2 : px(110, 11);
     const x0 = x - half, y0 = y - half, side = half * 2, corner = Math.max(2, half * 0.18);
     // Advance between snapshots at the rate stvtf extrapolates from the cap times and cappers.
-    const progress = Math.max(0, Math.min(1, o.cap_progress + (o.cap_rate || 0) * Math.max(0, tick - snap.tick) * MS_PER_TICK / 1000));
+    const progress = Math.max(0, Math.min(1, o.cap_progress + (o.cap_rate || 0) * Math.max(0, tick - snap.tick) * msPerTick / 1000));
     const capping = o.capping_team !== "none" && progress > 0;
     ctx.save();
     ctx.beginPath(); ctx.roundRect(x0, y0, side, side, corner);
@@ -244,7 +244,7 @@ function drawPickups(o, carrier, snap, tick) {
   ctx.fillStyle = "#0b0c0e"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
   ctx.font = `800 ${Math.round(Math.max(9, r * 1.2))}px system-ui`; ctx.fillText(String(o.points), x, y + 0.5);
   if (o.status === "dropped" && o.returns_in != null) {
-    const left = Math.max(0, Math.ceil(o.returns_in - Math.max(0, tick - snap.tick) * MS_PER_TICK / 1000));
+    const left = Math.max(0, Math.ceil(o.returns_in - Math.max(0, tick - snap.tick) * msPerTick / 1000));
     ctx.font = `700 ${Math.round(Math.max(10 * uiScale(), r * 0.9))}px "HUD Condensed", system-ui`;
     ctx.textBaseline = "top"; ctx.lineJoin = "round"; ctx.lineWidth = 3; ctx.strokeStyle = "#000";
     ctx.strokeText(String(left), x, y + r + 2); ctx.fillStyle = "#fff"; ctx.fillText(String(left), x, y + r + 2);
@@ -274,7 +274,7 @@ export function drawFlags(snap, players, tick) {
       ctx.fillStyle = o.team === "red" || o.team === "blue" ? TEAM[o.team] : "#f2c94c"; ctx.fill(); ctx.stroke();
     }
     if (o.status === "dropped" && o.returns_in != null) {
-      const left = Math.max(0, Math.ceil(o.returns_in - Math.max(0, tick - snap.tick) * MS_PER_TICK / 1000));
+      const left = Math.max(0, Math.ceil(o.returns_in - Math.max(0, tick - snap.tick) * msPerTick / 1000));
       ctx.font = `700 ${Math.round(Math.max(11 * uiScale(), s * 0.7))}px "HUD Condensed", system-ui`;
       ctx.textAlign = "center"; ctx.textBaseline = "top"; ctx.lineJoin = "round";
       ctx.lineWidth = 3; ctx.strokeText(String(left), x, y + s * 0.55);

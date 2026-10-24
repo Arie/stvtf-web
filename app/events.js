@@ -1,4 +1,4 @@
-import { MS_PER_TICK, state } from "./core.js";
+import { msPerTick, state } from "./core.js";
 import { banner, teamName, pointName, flagName, chat, feedEvent } from "./feed.js";
 import { showTimeAdded } from "./hud.js";
 import { layerOn } from "./layers.js";
@@ -17,7 +17,7 @@ const LATE_MS = 1500, LATE_IMPACT_MS = 600, LATE_TIME_ADDED_MS = 3000;
 // Jump trails kept at once.
 const MAX_TRAILS = 80;
 let eventTick = 0;
-const lagMs = ev => Math.max(0, (eventTick - ev.tick) * MS_PER_TICK);
+const lagMs = ev => Math.max(0, (eventTick - ev.tick) * msPerTick);
 const stale = (ev, ms) => lagMs(ev) > ms;
 export function fireEvents(tick, byId) {
   eventTick = tick;

@@ -1,4 +1,4 @@
-import { $, DELAY, DELAY_MS, PAGE, state, observeTick, setStatus } from "./core.js";
+import { $, DELAY, DELAY_MS, PAGE, state, observeTick, setStatus, setTickInterval } from "./core.js";
 import { killiconsLoaded, CHAT_TYPES, chat, feedEvent } from "./feed.js";
 import { hudNodes } from "./hud.js";
 import { setFollow } from "./input.js";
@@ -72,6 +72,7 @@ function handle(m) {
         if (state.map) feedEvent({ type: "map", map: m.map }, () => null);
         loadMap(m.map);
       }
+      setTickInterval(m.tick_interval);
       // The same map again (a reconnect, a signon restart) keeps who you are following.
       resetMatch(sameMap);
       break;
