@@ -1,0 +1,241 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>TF2Pugs.com</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="https://tf2pugs.com/assets/images/logo3.png">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css">
+<style>
+  :root { --blu: #5885A2; --red: #B8383B; }
+  html { font-size: 14px; }
+  @media (min-width: 768px) { html { font-size: 16px; } }
+  .link-shadow:hover { background-color: #f8f8f8; }
+  #logo { background-color: #f8f8f8; border-width: 2px !important; }
+  .logo-size { height: 42px; width: 42px; }
+  .nav-avatar { height: 32px; width: 32px; }
+  .flag { width: 35px; height: auto; }
+  .pug-player { height: 62px; position: relative; }
+  .pug-player .avatar { width: 62px; height: 62px; }
+
+  /* Live additions */
+  .pug-player.dead .pug-player-info { opacity: .45; }
+  .pug-player .hp-bar { position: absolute; left: 0; right: 0; bottom: 0; height: 3px; background: #e9ecef; }
+  .pug-player .hp-bar div { height: 100%; transition: width .3s; }
+  .pug-player .live { min-width: 64px; font-size: .8rem; line-height: 1.1; }
+  .pug-player .live img { width: 22px; height: 22px; }
+  .pug-player.followed { outline: 2px solid #212529; }
+  .follow-btn { padding: 0 .35rem; font-size: .75rem; }
+  .live-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #dc3545; margin-right: .35rem; animation: pulse 1.5s infinite; }
+  @keyframes pulse { 50% { opacity: .3; } }
+  #feed { height: 100%; overflow-y: auto; font-size: .85rem; }
+  #feed .list-group-item { padding: .35rem .75rem; }
+  .t-blue { color: var(--blu); font-weight: 600; } .t-red { color: var(--red); font-weight: 600; }
+  .stv-frame { border: 0; border-radius: .25rem; background: #000; }
+</style>
+</head>
+<body style="background-color: rgb(248, 249, 250);">
+<header class="bg-white">
+  <nav class="navbar navbar-expand-sm navbar-light border-bottom shadow mb-3">
+    <div class="container">
+      <a class="navbar-brand" href="https://tf2pugs.com/"><img id="logo" src="https://tf2pugs.com/assets/images/logo3.png" class="rounded-circle logo-size border" alt=""></a>
+      <a class="navbar-brand nav-link link-shadow rounded-pill" href="https://tf2pugs.com/">TF2Pugs.com</a>
+      <div class="navbar-collapse justify-content-end">
+        <ul class="navbar-nav align-items-center">
+          <li class="nav-item"><a href="https://discord.gg/GNAp64CsZY" target="_blank" class="nav-link"><img src="https://tf2pugs.com/assets/images/profile-icons/icon_clyde_blurple_RGB.png" style="width: 26px; height: 20px; top: -1px; position: relative;" alt="Discord"></a></li>
+          <li class="nav-item"><a class="nav-link link-shadow rounded-pill" href="https://tf2pugs.com/about">About</a></li>
+          <li class="nav-item"><a class="nav-link" href="https://tf2pugs.com/profile/76561197960497430"><img class="nav-avatar shadow" src="https://avatars.steamstatic.com/5fee4d76e58e4dcf81a11cdbcddb6300ebd97421_full.jpg" alt=""></a></li>
+        </ul>
+      </div>
+    </div>
+  </nav>
+</header>
+
+<div class="container pt-2">
+  <div class="row">
+    <div class="text-center mb-2">
+      <h2 class="mb-2">Sixes</h2>
+      <h3>cp_process_f12</h3>
+    </div>
+    <div class="d-flex">
+      <div class="col-5 mb-3">
+        <h3 class="text-center rounded text-white" style="background-color: var(--blu);">Blue</h3>
+        <div id="roster-blue"></div>
+      </div>
+      <div class="col-2 d-flex flex-column text-center align-items-center">
+        <div class="mb-2" style="height: 33.594px; width: 100%;"><img class="flag" src="https://tf2pugs.com/assets/images/flags/united-states.png" alt="US"></div>
+        <div id="roles"></div>
+      </div>
+      <div class="col-5 mb-3">
+        <h3 class="text-center rounded text-white" style="background-color: var(--red);">Red</h3>
+        <div id="roster-red"></div>
+      </div>
+    </div>
+    <div class="d-flex align-items-center justify-content-center pb-2">
+      <p class="me-2 mb-0">Pug creator:</p>
+      <a href="https://tf2pugs.com/profile/76561198046904963"><img style="width: 30px; height: 30px;" src="https://avatars.steamstatic.com/718a3d7ccf70cdc89e7789f08989bd538cea2789_full.jpg" alt="thug"></a>
+    </div>
+  </div>
+
+  <div class="card shadow-sm mb-3" id="live-card">
+    <div class="card-header bg-white d-flex align-items-center flex-wrap gap-2">
+      <span class="badge bg-secondary" id="live-badge">Connecting…</span>
+      <span class="text-muted" id="live-map"></span>
+      <span class="fs-5 fw-bold mx-auto">
+        <span style="color: var(--blu);">BLU <span id="score-blue">0</span></span>
+        <span class="text-muted mx-1">:</span>
+        <span style="color: var(--red);"><span id="score-red">0</span> RED</span>
+      </span>
+      <div class="btn-group btn-group-sm" role="group" aria-label="Map view">
+        <button type="button" class="btn btn-outline-dark active" data-view="">Map</button>
+        <button type="button" class="btn btn-outline-dark" data-view="overlay">Minimap</button>
+      </div>
+    </div>
+    <div class="card-body">
+      <div class="row g-3">
+        <div class="col-lg-8">
+          <div class="ratio ratio-16x9"><iframe id="stv" class="stv-frame" title="Live map by stv.tf" allow="fullscreen"></iframe></div>
+          <div class="small text-muted mt-1">Live map by <a href="https://stv.tf" target="_blank" rel="noopener">stv.tf</a>, from SourceTV (delayed). Click a player's eye to follow them.</div>
+        </div>
+        <div class="col-lg-4">
+          <div class="card h-100" style="min-height: 240px;">
+            <div class="card-header py-1 fw-bold small">Match feed</div>
+            <ul class="list-group list-group-flush" id="feed"></ul>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// The pug, as tf2pugs already has it.
+const AVATAR = "https://avatars.steamstatic.com/";
+const pug = {
+  roles: [["scout", "Flank"], ["scout", "Pocket"], ["soldier", "Roamer"], ["soldier", "Pocket"], ["demoman", "Demo"], ["medic", "Medic"]],
+  blue: [
+    ["76561197997356746", "hammy lft", "https://avatars.akamai.steamstatic.com/28aa804d2c8674a1b4abe6d8635de3b4cefed11f"],
+    ["76561198872953118", "lingdinglingding", AVATAR + "f89d0d69b961a035145ad6dcff8fc696c89519f2"],
+    ["76561198823526581", "broz", AVATAR + "fae88fcc4372e35f0cd3cc7464c128537e8dcaef"],
+    ["76561199537202853", "HeavyGaming", AVATAR + "fef49e7fa7e1997310d705b2a6158ff8dc1cdfeb"],
+    ["76561198002516729", "Yoshi", AVATAR + "ecfe8f794ba8b6382eda85c2c81cdc07782c1454"],
+    ["76561199125496367", "kelvar1s", AVATAR + "c4bbfa832fa4d61131eeac0f46cd6d5a4dd49b63"],
+  ],
+  red: [
+    ["76561198004630011", "HOOD Jacob", AVATAR + "f8a206c04362c0c5ed66c363bba9c2509a08f615"],
+    ["76561198327220805", "Sista", "https://avatars.akamai.steamstatic.com/73a343df8827c4301026169d59ec92a5de65046c"],
+    ["76561198699205919", "gm2121177", AVATAR + "fef49e7fa7e1997310d705b2a6158ff8dc1cdfeb"],
+    ["76561198176135279", "<3", AVATAR + "6641e75b8730bc462b567a35cb525ffc85931fcb"],
+    ["76561198046904963", "thug", AVATAR + "718a3d7ccf70cdc89e7789f08989bd538cea2789"],
+    ["76561199130242847", "cacos", AVATAR + "6747938064ce0df9754e716a885cfc5f4d88ffce"],
+  ],
+};
+
+// The live map. In production this is the start link tf2pugs' server gets from serveme.tf for the
+// pug's reservation (GET /api/reservations/:id/stv); stv.tf's demo match stands in for it here.
+const STV = "https://stv.tf";
+const MATCH = `${STV}/w/demo/`;
+
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+const ICON = c => `https://tf2pugs.com/assets/images/class-icons/${c}.png`;
+let live = new Map(), followed = null;
+
+function renderRoster() {
+  $("roles").innerHTML = pug.roles.map(([cls, role]) =>
+    `<div class="p-1 text-center" style="width: 80px;"><img class="m-1" style="width: 30px; height: 30px;" src="${ICON(cls)}" alt=""><div>${role}</div></div>`).join("");
+  for (const team of ["blue", "red"]) {
+    $(`roster-${team}`).innerHTML = pug[team].map(([id, name, avatar]) => `
+      <div class="d-flex">
+        <div class="pug-player d-flex text-center flex-grow-1 m-1 shadow" data-steamid64="${id}">
+          <div class="pug-player-info d-flex flex-grow-1 bg-white rounded">
+            <a href="https://tf2pugs.com/profile/${id}"><img class="avatar" src="${avatar}_full.jpg" alt=""></a>
+            <div class="d-flex justify-content-center align-items-center flex-grow-1"><div class="text-wrap text-break m-2">${esc(name)}</div></div>
+            <div class="live d-flex flex-column justify-content-center align-items-center pe-2 text-muted"></div>
+          </div>
+          <div class="hp-bar" hidden><div></div></div>
+        </div>
+      </div>`).join("");
+  }
+}
+
+// Live data on each card, matched by Steam ID.
+function renderLive() {
+  for (const card of document.querySelectorAll(".pug-player")) {
+    const p = live.get(card.dataset.steamid64);
+    const box = card.querySelector(".live"), bar = card.querySelector(".hp-bar");
+    card.classList.toggle("dead", Boolean(p && !p.alive));
+    card.classList.toggle("followed", Boolean(p) && followed === card.dataset.steamid64);
+    bar.hidden = !p;
+    if (!p) { box.innerHTML = live.size ? `<span class="small">not on<br>SourceTV</span>` : ""; continue; }
+    const f = Math.min(1, p.hp / p.max_hp);
+    bar.firstElementChild.style.width = `${p.alive ? f * 100 : 0}%`;
+    bar.firstElementChild.style.background = f > .5 ? "#198754" : f > .25 ? "#ffc107" : "#dc3545";
+    box.innerHTML = `<img src="${ICON(p.class)}" alt="${p.class}" title="${p.class}">
+      <span class="fw-bold text-dark">${p.alive ? p.hp : "dead"}</span>
+      <button type="button" class="btn btn-${followed === card.dataset.steamid64 ? "dark" : "outline-secondary"} follow-btn" title="Follow on the map">👁</button>`;
+  }
+}
+
+function load(view) {
+  $("stv").src = view ? `${MATCH}overlay?names=1&score=1` : MATCH;
+}
+const send = m => $("stv").contentWindow.postMessage({ stvtf: 1, ...m }, STV);
+
+function feed(html) {
+  const li = document.createElement("li");
+  li.className = "list-group-item";
+  li.innerHTML = html;
+  $("feed").prepend(li);
+  while ($("feed").children.length > 60) $("feed").lastChild.remove();
+}
+function setBadge(on, text) {
+  $("live-badge").className = `badge ${on ? "bg-danger" : "bg-secondary"}`;
+  $("live-badge").innerHTML = on ? `<span class="live-dot bg-white"></span>LIVE` : esc(text);
+}
+const who = p => p ? `<span class="t-${p.team}">${esc(p.name)}</span>` : "?";
+
+addEventListener("message", e => {
+  if (e.origin !== STV || e.data?.stvtf !== 1) return;
+  const m = e.data;
+  if (m.type === "status") {
+    if (m.state !== "full") setBadge(false, m.state.replaceAll("_", " "));
+  } else if (m.type === "map") {
+    $("live-map").textContent = `on ${m.map}`;
+  } else if (m.type === "state") {
+    setBadge(true);
+    $("score-blue").textContent = m.score?.blue ?? 0;
+    $("score-red").textContent = m.score?.red ?? 0;
+    live = new Map(m.players.filter(p => p.steamid64).map(p => [p.steamid64, p]));
+    renderLive();
+  } else if (m.type === "event") {
+    const ev = m.event, p = id => m.players[id];
+    if (ev.type === "kill" && !ev.feign) feed(`${ev.attacker != null && ev.attacker !== ev.victim ? who(p(ev.attacker)) + " " : ""}<span class="text-muted">${ev.headshot ? "headshot" : ev.backstab ? "backstabbed" : "killed"}</span> ${who(p(ev.victim))}`);
+    else if (ev.type === "uber") feed(`${who(p(ev.medic))} <span class="text-muted">popped</span> <b>${esc(ev.medigun || "über")}</b>`);
+    else if (ev.type === "point_captured") feed(`<span class="t-${ev.team}">${ev.team.toUpperCase()}</span> <span class="text-muted">captured a point</span>`);
+    else if (ev.type === "round_win") feed(`<b class="t-${ev.team}">${ev.team.toUpperCase()} won the round</b>`);
+    else if (ev.type === "round_start") feed(`<span class="text-muted">Round start</span>`);
+    else if (ev.type === "chat") feed(`${ev.player != null ? who(p(ev.player)) : esc(ev.name || "Console")}<span class="text-muted">:</span> ${esc(ev.text)}`);
+  }
+});
+
+document.addEventListener("click", e => {
+  const btn = e.target.closest(".follow-btn");
+  if (btn) {
+    const id = btn.closest(".pug-player").dataset.steamid64;
+    followed = followed === id ? null : id;
+    send(followed ? { type: "follow", steamid64: followed } : { type: "follow" });
+    renderLive();
+  }
+  const v = e.target.closest("[data-view]");
+  if (v) {
+    document.querySelectorAll("[data-view]").forEach(b => b.classList.toggle("active", b === v));
+    load(v.dataset.view);
+  }
+});
+
+renderRoster();
+load("");
+</script>
+</body>
+</html>

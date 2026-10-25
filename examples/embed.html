@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>stv.tf embed example</title>
+<style>
+  :root { --bg: #14161a; --panel: #1d2026; --line: #2b2f37; --text: #e6e6e6; --dim: #8b919c; --red: #d0453f; --blu: #4f8fc0; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.4 system-ui, sans-serif; }
+  header { display: flex; align-items: center; gap: 16px; padding: 12px 20px; border-bottom: 1px solid var(--line); }
+  header h1 { font-size: 16px; margin: 0; font-weight: 600; }
+  header .meta { color: var(--dim); }
+  header .live { background: var(--red); color: #fff; font-weight: 700; font-size: 11px; padding: 2px 6px; border-radius: 3px; letter-spacing: .05em; }
+  header .live.off { background: #555; }
+  .score { margin-left: auto; display: flex; align-items: center; gap: 10px; font-size: 22px; font-weight: 700; }
+  .score .blu { color: var(--blu); } .score .red { color: var(--red); }
+  .score small { font-size: 12px; color: var(--dim); font-weight: 400; }
+  main { display: grid; grid-template-columns: 240px 1fr 300px; gap: 12px; padding: 12px; height: calc(100vh - 57px); }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; overflow: hidden; display: flex; flex-direction: column; min-height: 0; }
+  .panel h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--dim); margin: 0; padding: 10px 12px; border-bottom: 1px solid var(--line); }
+  iframe { width: 100%; height: 100%; border: 0; border-radius: 6px; background: #000; }
+  .team { padding: 4px 0; }
+  .team + .team { border-top: 1px solid var(--line); }
+  .player { display: flex; align-items: center; gap: 8px; padding: 5px 12px; cursor: pointer; border-left: 3px solid transparent; }
+  .player:hover { background: #262a31; }
+  .player.followed { background: #2c3139; border-left-color: #fff; }
+  .player.dead { opacity: .4; }
+  .player .cls { width: 26px; color: var(--dim); font-size: 11px; text-transform: uppercase; }
+  .player .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .player .hp { font-variant-numeric: tabular-nums; width: 32px; text-align: right; }
+  .blu .player .name { color: #a9c9e4; } .red .player .name { color: #eba7a4; }
+  .feed { overflow-y: auto; flex: 1; padding: 6px 0; }
+  .feed div { padding: 3px 12px; animation: in .3s ease-out; }
+  @keyframes in { from { background: #3a3f48; } }
+  .feed .b { color: #a9c9e4; } .feed .r { color: #eba7a4; } .feed .x { color: var(--dim); }
+  .feed .big { font-weight: 600; }
+  .controls { padding: 10px 12px; border-top: 1px solid var(--line); display: grid; gap: 8px; }
+  .controls label { display: flex; align-items: center; gap: 6px; color: var(--dim); }
+  .controls button { background: #2b2f37; color: var(--text); border: 1px solid #3a3f48; border-radius: 4px; padding: 5px 10px; cursor: pointer; }
+  .controls button.on { background: #3d5a78; border-color: #4f8fc0; }
+  .row { display: flex; gap: 6px; flex-wrap: wrap; }
+  #error { color: #eba7a4; padding: 12px; }
+  .hint { color: var(--dim); font-size: 12px; padding: 0 12px 10px; }
+</style>
+</head>
+<body>
+<header>
+  <span class="live off" id="live">LIVE</span>
+  <h1 id="title">Match</h1>
+  <span class="meta" id="meta">connecting…</span>
+  <div class="score"><span class="blu">BLU</span> <span class="blu" id="sb">0</span> <small>:</small> <span class="red" id="sr">0</span> <span class="red">RED</span></div>
+</header>
+<main>
+  <section class="panel">
+    <h2>Players <span style="text-transform:none;letter-spacing:0">(click to follow)</span></h2>
+    <div class="team blu" id="blu"></div>
+    <div class="team red" id="red"></div>
+    <div class="controls">
+      <div class="row">
+        <button data-view="" class="on">Full map</button>
+        <button data-view="overlay">Overlay</button>
+      </div>
+      <label><input type="checkbox" data-layer="jumps" checked> Jump trails</label>
+      <label><input type="checkbox" data-layer="heals" checked> Heal numbers</label>
+      <label><input type="checkbox" data-layer="loadout" checked> Weapon in hand</label>
+    </div>
+  </section>
+  <iframe id="map" title="stv.tf live map" allow="fullscreen"></iframe>
+  <section class="panel">
+    <h2>Match feed (from postMessage)</h2>
+    <div class="feed" id="feed"></div>
+    <div class="hint">This side of the page is the host site's own HTML, built from the messages the stv.tf iframe sends.</div>
+  </section>
+</main>
+<script>
+const STV = "https://stv.tf";
+const $ = id => document.getElementById(id);
+const frame = $("map");
+// stv.tf's recorded demo match. For a live match, the site's server fetches a start link from
+// serveme.tf's API (GET /api/reservations/:id/stv) and uses that as the src instead.
+const MATCH = `${STV}/w/demo/`;
+let view = "", players = new Map(), followed = null;
+
+function load() {
+  frame.src = view ? `${MATCH}overlay?names=1&score=1` : MATCH;
+}
+
+const send = m => frame.contentWindow.postMessage({ stvtf: 1, ...m }, STV);
+const teamCls = t => t === "blue" ? "b" : t === "red" ? "r" : "x";
+const nameOf = p => p ? `<span class="${teamCls(p.team)}">${esc(p.name)}</span>` : "?";
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+
+function feed(html, big) {
+  const d = document.createElement("div");
+  d.innerHTML = html;
+  if (big) d.className = "big";
+  $("feed").prepend(d);
+  while ($("feed").children.length > 80) $("feed").lastChild.remove();
+}
+
+function renderPlayers(list) {
+  for (const team of ["blue", "red"]) {
+    const el = $(team === "blue" ? "blu" : "red");
+    el.innerHTML = list.filter(p => p.team === team).map(p =>
+      `<div class="player${p.alive ? "" : " dead"}${p.id === followed ? " followed" : ""}" data-id="${p.id}">
+        <span class="cls">${esc((p.class || "").slice(0, 3))}</span><span class="name">${esc(p.name)}</span><span class="hp">${p.alive ? p.hp : "✕"}</span></div>`).join("");
+  }
+}
+
+addEventListener("message", e => {
+  if (e.origin !== STV || e.data?.stvtf !== 1) return;
+  const m = e.data;
+  switch (m.type) {
+    case "status": $("live").classList.toggle("off", m.state !== "full"); break;
+    case "map": $("title").textContent = m.map; feed(`<span class="x">map</span> ${esc(m.map)}`, true); break;
+    case "state":
+      $("sb").textContent = m.score?.blue ?? 0; $("sr").textContent = m.score?.red ?? 0;
+      $("live").classList.remove("off");
+      players = new Map(m.players.map(p => [p.id, p]));
+      $("meta").textContent = `${m.players.filter(p => p.team === "blue" || p.team === "red").length} players`;
+      renderPlayers(m.players);
+      break;
+    case "event": {
+      const ev = m.event, p = id => m.players[id] || players.get(id);
+      if (ev.type === "kill") feed(`${ev.attacker != null && ev.attacker !== ev.victim ? nameOf(p(ev.attacker)) + " " : ""}<span class="x">${ev.crit ? "crit-killed" : ev.headshot ? "headshot" : ev.backstab ? "backstabbed" : "killed"}</span> ${nameOf(p(ev.victim))}${ev.assister != null ? ` <span class="x">+ ${esc(p(ev.assister)?.name || "?")}</span>` : ""}`);
+      else if (ev.type === "uber") feed(`${nameOf(p(ev.medic))} <span class="x">popped</span> ${esc(ev.medigun || "uber")}`, true);
+      else if (ev.type === "point_captured") feed(`<span class="${teamCls(ev.team)}">${ev.team.toUpperCase()}</span> <span class="x">captured point</span> ${ev.point + 1}`, true);
+      else if (ev.type === "round_win") feed(`<span class="${teamCls(ev.team)}">${ev.team.toUpperCase()} wins the round</span>`, true);
+      else if (ev.type === "round_start") feed(`<span class="x">— round start —</span>`, true);
+      else if (ev.type === "chat") feed(`${ev.player != null ? nameOf(p(ev.player)) : esc(ev.name || "server")}: ${esc(ev.text)}`);
+      break;
+    }
+  }
+});
+
+document.addEventListener("click", e => {
+  const row = e.target.closest(".player");
+  if (row) {
+    const id = Number(row.dataset.id);
+    followed = followed === id ? null : id;
+    const p = players.get(id);
+    send(followed == null ? { type: "follow" } : p?.steamid && p.steamid !== "BOT" ? { type: "follow", steamid: p.steamid } : { type: "follow", id });
+    renderPlayers([...players.values()]);
+  }
+  const v = e.target.closest("[data-view]");
+  if (v) {
+    view = v.dataset.view;
+    document.querySelectorAll("[data-view]").forEach(b => b.classList.toggle("on", b === v));
+    load();
+  }
+});
+document.addEventListener("change", e => {
+  const l = e.target.dataset.layer;
+  if (l) send({ type: "layer", name: l, on: e.target.checked });
+});
+
+load();
+</script>
+</body>
+</html>

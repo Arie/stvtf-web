@@ -278,6 +278,8 @@ fn serve_file(s: &mut TcpStream, app: &App, path: &str) -> std::io::Result<()> {
         }
         p if let Some(file) = p.strip_prefix("/backpack/") => serve_backpack(s, app, file),
         p if p.starts_with("/overview/") || p.starts_with("/map/") => serve_cached(s, app, p),
+        "/examples/embed.html" => respond(s, "200 OK", HTML, include_bytes!("../examples/embed.html")),
+        "/examples/tf2pugs.html" => respond(s, "200 OK", HTML, include_bytes!("../examples/tf2pugs.html")),
         _ => not_found(s),
     }
 }
