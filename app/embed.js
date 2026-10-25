@@ -5,7 +5,7 @@ import { layerOn, setLayer } from "./layers.js";
 // In a site's iframe: what happens goes to the parent page as postMessage, as the map shows it (so
 // after any delay), and the parent can follow a player or switch a layer. Every message carries
 // `stvtf: 1`. See "Embedding" in the README.
-const EMBEDDED = window.parent !== window;
+export const EMBEDDED = window.parent !== window;
 const EVENTS = new Set(["kill", "uber", "point_captured", "capture_broken", "flag", "round_start", "round_win", "chat"]);
 const PLAYER_FIELDS = ["victim", "attacker", "assister", "medic", "target", "player", "carrier"];
 const STATE_MS = 500;

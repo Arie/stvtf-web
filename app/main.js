@@ -1,5 +1,5 @@
 import { OVERLAY, canvas, ctx, state, renderTick, canvasSize } from "./core.js";
-import { embedState } from "./embed.js";
+import { EMBEDDED, embedState } from "./embed.js";
 import { fireEvents } from "./events.js";
 import { updatePanel, renderScoreboard, shownScore } from "./hud.js";
 import { layerOn, renderSettings } from "./layers.js";
@@ -105,7 +105,22 @@ function draw() {
   }
 }
 
+// Browsers stop animation frames in an iframe scrolled out of view: playback, and with it the
+// parent page's messages, then goes on without drawing.
+const UNDRAWN_MS = 250;
+function advance() {
+  if (performance.now() - lastDraw < UNDRAWN_MS) return;
+  const tick = renderTick(), f = frameAt(tick);
+  if (!f) return;
+  state.lastPlayers = f.players;
+  fireEvents(tick, new Map(f.players.map(p => [p.id, p])));
+  const now = performance.now();
+  state.effects = state.effects.filter(e => now - e.t0 < e.life);
+  embedState(shownScore(f.snap) ?? null, f.players);
+}
+
 renderSettings();
 openStream();
 
 requestAnimationFrame(frame);
+if (EMBEDDED) setInterval(() => { try { advance(); } catch (e) { console.error(e); } }, UNDRAWN_MS);
