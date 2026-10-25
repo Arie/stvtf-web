@@ -205,7 +205,7 @@ fn serve_many(
     match (request.path.as_str(), request.method.as_str()) {
         (path @ ("/" | "/watch"), _) if app.keys.is_some() => front_door(&mut s, app, path)?,
         ("/start", _) => match start(app, sessions, &request.query) {
-            Ok(m) => started(&mut s, &m)?,
+            Ok(m) => app.redirect(&mut s, "303 See Other", &format!("/w/{}/{}", m.id, start_view(&request.query)))?,
             Err(e) => respond(&mut s, "400 Bad Request", TEXT, format!("{e:#}").as_bytes())?,
         },
         ("/", "GET") => respond(&mut s, "200 OK", HTML, &app.page(&landing("")))?,
@@ -363,6 +363,36 @@ fn start(app: &App, sessions: &Sessions, query: &str) -> Result<Arc<Session>> {
     let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs());
     let t = keys.open(token, now)?;
     sessions.open(&t.connect, t.owner.as_deref())
+}
+
+/// Display options a start link can carry over to the page.
+const VIEW_OPTIONS: [&str; 7] = ["names", "score", "panel", "rotate", "dot", "ui", "zoom"];
+
+/// Where a start link lands below `/w/<id>/`: `view=overlay`, `delay=<s>` and the display options
+/// become `overlay/4.5?names=1`. Anything else, or a delay out of range, is left out.
+fn start_view(query: &str) -> String {
+    let overlay = param(query, "view") == Some("overlay");
+    let delay = param(query, "delay").unwrap_or_default();
+    let mut path = match (overlay, delay) {
+        (true, "") => "overlay".to_string(),
+        (true, d) => format!("overlay/{d}"),
+        (false, d) => d.to_string(),
+    };
+    if !is_page(&path) {
+        path = if overlay { "overlay".into() } else { String::new() };
+    }
+    let options: Vec<String> = VIEW_OPTIONS
+        .iter()
+        .filter_map(|k| {
+            param(query, k)
+                .filter(|v| !v.is_empty() && v.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'.' || b == b'-'))
+                .map(|v| format!("{k}={v}"))
+        })
+        .collect();
+    if !options.is_empty() {
+        path = format!("{path}?{}", options.join("&"));
+    }
+    path
 }
 
 /// The page or its overlay, either with a delay in seconds after it: `5`, `overlay/4.5`.
@@ -535,6 +565,11 @@ mod tests {
         assert!(location.starts_with("/live/w/") && location.ends_with('/'), "{response}");
         let page = request_to(&app, format!("GET {} HTTP/1.1\r\n\r\n", &location[5..]).as_bytes()).1;
         assert!(page.contains(r#"<base href="/live/">"#), "{page}");
+        let overlay =
+            request_to(&app, format!("GET /start?t={t}&view=overlay&delay=4.5&names=1&x=y&score=%0d HTTP/1.1\r\n\r\n").as_bytes()).1;
+        assert!(overlay.contains(&format!("Location: {location}overlay/4.5?names=1\r\n")), "{overlay}");
+        let late = request_to(&app, format!("GET /start?t={t}&delay=99 HTTP/1.1\r\n\r\n").as_bytes()).1;
+        assert!(late.contains(&format!("Location: {location}\r\n")), "{late}");
         assert!(request_to(&app, b"GET /start?t=bogus HTTP/1.1\r\n\r\n").1.starts_with("HTTP/1.1 400"));
         if let Matches::Many(s) = &app.matches {
             s.stop_all();
