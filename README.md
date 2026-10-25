@@ -137,8 +137,8 @@ addEventListener("message", e => { if (e.origin === "https://stv.tf" && e.data?.
 The event fields follow stvtf's output and may still change.
 
 Two examples, both playing the demo match: [`examples/embed.html`](examples/embed.html)
-(<https://stv.tf/examples/embed.html>), a page built around the map from its messages, and
-[`examples/tf2pugs.html`](examples/tf2pugs.html) (<https://stv.tf/examples/tf2pugs.html>), a
+(<https://arie.github.io/stvtf-web/embed.html>), a page built around the map from its messages, and
+[`examples/tf2pugs.html`](examples/tf2pugs.html) (<https://arie.github.io/stvtf-web/tf2pugs.html>), a
 mockup of a tf2pugs.com pug page whose roster cards show each player's live health and follow
 them by `steamid64`.
 
