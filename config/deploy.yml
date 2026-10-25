@@ -3,6 +3,21 @@
 # STVTF_TOKEN_KEY is the key both share. The image builds from the directory holding the
 # stvtf and stvtf-web checkouts.
 #   kamal deploy -d eu|na|au|sea
+#
+# The image holds both checkouts, but Kamal names a version after this repository's commit
+# alone, so a change to stvtf only would reuse the tag and leave rollback guessing. The version
+# names both commits instead, and like Kamal's own gets a random suffix while either has
+# uncommitted changes. `--version` or VERSION still take precedence.
+<%
+  commit = ->(repo) do
+    sha = `git -C #{repo} rev-parse --short=12 HEAD`.strip
+    raise "no git checkout in #{repo}" unless $?.success?
+    [sha, `git -C #{repo} status --porcelain`.empty?]
+  end
+  web, web_clean = commit.(".")
+  lib, lib_clean = commit.("../stvtf")
+  ENV["VERSION"] ||= "#{web}_stvtf_#{lib}#{"_uncommitted_#{SecureRandom.hex(8)}" unless web_clean && lib_clean}"
+%>
 service: stvtf
 image: arie/stvtf
 require_destination: true
@@ -43,6 +58,7 @@ proxy:
   # comes instead of buffering the response.
   buffering:
     responses: false
+
 
 aliases:
   logs: app logs -f
