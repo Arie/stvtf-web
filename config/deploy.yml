@@ -59,6 +59,10 @@ proxy:
   buffering:
     responses: false
 
+# Those streams never finish on their own, so a deploy would wait the full drain (30 s by default)
+# for them before moving on. Browsers reconnect to the new container by themselves; the few
+# seconds left are for ordinary requests in flight.
+drain_timeout: 5
 
 aliases:
   logs: app logs -f
