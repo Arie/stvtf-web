@@ -4,11 +4,15 @@ FROM rust:1-bookworm AS build
 WORKDIR /src
 COPY stvtf ./stvtf
 COPY stvtf-web ./stvtf-web
-RUN cd stvtf-web && cargo build --release --locked
+# The crates and target directory are cache mounts, so a deploy recompiles only what changed;
+# the binary is copied out because the cache is not part of the image.
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/src/stvtf-web/target \
+    cd stvtf-web && cargo build --release --locked && cp target/release/stvtf-web /usr/local/bin/
 
 FROM debian:bookworm-slim
 RUN useradd --system --home /data stvtf && mkdir -p /data && chown stvtf /data
-COPY --from=build /src/stvtf-web/target/release/stvtf-web /usr/local/bin/stvtf-web
+COPY --from=build /usr/local/bin/stvtf-web /usr/local/bin/stvtf-web
 COPY stvtf-web/backpack /usr/share/stvtf/backpack
 USER stvtf
 WORKDIR /data
