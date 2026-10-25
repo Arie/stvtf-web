@@ -266,6 +266,9 @@ fn serve_file(s: &mut TcpStream, app: &App, path: &str) -> std::io::Result<()> {
         "/fonts/RobotoCondensed-Bold.ttf" => respond_cached(s, TTF, include_bytes!("../fonts/RobotoCondensed-Bold.ttf")),
         "/killicons.css" => respond(s, "200 OK", CSS, include_bytes!("../killicons/killicons.css")),
         "/killicons.webp" => respond(s, "200 OK", WEBP, include_bytes!("../killicons/killicons.webp")),
+        // For other sites: the class names stay as they are within a version.
+        "/killicons/v1/killicons.css" => respond_cached(s, CSS, KILLICONS_V1_CSS.as_bytes()),
+        "/killicons/v1/killicons.webp" => respond_cached(s, WEBP, include_bytes!("../killicons/killicons.webp")),
         p if let Some(file) = p.strip_prefix("/icons/") => match ICONS.iter().find(|(name, _)| file.strip_suffix(".svg") == Some(name)) {
             Some((_, svg)) => respond(s, "200 OK", SVG, svg),
             None => not_found(s),
@@ -367,6 +370,9 @@ fn start(app: &App, sessions: &Sessions, query: &str) -> Result<Arc<Session>> {
     let t = keys.open(token, now)?;
     sessions.open(&t.connect, t.owner.as_deref())
 }
+
+const KILLICONS_V1_CSS: &str =
+    concat!(include_str!("../killicons/killicons.css"), "\n.killicon.crit { filter: drop-shadow(0 0 3px #ff4b3a); }\n");
 
 /// Display options a start link can carry over to the page.
 const VIEW_OPTIONS: [&str; 8] = ["names", "score", "panel", "rotate", "dot", "ui", "zoom", "side"];
@@ -489,6 +495,12 @@ mod tests {
 
     fn request(send: &[u8]) -> (Result<()>, String) {
         request_to(&app(Matches::One(SharedHub::default())), send)
+    }
+
+    #[test]
+    fn other_sites_get_the_kill_icons_with_crits_under_a_version() {
+        let css = request(b"GET /killicons/v1/killicons.css HTTP/1.1\r\n\r\n").1;
+        assert!(css.starts_with("HTTP/1.1 200") && css.contains(".killicon-quake_rl") && css.contains(".killicon.crit"), "{css}");
     }
 
     fn post_watch(app: &App, connect: &str) -> String {

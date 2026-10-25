@@ -122,7 +122,7 @@ and arrives as the map shows it, so after any delay. Players are
 | `ready` | the page loaded |
 | `map` | `map`: the map loaded, also after a map change |
 | `status` | `state`: the SourceTV connection (`full` is live, `map_change`, `disconnected`, …) |
-| `state` | twice a second: `map`, `score` `{red, blue}`, `players` with `alive`, `hp`, `max_hp` |
+| `state` | twice a second: `map`, `score` `{red, blue}`, `players` with `alive`, `hp`, `max_hp` and `weapon` (in hand: `{item, clip, image}`, the item definition index, rounds loaded and a picture URL, or null) |
 | `event` | `event`: what the page's own feed and chat show (`kill`, `uber`, `medic_death`, `point_captured`, `capture_blocked`, `flag`, `round_start`, `round_win`, `chat`, `voice_command`, …) as stvtf emits it, without the per-shot and per-hit effects; `players`: the players it names, by id |
 
 | to the map, `type` | |
@@ -135,7 +135,20 @@ frame.contentWindow.postMessage({ stvtf: 1, type: "follow", steamid: "[U:1:23170
 addEventListener("message", e => { if (e.origin === "https://stv.tf" && e.data?.stvtf === 1) console.log(e.data); });
 ```
 
-The event fields follow stvtf's output and may still change.
+The event fields follow stvtf's output and may still change. A `kill` also has what the page's
+own feed works out: `icon`, the kill icon to show (the weapon's, or its headshot or backstab
+variant; null when there is none), `icon_box` `{url, x, y, w, h}`, where it is in the sprite,
+`streak`, the attacker's kills within 10 s (2 and up for a multikill), and `airshot`.
+
+Draw the icon from the box, or with stv.tf's kill icon classes, which keep their names within
+`v1`; `crit` adds TF2's red glow:
+
+```html
+<link rel="stylesheet" href="https://stv.tf/killicons/v1/killicons.css">
+<span class="killicon killicon-${ev.icon} ${ev.crit ? "crit" : ""}"></span>
+```
+
+The icons are drawn for a dark feed, like TF2's.
 
 Two examples, both playing the demo match: [`examples/embed.html`](examples/embed.html)
 (<https://arie.github.io/stvtf-web/embed.html>), a page built around the map from its messages, and

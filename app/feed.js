@@ -4,17 +4,24 @@ import { layerOn } from "./layers.js";
 
 export function esc(s) { return String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
 function who(pl) { return pl ? `<span class="t-${esc(pl.team)}">${esc(pl.name)}</span>` : "world"; }
-// Kill icons from tf2-icons, named like the weapons in server logs and kill events.
-const KILLICONS = new Set();
+// Kill icons from tf2-icons, named like the weapons in server logs and kill events: where each is
+// in the sprite.
+export const KILLICONS = new Map();
 export const killiconsLoaded = fetch("killicons.css").then(r => r.text()).then(css => {
-  for (const m of css.matchAll(/\.killicon-([A-Za-z0-9_]+)\s*\{/g)) KILLICONS.add(m[1]);
+  for (const [, name, rule] of css.matchAll(/\.killicon-([A-Za-z0-9_]+)\s*\{([^}]*)\}/g)) {
+    const px = prop => [...(rule.match(new RegExp(`${prop}:([^;]*)`))?.[1] ?? "").matchAll(/-?\d+/g)].map(Number);
+    const [w] = px("width"), [h] = px("height"), [x = 0, y = 0] = px("background-position");
+    KILLICONS.set(name, { x: -x, y: -y, w, h });
+  }
 });
-function weaponIcon(ev) {
+const killIcon = ev => {
   const w = ev.weapon || "";
-  const pick = [ev.headshot && `${w}_headshot`, ev.headshot && "headshot", ev.backstab && `${w}_backstab`, ev.backstab && "backstab", w]
-    .find(n => n && KILLICONS.has(n));
+  return [ev.headshot && `${w}_headshot`, ev.headshot && "headshot", ev.backstab && `${w}_backstab`, ev.backstab && "backstab", w]
+    .find(n => n && KILLICONS.has(n)) || null;
+};
+function weaponIcon(ev, icon) {
   const crit = ev.crit ? " crit" : "";
-  return pick ? `<span class="killicon killicon-${pick}${crit}" title="${esc(w)}"></span>` : `<span class="w">${esc(w)}</span>`;
+  return icon ? `<span class="killicon killicon-${icon}${crit}" title="${esc(ev.weapon)}"></span>` : `<span class="w">${esc(ev.weapon)}</span>`;
 }
 const BUILDING = { sentry: "Sentry", dispenser: "Dispenser", teleporter: "Teleporter", sapper: "Sapper" };
 const BANNER = { buff_banner: "Buff Banner", battalions_backup: "Battalion's Backup", concheror: "Concheror" };
@@ -62,6 +69,15 @@ function streak(ev) {
   streaks.set(ev.attacker, { tick: ev.tick, n });
   return n;
 }
+// A kill's icon, streak and airshot, worked out once for the feed and the embedding page.
+const killed = new WeakMap();
+export function killDetails(ev, p) {
+  if (!killed.has(ev)) {
+    const by = ev.attacker != null && ev.attacker !== ev.victim && p(ev.attacker);
+    killed.set(ev, { icon: killIcon(ev), streak: by && !ev.feign ? streak(ev) : 0, airshot: Boolean(ev.airborne && PROJECTILE_WEAPON.test(ev.weapon || "")) });
+  }
+  return killed.get(ev);
+}
 
 // One row per event, newest on top, stamped with the round clock.
 export function feedEvent(ev, p) {
@@ -71,12 +87,12 @@ export function feedEvent(ev, p) {
   switch (ev.type) {
     case "kill": {
       const a = ev.attacker != null && ev.attacker !== ev.victim ? p(ev.attacker) : null;
-      const n = a && !ev.feign ? streak(ev) : 0;
+      const k = killDetails(ev, p), n = k.streak;
       if (n >= 2) cls += ` streak s${Math.min(n, 4)}`;
       const tags = [n >= 2 && chip(`s${Math.min(n, 4)}`, `${n}K`), ev.dominated && chip("dom", "DOMINATING"), ev.revenge && chip("rev", "REVENGE"),
-        ev.airborne && PROJECTILE_WEAPON.test(ev.weapon || "") && chip("air", "AIRSHOT"), ev.feign && chip("", "FEIGN")].filter(Boolean).join("");
+        k.airshot && chip("air", "AIRSHOT"), ev.feign && chip("", "FEIGN")].filter(Boolean).join("");
       cls += ev.feign ? " feign" : "";
-      html = `${a ? name(ev.attacker) : ""}${ev.assister != null ? "+" + name(ev.assister) : ""}${weaponIcon(ev)}${name(ev.victim)}${tags}`;
+      html = `${a ? name(ev.attacker) : ""}${ev.assister != null ? "+" + name(ev.assister) : ""}${weaponIcon(ev, k.icon)}${name(ev.victim)}${tags}`;
       break;
     }
     case "uber": {

@@ -1,4 +1,5 @@
 import { state } from "./core.js";
+import { KILLICONS, killDetails } from "./feed.js";
 import { setFollow } from "./input.js";
 import { layerOn, setLayer } from "./layers.js";
 
@@ -15,6 +16,12 @@ const STATE_MS = 500;
 const post = m => { if (EMBEDDED) window.parent.postMessage({ stvtf: 1, ...m }, "*"); };
 const STEAMID64_BASE = 76561197960265728n;
 const steamid64 = id => { const n = /^\[U:1:(\d+)\]$/.exec(id || "")?.[1]; return n ? String(STEAMID64_BASE + BigInt(n)) : null; };
+// Absolute, since the parent page loads them from its own origin.
+const asset = path => new URL(path, document.baseURI).href;
+const SPRITE = asset("killicons/v1/killicons.webp");
+let itemImages = {};
+if (EMBEDDED) fetch("backpack/items.json").then(r => r.json()).then(j => { itemImages = j; }).catch(() => {});
+const weapon = w => w && { item: w.item, clip: w.clip ?? null, image: itemImages[w.item] ? asset(`backpack/${itemImages[w.item]}.webp`) : null };
 const who = p => p && { id: p.id, name: p.name, steamid: p.steamid, steamid64: steamid64(p.steamid), team: p.team, class: p.class };
 
 export function embedMap(map) { post({ type: "map", map }); }
@@ -23,7 +30,12 @@ export function embedStatus(s) { post({ type: "status", state: s }); }
 export function embedEvent(ev, byId) {
   if (!EMBEDDED || EFFECTS.has(ev.type)) return;
   const ids = [...PLAYER_FIELDS.map(f => ev[f]), ...(ev.cappers || [])].filter(id => id != null);
-  const players = Object.fromEntries(ids.map(id => [id, who(byId.get(id) || state.players.get(id))]).filter(([, p]) => p));
+  const pl = id => byId.get(id) || state.players.get(id);
+  const players = Object.fromEntries(ids.map(id => [id, who(pl(id))]).filter(([, p]) => p));
+  if (ev.type === "kill") {
+    const k = killDetails(ev, pl), box = k.icon && KILLICONS.get(k.icon);
+    ev = { ...ev, icon: k.icon, icon_box: box ? { url: SPRITE, ...box } : null, streak: k.streak, airshot: k.airshot };
+  }
   post({ type: "event", event: ev, players });
 }
 
@@ -32,7 +44,7 @@ export function embedState(score, players) {
   const now = performance.now();
   if (!EMBEDDED || now - lastState < STATE_MS) return;
   lastState = now;
-  post({ type: "state", map: state.map, score, players: players.map(p => ({ ...who(p), alive: p.alive, hp: p.hp, max_hp: p.max_hp })) });
+  post({ type: "state", map: state.map, score, players: players.map(p => ({ ...who(p), alive: p.alive, hp: p.hp, max_hp: p.max_hp, weapon: p.alive ? weapon(p.weapon) : null })) });
 }
 
 window.addEventListener("message", e => {
