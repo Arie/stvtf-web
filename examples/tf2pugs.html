@@ -30,6 +30,8 @@
   @keyframes pulse { 50% { opacity: .3; } }
   #feed { height: 100%; overflow-y: auto; font-size: .85rem; }
   #feed .list-group-item { padding: .35rem .75rem; }
+  #feed .event { background: #f8f9fa; font-weight: 600; }
+  #feed .chat { color: #495057; font-style: italic; }
   .t-blue { color: var(--blu); font-weight: 600; } .t-red { color: var(--red); font-weight: 600; }
   .stv-frame { border: 0; border-radius: .25rem; background: #000; }
 </style>
@@ -178,13 +180,13 @@ function renderLive() {
 }
 
 function load(view) {
-  $("stv").src = view ? `${MATCH}overlay?names=1&score=1` : MATCH;
+  $("stv").src = view ? `${MATCH}overlay?names=1&score=1` : `${MATCH}?side=0`;
 }
 const send = m => $("stv").contentWindow.postMessage({ stvtf: 1, ...m }, STV);
 
-function feed(html) {
+function feed(html, kind = "") {
   const li = document.createElement("li");
-  li.className = "list-group-item";
+  li.className = `list-group-item ${kind}`;
   li.innerHTML = html;
   $("feed").prepend(li);
   while ($("feed").children.length > 60) $("feed").lastChild.remove();
@@ -210,12 +212,22 @@ addEventListener("message", e => {
     renderLive();
   } else if (m.type === "event") {
     const ev = m.event, p = id => m.players[id];
-    if (ev.type === "kill" && !ev.feign) feed(`${ev.attacker != null && ev.attacker !== ev.victim ? who(p(ev.attacker)) + " " : ""}<span class="text-muted">${ev.headshot ? "headshot" : ev.backstab ? "backstabbed" : "killed"}</span> ${who(p(ev.victim))}`);
-    else if (ev.type === "uber") feed(`${who(p(ev.medic))} <span class="text-muted">popped</span> <b>${esc(ev.medigun || "über")}</b>`);
-    else if (ev.type === "point_captured") feed(`<span class="t-${ev.team}">${ev.team.toUpperCase()}</span> <span class="text-muted">captured a point</span>`);
-    else if (ev.type === "round_win") feed(`<b class="t-${ev.team}">${ev.team.toUpperCase()} won the round</b>`);
-    else if (ev.type === "round_start") feed(`<span class="text-muted">Round start</span>`);
-    else if (ev.type === "chat") feed(`${ev.player != null ? who(p(ev.player)) : esc(ev.name || "Console")}<span class="text-muted">:</span> ${esc(ev.text)}`);
+    const team = t => `<span class="t-${t}">${t === "blue" ? "BLU" : "RED"}</span>`;
+    const did = (a, verb, b) => `${a != null ? who(p(a)) + " " : ""}<span class="text-muted">${verb}</span>${b != null ? " " + who(p(b)) : ""}`;
+    switch (ev.type) {
+      case "kill":
+        if (!ev.feign) feed(did(ev.attacker !== ev.victim ? ev.attacker : null, ev.attacker === ev.victim || ev.attacker == null ? "died:" : ev.headshot ? "headshot" : ev.backstab ? "backstabbed" : "killed", ev.victim));
+        break;
+      case "medic_death": if (ev.drop) feed(did(ev.medic, "dropped über"), "event"); break;
+      case "uber": feed(did(ev.medic, `popped ${esc(ev.medigun || "über")}`), "event"); break;
+      case "point_captured": feed(`${team(ev.team)} captured a point`, "event"); break;
+      case "capture_blocked": feed(did(ev.blocker, "defended a point"), "event"); break;
+      case "flag": feed(did(ev.player, `${esc(ev.event.replaceAll("_", " "))} the intelligence`), "event"); break;
+      case "round_start": feed("Round start", "event"); break;
+      case "round_win": feed(`${team(ev.team)} won the round`, "event"); break;
+      case "stalemate": case "overtime": case "game_over": feed(ev.type.replace("_", " ").replace(/^./, c => c.toUpperCase()), "event"); break;
+      case "chat": feed(`${ev.player != null ? who(p(ev.player)) : esc(ev.name || "Console")}: ${esc(ev.text)}`, "chat"); break;
+    }
   }
 });
 

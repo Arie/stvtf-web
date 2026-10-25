@@ -83,7 +83,7 @@ const MATCH = `${STV}/w/demo/`;
 let view = "", players = new Map(), followed = null;
 
 function load() {
-  frame.src = view ? `${MATCH}overlay?names=1&score=1` : MATCH;
+  frame.src = view ? `${MATCH}overlay?names=1&score=1` : `${MATCH}?side=0`;
 }
 
 const send = m => frame.contentWindow.postMessage({ stvtf: 1, ...m }, STV);
