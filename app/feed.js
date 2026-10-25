@@ -1,4 +1,5 @@
 import { msPerTick, TEAM, $, state } from "./core.js";
+import { asset } from "./env.js";
 import { MEDIGUN_NAME, mmss } from "./hud.js";
 import { layerOn } from "./layers.js";
 
@@ -7,7 +8,7 @@ function who(pl) { return pl ? `<span class="t-${esc(pl.team)}">${esc(pl.name)}<
 // Kill icons from tf2-icons, named like the weapons in server logs and kill events: where each is
 // in the sprite.
 export const KILLICONS = new Map();
-export const killiconsLoaded = fetch("killicons.css").then(r => r.text()).then(css => {
+export const killiconsLoaded = fetch(asset("killicons.css")).then(r => r.text()).then(css => {
   for (const [, name, rule] of css.matchAll(/\.killicon-([A-Za-z0-9_]+)\s*\{([^}]*)\}/g)) {
     const px = prop => [...(rule.match(new RegExp(`${prop}:([^;]*)`))?.[1] ?? "").matchAll(/-?\d+/g)].map(Number);
     const [w] = px("width"), [h] = px("height"), [x = 0, y = 0] = px("background-position");

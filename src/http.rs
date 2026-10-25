@@ -25,8 +25,9 @@ const SVG: &str = "image/svg+xml";
 const TTF: &str = "font/ttf";
 
 /// The page's stylesheet and modules, served at `/app/<version>/`: `main.js` imports the rest.
-const APP: [(&str, &str, &[u8]); 14] = [
+const APP: [(&str, &str, &[u8]); 16] = [
     ("style.css", CSS, include_bytes!("../app/style.css")),
+    ("env.js", JS, include_bytes!("../app/env.js")),
     ("core.js", JS, include_bytes!("../app/core.js")),
     ("layers.js", JS, include_bytes!("../app/layers.js")),
     ("stream.js", JS, include_bytes!("../app/stream.js")),
@@ -39,6 +40,7 @@ const APP: [(&str, &str, &[u8]); 14] = [
     ("players.js", JS, include_bytes!("../app/players.js")),
     ("hud.js", JS, include_bytes!("../app/hud.js")),
     ("embed.js", JS, include_bytes!("../app/embed.js")),
+    ("stv-map.js", JS, include_bytes!("../app/stv-map.js")),
     ("main.js", JS, include_bytes!("../app/main.js")),
 ];
 const ICONS: [(&str, &[u8]); 9] = [
@@ -128,13 +130,14 @@ fn param<'a>(query: &'a str, name: &str) -> Option<&'a str> {
     query.split('&').find_map(|kv| kv.split_once('=').filter(|(k, _)| *k == name).map(|(_, v)| v))
 }
 
-/// The status line and headers; every response says `nosniff`.
+/// The status line and headers; every response says `nosniff` and may be read by any site.
 fn write_head(s: &mut impl Write, status: &str, headers: &[(&str, &str)]) -> std::io::Result<()> {
     write!(s, "HTTP/1.1 {status}\r\n")?;
     for (name, value) in headers {
         write!(s, "{name}: {value}\r\n")?;
     }
-    write!(s, "X-Content-Type-Options: nosniff\r\n\r\n")
+    // Everything here is public and nothing uses cookies: <stv-map> on other sites reads it all.
+    write!(s, "Access-Control-Allow-Origin: *\r\nX-Content-Type-Options: nosniff\r\n\r\n")
 }
 
 /// A whole response, after which the connection closes.
@@ -206,6 +209,11 @@ fn serve_many(
     match (request.path.as_str(), request.method.as_str()) {
         (path @ ("/" | "/watch"), _) if app.keys.is_some() => front_door(&mut s, app, path)?,
         ("/start", _) => match start(app, sessions, &request.query) {
+            // <stv-map> asks where the match is instead of following the redirect.
+            Ok(m) if param(&request.query, "format") == Some("json") => {
+                let page = format!("{}/w/{}/", app.base, m.id);
+                respond(&mut s, "200 OK", JSON, serde_json::json!({ "page": page }).to_string().as_bytes())?;
+            }
             Ok(m) => app.redirect(&mut s, "303 See Other", &format!("/w/{}/{}", m.id, start_view(&request.query)))?,
             Err(e) => respond(&mut s, "400 Bad Request", TEXT, format!("{e:#}").as_bytes())?,
         },
@@ -281,8 +289,14 @@ fn serve_file(s: &mut TcpStream, app: &App, path: &str) -> std::io::Result<()> {
         }
         p if let Some(file) = p.strip_prefix("/backpack/") => serve_backpack(s, app, file),
         p if p.starts_with("/overview/") || p.starts_with("/map/") => serve_cached(s, app, p),
+        // A fixed address for other sites, loading this build's viewer.
+        "/embed/v1/stv-map.js" => {
+            let loader = format!("export * from \"../../app/{}/stv-map.js\";\n", app_version());
+            respond_with(s, "200 OK", &[("Content-Type", JS), ("Cache-Control", "max-age=300")], loader.as_bytes())
+        }
         "/examples/embed.html" => respond(s, "200 OK", HTML, include_bytes!("../examples/embed.html")),
         "/examples/tf2pugs.html" => respond(s, "200 OK", HTML, include_bytes!("../examples/tf2pugs.html")),
+        "/examples/tf2pugs-js.html" => respond(s, "200 OK", HTML, include_bytes!("../examples/tf2pugs-js.html")),
         _ => not_found(s),
     }
 }
@@ -498,6 +512,14 @@ mod tests {
     }
 
     #[test]
+    fn other_sites_load_the_viewer_from_a_fixed_address() {
+        let loader = request(b"GET /embed/v1/stv-map.js HTTP/1.1\r\n\r\n").1;
+        assert!(loader.contains(&format!("\"../../app/{}/stv-map.js\"", app_version())) && loader.contains("max-age=300"), "{loader}");
+        let module = request(format!("GET /app/{}/stv-map.js HTTP/1.1\r\n\r\n", app_version()).as_bytes()).1;
+        assert!(module.contains("customElements.define") && module.contains("Access-Control-Allow-Origin: *"), "{module}");
+    }
+
+    #[test]
     fn other_sites_get_the_kill_icons_with_crits_under_a_version() {
         let css = request(b"GET /killicons/v1/killicons.css HTTP/1.1\r\n\r\n").1;
         assert!(css.starts_with("HTTP/1.1 200") && css.contains(".killicon-quake_rl") && css.contains(".killicon.crit"), "{css}");
@@ -585,6 +607,8 @@ mod tests {
         assert!(overlay.contains(&format!("Location: {location}overlay/4.5?names=1\r\n")), "{overlay}");
         let late = request_to(&app, format!("GET /start?t={t}&delay=99 HTTP/1.1\r\n\r\n").as_bytes()).1;
         assert!(late.contains(&format!("Location: {location}\r\n")), "{late}");
+        let json = request_to(&app, format!("GET /start?t={t}&format=json HTTP/1.1\r\n\r\n").as_bytes()).1;
+        assert!(json.contains(&format!(r#"{{"page":"{location}"}}"#)) && json.contains("Access-Control-Allow-Origin: *"), "{json}");
         assert!(request_to(&app, b"GET /start?t=bogus HTTP/1.1\r\n\r\n").1.starts_with("HTTP/1.1 400"));
         if let Matches::Many(s) = &app.matches {
             s.stop_all();
@@ -636,7 +660,9 @@ mod tests {
             imported += &file;
         }
         for (name, ctype, _) in APP {
-            assert!(ctype != JS || name == "main.js" || imported.contains(&format!("from \"./{name}\"")), "nothing imports {name}");
+            // The page's entry, and the one /embed/v1/stv-map.js loads for other sites.
+            let entry = name == "main.js" || name == "stv-map.js";
+            assert!(ctype != JS || entry || imported.contains(&format!("from \"./{name}\"")), "nothing imports {name}");
         }
         // The stylesheet's own links are relative to where it is served.
         let css = std::str::from_utf8(APP[0].2).unwrap();

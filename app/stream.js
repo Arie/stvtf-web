@@ -1,5 +1,6 @@
 import { $, DELAY, DELAY_MS, PAGE, state, observeTick, setStatus, setTickInterval } from "./core.js";
 import { embedMap, embedStatus } from "./embed.js";
+import { asset } from "./env.js";
 import { killiconsLoaded, CHAT_TYPES, chat, feedEvent } from "./feed.js";
 import { hudNodes } from "./hud.js";
 import { setFollow } from "./input.js";
@@ -14,7 +15,7 @@ const SNAPS_KEPT = 60;
 
 // ---------- incoming stream
 // Next to the page, so a match at /w/<id>/ (and its /w/<id>/overlay) reads its own events.
-const EVENTS_URL = PAGE.replace(/(overlay\/?|index\.html)?$/, "") + "events";
+const EVENTS_URL = asset(PAGE.replace(/(overlay\/?|index\.html)?$/, "") + "events");
 // With a delay, everything from the stream is handled that much later, in the order it came
 // (timers with the same delay run in order): map changes and the feed so far as well as snapshots.
 const later = fn => (DELAY_MS ? setTimeout(fn, DELAY_MS) : fn());
@@ -24,7 +25,9 @@ let opened = false;
 let es = null;
 export function openStream() {
   es?.close();
-  const s = es = new EventSource(EVENTS_URL + (detailNeeded() ? "?detail=1" : ""));
+  const url = new URL(EVENTS_URL);
+  if (detailNeeded()) url.searchParams.set("detail", "1");
+  const s = es = new EventSource(url);
   s.onmessage = e => { const m = JSON.parse(e.data); waiting(m); later(() => handle(m)); };
   s.onopen = () => later(() => {
     if (opened) { $("feed").replaceChildren(); $("chat").replaceChildren(); }

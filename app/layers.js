@@ -1,4 +1,5 @@
 import { $, OVERLAY } from "./core.js";
+import { env } from "./env.js";
 import { openStream } from "./stream.js";
 
 // Overkill layers; `detail` ones need the hub's high-volume lines (?detail=1). All on by default; the overlay shows only caps.
@@ -17,14 +18,14 @@ const LAYERS = {
 const layerState = {};
 for (const [name, l] of Object.entries(LAYERS)) {
   layerState[name] = OVERLAY ? name === "caps" : l.def;
-  try { const v = !OVERLAY && localStorage.getItem("layer." + name); if (v === "1" || v === "0") layerState[name] = v === "1"; } catch {}
+  try { const v = !OVERLAY && env.storage && localStorage.getItem("layer." + name); if (v === "1" || v === "0") layerState[name] = v === "1"; } catch {}
 }
 export const layerOn = name => layerState[name];
 export const detailNeeded = () => Object.entries(LAYERS).some(([n, l]) => l.detail && layerState[n]);
 export function setLayer(name, on) {
   const had = detailNeeded();
   layerState[name] = on;
-  try { localStorage.setItem("layer." + name, on ? "1" : "0"); } catch {}
+  try { if (env.storage) localStorage.setItem("layer." + name, on ? "1" : "0"); } catch {}
   renderSettings();
   if (had !== detailNeeded()) openStream();
 }
@@ -32,7 +33,7 @@ export function setOverkill(on) {
   const had = detailNeeded();
   for (const name of Object.keys(LAYERS)) {
     layerState[name] = on;
-    try { localStorage.setItem("layer." + name, on ? "1" : "0"); } catch {}
+    try { if (env.storage) localStorage.setItem("layer." + name, on ? "1" : "0"); } catch {}
   }
   renderSettings();
   if (had !== detailNeeded()) openStream();

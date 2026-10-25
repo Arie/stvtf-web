@@ -1,7 +1,7 @@
 /* Bundled, so the HUD looks the same everywhere instead of whatever the viewer has installed. */
 @font-face { font-family: "HUD Condensed"; src: url("../../fonts/RobotoCondensed-Regular.ttf") format("truetype"); font-weight: 400; }
 @font-face { font-family: "HUD Condensed"; src: url("../../fonts/RobotoCondensed-Bold.ttf") format("truetype"); font-weight: 700; }
-:root {
+.stvtf {
   --bg: #15171a; --panel: #1e2125; --line: #2c3036; --text: #d8dadd; --dim: #8a9099;
   --red: #d0453f; --blue: #4f8fc0; --red-soft: #d0453f33; --blue-soft: #4f8fc033;
   /* Team shades worked out ahead: color-mix() in a gradient is converted again on every paint. */
@@ -10,11 +10,12 @@
 }
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
-html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
-  font: 13px/1.35 system-ui, -apple-system, "Segoe UI", sans-serif; }
-/* Laid out for 1080p streams; --s scales the HUD, panel and markers with the window height. */
-:root { --s: 1; }
-body { display: grid; grid-template-rows: 1fr; }
+html, body { margin: 0; height: 100%; }
+/* The viewer's outermost element, the whole window on stv.tf's own page. */
+.stvtf { position: relative; height: 100%; display: grid; grid-template-rows: 1fr; container-type: inline-size;
+  background: var(--bg); color: var(--text); font: 13px/1.35 system-ui, -apple-system, "Segoe UI", sans-serif; }
+/* Laid out for 1080p streams; --s scales the HUD, panel and markers with the viewer's height. */
+.stvtf { --s: 1; }
 #title { display: flex; gap: 10px; align-items: baseline; padding: 10px 12px; border-bottom: 1px solid var(--line); }
 #title b { font-size: 15px; }
 .hud, #scoreboard, #follow, #bgtoggle, #autozoom, #sidetoggle, #helptoggle, #settingstoggle, #help, #board, aside { zoom: var(--s); }
@@ -27,7 +28,7 @@ canvas#c:active { cursor: grabbing; }
 /* The map picture under the canvas, placed by a transform the compositor applies. */
 #bg { position: absolute; inset: 0; overflow: hidden; pointer-events: none; background: #101214; }
 #bg > * { position: absolute; left: 0; top: 0; transform-origin: 0 0; will-change: transform; }
-html.overlay #bg { background: none; }
+.stvtf.overlay #bg { background: none; }
 #banner { position: absolute; top: 14px; left: 50%; transform: translateX(-50%);
   padding: 6px 16px; border-radius: 4px; background: #000a; font-weight: 600; font-size: 15px;
   opacity: 0; transition: opacity .4s; pointer-events: none; }
@@ -134,9 +135,9 @@ aside h3 { margin: 0 0 6px; font-size: 11px; text-transform: uppercase; letter-s
 #follow b { color: #fff; }
 #follow button, #bgtoggle button { border: 0; font: inherit; cursor: pointer; }
 #follow button { width: 22px; height: 22px; border-radius: 50%; background: #ffffff1a; color: #fff; }
-html.noside aside { display: none; }
-html.nohud .hud, html.nohud #scoreboard, html.noscore #scoreboard { display: none; }
-html.noside main { grid-template-columns: 1fr; grid-template-rows: 1fr; }
+.stvtf.noside aside { display: none; }
+.stvtf.nohud .hud, .stvtf.nohud #scoreboard, .stvtf.noscore #scoreboard { display: none; }
+.stvtf.noside main { grid-template-columns: 1fr; grid-template-rows: 1fr; }
 #sidetoggle, #helptoggle, #settingstoggle, #autozoom { position: absolute; right: 12px; z-index: 3; padding: 5px 10px; border: 0; border-radius: 6px;
   background: #0b0c0ee6; color: #fff; font: inherit; font-size: 12px; cursor: pointer; }
 #sidetoggle, #helptoggle, #settingstoggle { top: 12px; font-size: 16px; line-height: 1; padding: 4px 0; width: 24px; text-align: center; }
@@ -159,20 +160,19 @@ html.noside main { grid-template-columns: 1fr; grid-template-rows: 1fr; }
 #bgtoggle button { padding: 4px 10px; border-radius: 4px; background: transparent; color: var(--dim); font-size: 12px; }
 #bgtoggle button.on { background: #ffffff1f; color: #fff; }
 /* Broadcast overlay (/overlay): only the map, on a transparent page for OBS. */
-html.overlay, html.overlay body { background: transparent; }
-html.overlay body { display: block; }
-html.overlay header, html.overlay aside, html.overlay .hud, html.overlay #follow, html.overlay #bgtoggle, html.overlay #sidetoggle,
-html.overlay #helptoggle, html.overlay #help, html.overlay #settingstoggle, html.overlay #settings,
-html.overlay #empty, html.overlay #banner { display: none !important; }
-html.overlay main { display: block; height: 100%; }
-html.overlay #stage { position: fixed; inset: 0; border-radius: 14px; background: rgb(11 12 14 / var(--overlay-opacity, .82));
+.stvtf.overlay { background: transparent; display: block; }
+.stvtf.overlay header, .stvtf.overlay aside, .stvtf.overlay .hud, .stvtf.overlay #follow, .stvtf.overlay #bgtoggle, .stvtf.overlay #sidetoggle,
+.stvtf.overlay #helptoggle, .stvtf.overlay #help, .stvtf.overlay #settingstoggle, .stvtf.overlay #settings,
+.stvtf.overlay #empty, .stvtf.overlay #banner { display: none !important; }
+.stvtf.overlay main { display: block; height: 100%; }
+.stvtf.overlay #stage { position: absolute; inset: 0; border-radius: 14px; background: rgb(11 12 14 / var(--overlay-opacity, .82));
   box-shadow: inset 0 0 0 1px #ffffff1f; }
-html.overlay canvas#c { cursor: default; pointer-events: none; }
-html.overlay #scoreboard { top: 6px; transform: translateX(-50%) scale(.62); transform-origin: top center; }
+.stvtf.overlay canvas#c { cursor: default; pointer-events: none; }
+.stvtf.overlay #scoreboard { top: 6px; transform: translateX(-50%) scale(.62); transform-origin: top center; }
 @keyframes pulse { from { opacity: 1; } to { opacity: .55; } }
 /* Moving exactly one 24px tile per cycle loops seamlessly. */
 @keyframes stripes { from { background-position: 0 0; } to { background-position: 24px 0; } }
-@media (max-width: 800px) { .hud { width: 150px; } .card .nm small, .card .tag { display: none; } }
+@container (max-width: 800px) { .hud { width: 150px; } .card .nm small, .card .tag { display: none; } }
 #feed, #chat { overflow-y: auto; flex: 1; min-height: 80px; }
 /* Rows scrolled out of view are skipped when the page is painted. */
 #feed > div, #chat > div { content-visibility: auto; contain-intrinsic-size: auto 20px; }

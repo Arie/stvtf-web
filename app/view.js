@@ -1,4 +1,5 @@
 import { $, OVERLAY, OPT, overlayUnit, canvas, uiScale, ctx, state, canvasSize } from "./core.js";
+import { env, asset } from "./env.js";
 
 // Map geometry: at least this many world units per pixel, and a canvas at most this wide;
 // bsp.rs pads the bounds' top this far above the highest point or pickup (its PAD), floors are
@@ -13,7 +14,7 @@ const FRAME_PAD = 600;
 let boundaries = null;
 async function demostfBoundaries() {
   if (!boundaries) {
-    try { boundaries = await (await fetch("overview/boundaries.json")).json(); }
+    try { boundaries = await (await fetch(asset("overview/boundaries.json"))).json(); }
     catch { boundaries = {}; }
   }
   return boundaries;
@@ -43,11 +44,11 @@ export async function loadMap(map) {
       $("bgtoggle").hidden = false;
       if (!state.fitted) fitTo(known[alias].boundary_min, known[alias].boundary_max);
     };
-    img.src = `overview/${alias}.webp`;
+    img.src = asset(`overview/${alias}.webp`);
   }
   $("bgtoggle").hidden = true;
   try {
-    const g = await (await fetch(`map/${encodeURIComponent(map)}`)).json();
+    const g = await (await fetch(asset(`map/${encodeURIComponent(map)}`))).json();
     if (state.map !== map) return;
     state.geometry = g;
     state.spawns = g.spawns || null;
@@ -91,8 +92,8 @@ function renderGeometry(g) {
 
 // ---------- view
 // Whether the main view shows the player HUD or the scoreboard (h and s hide them).
-const shown = what => !OVERLAY && !document.documentElement.classList.contains("nohud") &&
-  !(what === "score" && document.documentElement.classList.contains("noscore"));
+const shown = what => !OVERLAY && !env.el.classList.contains("nohud") &&
+  !(what === "score" && env.el.classList.contains("noscore"));
 
 function fitTo(min, max) {
   const r = canvas.getBoundingClientRect(), v = state.view;

@@ -1,4 +1,5 @@
 import { msPerTick, TEAM, CLASS, byClass, ICONS, $, OVERLAY, OPT, state } from "./core.js";
+import { asset } from "./env.js";
 import { layerOn } from "./layers.js";
 import { esc } from "./feed.js";
 
@@ -35,7 +36,7 @@ function weaponImage(p) {
   if (!layerOn("loadout") || !p.alive || !p.weapon) return null;
   if (!itemImages) {
     itemImages = {};
-    fetch("backpack/items.json").then(r => r.json()).then(j => { itemImages = j; state.lastPanel = 0; }).catch(() => {});
+    fetch(asset("backpack/items.json")).then(r => r.json()).then(j => { itemImages = j; state.lastPanel = 0; }).catch(() => {});
     return null;
   }
   return itemImages[p.weapon.item] || null;
@@ -48,7 +49,7 @@ function card(p) {
   setStyle(el.children[0], "clipPath", `inset(0px ${(100 - f * 100).toFixed(1)}% 0px 0px)`);
   const oc = p.alive && p.hp > p.max_hp ? Math.min(1, (p.hp - p.max_hp) / (Math.floor(p.max_hp * 1.5 / 5) * 5 - p.max_hp || 1)) : 0;
   setStyle(el.children[1], "clipPath", `inset(0px ${(100 - oc * 100).toFixed(1)}% 0px 0px)`);
-  setHTML(el.children[2], ICONS[p.class] ? `<img src="icons/${p.class}.svg" alt="${p.class}">` : CLASS[p.class] || "?");
+  setHTML(el.children[2], ICONS[p.class] ? `<img src="${asset(`icons/${p.class}.svg`)}" alt="${p.class}">` : CLASS[p.class] || "?");
   setText2(el.querySelector(".nm b"), p.name);
   const sub = p.ping != null ? `${p.ping} ms` : "";
   const [subEl, wp] = el.querySelector(".nm small").children;
@@ -60,7 +61,7 @@ function card(p) {
   if (w && wp.dataset.img !== w) {
     wp.dataset.img = w;
     wp.style.display = "";
-    wp.src = `backpack/${w}.webp`;
+    wp.src = asset(`backpack/${w}.webp`);
     wp.onerror = () => { wp.style.display = "none"; };
   }
   wp.hidden = !w;
@@ -117,7 +118,7 @@ export function renderBoard(players, snap) {
     const rows = players.filter(p => p.team === t).sort((a, b) => (b.score?.points ?? 0) - (a.score?.points ?? 0) || (b.score?.kills ?? 0) - (a.score?.kills ?? 0));
     const body = rows.map(p => {
       const s = p.score || {}, status = !p.alive && p.respawn > 0 ? ` <small>${Math.ceil(p.respawn)}s</small>` : "";
-      const icon = ICONS[p.class] ? `<img src="icons/${p.class}.svg" alt="">` : "";
+      const icon = ICONS[p.class] ? `<img src="${asset(`icons/${p.class}.svg`)}" alt="">` : "";
       return `<tr class="${p.alive ? "" : "dead"}"><td class="bc">${icon}</td><td class="bn">${esc(p.name)}${status}</td>${BOARD_COLUMNS.map(([k]) => `<td>${s[k] ?? ""}</td>`).join("")}<td>${p.ping ?? ""}</td></tr>`;
     }).join("");
     const score = (snap.score || {})[t] ?? 0;

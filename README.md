@@ -150,11 +150,43 @@ Draw the icon from the box, or with stv.tf's kill icon classes, which keep their
 
 The icons are drawn for a dark feed, like TF2's.
 
-Two examples, both playing the demo match: [`examples/embed.html`](examples/embed.html)
-(<https://arie.github.io/stvtf-web/embed.html>), a page built around the map from its messages, and
-[`examples/tf2pugs.html`](examples/tf2pugs.html) (<https://arie.github.io/stvtf-web/tf2pugs.html>), a
-mockup of a tf2pugs.com pug page whose roster cards show each player's live health and follow
-them by `steamid64`.
+### As an element
+
+Instead of an iframe, a site can put the map straight into its page:
+
+```html
+<script type="module" src="https://stv.tf/embed/v1/stv-map.js"></script>
+<stv-map src="https://stv.tf/start?t=…" side="0" style="width: 100%"></stv-map>
+<script>
+  const map = document.querySelector("stv-map");
+  map.addEventListener("state", e => showScore(e.detail.score));
+  map.addEventListener("event", e => addToFeed(e.detail.event, e.detail.players));
+  map.follow({ steamid64: "76561197960497430" });
+</script>
+```
+
+`src` is a start link or a match page (`https://stv.tf/w/<id>/`). The attributes `view="overlay"`,
+`delay`, `side` and the overlay's options do what they do on a link. The element fires the
+messages above as events named by their `type`, with the message as `detail`, and has
+`follow({steamid64 | steamid | id})` (no argument stops following) and `setLayer(name, on)`. It is
+16:9 unless sized otherwise, keeps its own styles in a shadow root, and takes the keyboard
+shortcuts while it has focus. A page has one map; `/embed/v1/` loads the current build, within
+5 minutes of a release.
+
+The stv.tf server answers every request with `Access-Control-Allow-Origin: *` for this; the
+element asks `/start?t=…&format=json` where a start link leads instead of following it.
+
+### Examples
+
+All play the demo match:
+
+- [`examples/embed.html`](examples/embed.html) (<https://arie.github.io/stvtf-web/embed.html>): a
+  page built around the map in an iframe from its messages.
+- [`examples/tf2pugs.html`](examples/tf2pugs.html) (<https://arie.github.io/stvtf-web/tf2pugs.html>):
+  a mockup of a tf2pugs.com pug page with the map in an iframe, whose roster cards show each
+  player's live health and follow them by `steamid64`.
+- [`examples/tf2pugs-js.html`](examples/tf2pugs-js.html)
+  (<https://arie.github.io/stvtf-web/tf2pugs-js.html>): the same page with `<stv-map>`.
 
 ## What it shows
 

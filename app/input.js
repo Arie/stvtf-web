@@ -1,9 +1,13 @@
 import { $, DELAY, OPT, OVERLAY, PAGE, canvas, uiScale, applyScale, state } from "./core.js";
+import { env } from "./env.js";
 import { layerOn, setLayer, setOverkill, overkillOn } from "./layers.js";
 import { viewCy, frameMap, toScreen } from "./view.js";
 
 // A resize (or hiding the events) only refits the whole-map framing; auto zoom glides to it.
-addEventListener("resize", () => { applyScale(); if (state.framed) frameMap(true); });
+const refit = () => { applyScale(); if (state.framed) frameMap(true); };
+addEventListener("resize", refit);
+// An element on another site changes size without the window.
+if (env.component) new ResizeObserver(refit).observe(env.el);
 let drag = null;
 canvas.addEventListener("mousedown", e => drag = { x: e.clientX, y: e.clientY, cx: state.view.cx, cy: state.view.cy, moved: false });
 window.addEventListener("mouseup", e => {
@@ -20,8 +24,8 @@ window.addEventListener("mousemove", e => {
 // h: player HUD and scores, s: just the scores, e: events and chat, g: overview or geometry,
 // o: the overlay or back.
 function toggle(cls) {
-  const on = document.documentElement.classList.toggle(cls);
-  try { localStorage.setItem(cls, on ? "1" : "0"); } catch {}
+  const on = env.el.classList.toggle(cls);
+  try { if (env.storage) localStorage.setItem(cls, on ? "1" : "0"); } catch {}
   dispatchEvent(new Event("resize"));
 }
 function toggleExclusive(id) {
@@ -35,10 +39,10 @@ function showBoard(on) {
   $("board").hidden = !on;
   state.lastPanel = 0;
 }
-window.addEventListener("keyup", e => { if (e.key === "Tab") showBoard(false); });
-window.addEventListener("blur", () => showBoard(false));
-window.addEventListener("keydown", e => {
-  if (e.ctrlKey || e.metaKey || e.altKey || e.target.closest?.("input:not([type=checkbox]), textarea")) return;
+env.keys.addEventListener("keyup", e => { if (e.key === "Tab") showBoard(false); });
+env.keys.addEventListener("blur", () => showBoard(false));
+env.keys.addEventListener("keydown", e => {
+  if (e.ctrlKey || e.metaKey || e.altKey || e.composedPath()[0].closest?.("input:not([type=checkbox]), textarea")) return;
   if (e.key === "Tab") { e.preventDefault(); showBoard(true); return; }
   switch (e.key) {
     case "Escape": setFollow(null); $("help").hidden = true; $("settings").hidden = true; break;
@@ -49,13 +53,13 @@ window.addEventListener("keydown", e => {
     case "l": if (!OVERLAY) setLayer("loadout", !layerOn("loadout")); break;
     case "h": toggle("nohud"); break;
     case "s": toggle("noscore"); break;
-    case "e": setSidebar(document.documentElement.classList.contains("noside")); break;
-    case "g": if (!$("bgtoggle").hidden) document.querySelector("#bgtoggle button:not(.on)").click(); break;
-    case "o": location.replace(OVERLAY ? PAGE.replace(/overlay\/?$/, "") + DELAY : PAGE.replace(/(index\.html)?$/, "overlay") + (DELAY && "/" + DELAY)); break;
+    case "e": setSidebar(env.el.classList.contains("noside")); break;
+    case "g": if (!$("bgtoggle").hidden) env.root.querySelector("#bgtoggle button:not(.on)").click(); break;
+    case "o": if (!env.component) location.replace(OVERLAY ? PAGE.replace(/overlay\/?$/, "") + DELAY : PAGE.replace(/(index\.html)?$/, "overlay") + (DELAY && "/" + DELAY)); break;
   }
 });
 for (const cls of ["nohud", "noscore"]) {
-  try { if (!OVERLAY && localStorage.getItem(cls) === "1") document.documentElement.classList.add(cls); } catch {}
+  try { if (!OVERLAY && env.storage && localStorage.getItem(cls) === "1") env.el.classList.add(cls); } catch {}
 }
 
 function setAutoZoom(on) {
@@ -105,20 +109,20 @@ $("feed").addEventListener("click", e => {
 });
 
 function setSidebar(show) {
-  document.documentElement.classList.toggle("noside", !show);
+  env.el.classList.toggle("noside", !show);
   $("sidetoggle").textContent = show ? "›" : "‹";
   $("sidetoggle").title = show ? "Hide events and chat (e)" : "Show events and chat (e)";
-  try { localStorage.setItem("sidebar", show ? "1" : "0"); } catch {}
+  try { if (env.storage) localStorage.setItem("sidebar", show ? "1" : "0"); } catch {}
   dispatchEvent(new Event("resize"));
 }
-$("sidetoggle").addEventListener("click", () => setSidebar(document.documentElement.classList.contains("noside")));
-try { if (!OVERLAY && localStorage.getItem("sidebar") === "0") setSidebar(false); } catch {}
+$("sidetoggle").addEventListener("click", () => setSidebar(env.el.classList.contains("noside")));
+try { if (!OVERLAY && env.storage && localStorage.getItem("sidebar") === "0") setSidebar(false); } catch {}
 // side=0: no events and chat beside the map, for a site that shows its own.
-if (OPT.get("side") === "0") document.documentElement.classList.add("noside");
-for (const b of document.querySelectorAll("#bgtoggle button")) {
+if (OPT.get("side") === "0") env.el.classList.add("noside");
+for (const b of env.root.querySelectorAll("#bgtoggle button")) {
   b.addEventListener("click", () => {
     state.bg = b.dataset.bg;
-    for (const o of document.querySelectorAll("#bgtoggle button")) o.classList.toggle("on", o === b);
+    for (const o of env.root.querySelectorAll("#bgtoggle button")) o.classList.toggle("on", o === b);
   });
 }
 canvas.addEventListener("wheel", e => {
