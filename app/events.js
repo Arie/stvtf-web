@@ -1,4 +1,5 @@
 import { msPerTick, state } from "./core.js";
+import { embedEvent } from "./embed.js";
 import { banner, teamName, pointName, flagName, chat, feedEvent } from "./feed.js";
 import { showTimeAdded } from "./hud.js";
 import { layerOn } from "./layers.js";
@@ -26,6 +27,7 @@ export function fireEvents(tick, byId) {
   const now = performance.now();
   for (const ev of due) {
     const p = id => byId.get(id) || state.players.get(id);
+    embedEvent(ev, byId);
     switch (ev.type) {
       case "shot": state.effects.push({ kind: "shot", ev, team: p(ev.player)?.team, t0: now - lagMs(ev), life: LIFE.shot }); break;
       case "explosion":

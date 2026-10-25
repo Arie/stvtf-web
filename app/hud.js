@@ -135,15 +135,19 @@ function clock(secs) {
 }
 export function mmss(secs) { return `${Math.floor(secs / 60)}:${String(Math.floor(secs % 60)).padStart(2, "0")}`; }
 function setText(id, text) { const el = $(id); if (el.textContent !== text) el.textContent = text; }
-export function renderScoreboard(snap, tick) {
-  $("scoreboard").hidden = OVERLAY && OPT.get("score") !== "1";
-  // CTF counts the round in captured intelligence, like TF2's CTF HUD, and pass time in goals;
-  // maps with a neutral flag (bball, special delivery) keep the team score. Robot and player
-  // destruction count points (other maps that reuse their logic count something else with it).
+// CTF counts the round in captured intelligence, like TF2's CTF HUD, and pass time in goals;
+// maps with a neutral flag (bball, special delivery) keep the team score. Robot and player
+// destruction count points (other maps that reuse their logic count something else with it).
+export function shownScore(snap) {
   const objectives = snap.objectives || [];
   const ctf = snap.captures && objectives.some(o => (o.kind === "flag" && (o.team === "red" || o.team === "blue")) || o.kind === "goal");
   const destruction = snap.points && /^(rd|pd)_/.test(state.map || "");
-  const scores = destruction ? snap.points : ctf ? snap.captures : snap.score;
+  return destruction ? snap.points : ctf ? snap.captures : snap.score;
+}
+
+export function renderScoreboard(snap, tick) {
+  $("scoreboard").hidden = OVERLAY && OPT.get("score") !== "1";
+  const scores = shownScore(snap);
   setText("score-blue", String(scores?.blue ?? 0));
   setText("score-red", String(scores?.red ?? 0));
   const timers = snap.timers || [];

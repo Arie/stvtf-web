@@ -25,7 +25,7 @@ const SVG: &str = "image/svg+xml";
 const TTF: &str = "font/ttf";
 
 /// The page's stylesheet and modules, served at `/app/<version>/`: `main.js` imports the rest.
-const APP: [(&str, &str, &[u8]); 13] = [
+const APP: [(&str, &str, &[u8]); 14] = [
     ("style.css", CSS, include_bytes!("../app/style.css")),
     ("core.js", JS, include_bytes!("../app/core.js")),
     ("layers.js", JS, include_bytes!("../app/layers.js")),
@@ -38,6 +38,7 @@ const APP: [(&str, &str, &[u8]); 13] = [
     ("overkill.js", JS, include_bytes!("../app/overkill.js")),
     ("players.js", JS, include_bytes!("../app/players.js")),
     ("hud.js", JS, include_bytes!("../app/hud.js")),
+    ("embed.js", JS, include_bytes!("../app/embed.js")),
     ("main.js", JS, include_bytes!("../app/main.js")),
 ];
 const ICONS: [(&str, &[u8]); 9] = [

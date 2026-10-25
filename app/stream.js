@@ -1,4 +1,5 @@
 import { $, DELAY, DELAY_MS, PAGE, state, observeTick, setStatus, setTickInterval } from "./core.js";
+import { embedMap, embedStatus } from "./embed.js";
 import { killiconsLoaded, CHAT_TYPES, chat, feedEvent } from "./feed.js";
 import { hudNodes } from "./hud.js";
 import { setFollow } from "./input.js";
@@ -71,6 +72,7 @@ function handle(m) {
       if (!sameMap) {
         if (state.map) feedEvent({ type: "map", map: m.map }, () => null);
         loadMap(m.map);
+        embedMap(m.map);
       }
       setTickInterval(m.tick_interval);
       // The same map again (a reconnect, a signon restart) keeps who you are following.
@@ -78,6 +80,7 @@ function handle(m) {
       break;
     }
     case "status":
+      embedStatus(m.state);
       if (m.state === "map_change") { resetMatch(); setStatus("map changing", false); }
       else if (m.state === "full") setStatus("live", true);
       else if (m.state === "disconnected" || m.state === "connect_failed") setStatus(m.state + ": " + (m.reason || ""), false);

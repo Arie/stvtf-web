@@ -1,6 +1,7 @@
 import { OVERLAY, canvas, ctx, state, renderTick, canvasSize } from "./core.js";
+import { embedState } from "./embed.js";
 import { fireEvents } from "./events.js";
-import { updatePanel, renderScoreboard } from "./hud.js";
+import { updatePanel, renderScoreboard, shownScore } from "./hud.js";
 import { layerOn, renderSettings } from "./layers.js";
 import { drawObjectives, drawCapAreas, drawFlags, drawBuildings, drawSpawnRooms } from "./objectives.js";
 import { drawMarks, drawPacks, drawJumpTrails } from "./overkill.js";
@@ -79,6 +80,7 @@ function draw() {
       state.view.cy += (target.pos[1] - state.view.cy) * 0.18;
     }
     renderScoreboard(f.snap, tick);
+    embedState(shownScore(f.snap) ?? null, f.players);
   }
   drawBackground(r);
   if (f) {

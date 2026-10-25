@@ -105,6 +105,36 @@ stream of it (Twitch runs a few seconds behind SourceTV): `/w/<id>/5`, `/w/<id>/
 or `/5` and `/overlay/5` for a single server, up to 60. The page handles everything from the
 server that much later, so it also starts that much later; `o` keeps the delay.
 
+## Embedding
+
+A site embeds a match by putting a start link (from serveme.tf's API) in an iframe. The link
+can say where it lands: `view=overlay`, `delay=<s>` and the overlay's query options carry over,
+so `/start?t=…&view=overlay&delay=5&names=1` opens `/w/<id>/overlay/5?names=1`.
+
+In an iframe the page talks to its parent with `postMessage`. Every message has `stvtf: 1`,
+and arrives as the map shows it, so after any delay. Players are
+`{id, name, steamid, team, class}`, with `steamid` as `[U:1:…]` (`BOT` for bots).
+
+| from the map, `type` | |
+|---|---|
+| `ready` | the page loaded |
+| `map` | `map`: the map loaded, also after a map change |
+| `status` | `state`: the SourceTV connection (`full` is live, `map_change`, `disconnected`, …) |
+| `state` | twice a second: `map`, `score` `{red, blue}`, `players` with `alive`, `hp`, `max_hp` |
+| `event` | `event`: a `kill`, `uber`, `point_captured`, `capture_broken`, `flag`, `round_start`, `round_win` or `chat` as stvtf emits it; `players`: the players it names, by id |
+
+| to the map, `type` | |
+|---|---|
+| `follow` | keep a player centred, by `steamid` or `id`; neither, or an unknown one, stops following |
+| `layer` | `name` (`caps`, `heals`, `hits`, `marks`, `jumps`, `pickups`, `points`, `flow`, `loadout`, `effects`), `on` |
+
+```js
+frame.contentWindow.postMessage({ stvtf: 1, type: "follow", steamid: "[U:1:231702]" }, "https://stv.tf");
+addEventListener("message", e => { if (e.origin === "https://stv.tf" && e.data?.stvtf === 1) console.log(e.data); });
+```
+
+The event fields follow stvtf's output and may still change.
+
 ## What it shows
 
 - A spectator HUD over the map like TF2's: BLU down the left, RED down the right.
