@@ -132,10 +132,17 @@ pub struct Sessions {
     pub max: usize,
     pub hz: f32,
     pub store: Option<Store>,
+    /// This process's mark in the store, once it took the folder over.
+    claim: String,
 }
 
 /// A file per match, so the containers of a deploy, briefly running side by side, never write
 /// over each other's list. Encrypted with the token key when there is one.
+///
+/// The newest process owns the folder: it writes its mark to [`CURRENT`] on start, and from then
+/// on the release it replaces saves only the matches it starts, for the new one to pick up when
+/// their pages reconnect to it, and not the others, so it cannot bring back a match the new one
+/// ended.
 pub struct Store {
     pub dir: PathBuf,
     pub keys: Option<Arc<token::Keys>>,
@@ -156,9 +163,23 @@ struct SavedMatch {
     history: Vec<String>,
 }
 
+/// The file in the store holding the mark of the process it belongs to.
+const CURRENT: &str = "current";
+
 impl Store {
     fn path(&self, id: &str) -> PathBuf {
         self.dir.join(id)
+    }
+
+    /// Takes the folder over from whichever process had it.
+    fn claim(&self, mark: &str) -> Result<()> {
+        std::fs::create_dir_all(&self.dir)?;
+        Ok(write_atomic(&self.path(CURRENT), mark.as_bytes())?)
+    }
+
+    /// Whether a newer process took the folder over from the one with `mark`.
+    fn taken_over(&self, mark: &str) -> bool {
+        std::fs::read(self.path(CURRENT)).is_ok_and(|current| current != mark.as_bytes())
     }
 
     /// Saves a match, unless it was stopped (ended, or all of them stopped at exit) or its map
@@ -206,15 +227,25 @@ impl Store {
 
 impl Sessions {
     pub fn new(public: bool, max: usize, hz: f32) -> Self {
-        Sessions { map: Mutex::default(), public, max, hz, store: None }
+        Sessions { map: Mutex::default(), public, max, hz, store: None, claim: random_id() }
     }
 
     fn lock(&self) -> std::sync::MutexGuard<'_, HashMap<String, Arc<Session>>> {
         lock(&self.map)
     }
 
+    /// The session `id`, or one the release this process replaces started after this one took
+    /// over its folder, picked up as its page reconnects here.
     pub fn get(&self, id: &str) -> Option<Arc<Session>> {
-        self.lock().get(id).cloned()
+        let mut map = self.lock();
+        if let Some(s) = map.get(id) {
+            return Some(s.clone());
+        }
+        let store = self.store.as_ref()?;
+        if !is_id(id) || !store.path(id).exists() {
+            return None;
+        }
+        self.pick_up(&mut map, store, id)
     }
 
     /// Whether any match, the demo included, is on `map`.
@@ -291,40 +322,51 @@ impl Sessions {
         s
     }
 
-    /// Picks up the matches a previous process saved (the one a deploy replaces), each under its
-    /// old link and with its feed so far. Returns how many.
+    /// Takes the folder over and picks up the matches a previous process saved (the one a deploy
+    /// replaces), each under its old link and with its feed so far. Returns how many.
     pub fn restore(&self) -> usize {
         let Some(store) = &self.store else { return 0 };
+        if let Err(e) = store.claim(&self.claim) {
+            eprintln!("stvtf-web: taking over {}: {e:#}", store.dir.display());
+        }
         let Ok(entries) = std::fs::read_dir(&store.dir) else { return 0 };
         let mut map = self.lock();
         let mut restored = 0;
         for entry in entries.flatten() {
             let id = entry.file_name().to_string_lossy().into_owned();
-            if id.len() != 2 * ID_BYTES || !id.chars().all(|c| c.is_ascii_hexdigit()) || map.contains_key(&id) {
-                continue;
+            if is_id(&id) && !map.contains_key(&id) && self.pick_up(&mut map, store, &id).is_some() {
+                restored += 1;
             }
-            let saved = std::fs::read(entry.path()).map_err(anyhow::Error::from).and_then(|d| store.load(&d));
-            let Ok(saved) = saved else {
-                eprintln!("stvtf-web: dropping unreadable saved match {id}");
-                store.forget(&id);
-                continue;
-            };
-            let hub = SharedHub::default();
-            {
-                let mut h = lock(&hub);
-                h.map = saved.map;
-                h.history = saved.history.into_iter().map(Into::into).collect();
-            }
-            let s = self.start(&mut map, id, saved.server, saved.password, saved.owner, hub);
-            s.shared.store(saved.shared, Ordering::Relaxed);
-            restored += 1;
         }
         restored
     }
 
-    /// Saves every running match, with its feed so far.
+    /// Watches the match saved as `id` again, or drops its file if it cannot be read.
+    fn pick_up(&self, map: &mut HashMap<String, Arc<Session>>, store: &Store, id: &str) -> Option<Arc<Session>> {
+        let saved = std::fs::read(store.path(id)).map_err(anyhow::Error::from).and_then(|d| store.load(&d));
+        let Ok(saved) = saved else {
+            eprintln!("stvtf-web: dropping unreadable saved match {id}");
+            store.forget(id);
+            return None;
+        };
+        let hub = SharedHub::default();
+        {
+            let mut h = lock(&hub);
+            h.map = saved.map;
+            h.history = saved.history.into_iter().map(Into::into).collect();
+        }
+        let s = self.start(map, id.to_string(), saved.server, saved.password, saved.owner, hub);
+        s.shared.store(saved.shared, Ordering::Relaxed);
+        Some(s)
+    }
+
+    /// Saves every running match, with its feed so far, unless a newer process took the store
+    /// over: it has these matches already, apart from the ones it ended.
     pub fn persist(&self) {
         let Some(store) = &self.store else { return };
+        if store.taken_over(&self.claim) {
+            return;
+        }
         let running: Vec<Arc<Session>> = self.lock().values().filter(|s| !s.pinned).cloned().collect();
         for s in running {
             if let Err(e) = store.save(&s) {
@@ -388,6 +430,11 @@ impl Sessions {
             }
         }
     }
+}
+
+/// Whether `name` is a match id, as made by [`random_id`].
+fn is_id(name: &str) -> bool {
+    name.len() == 2 * ID_BYTES && name.chars().all(|c| c.is_ascii_hexdigit())
 }
 
 /// Random bits from the OS as hex; the link to a match is all it takes to watch it.
@@ -600,6 +647,46 @@ mod tests {
         drop(hub);
         assert!(!dir.join(&broken).exists(), "an unreadable one is dropped");
         s.stop_all();
+    }
+
+    /// A process starting on `dir`, as a deploy's new release does, and how many matches it took over.
+    fn start_on(dir: &TempDir) -> (Sessions, usize) {
+        let mut s = Sessions::new(false, 4, 20.0);
+        s.store = Some(Store { dir: dir.to_path_buf(), keys: None });
+        let restored = s.restore();
+        (s, restored)
+    }
+
+    #[test]
+    fn a_match_started_by_the_old_release_is_picked_up_when_asked_for() {
+        let dir = TempDir::new("sessions");
+        let ((old, _), (new, _)) = (start_on(&dir), start_on(&dir));
+        // Started after the new release read the folder, before the proxy switched to it.
+        let m = old.open("192.0.2.1:27020 tv", Some("u1")).unwrap();
+        let again = new.get(&m.id).expect("the page reconnecting to the new release finds it");
+        assert_eq!((again.server, again.owner().as_deref()), (m.server, Some("u1")));
+        assert!(new.get(&random_id()).is_none(), "a match nobody saved is still unknown");
+        assert!(new.get("../current").is_none(), "only match ids are looked up");
+        old.stop_all();
+        new.stop_all();
+    }
+
+    #[test]
+    fn a_release_taken_over_leaves_the_saved_matches_alone() {
+        let dir = TempDir::new("sessions");
+        let (old, _) = start_on(&dir);
+        let m = old.open("192.0.2.1:27020 tv", Some("u1")).unwrap();
+        let (new, restored) = start_on(&dir);
+        assert_eq!(restored, 1);
+        // Its owner moves on once the proxy switched: the new release ends it.
+        new.open("192.0.2.2:27020 tv", Some("u1")).unwrap();
+        assert!(!dir.join(&m.id).exists());
+        // The old release still has it, with lines it got since its last save, and saves on SIGTERM.
+        m.hub.lock().unwrap().changes += 1;
+        old.persist();
+        assert!(!dir.join(&m.id).exists(), "not brought back for the next deploy");
+        old.stop_all();
+        new.stop_all();
     }
 
     #[test]
