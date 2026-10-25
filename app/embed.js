@@ -11,7 +11,9 @@ const PLAYER_FIELDS = ["victim", "attacker", "assister", "medic", "target", "pla
 const STATE_MS = 500;
 
 const post = m => { if (EMBEDDED) window.parent.postMessage({ stvtf: 1, ...m }, "*"); };
-const who = p => p && { id: p.id, name: p.name, steamid: p.steamid, team: p.team, class: p.class };
+const STEAMID64_BASE = 76561197960265728n;
+const steamid64 = id => { const n = /^\[U:1:(\d+)\]$/.exec(id || "")?.[1]; return n ? String(STEAMID64_BASE + BigInt(n)) : null; };
+const who = p => p && { id: p.id, name: p.name, steamid: p.steamid, steamid64: steamid64(p.steamid), team: p.team, class: p.class };
 
 export function embedMap(map) { post({ type: "map", map }); }
 export function embedStatus(s) { post({ type: "status", state: s }); }
@@ -35,7 +37,7 @@ window.addEventListener("message", e => {
   const m = e.data;
   if (e.source !== window.parent || m?.stvtf !== 1) return;
   if (m.type === "follow") {
-    const p = m.steamid != null ? state.lastPlayers.find(x => x.steamid === m.steamid) : state.lastPlayers.find(x => x.id === m.id);
+    const p = state.lastPlayers.find(x => m.steamid != null ? x.steamid === m.steamid : m.steamid64 != null ? steamid64(x.steamid) === String(m.steamid64) : x.id === m.id);
     if (!p) setFollow(null);
     else if (p.id !== state.follow) setFollow(p.id);
   } else if (m.type === "layer" && layerOn(m.name) != null) setLayer(m.name, Boolean(m.on));

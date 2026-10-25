@@ -113,7 +113,8 @@ so `/start?t=…&view=overlay&delay=5&names=1` opens `/w/<id>/overlay/5?names=1`
 
 In an iframe the page talks to its parent with `postMessage`. Every message has `stvtf: 1`,
 and arrives as the map shows it, so after any delay. Players are
-`{id, name, steamid, team, class}`, with `steamid` as `[U:1:…]` (`BOT` for bots).
+`{id, name, steamid, steamid64, team, class}`, with `steamid` as `[U:1:…]` (`BOT` for bots, whose
+`steamid64` is null).
 
 | from the map, `type` | |
 |---|---|
@@ -125,7 +126,7 @@ and arrives as the map shows it, so after any delay. Players are
 
 | to the map, `type` | |
 |---|---|
-| `follow` | keep a player centred, by `steamid` or `id`; neither, or an unknown one, stops following |
+| `follow` | keep a player centred, by `steamid`, `steamid64` or `id`; none, or an unknown one, stops following |
 | `layer` | `name` (`caps`, `heals`, `hits`, `marks`, `jumps`, `pickups`, `points`, `flow`, `loadout`, `effects`), `on` |
 
 ```js
