@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>stv.tf embed example</title>
+<link rel="stylesheet" href="https://stv.tf/killicons/v1/killicons.css">
 <style>
   :root { --bg: #14161a; --panel: #1d2026; --line: #2b2f37; --text: #e6e6e6; --dim: #8b919c; --red: #d0453f; --blu: #4f8fc0; }
   * { box-sizing: border-box; }
@@ -35,6 +36,12 @@
   @keyframes in { from { background: #3a3f48; } }
   .feed .b { color: #a9c9e4; } .feed .r { color: #eba7a4; } .feed .x { color: var(--dim); }
   .feed .big { font-weight: 600; }
+  .ki { display: inline-flex; align-items: center; vertical-align: middle; background: #111318; border-radius: 4px; padding: 1px 5px; margin: 0 4px; }
+  .ki .killicon { zoom: .55; }
+  .tag { font-size: 10px; font-weight: 700; padding: 0 4px; border-radius: 3px; margin-left: 4px; vertical-align: middle; background: #6c757d; color: #fff; }
+  .tag.k { background: #d9822b; } .tag.air { background: #3a87c8; } .tag.dom { background: #b8383b; }
+  .text-muted { color: var(--dim); }
+  .player .wp { height: 20px; width: 40px; object-fit: contain; }
   .controls { padding: 10px 12px; border-top: 1px solid var(--line); display: grid; gap: 8px; }
   .controls label { display: flex; align-items: center; gap: 6px; color: var(--dim); }
   .controls button { background: #2b2f37; color: var(--text); border: 1px solid #3a3f48; border-radius: 4px; padding: 5px 10px; cursor: pointer; }
@@ -99,12 +106,23 @@ function feed(html, big) {
   while ($("feed").children.length > 80) $("feed").lastChild.remove();
 }
 
+// A kill as TF2's feed shows it: attacker (+ assister), weapon icon, victim, and what made it special.
+function killRow(ev, p, who) {
+  const by = ev.attacker != null && ev.attacker !== ev.victim ? who(p(ev.attacker)) + (ev.assister != null ? ` + ${who(p(ev.assister))}` : "") : "";
+  const icon = ev.icon
+    ? `<span class="ki"><span class="killicon killicon-${esc(ev.icon)}${ev.crit ? " crit" : ""}" title="${esc(ev.weapon)}"></span></span>`
+    : ` <span class="text-muted">${esc(ev.weapon || "died")}</span> `;
+  const tags = [ev.streak >= 2 && `<span class="tag k">${ev.streak}K</span>`, ev.airshot && `<span class="tag air">AIRSHOT</span>`,
+    ev.dominated && `<span class="tag dom">DOMINATING</span>`, ev.revenge && `<span class="tag dom">REVENGE</span>`].filter(Boolean).join("");
+  return `${by}${icon}${who(p(ev.victim))}${tags}`;
+}
+
 function renderPlayers(list) {
   for (const team of ["blue", "red"]) {
     const el = $(team === "blue" ? "blu" : "red");
     el.innerHTML = list.filter(p => p.team === team).map(p =>
       `<div class="player${p.alive ? "" : " dead"}${p.id === followed ? " followed" : ""}" data-id="${p.id}">
-        <span class="cls">${esc((p.class || "").slice(0, 3))}</span><span class="name">${esc(p.name)}</span><span class="hp">${p.alive ? p.hp : "✕"}</span></div>`).join("");
+        <span class="cls">${esc((p.class || "").slice(0, 3))}</span><span class="name">${esc(p.name)}</span>${p.weapon?.image ? `<img class="wp" src="${esc(p.weapon.image)}" alt="">` : ""}<span class="hp">${p.alive ? p.hp : "✕"}</span></div>`).join("");
   }
 }
 
@@ -123,7 +141,7 @@ addEventListener("message", e => {
       break;
     case "event": {
       const ev = m.event, p = id => m.players[id] || players.get(id);
-      if (ev.type === "kill") feed(`${ev.attacker != null && ev.attacker !== ev.victim ? nameOf(p(ev.attacker)) + " " : ""}<span class="x">${ev.crit ? "crit-killed" : ev.headshot ? "headshot" : ev.backstab ? "backstabbed" : "killed"}</span> ${nameOf(p(ev.victim))}${ev.assister != null ? ` <span class="x">+ ${esc(p(ev.assister)?.name || "?")}</span>` : ""}`);
+      if (ev.type === "kill") { if (!ev.feign) feed(killRow(ev, p, nameOf)); }
       else if (ev.type === "uber") feed(`${nameOf(p(ev.medic))} <span class="x">popped</span> ${esc(ev.medigun || "uber")}`, true);
       else if (ev.type === "point_captured") feed(`<span class="${teamCls(ev.team)}">${ev.team.toUpperCase()}</span> <span class="x">captured point</span> ${ev.point + 1}`, true);
       else if (ev.type === "round_win") feed(`<span class="${teamCls(ev.team)}">${ev.team.toUpperCase()} wins the round</span>`, true);
