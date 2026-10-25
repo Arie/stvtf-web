@@ -1,4 +1,4 @@
-import { $, DELAY, OVERLAY, PAGE, canvas, uiScale, applyScale, state } from "./core.js";
+import { $, DELAY, OPT, OVERLAY, PAGE, canvas, uiScale, applyScale, state } from "./core.js";
 import { layerOn, setLayer, setOverkill, overkillOn } from "./layers.js";
 import { viewCy, frameMap, toScreen } from "./view.js";
 
@@ -113,6 +113,8 @@ function setSidebar(show) {
 }
 $("sidetoggle").addEventListener("click", () => setSidebar(document.documentElement.classList.contains("noside")));
 try { if (!OVERLAY && localStorage.getItem("sidebar") === "0") setSidebar(false); } catch {}
+// side=0: no events and chat beside the map, for a site that shows its own.
+if (OPT.get("side") === "0") document.documentElement.classList.add("noside");
 for (const b of document.querySelectorAll("#bgtoggle button")) {
   b.addEventListener("click", () => {
     state.bg = b.dataset.bg;

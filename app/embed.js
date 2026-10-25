@@ -6,8 +6,10 @@ import { layerOn, setLayer } from "./layers.js";
 // after any delay), and the parent can follow a player or switch a layer. Every message carries
 // `stvtf: 1`. See "Embedding" in the README.
 export const EMBEDDED = window.parent !== window;
-const EVENTS = new Set(["kill", "uber", "point_captured", "capture_broken", "flag", "round_start", "round_win", "chat"]);
-const PLAYER_FIELDS = ["victim", "attacker", "assister", "medic", "target", "player", "carrier"];
+// What the page's own feed and chat show; not the effects drawn on the map.
+const EFFECTS = new Set(["shot", "explosion", "airblast", "sentry_shot", "damage", "spawn", "heal", "impact", "mark", "blast_jump",
+  "pickup", "building_upgrade", "building_repair", "time_added"]);
+const PLAYER_FIELDS = ["victim", "attacker", "assister", "medic", "target", "player", "carrier", "owner", "blocker", "killer"];
 const STATE_MS = 500;
 
 const post = m => { if (EMBEDDED) window.parent.postMessage({ stvtf: 1, ...m }, "*"); };
@@ -19,7 +21,7 @@ export function embedMap(map) { post({ type: "map", map }); }
 export function embedStatus(s) { post({ type: "status", state: s }); }
 
 export function embedEvent(ev, byId) {
-  if (!EMBEDDED || !EVENTS.has(ev.type)) return;
+  if (!EMBEDDED || EFFECTS.has(ev.type)) return;
   const ids = [...PLAYER_FIELDS.map(f => ev[f]), ...(ev.cappers || [])].filter(id => id != null);
   const players = Object.fromEntries(ids.map(id => [id, who(byId.get(id) || state.players.get(id))]).filter(([, p]) => p));
   post({ type: "event", event: ev, players });

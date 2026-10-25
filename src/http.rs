@@ -369,7 +369,7 @@ fn start(app: &App, sessions: &Sessions, query: &str) -> Result<Arc<Session>> {
 }
 
 /// Display options a start link can carry over to the page.
-const VIEW_OPTIONS: [&str; 7] = ["names", "score", "panel", "rotate", "dot", "ui", "zoom"];
+const VIEW_OPTIONS: [&str; 8] = ["names", "score", "panel", "rotate", "dot", "ui", "zoom", "side"];
 
 /// Where a start link lands below `/w/<id>/`: `view=overlay`, `delay=<s>` and the display options
 /// become `overlay/4.5?names=1`. Anything else, or a delay out of range, is left out.

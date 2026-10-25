@@ -109,7 +109,8 @@ server that much later, so it also starts that much later; `o` keeps the delay.
 
 A site embeds a match by putting a start link (from serveme.tf's API) in an iframe. The link
 can say where it lands: `view=overlay`, `delay=<s>` and the overlay's query options carry over,
-so `/start?t=…&view=overlay&delay=5&names=1` opens `/w/<id>/overlay/5?names=1`.
+so `/start?t=…&view=overlay&delay=5&names=1` opens `/w/<id>/overlay/5?names=1`. `side=0` leaves
+out the events and chat beside the map, for a site that shows its own.
 
 In an iframe the page talks to its parent with `postMessage`. Every message has `stvtf: 1`,
 and arrives as the map shows it, so after any delay. Players are
@@ -122,7 +123,7 @@ and arrives as the map shows it, so after any delay. Players are
 | `map` | `map`: the map loaded, also after a map change |
 | `status` | `state`: the SourceTV connection (`full` is live, `map_change`, `disconnected`, …) |
 | `state` | twice a second: `map`, `score` `{red, blue}`, `players` with `alive`, `hp`, `max_hp` |
-| `event` | `event`: a `kill`, `uber`, `point_captured`, `capture_broken`, `flag`, `round_start`, `round_win` or `chat` as stvtf emits it; `players`: the players it names, by id |
+| `event` | `event`: what the page's own feed and chat show (`kill`, `uber`, `medic_death`, `point_captured`, `capture_blocked`, `flag`, `round_start`, `round_win`, `chat`, `voice_command`, …) as stvtf emits it, without the per-shot and per-hit effects; `players`: the players it names, by id |
 
 | to the map, `type` | |
 |---|---|
