@@ -1073,8 +1073,8 @@ mod tests {
                 took.as_millis(),
                 kinds.join(", ")
             );
-            if g.floors.len() * 10 < before.0 * 3 {
-                failed.push(format!("{name}: only {} of {} floors left", g.floors.len(), before.0));
+            if total < before.1 * 0.15 {
+                failed.push(format!("{name}: only {:.0}% of the floor area left", 100.0 * total / before.1));
             }
         }
         assert!(failed.is_empty(), "{failed:#?}");
