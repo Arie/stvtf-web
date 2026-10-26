@@ -4,8 +4,11 @@
 //! the 3D skybox out of the picture.
 
 use anyhow::{Result, anyhow, bail};
+use material::Kind;
 use serde::Serialize;
 use stvtf::output::{PickupItem, PickupSize, Team, round1};
+
+mod material;
 
 const LUMP_ENTITIES: usize = 0;
 const LUMP_PLANES: usize = 1;
@@ -102,11 +105,12 @@ pub struct Geometry {
     pub walls: Vec<Wall>,
 }
 
-/// An upward face: its height and outline (`x, y, x, y, …`).
+/// An upward face: its height, outline (`x, y, x, y, …`) and what it is made of.
 #[derive(Debug, Serialize)]
 pub struct Floor {
     pub z: f64,
     pub p: Vec<f64>,
+    pub k: Kind,
 }
 
 /// A wall seen from above: its top and its two ends (`x1, y1, x2, y2`).
@@ -481,10 +485,12 @@ struct World {
     textures: Vec<String>,
 }
 
-/// A face of the world as seen from above: its corners and how far its normal points up.
+/// A face of the world as seen from above: its corners, how far its normal points up and its
+/// texture's index in the texture table.
 struct Face {
     pts: Vec<Vec3>,
     normal_z: f32,
+    texture: usize,
 }
 
 impl World {
@@ -512,8 +518,8 @@ impl World {
         *edges_left = edges_left.checked_sub(num_edges).ok_or_else(|| anyhow!("faces use more edges than the map has"))?;
         let Ok(tex) = usize::try_from(tex) else { return Ok(None) };
         let t = tex * TEXINFO_SIZE;
-        let (flags, tdata) = (i32_at(&self.texinfo, t + TEXINFO_FLAGS)?, i32_at(&self.texinfo, t + TEXINFO_TEXDATA)?);
-        if flags & SKIP_FLAGS != 0 || self.textures.get(tdata as usize).is_some_and(|n| n.starts_with(TOOL_TEXTURES)) {
+        let (flags, texture) = (i32_at(&self.texinfo, t + TEXINFO_FLAGS)?, i32_at(&self.texinfo, t + TEXINFO_TEXDATA)? as usize);
+        if flags & SKIP_FLAGS != 0 || self.textures.get(texture).is_some_and(|n| n.starts_with(TOOL_TEXTURES)) {
             return Ok(None);
         }
         let mut normal_z = f32_at(&self.planes, plane * PLANE_SIZE + PLANE_NORMAL_Z)?;
@@ -528,7 +534,7 @@ impl World {
                 vec3_at(&self.verts, usize::from(u16_at(&self.edges, eo)?) * VERTEX_SIZE)
             })
             .collect::<Result<_>>()?;
-        Ok(Some(Face { pts, normal_z }))
+        Ok(Some(Face { pts, normal_z, texture }))
     }
 }
 
@@ -573,7 +579,8 @@ pub fn geometry(data: &[u8]) -> Result<Geometry> {
         }
         if face.normal_z > FLOOR_MIN_NORMAL_Z {
             let p: Vec<f64> = face.pts.iter().flat_map(|p| [round1(p[0]), round1(p[1])]).collect();
-            floors.push((centre[2], Floor { z: round1(centre[2]), p }));
+            let k = world.textures.get(face.texture).map_or(Kind::Other, |t| material::kind(t));
+            floors.push((centre[2], Floor { z: round1(centre[2]), p, k }));
             if bounds.is_none() {
                 floor_pts.extend(face.pts);
             }
@@ -603,8 +610,31 @@ pub fn geometry(data: &[u8]) -> Result<Geometry> {
 mod tests {
     use super::*;
 
-    fn process() -> Option<Vec<u8>> {
-        std::fs::read(concat!(env!("CARGO_MANIFEST_DIR"), "/cache/cp_process_f12.bsp")).ok()
+    /// The map `name` from the cache, or None (said on stderr) when it is not there.
+    pub(super) fn map(name: &str) -> Option<Vec<u8>> {
+        let data = std::fs::read(format!("{}/cache/{name}.bsp", env!("CARGO_MANIFEST_DIR"))).ok();
+        if data.is_none() {
+            eprintln!("skipping: cache/{name}.bsp is missing");
+        }
+        data
+    }
+
+    pub(super) fn process() -> Option<Vec<u8>> {
+        map("cp_process_f12")
+    }
+
+    pub(super) fn swiftwater() -> Option<Vec<u8>> {
+        map("pl_swiftwater_final1")
+    }
+
+    /// Whether (x, y) is inside the outline `p` (`x, y, x, y, …`).
+    pub(super) fn contains(p: &[f64], x: f64, y: f64) -> bool {
+        let n = p.len() / 2;
+        let at = |i: usize| (p[i % n * 2], p[i % n * 2 + 1]);
+        (0..n).fold(false, |inside, i| {
+            let ((x1, y1), (x2, y2)) = (at(i), at(i + 1));
+            inside ^ ((y1 > y) != (y2 > y) && x < (x2 - x1) * (y - y1) / (y2 - y1) + x1)
+        })
     }
 
     #[test]
@@ -720,6 +750,27 @@ mod tests {
         assert!(g.floors.len() > 1000, "{} floors", g.floors.len());
         assert!(g.floors.windows(2).all(|w| w[0].z <= w[1].z), "floors sorted by height");
         assert!(g.walls.len() > 1000);
+    }
+
+    #[test]
+    fn process_floors_have_material_kinds() {
+        let Some(data) = process() else { return };
+        let g = geometry(&data).unwrap();
+        let of = |k| g.floors.iter().filter(|f| f.k == k).count();
+        assert!(of(Kind::Concrete) + of(Kind::Metal) > 100, "{} concrete, {} metal", of(Kind::Concrete), of(Kind::Metal));
+        assert!(of(Kind::Other) < g.floors.len(), "every floor is other");
+        // A (convex) floor contains its own middle.
+        let f = g.floors.iter().find(|f| f.k == Kind::Metal).unwrap();
+        let n = (f.p.len() / 2) as f64;
+        let mid = |i: usize| f.p.iter().skip(i).step_by(2).sum::<f64>() / n;
+        assert!(contains(&f.p, mid(0), mid(1)), "{:?}", f.p);
+    }
+
+    #[test]
+    fn swiftwater_has_water_floors() {
+        let Some(data) = swiftwater() else { return };
+        let g = geometry(&data).unwrap();
+        assert!(g.floors.iter().any(|f| f.k == Kind::Water));
     }
 
     #[test]
