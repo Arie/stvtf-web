@@ -19,8 +19,9 @@ const MAX_POWER: usize = 4;
 /// All the grid points read from one map: real maps have far fewer, and a crafted one could
 /// otherwise make every face's displacement read the same points again and again.
 const MAX_GRID_POINTS: usize = 1 << 20;
-/// The most pieces a cell is cut into per side by `samples`.
-const MAX_SAMPLE_SPLIT: usize = 64;
+/// `samples` gives at most about this many times the grid's points per displacement, whatever
+/// the step and extents (real maps are well under it), so all of a map's stay bounded.
+const SAMPLE_BUDGET_FACTOR: usize = 4;
 
 /// A displacement of the world: the plane of its base face (normal, distance, facing out), the
 /// base face's corners, and the `n` by `n` grid of points (row-major) that is its real surface.
@@ -54,6 +55,7 @@ impl Displacement {
             return self.grid.clone();
         }
         let cells_per_side = self.n - 1;
+        let max_split = (self.grid.len() * SAMPLE_BUDGET_FACTOR / (cells_per_side * cells_per_side)).isqrt().max(1);
         let mut out = Vec::new();
         for (index, [near_left, near_right, far_right, far_left]) in self.cells().enumerate() {
             let (row, col) = (index / cells_per_side, index % cells_per_side);
@@ -62,7 +64,7 @@ impl Displacement {
                 .map(|(p, q)| (0..3).map(|k| (p[k] - q[k]).powi(2)).sum::<f32>().sqrt())
                 .fold(0.0, f32::max);
             // The cell's far edges belong to the next cell, except at the surface's edge.
-            let split = ((longest / step).ceil().max(1.0) as usize).min(MAX_SAMPLE_SPLIT);
+            let split = ((longest / step).ceil().max(1.0) as usize).min(max_split);
             let (rows, cols) = (split + usize::from(row == cells_per_side - 1), split + usize::from(col == cells_per_side - 1));
             for r in 0..rows {
                 for c in 0..cols {
@@ -175,6 +177,15 @@ mod tests {
         let d = ds.iter().max_by_key(|d| d.n).unwrap();
         assert!(d.samples(16.0).len() > d.grid.len());
         assert_eq!(d.samples(0.0).len(), d.grid.len());
+    }
+
+    #[test]
+    fn samples_of_absurd_extents_are_bounded() {
+        let n = 17;
+        let grid = (0..n * n).map(|k| [(k / n) as f32 * 1e9, (k % n) as f32 * 1e9, 0.0]).collect::<Vec<_>>();
+        let d = Displacement { plane: [0.0, 0.0, 1.0, 0.0], base: [[0.0; 3]; 4], n, grid, texture: 0, face: 0 };
+        let len = d.samples(1.0).len();
+        assert!(len <= 6 * d.grid.len(), "{len}");
     }
 
     #[test]
