@@ -10,17 +10,23 @@ use stvtf::output::{PickupItem, PickupSize, Team, round1};
 
 mod displacement;
 mod material;
+mod reach;
 mod track;
 
 const LUMP_ENTITIES: usize = 0;
 const LUMP_PLANES: usize = 1;
 const LUMP_TEXDATA: usize = 2;
 const LUMP_VERTEXES: usize = 3;
+const LUMP_NODES: usize = 5;
 const LUMP_TEXINFO: usize = 6;
 const LUMP_FACES: usize = 7;
+const LUMP_LEAFS: usize = 10;
 const LUMP_EDGES: usize = 12;
 const LUMP_SURFEDGES: usize = 13;
 const LUMP_MODELS: usize = 14;
+const LUMP_LEAFBRUSHES: usize = 17;
+const LUMP_BRUSHES: usize = 18;
+const LUMP_BRUSHSIDES: usize = 19;
 const LUMP_DISPINFO: usize = 26;
 const LUMP_DISP_VERTS: usize = 33;
 const LUMP_TEXDATA_STRING_DATA: usize = 43;
@@ -110,6 +116,8 @@ pub struct Geometry {
     pub walls: Vec<Wall>,
     /// The payload track's segments (`x1, y1, z1, x2, y2, z2`); empty without a payload cart.
     pub track: Vec<[f64; 6]>,
+    /// Where players can get to, seen from above; None when it could not be worked out.
+    pub playable: Option<reach::Mask>,
 }
 
 /// An upward face: its height, outline (`x, y, x, y, …`) and what it is made of.
@@ -585,6 +593,7 @@ pub fn geometry(data: &[u8]) -> Result<Geometry> {
     let world = World::read(data)?;
     let map = Entities::read(data)?;
     let bounds = playable_bounds(&map.list);
+    let (spawns, packs, cap_areas, track) = (spawns(&map), packs(&map.list), cap_areas(&map), track::track(&map));
 
     // Only the world model: brush entities (doors, triggers, func_brush) are separate models.
     let (first, count) = (index_at(&map.models, MODEL_FIRST_FACE)?, index_at(&map.models, MODEL_NUM_FACES)?);
@@ -632,6 +641,24 @@ pub fn geometry(data: &[u8]) -> Result<Geometry> {
         }
     }
     floors.sort_by(|a, b| a.0.total_cmp(&b.0));
+    // Only maps with points or pickups: on the others (MGE, jump maps) the spawns are not where
+    // the play is, so every floor is kept.
+    let reach = bounds.and_then(|b| {
+        let mut seeds: Vec<Vec3> =
+            spawns.points.iter().map(|s| s.pos).chain(packs.iter().map(|p| p.pos)).map(|p| p.map(|v| v as f32)).collect();
+        seeds.extend(
+            cap_areas.iter().map(|a| [f64::midpoint(a.min[0], a.max[0]), f64::midpoint(a.min[1], a.max[1]), a.min[2]].map(|v| v as f32)),
+        );
+        seeds.extend(track.iter().flatten());
+        // A map whose brushes cannot be read keeps every floor, as before.
+        reach::reach(data, &disps, &b, &seeds).unwrap_or_else(|e| {
+            eprintln!("stvtf-web: playable area left out: {e:#}");
+            None
+        })
+    });
+    if let Some(r) = &reach {
+        floors.retain(|(_, f)| r.keeps(&f.p, f.z));
+    }
     // Without points or pickups, the floors frame the map; the top keeps the PAD above the
     // highest floor that the viewer's roof cut expects.
     let bounds = bounds.or_else(|| {
@@ -640,13 +667,14 @@ pub fn geometry(data: &[u8]) -> Result<Geometry> {
         (!floor_pts.is_empty()).then_some(b)
     });
     Ok(Geometry {
-        spawns: spawns(&map),
-        packs: packs(&map.list),
-        cap_areas: cap_areas(&map),
+        spawns,
+        packs,
+        cap_areas,
         bounds: bounds.map(|b| [b.lo.map(f64::from), b.hi.map(f64::from)]),
         floors: floors.into_iter().map(|f| f.1).collect(),
         walls,
-        track: track::track(&map).into_iter().map(|[a, b]| [a[0], a[1], a[2], b[0], b[1], b[2]].map(round1)).collect(),
+        track: track.into_iter().map(|[a, b]| [a[0], a[1], a[2], b[0], b[1], b[2]].map(round1)).collect(),
+        playable: reach.map(|r| r.mask()),
     })
 }
 
@@ -780,6 +808,11 @@ mod tests {
             LUMP_MODELS,
             LUMP_DISPINFO,
             LUMP_DISP_VERTS,
+            LUMP_NODES,
+            LUMP_LEAFS,
+            LUMP_LEAFBRUSHES,
+            LUMP_BRUSHES,
+            LUMP_BRUSHSIDES,
         ] {
             let h = lump_entry(index);
             let (ofs, len) = (index_at(&data, h + LUMP_OFFSET).unwrap(), index_at(&data, h + LUMP_LENGTH).unwrap());

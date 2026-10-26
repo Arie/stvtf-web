@@ -33,7 +33,6 @@ const MAX_SAMPLE_SPLIT: usize = 64;
 #[derive(Debug)]
 pub(super) struct Displacement {
     pub plane: [f32; 4],
-    #[expect(dead_code, reason = "the playable-area flood fill finds the brush that carries a displacement by it")]
     pub base: [Vec3; 4],
     pub n: usize,
     pub grid: Vec<Vec3>,
@@ -54,7 +53,6 @@ impl Displacement {
     }
 
     /// Points on the surface that are no more than `step` apart (a step of 0 gives the grid's points).
-    #[cfg_attr(not(test), expect(dead_code, reason = "the playable-area flood fill samples the terrain"))]
     pub fn samples(&self, step: f32) -> Vec<Vec3> {
         if step <= 0.0 || step.is_nan() {
             return self.grid.clone();
@@ -181,10 +179,19 @@ mod tests {
     #[test]
     fn swiftwater_terrain_is_at_its_real_height() {
         let Some(data) = swiftwater() else { return };
-        let g = geometry(&data).unwrap();
         // Terrain near (2260, -100), inside a cell rather than on its edge, sits at about -708; its base faces are at -548 and -480.
-        let zs: Vec<f64> = g.floors.iter().filter(|f| f.d && contains(&f.p, 2260.0, -100.0)).map(|f| f.z).collect();
+        // It is out of the players' reach, so its cells are looked at before the floors are filtered.
+        let ds = displacements(&data, &World::read(&data).unwrap()).unwrap();
+        let cells = ds.iter().flat_map(Displacement::cells);
+        let zs: Vec<f32> = cells
+            .filter(|c| contains(&c.iter().flat_map(|p| [f64::from(p[0]), f64::from(p[1])]).collect::<Vec<_>>(), 2260.0, -100.0))
+            .map(|c| c.iter().map(|p| p[2]).sum::<f32>() / 4.0)
+            .collect();
         assert!(!zs.is_empty() && zs.iter().all(|z| *z < -650.0), "{zs:?}");
+        // Kept terrain near (3874, 378) sits at about -949; its base face is at -1028.
+        let g = geometry(&data).unwrap();
+        let zs: Vec<f64> = g.floors.iter().filter(|f| f.d && contains(&f.p, 3874.0, 378.0)).map(|f| f.z).collect();
+        assert!(!zs.is_empty() && zs.iter().all(|z| *z > -990.0), "{zs:?}");
     }
 
     #[test]
