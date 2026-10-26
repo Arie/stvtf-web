@@ -155,7 +155,9 @@ function renderGeometry(g) {
   c.stroke();
   c.globalCompositeOperation = "source-over";
   const pa = g.playable;
-  if (pa?.bits) {
+  // The mask is optional: one too big for a canvas (a crafted, very long map) leaves every floor
+  // drawn rather than losing the whole map.
+  if (pa?.bits) try {
     // Rows run from the lowest y up, so they are flipped into the canvas.
     const bytes = Uint8Array.from(atob(pa.bits), ch => ch.charCodeAt(0));
     const mc = document.createElement("canvas"); mc.width = pa.w; mc.height = pa.h;
@@ -169,8 +171,7 @@ function renderGeometry(g) {
     c.imageSmoothingEnabled = true;
     c.globalCompositeOperation = "destination-in";
     c.drawImage(mc, X(pa.origin[0]), Y(pa.origin[1] + pa.h * pa.cell), pa.w * pa.cell / res, pa.h * pa.cell / res);
-    c.globalCompositeOperation = "source-over";
-  }
+  } catch (e) { console.warn("no playable area", e); } finally { c.globalCompositeOperation = "source-over"; }
   const track = (g.track || []).map(([x1, y1, , x2, y2]) => [X(x1), Y(y1), X(x2), Y(y2)]);
   c.strokeStyle = TIE_COLOUR; c.lineWidth = 2;
   c.beginPath();
