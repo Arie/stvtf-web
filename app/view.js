@@ -145,13 +145,15 @@ function renderGeometry(g) {
     if (patterns[k]) { c.fillStyle = patterns[k]; c.fill(); }
   }
   c.shadowColor = "transparent"; c.shadowBlur = c.shadowOffsetX = c.shadowOffsetY = 0; c.globalAlpha = 1;
-  c.strokeStyle = "#0b0c0e"; c.lineWidth = 1.2;
+  // Walls only where a floor was drawn: the rest are scenery's, out over the background.
+  c.strokeStyle = "#0b0c0e"; c.lineWidth = 1.2; c.globalCompositeOperation = "source-atop";
   c.beginPath();
   for (const wl of g.walls) {
     if (wl.z - WALL_BASE > cut) continue;
     c.moveTo(X(wl.p[0]), Y(wl.p[1])); c.lineTo(X(wl.p[2]), Y(wl.p[3]));
   }
   c.stroke();
+  c.globalCompositeOperation = "source-over";
   const pa = g.playable;
   if (pa?.bits) {
     // Rows run from the lowest y up, so they are flipped into the canvas.
@@ -163,7 +165,7 @@ function renderGeometry(g) {
       if (bytes[i >> 3] >> (i & 7) & 1) img.data.fill(255, ((pa.h - 1 - cy) * pa.w + cx) * 4, ((pa.h - 1 - cy) * pa.w + cx) * 4 + 4);
     }
     mctx.putImageData(img, 0, 0);
-    // Smoothing softens the mask's 64-unit steps into soft edges.
+    // Smoothing softens the mask's voxel steps into soft edges.
     c.imageSmoothingEnabled = true;
     c.globalCompositeOperation = "destination-in";
     c.drawImage(mc, X(pa.origin[0]), Y(pa.origin[1] + pa.h * pa.cell), pa.w * pa.cell / res, pa.h * pa.cell / res);
