@@ -12,7 +12,7 @@ use serde::Serialize;
 use super::displacement::Displacement;
 use super::{
     Bounds, FLOOR_MIN_NORMAL_Z, LUMP_BRUSHES, LUMP_BRUSHSIDES, LUMP_LEAFBRUSHES, LUMP_LEAFS, LUMP_MODELS, LUMP_NODES, LUMP_PLANES,
-    PLANE_DIST, PLANE_SIZE, Vec3, f32_at, i32_at, index_at, lump, u16_at, vec3_at,
+    PLANE_DIST, PLANE_SIZE, Vec3, crosses, f32_at, i32_at, index_at, lump, u16_at, vec3_at,
 };
 
 /// Where the BSP's version is, and the only one whose leaf layout is read here.
@@ -636,9 +636,7 @@ fn sample_grid(outline: &[[f64; 2]]) -> ([f64; 2], f64, [usize; 2]) {
 /// Whether `q` is inside the outline `pts`, or within `OUTLINE_SLACK` of it.
 fn within(pts: &[[f64; 2]], q: [f64; 2]) -> bool {
     let edges = || pts.iter().zip(pts.iter().cycle().skip(1));
-    let inside = edges().fold(false, |inside, (a, b)| {
-        inside ^ ((a[1] > q[1]) != (b[1] > q[1]) && q[0] < (b[0] - a[0]) * (q[1] - a[1]) / (b[1] - a[1]) + a[0])
-    });
+    let inside = edges().fold(false, |inside, (a, b)| inside ^ crosses(*a, *b, q));
     inside
         || edges().any(|(a, b)| {
             let (dx, dy) = (b[0] - a[0], b[1] - a[1]);
@@ -651,8 +649,8 @@ fn within(pts: &[[f64; 2]], q: [f64; 2]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::bsp::tests::{contains, map, process, swiftwater};
-    use crate::bsp::{Bounds, LUMP_LENGTH, geometry, lump_entry};
+    use crate::bsp::tests::{map, process, swiftwater};
+    use crate::bsp::{Bounds, LUMP_LENGTH, contains_point as contains, geometry, lump_entry};
 
     #[test]
     fn process_keeps_the_playable_floors_only() {

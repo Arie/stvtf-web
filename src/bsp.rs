@@ -726,14 +726,16 @@ fn without_shallow_water(floors: Vec<Floor>) -> Vec<Floor> {
     floors.into_iter().zip(keep).filter_map(|(f, k)| k.then_some(f)).collect()
 }
 
+/// Whether a ray from `q` towards +x crosses the edge `a`-`b` (the even-odd test).
+pub(super) fn crosses(a: [f64; 2], b: [f64; 2], q: [f64; 2]) -> bool {
+    (a[1] > q[1]) != (b[1] > q[1]) && q[0] < (b[0] - a[0]) * (q[1] - a[1]) / (b[1] - a[1]) + a[0]
+}
+
 /// Whether (x, y) is inside the outline `p` (`x, y, x, y, …`).
-fn contains_point(p: &[f64], x: f64, y: f64) -> bool {
+pub(super) fn contains_point(p: &[f64], x: f64, y: f64) -> bool {
     let n = p.len() / 2;
-    let at = |i: usize| (p[i % n * 2], p[i % n * 2 + 1]);
-    (0..n).fold(false, |inside, i| {
-        let ((x1, y1), (x2, y2)) = (at(i), at(i + 1));
-        inside ^ ((y1 > y) != (y2 > y) && x < (x2 - x1) * (y - y1) / (y2 - y1) + x1)
-    })
+    let at = |i: usize| [p[i % n * 2], p[i % n * 2 + 1]];
+    (0..n).fold(false, |inside, i| inside ^ crosses(at(i), at(i + 1), [x, y]))
 }
 
 #[cfg(test)]
@@ -755,16 +757,6 @@ mod tests {
 
     pub(super) fn swiftwater() -> Option<Vec<u8>> {
         map("pl_swiftwater_final1")
-    }
-
-    /// Whether (x, y) is inside the outline `p` (`x, y, x, y, …`).
-    pub(super) fn contains(p: &[f64], x: f64, y: f64) -> bool {
-        let n = p.len() / 2;
-        let at = |i: usize| (p[i % n * 2], p[i % n * 2 + 1]);
-        (0..n).fold(false, |inside, i| {
-            let ((x1, y1), (x2, y2)) = (at(i), at(i + 1));
-            inside ^ ((y1 > y) != (y2 > y) && x < (x2 - x1) * (y - y1) / (y2 - y1) + x1)
-        })
     }
 
     #[test]
@@ -909,7 +901,7 @@ mod tests {
         let f = g.floors.iter().find(|f| f.k == Kind::Metal).unwrap();
         let n = (f.p.len() / 2) as f64;
         let mid = |i: usize| f.p.iter().skip(i).step_by(2).sum::<f64>() / n;
-        assert!(contains(&f.p, mid(0), mid(1)), "{:?}", f.p);
+        assert!(contains_point(&f.p, mid(0), mid(1)), "{:?}", f.p);
     }
 
     #[test]

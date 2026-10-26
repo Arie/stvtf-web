@@ -154,7 +154,8 @@ fn read(info: &[u8], verts: &[u8], disp: usize, face: &super::Face, base: [Vec3;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::bsp::tests::{contains, swiftwater};
+    use crate::bsp::contains_point as contains;
+    use crate::bsp::tests::swiftwater;
     use crate::bsp::{LUMP_LENGTH, geometry, lump_entry};
     use std::collections::HashMap;
 
