@@ -138,8 +138,12 @@ pub(crate) fn write_atomic(path: &Path, data: &[u8]) -> std::io::Result<()> {
     static WRITES: AtomicU64 = AtomicU64::new(0);
     let mut tmp = path.as_os_str().to_owned();
     tmp.push(format!(".{}.{}.tmp", std::process::id(), WRITES.fetch_add(1, Ordering::Relaxed)));
-    std::fs::write(&tmp, data)?;
-    std::fs::rename(&tmp, path)
+    let written = std::fs::write(&tmp, data).and_then(|()| std::fs::rename(&tmp, path));
+    if written.is_err() {
+        // A half-written file under its own name would otherwise stay for good.
+        let _ = std::fs::remove_file(&tmp);
+    }
+    written
 }
 
 #[cfg(test)]
@@ -154,6 +158,17 @@ mod tests {
         std::fs::write(&path, b"old, longer contents").unwrap();
         write_atomic(&path, b"new").unwrap();
         assert_eq!(std::fs::read(&path).unwrap(), b"new");
+        assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 1, "no temporary file left");
+    }
+
+    #[test]
+    fn a_failed_write_atomic_leaves_no_temporary_file() {
+        let dir = TempDir::new("atomicfail");
+        // A file cannot be renamed over a directory that has something in it.
+        let path = dir.join("m.v7.json");
+        std::fs::create_dir(&path).unwrap();
+        std::fs::write(path.join("inside"), b"").unwrap();
+        assert!(write_atomic(&path, b"new").is_err());
         assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 1, "no temporary file left");
     }
 
