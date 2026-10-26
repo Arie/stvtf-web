@@ -559,10 +559,7 @@ impl Reach {
 
     /// Whether players can get to the space just above the floor `p` (`x, y, x, y, …`) at height `z`.
     pub(super) fn keeps(&self, p: &[f64], z: f64) -> bool {
-        let outline = p.as_chunks::<2>().0;
-        let (_, _, [along_x, along_y]) = sample_grid(outline);
-        let work = outline.len() * (along_x * along_y + 1);
-        let Some(left) = self.floor_work_left.get().checked_sub(work) else { return true };
+        let Some(left) = self.floor_work_left.get().checked_sub(samples_work(p)) else { return true };
         self.floor_work_left.set(left);
         floor_samples(p).into_iter().any(|[x, y]| self.above(x, y, z + ABOVE_FLOOR.0, z + ABOVE_FLOOR.1))
     }
@@ -615,6 +612,13 @@ pub(super) fn floor_samples(p: &[f64]) -> Vec<[f64; 2]> {
         }
     }
     out
+}
+
+/// What `floor_samples` of `p` costs: each sample is tested against every outline point.
+pub(super) fn samples_work(p: &[f64]) -> usize {
+    let outline = p.as_chunks::<2>().0;
+    let (_, _, [along_x, along_y]) = sample_grid(outline);
+    outline.len().saturating_mul(along_x * along_y + 1)
 }
 
 /// The grid a floor is sampled on: its lowest corner, its step and how many points it has

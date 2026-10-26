@@ -753,6 +753,7 @@ fn without_shallow_water(floors: Vec<Floor>) -> Vec<Floor> {
         // The floors under some of the water, and not above it.
         let under: Vec<&(&Floor, [f64; 4])> =
             solid.iter().filter(|(f, s)| f.z <= top && s[0] <= b[2] && s[2] >= b[0] && s[1] <= b[3] && s[3] >= b[1]).collect();
+        work_left = work_left.checked_sub(reach::samples_work(&w.p))?;
         let samples = reach::floor_samples(&w.p);
         let mut count = 0;
         for q in &samples {
@@ -1024,12 +1025,19 @@ mod tests {
         // Thousands of map-sized water faces over as many shallow beds: every sample would scan
         // every bed, for hours. The budget runs out instead, and the water left is kept.
         let big = |z: f64, k: Kind| Floor { z, p: vec![0.0, 0.0, 30000.0, 0.0, 30000.0, 30000.0, 0.0, 30000.0], k, d: false };
-        let floors: Vec<Floor> = (0..4000).map(|i| if i % 2 == 0 { big(-10.0, Kind::Dirt) } else { big(0.0, Kind::Water) }).collect();
+        let mut floors: Vec<Floor> = (0..4000).map(|i| if i % 2 == 0 { big(-10.0, Kind::Dirt) } else { big(0.0, Kind::Water) }).collect();
+        // And one water face with a million outline points, which every sample is tested against.
+        let ring = (0..1_000_000).flat_map(|i| {
+            let a = f64::from(i) / 1_000_000.0 * std::f64::consts::TAU;
+            [15000.0 + 15000.0 * a.cos(), 15000.0 + 15000.0 * a.sin()]
+        });
+        floors.insert(0, Floor { z: 0.0, p: ring.collect(), k: Kind::Water, d: false });
         let t = std::time::Instant::now();
         let kept = without_shallow_water(floors);
         eprintln!("{:.2?}", t.elapsed());
         assert!(t.elapsed() < std::time::Duration::from_secs(10), "{:.2?}", t.elapsed());
         assert!(kept.iter().filter(|f| f.k == Kind::Water).count() > 1000);
+        assert!(kept[0].p.len() == 2_000_000, "the huge water face is kept");
     }
 
     #[test]
