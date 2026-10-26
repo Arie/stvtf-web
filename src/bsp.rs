@@ -659,6 +659,7 @@ pub fn geometry(data: &[u8]) -> Result<Geometry> {
     if let Some(r) = &reach {
         floors.retain(|(_, f)| r.keeps(&f.p, f.z));
     }
+    let floors = without_shallow_water(floors.into_iter().map(|f| f.1).collect());
     // Without points or pickups, the floors frame the map; the top keeps the PAD above the
     // highest floor that the viewer's roof cut expects.
     let bounds = bounds.or_else(|| {
@@ -671,10 +672,67 @@ pub fn geometry(data: &[u8]) -> Result<Geometry> {
         packs,
         cap_areas,
         bounds: bounds.map(|b| [b.lo.map(f64::from), b.hi.map(f64::from)]),
-        floors: floors.into_iter().map(|f| f.1).collect(),
+        floors,
         walls,
         track: track.into_iter().map(|[a, b]| [a[0], a[1], a[2], b[0], b[1], b[2]].map(round1)).collect(),
         playable: reach.map(|r| r.mask()),
+    })
+}
+
+/// How far under the water a floor must be for the water to count as deep there.
+const WATER_DEPTH: f64 = 32.0;
+/// How far above the water a floor still buries it.
+const WATER_BURY: f64 = 8.0;
+
+/// The floors without the water that is buried or shallow: water stays when most of its sample
+/// points have a non-water floor at least `WATER_DEPTH` below it, and no non-water floor
+/// between that one and `WATER_BURY` above the water.
+fn without_shallow_water(floors: Vec<Floor>) -> Vec<Floor> {
+    // Non-water floors with their bounding box, to skip those a point cannot be in.
+    let solid: Vec<(&Floor, [f64; 4])> = floors
+        .iter()
+        .filter(|f| f.k != Kind::Water)
+        .map(|f| {
+            let bound = |a: usize, init: f64, pick: fn(f64, f64) -> f64| f.p.iter().skip(a).step_by(2).fold(init, |m, v| pick(m, *v));
+            (
+                f,
+                [
+                    bound(0, f64::INFINITY, f64::min),
+                    bound(1, f64::INFINITY, f64::min),
+                    bound(0, f64::NEG_INFINITY, f64::max),
+                    bound(1, f64::NEG_INFINITY, f64::max),
+                ],
+            )
+        })
+        .collect();
+    let deep = |w: &Floor| {
+        let samples = reach::floor_samples(&w.p);
+        let top = w.z + WATER_BURY;
+        let count = samples
+            .iter()
+            .filter(|q| {
+                let highest = solid
+                    .iter()
+                    .filter(|(f, b)| f.z <= top && q[0] >= b[0] && q[0] <= b[2] && q[1] >= b[1] && q[1] <= b[3])
+                    .filter(|(f, _)| contains_point(&f.p, q[0], q[1]))
+                    .map(|(f, _)| f.z)
+                    .max_by(f64::total_cmp);
+                highest.is_some_and(|z| z <= w.z - WATER_DEPTH)
+            })
+            .count();
+        count * 2 > samples.len()
+    };
+    let keep: Vec<bool> = floors.iter().map(|f| f.k != Kind::Water || deep(f)).collect();
+    floors.into_iter().zip(keep).filter_map(|(f, k)| k.then_some(f)).collect()
+}
+
+/// Whether (x, y) is inside the outline `p` (`x, y, x, y, …`).
+fn contains_point(p: &[f64], x: f64, y: f64) -> bool {
+    let n = p.len() / 2;
+    let at = |i: usize| (p[i % n * 2], p[i % n * 2 + 1]);
+    (0..n).fold(false, |inside, i| {
+        let ((x1, y1), (x2, y2)) = (at(i), at(i + 1));
+        inside ^ ((y1 > y) != (y2 > y) && x < (x2 - x1) * (y - y1) / (y2 - y1) + x1)
     })
 }
 
@@ -855,10 +913,35 @@ mod tests {
     }
 
     #[test]
-    fn swiftwater_has_water_floors() {
+    fn swiftwater_trench_has_no_water() {
         let Some(data) = swiftwater() else { return };
         let g = geometry(&data).unwrap();
-        assert!(g.floors.iter().any(|f| f.k == Kind::Water));
+        assert!(!g.floors.iter().any(|f| f.k == Kind::Water), "the slab under the trench bed is buried");
+    }
+
+    /// A 256-unit square floor at height `z`.
+    fn sq(z: f64, k: Kind) -> Floor {
+        Floor { z, p: vec![0.0, 0.0, 256.0, 0.0, 256.0, 256.0, 0.0, 256.0], k, d: false }
+    }
+
+    #[test]
+    fn deep_water_is_kept() {
+        let deep = without_shallow_water(vec![sq(-100.0, Kind::Dirt), sq(0.0, Kind::Water)]);
+        assert_eq!(deep.len(), 2);
+        let shallow = without_shallow_water(vec![sq(-10.0, Kind::Dirt), sq(0.0, Kind::Water)]);
+        assert_eq!(shallow.len(), 1);
+    }
+
+    #[test]
+    fn buried_water_and_water_over_nothing_are_dropped() {
+        // A floor within 8 units above the water buries it, however deep the bed under it.
+        let buried = without_shallow_water(vec![sq(-100.0, Kind::Dirt), sq(5.0, Kind::Dirt), sq(0.0, Kind::Water)]);
+        assert_eq!(buried.len(), 2);
+        // A floor above that is out of the way.
+        let open = without_shallow_water(vec![sq(-100.0, Kind::Dirt), sq(50.0, Kind::Dirt), sq(0.0, Kind::Water)]);
+        assert_eq!(open.len(), 3);
+        // No floor under the water at all: not deep.
+        assert_eq!(without_shallow_water(vec![sq(0.0, Kind::Water)]).len(), 0);
     }
 
     #[test]
