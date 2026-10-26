@@ -10,6 +10,7 @@ use stvtf::output::{PickupItem, PickupSize, Team, round1};
 
 mod displacement;
 mod material;
+mod track;
 
 const LUMP_ENTITIES: usize = 0;
 const LUMP_PLANES: usize = 1;
@@ -107,6 +108,8 @@ pub struct Geometry {
     /// Upward faces, from low to high.
     pub floors: Vec<Floor>,
     pub walls: Vec<Wall>,
+    /// The payload track's segments (`x1, y1, z1, x2, y2, z2`); empty without a payload cart.
+    pub track: Vec<[f64; 6]>,
 }
 
 /// An upward face: its height, outline (`x, y, x, y, …`) and what it is made of.
@@ -643,6 +646,7 @@ pub fn geometry(data: &[u8]) -> Result<Geometry> {
         bounds: bounds.map(|b| [b.lo.map(f64::from), b.hi.map(f64::from)]),
         floors: floors.into_iter().map(|f| f.1).collect(),
         walls,
+        track: track::track(&map).into_iter().map(|[a, b]| [a[0], a[1], a[2], b[0], b[1], b[2]].map(round1)).collect(),
     })
 }
 
