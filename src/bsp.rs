@@ -8,6 +8,7 @@ use material::Kind;
 use serde::Serialize;
 use stvtf::output::{PickupItem, PickupSize, Team, round1};
 
+mod displacement;
 mod material;
 
 const LUMP_ENTITIES: usize = 0;
@@ -19,6 +20,8 @@ const LUMP_FACES: usize = 7;
 const LUMP_EDGES: usize = 12;
 const LUMP_SURFEDGES: usize = 13;
 const LUMP_MODELS: usize = 14;
+const LUMP_DISPINFO: usize = 26;
+const LUMP_DISP_VERTS: usize = 33;
 const LUMP_TEXDATA_STRING_DATA: usize = 43;
 const LUMP_TEXDATA_STRING_TABLE: usize = 44;
 
@@ -50,7 +53,6 @@ const F32_SIZE: usize = 4;
 const U16_SIZE: usize = 2;
 /// Record sizes and field offsets of the lumps read (`dplane_t`, `dface_t`, …).
 const PLANE_SIZE: usize = 20;
-const PLANE_NORMAL_Z: usize = 8;
 const VERTEX_SIZE: usize = 12;
 const EDGE_SIZE: usize = 4;
 const SURFEDGE_SIZE: usize = 4;
@@ -65,6 +67,8 @@ const FACE_SIDE: usize = 2;
 const FACE_FIRST_EDGE: usize = 4;
 const FACE_NUM_EDGES: usize = 8;
 const FACE_TEXINFO: usize = 10;
+const FACE_DISPINFO: usize = 12;
+const PLANE_DIST: usize = 12;
 const MODEL_SIZE: usize = 48;
 const MODEL_MINS: usize = 0;
 const MODEL_MAXS: usize = 12;
@@ -111,6 +115,9 @@ pub struct Floor {
     pub z: f64,
     pub p: Vec<f64>,
     pub k: Kind,
+    /// A cell of a displacement (terrain), drawn at its real height.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub d: bool,
 }
 
 /// A wall seen from above: its top and its two ends (`x1, y1, x2, y2`).
@@ -485,12 +492,15 @@ struct World {
     textures: Vec<String>,
 }
 
-/// A face of the world as seen from above: its corners, how far its normal points up and its
-/// texture's index in the texture table.
+/// A face of the world as seen from above: its corners, its plane (normal and distance, facing
+/// out), how far its normal points up, its texture's index in the texture table and its
+/// displacement, if it has one.
 struct Face {
     pts: Vec<Vec3>,
+    plane: [f32; 4],
     normal_z: f32,
     texture: usize,
+    disp: Option<usize>,
 }
 
 impl World {
@@ -522,10 +532,11 @@ impl World {
         if flags & SKIP_FLAGS != 0 || self.textures.get(texture).is_some_and(|n| n.starts_with(TOOL_TEXTURES)) {
             return Ok(None);
         }
-        let mut normal_z = f32_at(&self.planes, plane * PLANE_SIZE + PLANE_NORMAL_Z)?;
-        if side != 0 {
-            normal_z = -normal_z;
-        }
+        let sign = if side == 0 { 1.0 } else { -1.0 };
+        let normal = vec3_at(&self.planes, plane * PLANE_SIZE)?;
+        let plane = [sign * normal[0], sign * normal[1], sign * normal[2], sign * f32_at(&self.planes, plane * PLANE_SIZE + PLANE_DIST)?];
+        let normal_z = plane[2];
+        let disp = usize::try_from(i16_at(&self.faces, o + FACE_DISPINFO)?).ok();
         let pts = (first_edge..first_edge + num_edges)
             .map(|e| {
                 let se = i32_at(&self.surfedges, e * SURFEDGE_SIZE)?;
@@ -534,8 +545,19 @@ impl World {
                 vec3_at(&self.verts, usize::from(u16_at(&self.edges, eo)?) * VERTEX_SIZE)
             })
             .collect::<Result<_>>()?;
-        Ok(Some(Face { pts, normal_z, texture }))
+        Ok(Some(Face { pts, plane, normal_z, texture, disp }))
     }
+}
+
+/// How far up a cell of a displacement faces, as a unit normal's z, turned to the same side as
+/// the base face's `plane`.
+fn cell_normal_z(cell: &[Vec3; 4], plane: &[f32; 4]) -> f32 {
+    let d = |a: usize, b: usize| [0, 1, 2].map(|i| cell[a][i] - cell[b][i]);
+    let (u, v) = (d(2, 0), d(3, 1));
+    let n = [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]];
+    let len = n.iter().map(|c| c * c).sum::<f32>().sqrt();
+    let side = if n[0] * plane[0] + n[1] * plane[1] + n[2] * plane[2] < 0.0 { -1.0 } else { 1.0 };
+    side * n[2] / len
 }
 
 /// A wall's top and ends seen from above, or None for one too short to draw.
@@ -567,6 +589,8 @@ pub fn geometry(data: &[u8]) -> Result<Geometry> {
     let mut floor_pts = Vec::new();
     let mut walls = Vec::new();
     let mut edges_left = world.surfedges.len() / SURFEDGE_SIZE;
+    // A displacement that cannot be read leaves its base face as it is.
+    let disps = displacement::displacements(data, &world).unwrap_or_default();
     for f in first..first + count {
         let Some(face) = world.face(f, &mut edges_left)? else { continue };
         if face.pts.len() < 3 {
@@ -577,10 +601,26 @@ pub fn geometry(data: &[u8]) -> Result<Geometry> {
         if bounds.is_some_and(|b| !b.contains(&centre)) {
             continue;
         }
-        if face.normal_z > FLOOR_MIN_NORMAL_Z {
+        if let Some(d) = disps.iter().find(|d| d.face == f) {
+            for cell in d.cells() {
+                let kind = world.textures.get(d.texture).map_or(Kind::Other, |t| material::kind(t));
+                let c = cell.map(|p| p[2]).iter().sum::<f32>() / 4.0;
+                match cell_normal_z(&cell, &d.plane) {
+                    z if z > FLOOR_MIN_NORMAL_Z => {
+                        let p: Vec<f64> = cell.iter().flat_map(|p| [round1(p[0]), round1(p[1])]).collect();
+                        floors.push((c, Floor { z: round1(c), p, k: kind, d: true }));
+                        if bounds.is_none() {
+                            floor_pts.extend(cell);
+                        }
+                    }
+                    z if z.abs() < WALL_MAX_NORMAL_Z => walls.extend(wall(&cell)),
+                    _ => {}
+                }
+            }
+        } else if face.normal_z > FLOOR_MIN_NORMAL_Z {
             let p: Vec<f64> = face.pts.iter().flat_map(|p| [round1(p[0]), round1(p[1])]).collect();
             let k = world.textures.get(face.texture).map_or(Kind::Other, |t| material::kind(t));
-            floors.push((centre[2], Floor { z: round1(centre[2]), p, k }));
+            floors.push((centre[2], Floor { z: round1(centre[2]), p, k, d: false }));
             if bounds.is_none() {
                 floor_pts.extend(face.pts);
             }
@@ -725,7 +765,18 @@ mod tests {
         for n in [9, 500, 1036, data.len() / 3, data.len() / 2, data.len() - 1] {
             let _ = geometry(&data[..n]);
         }
-        for index in [LUMP_PLANES, LUMP_TEXDATA, LUMP_VERTEXES, LUMP_TEXINFO, LUMP_FACES, LUMP_EDGES, LUMP_SURFEDGES, LUMP_MODELS] {
+        for index in [
+            LUMP_PLANES,
+            LUMP_TEXDATA,
+            LUMP_VERTEXES,
+            LUMP_TEXINFO,
+            LUMP_FACES,
+            LUMP_EDGES,
+            LUMP_SURFEDGES,
+            LUMP_MODELS,
+            LUMP_DISPINFO,
+            LUMP_DISP_VERTS,
+        ] {
             let h = lump_entry(index);
             let (ofs, len) = (index_at(&data, h + LUMP_OFFSET).unwrap(), index_at(&data, h + LUMP_LENGTH).unwrap());
             // Too short, and the contents overwritten (out of range indices, NaN coordinates).
