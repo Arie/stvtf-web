@@ -1,13 +1,8 @@
 //! The payload track: the `path_track` chain a `team_train_watcher` sends its cart along.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use super::{Entities, Entity, Vec3};
-
-/// The `path_track` named `name` (names are not case-sensitive).
-fn node<'a>(map: &'a Entities, name: &str) -> Option<&'a Entity> {
-    map.of_class("path_track").find(|e| e.get("targetname").is_some_and(|n| n.eq_ignore_ascii_case(name)))
-}
 
 /// The track's segments (start and end of each), once each: from every watcher's `start_node`
 /// along `target` and `altpath`, every node visited once, so loops and branches end. Without a
@@ -15,6 +10,13 @@ fn node<'a>(map: &'a Entities, name: &str) -> Option<&'a Entity> {
 /// A name that matches no node, or a node without an origin, ends that branch.
 pub(super) fn track(map: &Entities) -> Vec<[Vec3; 2]> {
     let mut todo: Vec<String> = map.of_class("team_train_watcher").filter_map(|w| w.get("start_node")).map(str::to_lowercase).collect();
+    // By lowercased targetname; the first node of a name wins.
+    let mut nodes: HashMap<String, &Entity> = HashMap::new();
+    for e in map.of_class("path_track") {
+        if let Some(n) = e.get("targetname") {
+            nodes.entry(n.to_lowercase()).or_insert(e);
+        }
+    }
     let mut visited: HashSet<String> = HashSet::new();
     let mut seen: HashSet<(String, String)> = HashSet::new();
     let mut segments = Vec::new();
@@ -22,10 +24,10 @@ pub(super) fn track(map: &Entities) -> Vec<[Vec3; 2]> {
         if !visited.insert(name.clone()) {
             continue;
         }
-        let Some(from) = node(map, &name) else { continue };
+        let Some(from) = nodes.get(&name).copied() else { continue };
         let Some(a) = from.origin() else { continue };
         for next in ["target", "altpath"].into_iter().filter_map(|k| from.get(k)).map(str::to_lowercase) {
-            let Some(b) = node(map, &next).and_then(Entity::origin) else { continue };
+            let Some(b) = nodes.get(&next).copied().and_then(Entity::origin) else { continue };
             // Two nodes pointing at each other are one segment.
             let key = if name <= next { (name.clone(), next.clone()) } else { (next.clone(), name.clone()) };
             if name != next && seen.insert(key) {
