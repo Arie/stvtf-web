@@ -264,11 +264,14 @@ about 150 ms behind the newest data, so everything lines up with the movement.
   (`fastdl.serveme.tf/maps/`): upward faces coloured by what their texture is made of
   (grass, dirt, concrete, metal, wood, tile, water, lava, snow), terrain displacements at their
   real height, wall outlines and, on payload maps, the cart's track. Only the area players can
-  reach is drawn: a flood fill from the spawns, control points, pickups and the cart track,
-  with buried and shallow water left out. It is framed by control points, pickups and nearby
-  spawns (or by the floors, on maps without either) so the 3D skybox stays out. It also carries
-  `packs` (health and ammo kits by size) and `cap_areas` (each capture trigger's bounds and its
-  point). The extracted geometry is cached in `--cache` (`<map>.v7.json`).
+  reach is drawn: a flood fill from the spawns, capture areas, pickups and the cart track,
+  with buried and shallow water left out. Maps without points or pickups (MGE, jump) skip the
+  fill and draw every floor. It is framed by control points, pickups and nearby spawns (or by
+  the floors, on maps without either) so the 3D skybox stays out. Each floor carries its kind
+  (`k`) and, for terrain, `d`; the JSON also has the `track`'s segments, the `playable` area
+  as a mask of 16-unit cells, `packs` (health and ammo kits by size) and `cap_areas` (each
+  capture trigger's bounds and its point). The extracted geometry is cached in `--cache`
+  (`<map>.v7.json`, and gzipped as `<map>.v7.json.gz` for browsers that take it).
 
 ## Backpack pictures
 
