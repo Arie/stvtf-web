@@ -5,6 +5,13 @@ import { env, asset } from "./env.js";
 // bsp.rs pads the bounds' top this far above the highest point or pickup (its PAD), floors are
 // kept up to this far above that, and a wall counts from this far below its top.
 const MIN_UNITS_PER_PIXEL = 4, MAX_CANVAS = 4096, GEOMETRY_PAD = 1536, ROOF_ABOVE = 400, WALL_BASE = 64;
+// Floor colours by surface kind (bsp.rs's material words); anything else, or none, is "other".
+const KIND_COLOURS = { __proto__: null, grass: "#56703d", dirt: "#86704f", concrete: "#7b7870", metal: "#5e6872",
+  wood: "#7f5a39", tile: "#76665a", water: "#2c5a63", lava: "#93401f", snow: "#c7d1d8", other: "#6c6c6c" };
+// Water shows the floor under it; raised floors cast a short soft shadow (canvas pixels).
+const WATER_ALPHA = 0.45, SHADOW_COLOUR = "rgba(0,0,0,0.45)", SHADOW_BLUR = 6, SHADOW_OFFSET = 3;
+// Payload track: ties this far apart and this long, rails this far either side (canvas pixels).
+const TIE_STEP = 7, TIE_LENGTH = 10, RAIL_GAP = 3, TIE_COLOUR = "#3a2c20", RAIL_COLOUR = "#cdc8bc";
 // The HUD's player columns (shown on screens wider than this) and the scoreboard, in CSS pixels.
 const HUD_MIN_WIDTH = 800, HUD_COLUMN = 268, SCOREBOARD_HEIGHT = 140;
 // World units kept around the spawns and points when framing the map.
@@ -58,6 +65,52 @@ export async function loadMap(map) {
   if (state.map === map) state.mapData = true;
 }
 
+// A small tile of subtle marks per kind, made once with seeded noise so a map looks the same
+// on every load; kinds without one are plain.
+const kindTiles = {};
+function kindTile(k) {
+  if (k in kindTiles) return kindTiles[k];
+  let seed = 7;
+  const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  const size = { grass: [16, 16], dirt: [48, 48], metal: [8, 8], wood: [32, 10], tile: [12, 12], water: [24, 12] }[k];
+  if (!size) return (kindTiles[k] = null);
+  const t = document.createElement("canvas"); [t.width, t.height] = size;
+  const c = t.getContext("2d"), light = a => `rgba(255,255,255,${a})`, dark = a => `rgba(0,0,0,${a})`;
+  if (k === "grass") {
+    for (let i = 0; i < 40; i++) { c.fillStyle = rnd() < 0.5 ? light(0.1) : dark(0.12); c.fillRect(Math.floor(rnd() * 16), Math.floor(rnd() * 16), 1, 1); }
+  } else if (k === "dirt") {
+    for (let i = 0; i < 14; i++) {
+      const x = rnd() * 48, y = rnd() * 48, r = 4 + rnd() * 8, tint = rnd() < 0.5 ? "255,255,255" : "0,0,0";
+      // Drawn at every wrap so blotches cross the tile's edges without a seam.
+      for (const [dx, dy] of [[0, 0], [-48, 0], [0, -48], [-48, -48], [48, 0], [0, 48], [48, 48], [-48, 48], [48, -48]]) {
+        const gr = c.createRadialGradient(x + dx, y + dy, 0, x + dx, y + dy, r);
+        gr.addColorStop(0, `rgba(${tint},0.09)`); gr.addColorStop(1, `rgba(${tint},0)`);
+        c.fillStyle = gr; c.fillRect(x + dx - r, y + dy - r, 2 * r, 2 * r);
+      }
+    }
+  } else if (k === "metal") {
+    c.strokeStyle = light(0.09); c.lineWidth = 1;
+    c.beginPath(); c.moveTo(-1, 9); c.lineTo(9, -1); c.moveTo(-1, 1); c.lineTo(1, -1); c.moveTo(7, 9); c.lineTo(9, 7); c.stroke();
+  } else if (k === "wood") {
+    c.fillStyle = dark(0.18); c.fillRect(0, 9, 32, 1); c.fillRect(Math.floor(rnd() * 32), 0, 1, 9);
+    c.fillStyle = light(0.05); c.fillRect(0, 0, 32, 1);
+  } else if (k === "tile") {
+    c.fillStyle = dark(0.14); c.fillRect(0, 11, 12, 1); c.fillRect(11, 0, 1, 11);
+  } else if (k === "water") {
+    c.strokeStyle = light(0.12); c.lineWidth = 1;
+    c.beginPath();
+    for (let x = 0; x <= 24; x++) (x ? c.lineTo : c.moveTo).call(c, x, 6 + 2 * Math.sin(x / 24 * 2 * Math.PI));
+    c.stroke();
+  }
+  return (kindTiles[k] = t);
+}
+
+// A hex colour scaled by s, as rgb().
+function scaled(hex, s) {
+  const n = parseInt(hex.slice(1), 16), ch = sh => Math.min(255, Math.round((n >> sh & 255) * s));
+  return `rgb(${ch(16)} ${ch(8)} ${ch(0)})`;
+}
+
 function renderGeometry(g) {
   const [lo, hi] = g.bounds;
   // World units per pixel; huge maps (MGE) get coarser so the canvas stays within browser limits.
@@ -71,20 +124,71 @@ function renderGeometry(g) {
   // level, which the bounds' top is GEOMETRY_PAD above.
   const cut = hi[2] - GEOMETRY_PAD + ROOF_ABOVE;
   const X = x => (x - lo[0]) / res, Y = y => (hi[1] - y) / res;
+  const patterns = {};
+  c.lineWidth = 1; c.shadowBlur = SHADOW_BLUR; c.shadowOffsetX = c.shadowOffsetY = SHADOW_OFFSET;
   for (const f of g.floors) {
     if (f.z > cut) continue;
     const t = Math.max(0, Math.min(1, (f.z - zlo) / (zhi - zlo || 1)));
-    const l = 16 + t * 30;
-    c.fillStyle = `hsl(210 8% ${l}%)`;
+    const k = f.k in KIND_COLOURS ? f.k : "other", water = k === "water";
+    c.fillStyle = c.strokeStyle = scaled(KIND_COLOURS[k], 0.70 + 0.40 * t);
     c.beginPath();
     for (let i = 0; i < f.p.length; i += 2) (i ? c.lineTo : c.moveTo).call(c, X(f.p[i]), Y(f.p[i + 1]));
-    c.closePath(); c.fill();
+    c.closePath();
+    // Terrain is one smooth surface, so its cells do not shadow each other.
+    c.shadowColor = f.d || water ? "transparent" : SHADOW_COLOUR;
+    c.globalAlpha = water ? WATER_ALPHA : 1;
+    c.fill();
+    c.shadowColor = "transparent";
+    // The floor's own colour round its edge, so neighbouring polygons leave no hairline seams.
+    c.stroke();
+    if (!(k in patterns)) patterns[k] = kindTile(k) && c.createPattern(kindTile(k), "repeat");
+    if (patterns[k]) { c.fillStyle = patterns[k]; c.fill(); }
   }
+  c.shadowColor = "transparent"; c.shadowBlur = c.shadowOffsetX = c.shadowOffsetY = 0; c.globalAlpha = 1;
   c.strokeStyle = "#0b0c0e"; c.lineWidth = 1.2;
   c.beginPath();
   for (const wl of g.walls) {
     if (wl.z - WALL_BASE > cut) continue;
     c.moveTo(X(wl.p[0]), Y(wl.p[1])); c.lineTo(X(wl.p[2]), Y(wl.p[3]));
+  }
+  c.stroke();
+  const pa = g.playable;
+  if (pa?.bits) {
+    // Rows run from the lowest y up, so they are flipped into the canvas.
+    const bytes = Uint8Array.from(atob(pa.bits), ch => ch.charCodeAt(0));
+    const mc = document.createElement("canvas"); mc.width = pa.w; mc.height = pa.h;
+    const mctx = mc.getContext("2d"), img = mctx.createImageData(pa.w, pa.h);
+    for (let cy = 0; cy < pa.h; cy++) for (let cx = 0; cx < pa.w; cx++) {
+      const i = cy * pa.w + cx;
+      if (bytes[i >> 3] >> (i & 7) & 1) img.data.fill(255, ((pa.h - 1 - cy) * pa.w + cx) * 4, ((pa.h - 1 - cy) * pa.w + cx) * 4 + 4);
+    }
+    mctx.putImageData(img, 0, 0);
+    // Smoothing softens the mask's 64-unit steps into soft edges.
+    c.imageSmoothingEnabled = true;
+    c.globalCompositeOperation = "destination-in";
+    c.drawImage(mc, X(pa.origin[0]), Y(pa.origin[1] + pa.h * pa.cell), pa.w * pa.cell / res, pa.h * pa.cell / res);
+    c.globalCompositeOperation = "source-over";
+  }
+  const track = (g.track || []).map(([x1, y1, , x2, y2]) => [X(x1), Y(y1), X(x2), Y(y2)]);
+  c.strokeStyle = TIE_COLOUR; c.lineWidth = 2;
+  c.beginPath();
+  for (const [x1, y1, x2, y2] of track) {
+    const len = Math.hypot(x2 - x1, y2 - y1);
+    if (!len) continue;
+    const ux = (x2 - x1) / len, uy = (y2 - y1) / len, nx = -uy * TIE_LENGTH / 2, ny = ux * TIE_LENGTH / 2;
+    for (let d = TIE_STEP / 2; d < len; d += TIE_STEP) {
+      const x = x1 + ux * d, y = y1 + uy * d;
+      c.moveTo(x - nx, y - ny); c.lineTo(x + nx, y + ny);
+    }
+  }
+  c.stroke();
+  c.strokeStyle = RAIL_COLOUR; c.lineWidth = 1; c.lineCap = "round";
+  c.beginPath();
+  for (const [x1, y1, x2, y2] of track) {
+    const len = Math.hypot(x2 - x1, y2 - y1);
+    if (!len) continue;
+    const nx = -(y2 - y1) / len * RAIL_GAP, ny = (x2 - x1) / len * RAIL_GAP;
+    for (const s of [-1, 1]) { c.moveTo(x1 + s * nx, y1 + s * ny); c.lineTo(x2 + s * nx, y2 + s * ny); }
   }
   c.stroke();
   return { canvas: oc, lo, hi };
