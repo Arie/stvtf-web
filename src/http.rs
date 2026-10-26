@@ -347,7 +347,7 @@ fn serve_cached(s: &mut TcpStream, app: &App, p: &str, gzip: bool) -> std::io::R
         return not_found(s);
     };
     match result {
-        // A map's JSON is a few MB, and a tenth of that gzipped.
+        // A map's JSON is 1.5 to 3.5 MB, and about a sixth of that gzipped.
         Ok(body) if p.starts_with("/map/") => {
             let mut headers = vec![("Content-Type", JSON), ("Vary", "Accept-Encoding")];
             if gzip {
