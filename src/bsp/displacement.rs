@@ -19,9 +19,14 @@ const MAX_POWER: usize = 4;
 /// All the grid points read from one map: real maps have far fewer, and a crafted one could
 /// otherwise make every face's displacement read the same points again and again.
 const MAX_GRID_POINTS: usize = 1 << 20;
-/// `samples` gives at most about this many times the grid's points per displacement, whatever
-/// the step and extents (real maps are well under it), so all of a map's stay bounded.
-const SAMPLE_BUDGET_FACTOR: usize = 4;
+/// `samples` gives at most about this many points per displacement (a real 512-unit one at a
+/// step of 8 gives 4225, a 1400-unit one 8400), coarsening all its cells alike when more would come.
+const MAX_SAMPLES: usize = 16384;
+/// Displacements read per map (real maps have up to about 1200): with `MAX_SAMPLES` a crafted
+/// map's samples are then at most about 400 MB. The rest keep their base faces.
+const MAX_DISPLACEMENTS: usize = 2048;
+/// The most pieces a cell is cut into per side by `samples`.
+const MAX_SAMPLE_SPLIT: usize = 64;
 
 /// A displacement of the world: the plane of its base face (normal, distance, facing out), the
 /// base face's corners, and the `n` by `n` grid of points (row-major) that is its real surface.
@@ -55,16 +60,36 @@ impl Displacement {
             return self.grid.clone();
         }
         let cells_per_side = self.n - 1;
-        let max_split = (self.grid.len() * SAMPLE_BUDGET_FACTOR / (cells_per_side * cells_per_side)).isqrt().max(1);
+        let splits = |scale: f32| -> Vec<usize> {
+            self.cells()
+                .map(|[near_left, near_right, far_right, far_left]| {
+                    let longest = [(near_left, near_right), (near_right, far_right), (far_right, far_left), (far_left, near_left)]
+                        .into_iter()
+                        .map(|(p, q)| (0..3).map(|k| (p[k] - q[k]).powi(2)).sum::<f32>().sqrt())
+                        .fold(0.0, f32::max);
+                    ((longest / step).min(MAX_SAMPLE_SPLIT as f32) * scale).ceil().max(1.0) as usize
+                })
+                .collect()
+        };
+        // Points a split makes: the cell's far edges belong to the next cell, except at the surface's edge.
+        let count = |splits: &[usize]| -> usize {
+            splits
+                .iter()
+                .enumerate()
+                .map(|(i, &m)| {
+                    (m + usize::from(i / cells_per_side == cells_per_side - 1))
+                        * (m + usize::from(i % cells_per_side == cells_per_side - 1))
+                })
+                .sum()
+        };
+        let mut splits_now = splits(1.0);
+        let total = count(&splits_now);
+        if total > MAX_SAMPLES {
+            splits_now = splits((MAX_SAMPLES as f32 / total as f32).sqrt());
+        }
         let mut out = Vec::new();
-        for (index, [near_left, near_right, far_right, far_left]) in self.cells().enumerate() {
+        for (index, ([near_left, near_right, far_right, far_left], split)) in self.cells().zip(splits_now).enumerate() {
             let (row, col) = (index / cells_per_side, index % cells_per_side);
-            let longest = [(near_left, near_right), (near_right, far_right), (far_right, far_left), (far_left, near_left)]
-                .into_iter()
-                .map(|(p, q)| (0..3).map(|k| (p[k] - q[k]).powi(2)).sum::<f32>().sqrt())
-                .fold(0.0, f32::max);
-            // The cell's far edges belong to the next cell, except at the surface's edge.
-            let split = ((longest / step).ceil().max(1.0) as usize).min(max_split);
             let (rows, cols) = (split + usize::from(row == cells_per_side - 1), split + usize::from(col == cells_per_side - 1));
             for r in 0..rows {
                 for c in 0..cols {
@@ -89,6 +114,9 @@ pub(super) fn displacements(data: &[u8], world: &World) -> Result<Vec<Displaceme
     for f in first..first.saturating_add(count).min(world.faces.len() / FACE_SIZE) {
         let Some(face) = world.face(f, &mut edges_left)? else { continue };
         let (Some(d), Ok(base)) = (face.disp, <[Vec3; 4]>::try_from(face.pts.as_slice())) else { continue };
+        if out.len() >= MAX_DISPLACEMENTS {
+            break;
+        }
         if let Ok(disp) = read(&info, &verts, d, &face, base, &mut points_left) {
             out.push(Displacement { face: f, ..disp });
         }
@@ -185,7 +213,32 @@ mod tests {
         let grid = (0..n * n).map(|k| [(k / n) as f32 * 1e9, (k % n) as f32 * 1e9, 0.0]).collect::<Vec<_>>();
         let d = Displacement { plane: [0.0, 0.0, 1.0, 0.0], base: [[0.0; 3]; 4], n, grid, texture: 0, face: 0 };
         let len = d.samples(1.0).len();
-        assert!(len <= 6 * d.grid.len(), "{len}");
+        assert!(len <= 2 * MAX_SAMPLES, "{len}");
+    }
+
+    #[test]
+    fn swiftwater_samples_leave_no_gaps_at_a_step_of_8() {
+        let Some(data) = swiftwater() else { return };
+        let ds = displacements(&data, &World::read(&data).unwrap()).unwrap();
+        let reach = 8.0 * 2f32.sqrt() * 1.1;
+        for d in &ds {
+            let samples = d.samples(8.0);
+            // Every sample has another within a diagonal step: look in the 3x3 buckets around it.
+            let bucket = |p: &Vec3| [0, 1].map(|k| (p[k] / reach).floor() as i64);
+            let mut at: HashMap<[i64; 2], Vec<usize>> = HashMap::new();
+            for (i, p) in samples.iter().enumerate() {
+                at.entry(bucket(p)).or_default().push(i);
+            }
+            for (i, p) in samples.iter().enumerate() {
+                let [bx, by] = bucket(p);
+                let near = (-1..=1).flat_map(|dx| (-1..=1).map(move |dy| [bx + dx, by + dy])).filter_map(|b| at.get(&b)).flatten();
+                let nearest = near
+                    .filter(|&&j| j != i)
+                    .map(|&j| (0..3).map(|k| (p[k] - samples[j][k]).powi(2)).sum::<f32>().sqrt())
+                    .fold(f32::MAX, f32::min);
+                assert!(nearest <= reach, "face {}: {nearest} from {p:?}", d.face);
+            }
+        }
     }
 
     #[test]
