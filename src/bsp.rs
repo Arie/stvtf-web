@@ -696,47 +696,57 @@ fn outline_area(p: &[f64]) -> f64 {
 const WATER_DEPTH: f64 = 32.0;
 /// How far above the water a floor still buries it.
 const WATER_BURY: f64 = 8.0;
+/// Floors looked at plus outline points tested, for all the water together (real maps use
+/// under 2 million): a crafted map's water after that is kept.
+const MAX_WATER_WORK: usize = 1 << 26;
 
 /// The floors without the water that is buried or shallow: water stays when most of its sample
 /// points have a non-water floor at least `WATER_DEPTH` below it, and no non-water floor
 /// between that one and `WATER_BURY` above the water.
 fn without_shallow_water(floors: Vec<Floor>) -> Vec<Floor> {
     // Non-water floors with their bounding box, to skip those a point cannot be in.
-    let solid: Vec<(&Floor, [f64; 4])> = floors
-        .iter()
-        .filter(|f| f.k != Kind::Water)
-        .map(|f| {
-            let bound = |a: usize, init: f64, pick: fn(f64, f64) -> f64| f.p.iter().skip(a).step_by(2).fold(init, |m, v| pick(m, *v));
-            (
-                f,
-                [
-                    bound(0, f64::INFINITY, f64::min),
-                    bound(1, f64::INFINITY, f64::min),
-                    bound(0, f64::NEG_INFINITY, f64::max),
-                    bound(1, f64::NEG_INFINITY, f64::max),
-                ],
-            )
-        })
-        .collect();
-    let deep = |w: &Floor| {
-        let samples = reach::floor_samples(&w.p);
+    let solid: Vec<(&Floor, [f64; 4])> = floors.iter().filter(|f| f.k != Kind::Water).map(|f| (f, outline_box(&f.p))).collect();
+    let mut work_left = MAX_WATER_WORK;
+    // Whether the water `w` is deep, or None when the budget ran out.
+    let mut deep = |w: &Floor| -> Option<bool> {
         let top = w.z + WATER_BURY;
-        let count = samples
-            .iter()
-            .filter(|q| {
-                let highest = solid
-                    .iter()
-                    .filter(|(f, b)| f.z <= top && q[0] >= b[0] && q[0] <= b[2] && q[1] >= b[1] && q[1] <= b[3])
-                    .filter(|(f, _)| contains_point(&f.p, q[0], q[1]))
-                    .map(|(f, _)| f.z)
-                    .max_by(f64::total_cmp);
-                highest.is_some_and(|z| z <= w.z - WATER_DEPTH)
-            })
-            .count();
-        count * 2 > samples.len()
+        let b = outline_box(&w.p);
+        work_left = work_left.checked_sub(solid.len())?;
+        // The floors under some of the water, and not above it.
+        let under: Vec<&(&Floor, [f64; 4])> =
+            solid.iter().filter(|(f, s)| f.z <= top && s[0] <= b[2] && s[2] >= b[0] && s[1] <= b[3] && s[3] >= b[1]).collect();
+        let samples = reach::floor_samples(&w.p);
+        let mut count = 0;
+        for q in &samples {
+            let mut highest = f64::NEG_INFINITY;
+            work_left = work_left.checked_sub(under.len())?;
+            for (f, s) in &under {
+                if q[0] >= s[0] && q[0] <= s[2] && q[1] >= s[1] && q[1] <= s[3] && f.z > highest {
+                    work_left = work_left.checked_sub(f.p.len() / 2)?;
+                    if contains_point(&f.p, q[0], q[1]) {
+                        highest = f.z;
+                    }
+                }
+            }
+            if highest > f64::NEG_INFINITY && highest <= w.z - WATER_DEPTH {
+                count += 1;
+            }
+        }
+        Some(count * 2 > samples.len())
     };
-    let keep: Vec<bool> = floors.iter().map(|f| f.k != Kind::Water || deep(f)).collect();
+    let keep: Vec<bool> = floors.iter().map(|f| f.k != Kind::Water || deep(f).unwrap_or(true)).collect();
     floors.into_iter().zip(keep).filter_map(|(f, k)| k.then_some(f)).collect()
+}
+
+/// An outline's (`x, y, x, y, …`) lowest x and y and highest x and y.
+fn outline_box(p: &[f64]) -> [f64; 4] {
+    let bound = |a: usize, init: f64, pick: fn(f64, f64) -> f64| p.iter().skip(a).step_by(2).fold(init, |m, v| pick(m, *v));
+    [
+        bound(0, f64::INFINITY, f64::min),
+        bound(1, f64::INFINITY, f64::min),
+        bound(0, f64::NEG_INFINITY, f64::max),
+        bound(1, f64::NEG_INFINITY, f64::max),
+    ]
 }
 
 /// Whether a ray from `q` towards +x crosses the edge `a`-`b` (the even-odd test).
@@ -947,6 +957,19 @@ mod tests {
         assert_eq!(open.len(), 3);
         // No floor under the water at all: not deep.
         assert_eq!(without_shallow_water(vec![sq(0.0, Kind::Water)]).len(), 0);
+    }
+
+    #[test]
+    fn many_big_water_floors_are_bounded() {
+        // Thousands of map-sized water faces over as many shallow beds: every sample would scan
+        // every bed, for hours. The budget runs out instead, and the water left is kept.
+        let big = |z: f64, k: Kind| Floor { z, p: vec![0.0, 0.0, 30000.0, 0.0, 30000.0, 30000.0, 0.0, 30000.0], k, d: false };
+        let floors: Vec<Floor> = (0..4000).map(|i| if i % 2 == 0 { big(-10.0, Kind::Dirt) } else { big(0.0, Kind::Water) }).collect();
+        let t = std::time::Instant::now();
+        let kept = without_shallow_water(floors);
+        eprintln!("{:.2?}", t.elapsed());
+        assert!(t.elapsed() < std::time::Duration::from_secs(10), "{:.2?}", t.elapsed());
+        assert!(kept.iter().filter(|f| f.k == Kind::Water).count() > 1000);
     }
 
     #[test]
