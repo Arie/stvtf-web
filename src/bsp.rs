@@ -587,6 +587,11 @@ fn wall(pts: &[Vec3]) -> Option<Wall> {
 /// The map's spawns, packs, capture areas, playable bounds, floors (sorted from low to high) and
 /// walls.
 pub fn geometry(data: &[u8]) -> Result<Geometry> {
+    geometry_counted(data).map(|g| g.0)
+}
+
+/// `geometry`, and how many floors there were, and their area, before the playable-area filter.
+fn geometry_counted(data: &[u8]) -> Result<(Geometry, (usize, f64))> {
     if !data.starts_with(b"VBSP") {
         bail!("not a VBSP file");
     }
@@ -656,6 +661,7 @@ pub fn geometry(data: &[u8]) -> Result<Geometry> {
             None
         })
     });
+    let before_fill = (floors.len(), floors.iter().map(|f| outline_area(&f.1.p)).sum());
     if let Some(r) = &reach {
         floors.retain(|(_, f)| r.keeps(&f.p, f.z));
     }
@@ -667,7 +673,7 @@ pub fn geometry(data: &[u8]) -> Result<Geometry> {
         b.hi[2] += PAD - FLOOR_MARGIN;
         (!floor_pts.is_empty()).then_some(b)
     });
-    Ok(Geometry {
+    let geometry = Geometry {
         spawns,
         packs,
         cap_areas,
@@ -676,7 +682,14 @@ pub fn geometry(data: &[u8]) -> Result<Geometry> {
         walls,
         track: track.into_iter().map(|[a, b]| [a[0], a[1], a[2], b[0], b[1], b[2]].map(round1)).collect(),
         playable: reach.map(|r| r.mask()),
-    })
+    };
+    Ok((geometry, before_fill))
+}
+
+/// The area of an outline (`x, y, x, y, …`).
+fn outline_area(p: &[f64]) -> f64 {
+    let n = p.len() / 2;
+    (0..n).map(|i| p[i * 2] * p[(i + 1) % n * 2 + 1] - p[(i + 1) % n * 2] * p[i * 2 + 1]).sum::<f64>().abs() / 2.0
 }
 
 /// How far under the water a floor must be for the water to count as deep there.
@@ -1016,5 +1029,54 @@ mod tests {
         let Some(data) = process() else { return };
         let Bounds { lo, hi } = playable_bounds(&Entities::read(&data).unwrap().list).unwrap();
         assert!(lo[0] > -8000.0 && hi[1] < 8000.0, "{lo:?} {hi:?}");
+    }
+
+    /// Builds every map in `cache/`, for a look at how the playable-area filter and the material
+    /// kinds do on real maps. Run: `cargo test --release league_maps_build -- --ignored --nocapture`.
+    #[test]
+    #[ignore = "needs the maps in cache/; run by hand"]
+    fn league_maps_build() {
+        let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/cache");
+        let mut names: Vec<String> =
+            std::fs::read_dir(dir).unwrap().filter_map(|e| e.ok()?.file_name().to_str()?.strip_suffix(".bsp").map(str::to_owned)).collect();
+        names.sort();
+        let mut failed = Vec::new();
+        for name in &names {
+            let data = std::fs::read(format!("{dir}/{name}.bsp")).unwrap();
+            let start = std::time::Instant::now();
+            let (g, before) = match geometry_counted(&data) {
+                Ok(r) => r,
+                Err(e) => {
+                    println!("{name}: ERROR {e:#}");
+                    failed.push(format!("{name}: {e:#}"));
+                    continue;
+                }
+            };
+            let took = start.elapsed();
+            let mut shares: std::collections::BTreeMap<String, f64> = std::collections::BTreeMap::new();
+            let mut total = 0.0;
+            for f in &g.floors {
+                let a = outline_area(&f.p);
+                let kind = serde_json::to_value(f.k).unwrap().as_str().unwrap().to_owned();
+                *shares.entry(kind).or_default() += a;
+                total += a;
+            }
+            let kinds: Vec<String> = shares.iter().map(|(k, a)| format!("{k} {:.0}%", 100.0 * a / total.max(1.0))).collect();
+            println!(
+                "{name}: floors {} -> {} ({:.0}% by count, {:.0}% by area), playable {}, track {}, {} ms | {}",
+                before.0,
+                g.floors.len(),
+                100.0 * g.floors.len() as f64 / before.0.max(1) as f64,
+                100.0 * total / before.1.max(1.0),
+                if g.playable.is_some() { "yes" } else { "NO" },
+                g.track.len(),
+                took.as_millis(),
+                kinds.join(", ")
+            );
+            if g.floors.len() * 10 < before.0 * 3 {
+                failed.push(format!("{name}: only {} of {} floors left", g.floors.len(), before.0));
+            }
+        }
+        assert!(failed.is_empty(), "{failed:#?}");
     }
 }

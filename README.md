@@ -261,11 +261,14 @@ about 150 ms behind the newest data, so everything lines up with the movement.
   same way it does. About 50 competitive maps. The server fetches them once into `--cache`
   (default `cache/`) and serves them itself, so viewers do not each load them from demos.tf.
 - **map geometry**: for any map, drawn from the map's BSP from fastdl
-  (`fastdl.serveme.tf/maps/`): upward faces shaded by height, wall outlines, and the
-  playable area framed by control points, pickups and nearby spawns (or by the floors, on
-  maps without either) so the 3D skybox stays out. It also carries `packs` (health and ammo
-  kits by size) and `cap_areas` (each capture trigger's bounds and its point). The extracted
-  geometry is cached in `--cache`.
+  (`fastdl.serveme.tf/maps/`): upward faces coloured by what their texture is made of
+  (grass, dirt, concrete, metal, wood, tile, water, lava, snow), terrain displacements at their
+  real height, wall outlines and, on payload maps, the cart's track. Only the area players can
+  reach is drawn: a flood fill from the spawns, control points, pickups and the cart track,
+  with buried and shallow water left out. It is framed by control points, pickups and nearby
+  spawns (or by the floors, on maps without either) so the 3D skybox stays out. It also carries
+  `packs` (health and ammo kits by size) and `cap_areas` (each capture trigger's bounds and its
+  point). The extracted geometry is cached in `--cache` (`<map>.v7.json`).
 
 ## Backpack pictures
 
@@ -284,6 +287,9 @@ sets the directory (default `backpack`, `/usr/share/stvtf/backpack` in the Docke
 - `src/replay.rs`, `src/cli.rs`, `src/token.rs`: saved matches, the command line, the site's start tokens.
 - `src/bsp.rs`: BSP reading (including LZMA-compressed lumps), top-down geometry, and the
   spawn rooms and spawn points (with their control point) served with it on `/map/NAME`.
+  Its child modules: `material` (a floor's kind from its texture name), `displacement`
+  (terrain at its real height), `track` (the payload cart's track) and `reach` (the flood fill
+  of the playable area).
 - `index.html` and `app/`: the page, its stylesheet and ES modules (canvas, no build step), embedded in the binary.
 
 ## Tests
