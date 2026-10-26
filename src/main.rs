@@ -13,7 +13,7 @@ mod replay;
 mod sessions;
 mod token;
 
-use crate::cache::{WARM, demostf_maps, map_geometry, overview};
+use crate::cache::{WARM, demostf_maps, map_geometry_gzip, overview};
 use crate::cli::{DEFAULT_TV_PASSWORD, Options, USAGE, parse_connect};
 use crate::http::{MAX_STREAMS_PER_CLIENT, app_version, serve};
 use crate::hub::{SharedHub, watch_into};
@@ -143,7 +143,8 @@ fn warm(app: &App) {
     for name in WARM.lines().filter(|l| !l.is_empty() && !l.starts_with('#')) {
         let map_lock = app.map_lock(name);
         let _one_at_a_time = lock(&map_lock);
-        if let Err(e) = map_geometry(&app.cache, name, true) {
+        // Gzipped too: browsers take that, and the JSON is made on the way.
+        if let Err(e) = map_geometry_gzip(&app.cache, name, true) {
             eprintln!("stvtf-web: {name}: {e}");
         }
     }

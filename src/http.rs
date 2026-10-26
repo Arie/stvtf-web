@@ -1,6 +1,6 @@
 //! The HTTP side: pages, files, event streams and starting matches.
 
-use crate::cache::{map_geometry, overview};
+use crate::cache::{map_geometry, map_geometry_gzip, overview};
 use crate::hub::{SharedHub, subscribe};
 use crate::sessions::{Session, Sessions, Viewer};
 use crate::{App, Matches, is_name, lock, sessions};
@@ -191,7 +191,7 @@ fn serve_one(mut s: TcpStream, app: &App, hub: &SharedHub, request: &Request, cl
             Some(_slot) => stream(s, hub, request.gzip, wants_detail(&request.query))?,
             None => too_many_streams(&mut s)?,
         },
-        path => serve_file(&mut s, app, path)?,
+        path => serve_file(&mut s, app, path, request.gzip)?,
     }
     Ok(())
 }
@@ -235,7 +235,7 @@ fn serve_many(
             }
         }
         (p, _) if let Some(path) = p.strip_prefix("/w/") => serve_match(s, app, sessions, request, path, client)?,
-        (path, _) => serve_file(&mut s, app, path)?,
+        (path, _) => serve_file(&mut s, app, path, request.gzip)?,
     }
     Ok(())
 }
@@ -268,7 +268,7 @@ fn serve_match(mut s: TcpStream, app: &App, sessions: &Sessions, request: &Reque
 }
 
 /// The page's files, pictures and maps.
-fn serve_file(s: &mut TcpStream, app: &App, path: &str) -> std::io::Result<()> {
+fn serve_file(s: &mut TcpStream, app: &App, path: &str, gzip: bool) -> std::io::Result<()> {
     match path {
         "/fonts/RobotoCondensed-Regular.ttf" => respond_cached(s, TTF, include_bytes!("../fonts/RobotoCondensed-Regular.ttf")),
         "/fonts/RobotoCondensed-Bold.ttf" => respond_cached(s, TTF, include_bytes!("../fonts/RobotoCondensed-Bold.ttf")),
@@ -288,7 +288,7 @@ fn serve_file(s: &mut TcpStream, app: &App, path: &str) -> std::io::Result<()> {
             }
         }
         p if let Some(file) = p.strip_prefix("/backpack/") => serve_backpack(s, app, file),
-        p if p.starts_with("/overview/") || p.starts_with("/map/") => serve_cached(s, app, p),
+        p if p.starts_with("/overview/") || p.starts_with("/map/") => serve_cached(s, app, p, gzip),
         // A fixed address for other sites, loading this build's viewer.
         "/embed/v1/stv-map.js" => {
             let loader = format!("export * from \"../../app/{}/stv-map.js\";\n", app_version());
@@ -330,8 +330,9 @@ fn too_many_streams(s: &mut TcpStream) -> std::io::Result<()> {
     respond(s, "429 Too Many Requests", TEXT, b"too many matches open from your address")
 }
 
-/// A map's geometry, or a demos.tf overview, from the cache (fetched and made on a miss).
-fn serve_cached(s: &mut TcpStream, app: &App, p: &str) -> std::io::Result<()> {
+/// A map's geometry (gzipped when the browser takes it), or a demos.tf overview, from the cache
+/// (fetched and made on a miss).
+fn serve_cached(s: &mut TcpStream, app: &App, p: &str, gzip: bool) -> std::io::Result<()> {
     let result = if let Some(file) = p.strip_prefix("/overview/") {
         let _one_at_a_time = lock(&app.overviews);
         overview(&app.cache, file)
@@ -341,12 +342,19 @@ fn serve_cached(s: &mut TcpStream, app: &App, p: &str) -> std::io::Result<()> {
         let fetch = app.on_map(name);
         let map_lock = fetch.then(|| app.map_lock(name));
         let _one_at_a_time = map_lock.as_deref().map(lock);
-        map_geometry(&app.cache, name, fetch)
+        if gzip { map_geometry_gzip(&app.cache, name, fetch) } else { map_geometry(&app.cache, name, fetch) }
     } else {
         return not_found(s);
     };
     match result {
-        Ok(body) if p.starts_with("/map/") => respond(s, "200 OK", JSON, &body),
+        // A map's JSON is a few MB, and a tenth of that gzipped.
+        Ok(body) if p.starts_with("/map/") => {
+            let mut headers = vec![("Content-Type", JSON), ("Vary", "Accept-Encoding")];
+            if gzip {
+                headers.push(("Content-Encoding", "gzip"));
+            }
+            respond_with(s, "200 OK", &headers, &body)
+        }
         Ok(body) if p == "/overview/boundaries.json" => respond_cached(s, JSON, &body),
         Ok(body) => respond_cached(s, WEBP, &body),
         Err(e) => respond(s, "404 Not Found", TEXT, e.to_string().as_bytes()),
@@ -710,6 +718,40 @@ mod tests {
         ] {
             assert!(get(bad).starts_with("HTTP/1.1 404"), "{bad}");
         }
+    }
+
+    #[test]
+    fn map_geometry_is_gzipped_for_browsers_that_take_it() {
+        let dir = TempDir::new("mapgzip");
+        let json = format!(r#"{{"floors":[{}]}}"#, r#"{"z":0,"p":[0,0,1,0,1,1],"k":"grass"},"#.repeat(200).trim_end_matches(','));
+        std::fs::write(dir.join("cp_test.v7.json"), &json).unwrap();
+        let mut a = app(Matches::One(SharedHub::default()));
+        a.cache = dir.to_path_buf();
+        let get = |accept: &str| {
+            let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+            let mut client = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+            write!(client, "GET /map/cp_test HTTP/1.1\r\nHost: x\r\n{accept}\r\n").unwrap();
+            serve(listener.accept().unwrap().0, &a).unwrap();
+            let mut response = Vec::new();
+            client.read_to_end(&mut response).unwrap();
+            let split = response.windows(4).position(|w| w == b"\r\n\r\n").unwrap();
+            (String::from_utf8(response[..split].to_vec()).unwrap(), response[split + 4..].to_vec())
+        };
+        let (head, body) = get("Accept-Encoding: br, gzip;q=0.9\r\n");
+        assert!(
+            head.starts_with("HTTP/1.1 200") && head.contains("\r\nContent-Encoding: gzip") && head.contains("\r\nVary: Accept-Encoding"),
+            "{head}"
+        );
+        assert!(head.contains(&format!("\r\nContent-Length: {}\r\n", body.len())) && body.len() < json.len() / 4, "{head}");
+        let mut unzipped = String::new();
+        flate2::read::GzDecoder::new(&body[..]).read_to_string(&mut unzipped).unwrap();
+        assert_eq!(unzipped, json);
+        // Served again from the gzipped copy in the cache, which the plain JSON stays next to.
+        assert!(dir.join("cp_test.v7.json.gz").exists());
+        assert_eq!(get("Accept-Encoding: gzip\r\n").1, body);
+        let (head, body) = get("");
+        assert!(!head.contains("Content-Encoding") && head.contains("\r\nVary: Accept-Encoding"), "{head}");
+        assert_eq!(body, json.as_bytes());
     }
 
     #[test]

@@ -2,10 +2,13 @@
 
 use crate::{bsp, is_name};
 use anyhow::{Result, bail};
+use flate2::Compression;
+use flate2::write::GzEncoder;
 use serde::de::IgnoredAny;
 use std::collections::BTreeMap;
-use std::io::Read;
-use std::path::Path;
+use std::io::{Read, Write};
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 /// The most played maps, built when the server starts.
@@ -23,8 +26,7 @@ pub(crate) fn map_geometry(cache: &Path, name: &str, fetch: bool) -> Result<Vec<
         bail!("bad map name");
     }
     std::fs::create_dir_all(cache)?;
-    // Bump the suffix when the extracted data changes, so cached maps are redone.
-    let json = cache.join(format!("{name}.v7.json"));
+    let json = geometry_path(cache, name);
     if let Ok(body) = std::fs::read(&json) {
         return Ok(body);
     }
@@ -56,6 +58,31 @@ pub(crate) fn map_geometry(cache: &Path, name: &str, fetch: bool) -> Result<Vec<
     // Only a bump of the suffix needs the BSP again, and the most played maps add up to GBs.
     let _ = std::fs::remove_file(&bsp_path);
     Ok(body)
+}
+
+/// `map_geometry` gzipped, kept next to the JSON so a map is compressed once, not on every load.
+pub(crate) fn map_geometry_gzip(cache: &Path, name: &str, fetch: bool) -> Result<Vec<u8>> {
+    if !is_name(name, b"_") {
+        bail!("bad map name");
+    }
+    let mut path = geometry_path(cache, name).into_os_string();
+    path.push(".gz");
+    if let Ok(body) = std::fs::read(&path) {
+        return Ok(body);
+    }
+    let json = map_geometry(cache, name, fetch)?;
+    let mut gz = GzEncoder::new(Vec::new(), Compression::best());
+    gz.write_all(&json)?;
+    let body = gz.finish()?;
+    // Without the copy the next load just compresses it again.
+    let _ = write_atomic(Path::new(&path), &body);
+    Ok(body)
+}
+
+/// Where a map's geometry is cached. Bump the suffix when the extracted data changes, so cached
+/// maps are redone.
+fn geometry_path(cache: &Path, name: &str) -> PathBuf {
+    cache.join(format!("{name}.v7.json"))
 }
 
 /// demos.tf's map overviews, `boundaries.json` and `<map>.webp`, kept in the cache so viewers do
@@ -105,10 +132,12 @@ pub(crate) fn demostf_maps(cache: &Path) -> Vec<String> {
 }
 
 /// Writes through a temporary file and a rename: a cached file that can be read is complete,
-/// even after a crash halfway through writing it.
+/// even after a crash halfway through writing it. Each write has its own temporary file, so two
+/// at once (a gzipped map is written without a lock) cannot rename the other's half-written one.
 pub(crate) fn write_atomic(path: &Path, data: &[u8]) -> std::io::Result<()> {
+    static WRITES: AtomicU64 = AtomicU64::new(0);
     let mut tmp = path.as_os_str().to_owned();
-    tmp.push(".tmp");
+    tmp.push(format!(".{}.{}.tmp", std::process::id(), WRITES.fetch_add(1, Ordering::Relaxed)));
     std::fs::write(&tmp, data)?;
     std::fs::rename(&tmp, path)
 }
