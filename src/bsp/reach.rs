@@ -89,8 +89,8 @@ const MAX_FLOOR_WORK: usize = 1 << 26;
 const ABOVE_FLOOR: (f64, f64) = (8.0, 168.0);
 /// How close to a floor's outline a sample may be outside it.
 const OUTLINE_SLACK: f64 = 1.0;
-/// The mask's cell size.
-const MASK_CELL: usize = 64;
+/// How many cells the mask grows by around the reached space, so floors at its edge stay whole.
+const MASK_GROW: usize = 2;
 
 /// A bit per voxel.
 struct Bits(Vec<u64>);
@@ -192,9 +192,9 @@ pub(super) struct Reach {
 }
 
 /// The playable area seen from above, for the client to clip the floors to: `w` by `h` cells of
-/// `cell` units from `origin` (the lowest x and y), row by row from the lowest y; bit `i` is
-/// `bytes[i / 8] >> (i % 8) & 1` of `bits` (base64). A cell is set when some of the space above
-/// it was reached, or a neighbour's was.
+/// `cell` units (the grid's voxel) from `origin` (the lowest x and y), row by row from the lowest
+/// y; bit `i` is `bytes[i / 8] >> (i % 8) & 1` of `bits` (base64). A cell is set when some of the
+/// space above it was reached, or that of a cell up to `MASK_GROW` cells away.
 #[derive(Debug, Serialize)]
 pub struct Mask {
     pub origin: [f64; 2],
@@ -568,34 +568,27 @@ impl Reach {
     /// The reached space seen from above.
     pub(super) fn mask(&self) -> Mask {
         let g = &self.grid;
-        let [nx, ny, nz] = g.dims;
-        let vox = g.vox as usize;
-        let (w, h) = ((nx * vox).div_ceil(MASK_CELL), (ny * vox).div_ceil(MASK_CELL));
-        let mut cells = vec![false; w * h];
-        for x in 0..nx {
-            for y in 0..ny {
-                let col = g.column(x, y);
-                if self.reached.any(col, col + nz) {
-                    for cx in x * vox / MASK_CELL..=((x + 1) * vox - 1) / MASK_CELL {
-                        for cy in y * vox / MASK_CELL..=((y + 1) * vox - 1) / MASK_CELL {
-                            cells[cy * w + cx] = true;
-                        }
-                    }
-                }
-            }
+        let [w, h, nz] = g.dims;
+        let mut cells: Vec<bool> = (0..w * h)
+            .map(|i| {
+                let col = g.column(i % w, i / w);
+                self.reached.any(col, col + nz)
+            })
+            .collect();
+        for _ in 0..MASK_GROW {
+            cells = (0..w * h)
+                .map(|i| {
+                    let (cx, cy) = (i % w, i / w);
+                    (cx.saturating_sub(1)..=(cx + 1).min(w - 1))
+                        .any(|x| (cy.saturating_sub(1)..=(cy + 1).min(h - 1)).any(|y| cells[y * w + x]))
+                })
+                .collect();
         }
         let mut bytes = vec![0u8; (w * h).div_ceil(8)];
-        for cy in 0..h {
-            for cx in 0..w {
-                let near = (cx.saturating_sub(1)..=(cx + 1).min(w - 1))
-                    .any(|x| (cy.saturating_sub(1)..=(cy + 1).min(h - 1)).any(|y| cells[y * w + x]));
-                if near {
-                    let i = cy * w + cx;
-                    bytes[i / 8] |= 1 << (i % 8);
-                }
-            }
+        for (i, _) in cells.iter().enumerate().filter(|&(_, &set)| set) {
+            bytes[i / 8] |= 1 << (i % 8);
         }
-        Mask { origin: [g.origin[0], g.origin[1]], cell: MASK_CELL as f64, w, h, bits: STANDARD.encode(bytes) }
+        Mask { origin: [g.origin[0], g.origin[1]], cell: g.vox, w, h, bits: STANDARD.encode(bytes) }
     }
 }
 
@@ -660,7 +653,15 @@ mod tests {
         for p in g.spawns.points.iter().map(|s| s.pos).chain(g.packs.iter().map(|p| p.pos)) {
             assert!(g.floors.iter().any(|f| contains(&f.p, p[0], p[1]) && (p[2] - f.z).abs() < 64.0), "{p:?}");
         }
-        assert!(g.playable.is_some());
+        // The mask is at the voxel's size and covers them all.
+        let m = g.playable.unwrap();
+        let bytes = STANDARD.decode(&m.bits).unwrap();
+        assert_eq!(m.cell, 16.0);
+        for p in g.spawns.points.iter().map(|s| s.pos).chain(g.packs.iter().map(|p| p.pos)) {
+            let at = [0, 1].map(|a| ((p[a] - m.origin[a]) / m.cell) as usize);
+            let i = at[1] * m.w + at[0];
+            assert!(bytes[i / 8] >> (i % 8) & 1 == 1, "{p:?}");
+        }
     }
 
     #[test]
