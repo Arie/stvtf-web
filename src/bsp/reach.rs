@@ -333,9 +333,10 @@ impl Brush {
                 return None;
             }
         }
-        // `f64::min` and `max` ignore NaN: a plane with a NaN distance, or a NaN x or y in its
-        // normal, is skipped, and the brush blocks its whole box column as far as its other
-        // planes let it. A NaN z in the normal is caught above and blocks nothing here.
+        // A NaN in a plane makes `limit` NaN. On a plane that faces up or down `f64::min` and
+        // `max` ignore it: the plane is skipped, and the brush blocks its column as far as its
+        // other planes let it. On a side plane (no z in its normal), or one whose normal's z is
+        // NaN, `limit.is_nan()` above ends the column: the brush blocks nothing in it.
         (lo <= hi).then_some((lo as usize, hi as usize))
     }
 }
