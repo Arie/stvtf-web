@@ -646,11 +646,12 @@ fn geometry_counted(data: &[u8]) -> Result<(Geometry, (usize, f64))> {
         }
     }
     floors.sort_by(|a, b| a.0.total_cmp(&b.0));
+    // Where players stand: spawn points and packs.
+    let stands: Vec<Position> = spawns.points.iter().map(|s| s.pos).chain(packs.iter().map(|p| p.pos)).collect();
     // Only maps with points or pickups: on the others (MGE, jump maps) the spawns are not where
     // the play is, so every floor is kept.
     let reach = bounds.and_then(|b| {
-        let mut seeds: Vec<Vec3> =
-            spawns.points.iter().map(|s| s.pos).chain(packs.iter().map(|p| p.pos)).map(|p| p.map(|v| v as f32)).collect();
+        let mut seeds: Vec<Vec3> = stands.iter().map(|p| p.map(|v| v as f32)).collect();
         seeds.extend(
             cap_areas.iter().map(|a| [f64::midpoint(a.min[0], a.max[0]), f64::midpoint(a.min[1], a.max[1]), a.min[2]].map(|v| v as f32)),
         );
@@ -661,11 +662,10 @@ fn geometry_counted(data: &[u8]) -> Result<(Geometry, (usize, f64))> {
             None
         })
     });
-    let before_fill = (floors.len(), floors.iter().map(|f| outline_area(&f.1.p)).sum());
-    if let Some(r) = &reach {
-        floors.retain(|(_, f)| r.keeps(&f.p, f.z));
-    }
-    let floors = without_shallow_water(floors.into_iter().map(|f| f.1).collect());
+    let mut floors: Vec<Floor> = floors.into_iter().map(|f| f.1).collect();
+    let before_fill = (floors.len(), floors.iter().map(|f| outline_area(&f.p)).sum());
+    let reach = reach.filter(|r| fill(&mut floors, |f| r.keeps(&f.p, f.z), &stands, before_fill.1));
+    let floors = without_shallow_water(floors);
     // Without points or pickups, the floors frame the map; the top keeps the PAD above the
     // highest floor that the viewer's roof cut expects.
     let bounds = bounds.or_else(|| {
@@ -684,6 +684,44 @@ fn geometry_counted(data: &[u8]) -> Result<(Geometry, (usize, f64))> {
         playable: reach.map(|r| r.mask()),
     };
     Ok((geometry, before_fill))
+}
+
+/// How far above a floor a spawn point or pack still stands on it.
+const STANDS_ON: f64 = 64.0;
+/// The least share of the floor area the fill may keep: less is seeds in a sealed pocket.
+const MIN_FILL_SHARE: f64 = 0.1;
+/// Floors looked at plus outline points tested for the spawn points and packs together (real
+/// maps use under a few million): a crafted map's floors after that are not looked at.
+const MAX_STAND_WORK: usize = 1 << 26;
+
+/// Keeps the floors players get to (`keeps`) and those a spawn point or pack in `stands` is on
+/// (inside the outline, 0 to `STANDS_ON` above it), and says true; when that is under
+/// `MIN_FILL_SHARE` of `area` (all the floors'), keeps every floor and says false.
+fn fill(floors: &mut Vec<Floor>, keeps: impl Fn(&Floor) -> bool, stands: &[Position], area: f64) -> bool {
+    let mut work_left = MAX_STAND_WORK;
+    let mut stood_on = |f: &Floor| {
+        for s in stands {
+            let Some(left) = work_left.checked_sub(1) else { return false };
+            work_left = left;
+            if (0.0..=STANDS_ON).contains(&(s[2] - f.z)) {
+                let Some(left) = work_left.checked_sub(f.p.len() / 2) else { return false };
+                work_left = left;
+                if contains_point(&f.p, s[0], s[1]) {
+                    return true;
+                }
+            }
+        }
+        false
+    };
+    let kept: Vec<bool> = floors.iter().map(|f| keeps(f) || stood_on(f)).collect();
+    let kept_area: f64 = floors.iter().zip(&kept).filter(|(_, k)| **k).map(|(f, _)| outline_area(&f.p)).sum();
+    if kept_area < area * MIN_FILL_SHARE {
+        eprintln!("stvtf-web: playable area left out: it has {:.0}% of the floor area", 100.0 * kept_area / area);
+        return false;
+    }
+    let mut kept = kept.into_iter();
+    floors.retain(|_| kept.next().unwrap_or(true));
+    true
 }
 
 /// The area of an outline (`x, y, x, y, …`).
@@ -957,6 +995,28 @@ mod tests {
         assert_eq!(open.len(), 3);
         // No floor under the water at all: not deep.
         assert_eq!(without_shallow_water(vec![sq(0.0, Kind::Water)]).len(), 0);
+    }
+
+    #[test]
+    fn floors_under_spawns_and_packs_are_kept() {
+        let mut floors = vec![sq(0.0, Kind::Dirt), sq(100.0, Kind::Dirt), sq(200.0, Kind::Dirt), sq(300.0, Kind::Dirt)];
+        // The fill keeps the top one; a pack 40 units above the second, one 70 above the third.
+        let stands = [[128.0, 128.0, 140.0], [128.0, 128.0, 270.0]];
+        assert!(fill(&mut floors, |f| f.z > 250.0, &stands, 4.0 * 256.0 * 256.0));
+        assert_eq!(floors.iter().map(|f| f.z).collect::<Vec<_>>(), [100.0, 300.0]);
+    }
+
+    #[test]
+    fn a_fill_keeping_almost_nothing_keeps_every_floor() {
+        // Seeds in a sealed pocket: the fill keeps one floor in eleven.
+        let mut floors: Vec<Floor> = (0..11).map(|i| sq(f64::from(i) * 100.0, Kind::Dirt)).collect();
+        let area = 11.0 * 256.0 * 256.0;
+        assert!(!fill(&mut floors, |f| f.z < 50.0, &[], area));
+        assert_eq!(floors.len(), 11);
+        // One in ten is enough.
+        floors.pop();
+        assert!(fill(&mut floors, |f| f.z < 50.0, &[], area - 256.0 * 256.0));
+        assert_eq!(floors.len(), 1);
     }
 
     #[test]

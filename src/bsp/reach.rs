@@ -684,6 +684,11 @@ mod tests {
         for (x, y) in [(4263.0, -2873.0), (1617.0, -2993.0)] {
             assert!(g.floors.iter().any(|f| contains(&f.p, x, y)), "({x}, {y})");
         }
+        // Every pack has a kept floor 0 to 64 units under it (two at (2036, 1496/1544, -1127) were
+        // on floors the fill missed).
+        for p in g.packs.iter().map(|p| p.pos) {
+            assert!(g.floors.iter().any(|f| contains(&f.p, p[0], p[1]) && (0.0..=64.0).contains(&(p[2] - f.z))), "{p:?}");
+        }
     }
 
     #[test]
