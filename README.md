@@ -76,7 +76,7 @@ to disconnect, and it takes the second one.
 
 `/overlay` (or `/w/<id>/overlay`) is a minimap for streams, like the live radar in CS
 broadcasts: add it to OBS as a Browser source of any size (for example 480x480 or
-560x315). The page is transparent apart from a rounded panel; it has no controls and
+560x315). The page is transparent apart from the map itself; it has no controls and
 frames itself around the spawns and points of the map, upright like the main view, and
 then glides in on the area where the living players are.
 
@@ -92,7 +92,7 @@ Query options, e.g. `/overlay?names=1&score=1&panel=0.6`:
 |---|---|
 | `names=1` | player names under the dots |
 | `score=1` | a small scoreboard (scores, round timer, points) at the top |
-| `panel=0..1` | opacity of the panel background (default 0.82; 0 for none) |
+| `panel=0..1` | opacity of a dark backdrop behind the whole panel (default 0, none) |
 | `zoom=map` | keep the whole map in view instead of zooming to where the players are |
 | `rotate=auto\|<degrees>` | map rotation (default 0, upright like the main view; `auto` turns a quarter when that fills the panel clearly better) |
 | `ui=<factor>` | scale all markers (default 1; marker size already follows the panel size) |

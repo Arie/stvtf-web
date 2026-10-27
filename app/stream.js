@@ -1,4 +1,4 @@
-import { $, DELAY, DELAY_MS, PAGE, state, observeTick, setStatus, setTickInterval } from "./core.js";
+import { $, DELAY, DELAY_MS, OVERLAY, PAGE, state, observeTick, setStatus, setTickInterval } from "./core.js";
 import { embedMap, embedStatus } from "./embed.js";
 import { asset } from "./env.js";
 import { killiconsLoaded, CHAT_TYPES, chat, feedEvent } from "./feed.js";
@@ -48,17 +48,31 @@ setInterval(() => {
 // Until the first snapshot shows, say what the page is actually waiting for. The first data only
 // comes tv_delay late when SourceTV has just started broadcasting (connected, nothing yet); a match
 // under way sends its latest snapshot straight away, so then it is only the stream delay, if any.
+// A delay counts down to when that snapshot shows; it is all the overlay says while it waits, so a
+// delayed overlay is not an empty panel until then.
+let holdUntil = null;
 function waiting(m) {
   const empty = $("empty");
   if (empty.style.display === "none") return;
   if (m.type === "snapshot") {
-    if (DELAY_MS) empty.textContent = `holding the match back ${DELAY}s to line up with the stream…`;
-  } else if (m.type === "status") {
+    if (DELAY_MS && holdUntil == null) {
+      holdUntil = performance.now() + DELAY_MS;
+      empty.classList.add("holding");
+      countDown();
+    }
+  } else if (m.type === "status" && holdUntil == null) {
     empty.textContent =
       m.state === "full" ? "SourceTV has just started: its first data comes tv_delay after that…"
       : m.reason ? `SourceTV ${m.state.replaceAll("_", " ")}: ${m.reason}`
       : "connecting to SourceTV…";
   }
+}
+function countDown() {
+  const empty = $("empty");
+  if (empty.style.display === "none") return;
+  const left = Math.max(1, Math.ceil((holdUntil - performance.now()) / 1000));
+  empty.textContent = OVERLAY ? `starting in ${left}s…` : `holding the match back ${DELAY}s to line up with the stream: ${left}s…`;
+  setTimeout(countDown, 250);
 }
 
 function handle(m) {
@@ -101,7 +115,7 @@ function handle(m) {
       state.snaps.push(m);
       if (state.snaps.length > SNAPS_KEPT) state.snaps.shift();
       for (const p of m.players) state.players.set(p.id, p);
-      $("empty").style.display = "none";
+      $("empty").style.display = "none"; $("empty").classList.remove("holding");
       break;
     case "world":
       break;

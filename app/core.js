@@ -26,7 +26,7 @@ export const DELAY_MS = (Number(DELAY) || 0) * 1000;
 export const PAGE = env.path.replace(DELAY_PART, "/");
 
 // /overlay: a fixed, transparent minimap for broadcasts. Options in the query string:
-// names=1, score=1, panel=0..1 (background opacity), rotate=auto|<degrees>, dot=<px>.
+// names=1, score=1, panel=0..1 (backdrop opacity, none by default), rotate=auto|<degrees>, dot=<px>.
 export const OVERLAY = /\/overlay\/?$/.test(PAGE);
 export const OPT = new URLSearchParams(env.search);
 if (OVERLAY) {
