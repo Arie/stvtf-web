@@ -7,6 +7,7 @@
 mod bsp;
 mod cache;
 mod cli;
+mod demostf;
 mod http;
 mod hub;
 mod replay;

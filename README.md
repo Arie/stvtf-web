@@ -28,7 +28,14 @@ site. Matches then start only from the site's `/start?t=TOKEN` links: the token 
 (`base64url(12-byte nonce | ciphertext | tag)` of `{"connect", "owner", "exp"}`), so the
 SourceTV password in it is never readable in a URL, and a user (`owner`) watches one match at
 a time: starting another stops the previous one, unless someone else opened it too, in which
-case it is left running for them. A null owner is unlimited. `--home URL` sends visitors of `/` to the site (each
+case it is left running for them. A null owner is unlimited.
+
+A token with `"demo": <id>` in place of `connect` plays that [demos.tf](https://demos.tf) demo
+instead: fetched from demos.tf, decoded once (one demo at a time) and kept in memory only as its
+gzipped stvtf output, it plays through once at game speed, holding still while nobody watches.
+Everyone who opens the same demo while it plays watches it together, from where it is. It ends
+like a live match, 3 minutes after its last viewer left, and it is not picked up again after a
+restart. The owner limit and `--max-matches` count it like any other match. `--home URL` sends visitors of `/` to the site (each
 serveme.tf region uses its own `/stv` page); without it `/` answers 403.
 
 `--sessions DIR` keeps a file per running match there (encrypted with `STVTF_TOKEN_KEY` when
@@ -286,6 +293,7 @@ sets the directory (default `backpack`, `/usr/share/stvtf/backpack` in the Docke
   `/overview/`, `/backpack/`, `/start` and the connect form, and `/up`.
 - `src/hub.rs`: a match's latest state and feed, and the queue of each page watching it.
 - `src/sessions.rs`: many matches in one process, and saving them across a deploy.
+- `src/demostf.rs`: a demos.tf demo played as a match.
 - `src/cache.rs`: map geometry and demos.tf's overviews, fetched once and kept in `--cache`.
 - `src/replay.rs`, `src/cli.rs`, `src/token.rs`: saved matches, the command line, the site's start tokens.
 - `src/bsp.rs`: BSP reading (including LZMA-compressed lumps), top-down geometry, and the

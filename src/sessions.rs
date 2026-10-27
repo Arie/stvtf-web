@@ -5,7 +5,7 @@
 use crate::cache::write_atomic;
 use crate::cli::{DEFAULT_TV_PASSWORD, parse_connect};
 use crate::hub::{SharedHub, watch_into};
-use crate::{lock, token};
+use crate::{demostf, lock, token};
 use aes_gcm::aead::OsRng;
 use aes_gcm::aead::rand_core::RngCore;
 use anyhow::{Result, anyhow, bail};
@@ -36,6 +36,8 @@ pub struct Session {
     shared: AtomicBool,
     /// A fixed session (the demo): always there, outside the match limit.
     pinned: bool,
+    /// The demos.tf demo it plays instead of watching `server`.
+    demo: Option<u64>,
     stop: AtomicBool,
     /// Set when the watcher gave up (a wrong password, say) or was stopped.
     done: AtomicBool,
@@ -63,6 +65,7 @@ impl Session {
             owner: Mutex::new(owner),
             shared: AtomicBool::new(false),
             pinned,
+            demo: None,
             stop: AtomicBool::new(false),
             done: AtomicBool::new(false),
             viewers: AtomicUsize::new(0),
@@ -182,11 +185,11 @@ impl Store {
         std::fs::read(self.path(CURRENT)).is_ok_and(|current| current != mark.as_bytes())
     }
 
-    /// Saves a match, unless it was stopped (ended, or all of them stopped at exit) or its map
-    /// and feed are as last saved.
+    /// Saves a match, unless it was stopped (ended, or all of them stopped at exit), plays a demo
+    /// (the next process could not pick up where it is), or its map and feed are as last saved.
     fn save(&self, s: &Session) -> Result<()> {
         let mut last_saved = lock(&s.saving);
-        if s.stop.load(Ordering::Relaxed) {
+        if s.stop.load(Ordering::Relaxed) || s.demo.is_some() {
             return Ok(());
         }
         let (changes, map, history) = {
@@ -265,13 +268,52 @@ impl Sessions {
             bail!("{target} is not a public address");
         }
         let mut map = self.lock();
-        if let Some(s) = map.values().find(|s| !s.pinned && s.server == server && s.password == password && !s.done.load(Ordering::Relaxed))
+        if let Some(s) = map
+            .values()
+            .find(|s| !s.pinned && s.demo.is_none() && s.server == server && s.password == password && !s.done.load(Ordering::Relaxed))
         {
-            if s.owner().as_deref() != owner {
-                s.shared.store(true, Ordering::Relaxed);
-            }
-            return Ok(s.clone());
+            return Ok(join(s, owner));
         }
+        self.make_room(&mut map, owner)?;
+        let s = self.start(&mut map, random_id(), server, password, owner.map(str::to_string), SharedHub::default());
+        eprintln!("stvtf-web: match {} started on {server}, owner {}", s.label(), owner.unwrap_or("-"));
+        if let Some(store) = &self.store
+            && let Err(e) = store.save(&s)
+        {
+            eprintln!("stvtf-web: saving match {}: {e:#}", s.id);
+        }
+        Ok(s)
+    }
+
+    /// The session playing demos.tf demo `demo`, joining one already playing it (where it is now)
+    /// or starting it from the beginning; `owner` as for [`Sessions::open`]. It is not saved for
+    /// the next process.
+    pub fn open_demo(&self, demo: u64, owner: Option<&str>) -> Result<Arc<Session>> {
+        let mut map = self.lock();
+        if let Some(s) = map.values().find(|s| s.demo == Some(demo) && !s.done.load(Ordering::Relaxed)) {
+            return Ok(join(s, owner));
+        }
+        self.make_room(&mut map, owner)?;
+        let nowhere = SocketAddr::from((Ipv4Addr::UNSPECIFIED, 0));
+        let mut session = Session::new(random_id(), SharedHub::default(), nowhere, String::new(), owner.map(str::to_string), false);
+        session.demo = Some(demo);
+        let s = Arc::new(session);
+        let (player, hz) = (s.clone(), self.hz);
+        let thread = std::thread::spawn(move || {
+            if let Err(e) = demostf::play(&player.hub, demo, hz, &|| player.watched(), &player.stop) {
+                eprintln!("stvtf-web: match {} (demo {demo}) gave up: {e:#}", player.label());
+            }
+            player.done.store(true, Ordering::Relaxed);
+        });
+        *lock(&s.thread) = Some(thread);
+        map.insert(s.id.clone(), s.clone());
+        eprintln!("stvtf-web: match {} started on demo {demo}, owner {}", s.label(), owner.unwrap_or("-"));
+        Ok(s)
+    }
+
+    /// Makes room for a match `owner` starts: theirs before it stops, or is left to the others
+    /// who opened it too, and there must be fewer than `max` matches.
+    fn make_room(&self, map: &mut HashMap<String, Arc<Session>>, owner: Option<&str>) -> Result<()> {
         if let Some(o) = owner {
             let previous: Vec<String> = map.values().filter(|s| s.owner().as_deref() == Some(o)).map(|s| s.id.clone()).collect();
             for id in previous {
@@ -289,14 +331,7 @@ impl Sessions {
         if map.values().filter(|s| !s.pinned).count() >= self.max {
             bail!("already watching {} matches, the most this server does", self.max);
         }
-        let s = self.start(&mut map, random_id(), server, password, owner.map(str::to_string), SharedHub::default());
-        eprintln!("stvtf-web: match {} started on {server}, owner {}", s.label(), owner.unwrap_or("-"));
-        if let Some(store) = &self.store
-            && let Err(e) = store.save(&s)
-        {
-            eprintln!("stvtf-web: saving match {}: {e:#}", s.id);
-        }
-        Ok(s)
+        Ok(())
     }
 
     /// Watches `server` as session `id`.
@@ -432,6 +467,15 @@ impl Sessions {
     }
 }
 
+/// Joins `s`, a match already running: once someone besides its owner opens it, it is no longer
+/// only theirs to stop.
+fn join(s: &Arc<Session>, owner: Option<&str>) -> Arc<Session> {
+    if s.owner().as_deref() != owner {
+        s.shared.store(true, Ordering::Relaxed);
+    }
+    s.clone()
+}
+
 /// Whether `name` is a match id, as made by [`random_id`].
 fn is_id(name: &str) -> bool {
     name.len() == 2 * ID_BYTES && name.chars().all(|c| c.is_ascii_hexdigit())
@@ -544,6 +588,31 @@ mod tests {
         s.open("192.0.2.3:27020 tv", Some("u1")).unwrap();
         assert!(s.get(&b.id).is_none(), "a match only u1 opened is replaced");
         assert!(s.get(&a.id).is_some());
+        s.stop_all();
+    }
+
+    #[test]
+    fn a_demo_plays_once_for_everyone_who_opens_it() {
+        // Waiting for their turn to fetch, the demos never reach demos.tf.
+        let fetching = lock(&demostf::FETCHING);
+        let dir = TempDir::new("demo-sessions");
+        let mut s = Sessions::new(false, 3, 20.0);
+        s.store = Some(Store { dir: dir.to_path_buf(), keys: None });
+        let a = s.open_demo(1, Some("u1")).unwrap();
+        assert_eq!(s.open_demo(1, Some("u2")).unwrap().id, a.id, "joined where it is");
+        let server = s.open("192.0.2.1:27020 tv", None).unwrap();
+        assert_ne!(server.id, a.id);
+        let b = s.open_demo(2, Some("u3")).unwrap();
+        s.open_demo(3, Some("u3")).unwrap();
+        assert!(s.get(&b.id).is_none(), "a user plays one demo at a time");
+        let full = s.open_demo(4, None).err().unwrap().to_string();
+        assert!(full.contains("already watching 3"), "demos count towards the limit: {full}");
+        s.persist();
+        assert!(!dir.join(&a.id).exists(), "the next process could not pick a demo up where it is");
+        for m in s.lock().values() {
+            m.stop.store(true, Ordering::Relaxed);
+        }
+        drop(fetching);
         s.stop_all();
     }
 

@@ -1,7 +1,8 @@
 //! Start tokens from a site in front of this server (serveme.tf): it signs the user in and decides
 //! what they may watch, then hands the browser a short-lived token for us. The token is
 //! AES-256-GCM encrypted, so the `SourceTV` password inside it is never readable in a URL:
-//! base64url(12-byte nonce | ciphertext | 16-byte tag) of `{"connect", "owner", "exp"}`.
+//! base64url(12-byte nonce | ciphertext | 16-byte tag) of `{"connect", "owner", "exp"}`, or of
+//! `{"demo", "owner", "exp"}` for a demos.tf demo.
 
 use aes_gcm::aead::{Aead, AeadCore, KeyInit, OsRng};
 use aes_gcm::{Aes256Gcm, Nonce};
@@ -13,14 +14,23 @@ use serde::Deserialize;
 /// What a site's token says: the match to watch, for whom, and until when (Unix seconds).
 #[derive(Deserialize)]
 struct Claims {
-    connect: String,
+    connect: Option<String>,
+    /// A demos.tf demo, by its number, instead of a server.
+    demo: Option<u64>,
     owner: Option<String>,
     exp: u64,
 }
 
+/// A server's connect string, or a demos.tf demo to play.
+#[derive(Debug, PartialEq)]
+pub enum Source {
+    Connect(String),
+    Demo(u64),
+}
+
 #[derive(Debug)]
 pub struct Start {
-    pub connect: String,
+    pub source: Source,
     /// None: unlimited (admins, casters); otherwise one match at a time for this user.
     pub owner: Option<String>,
 }
@@ -70,7 +80,12 @@ impl Keys {
         if claims.exp < now {
             bail!("this link has expired; open the match again from the site");
         }
-        Ok(Start { connect: claims.connect, owner: claims.owner })
+        let source = match (claims.connect, claims.demo) {
+            (Some(connect), None) => Source::Connect(connect),
+            (None, Some(demo)) => Source::Demo(demo),
+            _ => bail!("invalid token"),
+        };
+        Ok(Start { source, owner: claims.owner })
     }
 }
 
@@ -96,10 +111,12 @@ mod tests {
     fn opens_a_valid_token() {
         let t = seal(r#"{"connect":"connect 1.2.3.4:27020; password \"tv\"","owner":"76561197960497430","exp":2000}"#, [7; 12]);
         let s = Keys::from_hex(KEY).unwrap().open(&t, 1000).unwrap();
-        assert_eq!(s.connect, r#"connect 1.2.3.4:27020; password "tv""#);
+        assert_eq!(s.source, Source::Connect(r#"connect 1.2.3.4:27020; password "tv""#.into()));
         assert_eq!(s.owner.as_deref(), Some("76561197960497430"));
         let unlimited = seal(r#"{"connect":"1.2.3.4:27020","owner":null,"exp":2000}"#, [8; 12]);
         assert!(Keys::from_hex(KEY).unwrap().open(&unlimited, 1000).unwrap().owner.is_none());
+        let demo = seal(r#"{"demo":1527264,"owner":null,"exp":2000}"#, [9; 12]);
+        assert_eq!(Keys::from_hex(KEY).unwrap().open(&demo, 1000).unwrap().source, Source::Demo(1_527_264));
     }
 
     #[test]
@@ -122,7 +139,13 @@ mod tests {
         let other = Keys::from_hex(&"ff".repeat(32)).unwrap();
         assert!(other.open(&t, 0).is_err());
         assert!(keys.open("not a token", 0).is_err());
-        for incomplete in [r#"{"exp":2000}"#, r#"{"connect":"1.2.3.4:27020"}"#, r#"{"connect":7,"exp":2000}"#] {
+        for incomplete in [
+            r#"{"exp":2000}"#,
+            r#"{"connect":"1.2.3.4:27020"}"#,
+            r#"{"connect":7,"exp":2000}"#,
+            r#"{"connect":"1.2.3.4:27020","demo":1,"exp":2000}"#,
+            r#"{"demo":"1","exp":2000}"#,
+        ] {
             assert!(keys.open(&seal(incomplete, [2; 12]), 0).is_err(), "{incomplete}");
         }
         assert!(Keys::from_hex("abc").is_err());

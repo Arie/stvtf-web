@@ -4,6 +4,7 @@ use crate::hub::{SharedHub, default_tick_interval, publish};
 use anyhow::{Context, Result, bail};
 use std::io::{BufRead, BufReader, Read};
 use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 use stvtf::Line;
 use stvtf::output::{Stamped, Status};
@@ -32,24 +33,33 @@ pub(crate) fn replay(hub: &SharedHub, path: &Path, play: &dyn Fn() -> bool) -> R
     Ok(())
 }
 
-/// Plays the file once at its recorded speed. A line that does not read as a line of today's
-/// stvtf (a recording from an older one, or a non-finite number written as null) is skipped;
-/// returns how many were.
+/// Plays the file once at its recorded speed; returns how many lines it skipped (see [`play_lines`]).
 fn play_once(hub: &SharedHub, path: &Path, play: &dyn Fn() -> bool) -> Result<usize> {
+    static NEVER: AtomicBool = AtomicBool::new(false);
     let file = std::fs::File::open(path).with_context(|| format!("opening {}", path.display()))?;
     let reader: Box<dyn Read> =
         if path.extension().is_some_and(|e| e == "gz") { Box::new(flate2::read::GzDecoder::new(file)) } else { Box::new(file) };
+    play_lines(hub, reader, &path.display().to_string(), play, &NEVER)
+}
+
+/// Plays saved stvtf output once at its recorded speed, until it ends or `stop`. A line that does
+/// not read as a line of today's stvtf (a recording from an older one, or a non-finite number
+/// written as null) is skipped; returns how many were. `name` is what errors call it.
+pub(crate) fn play_lines(hub: &SharedHub, reader: impl Read, name: &str, play: &dyn Fn() -> bool, stop: &AtomicBool) -> Result<usize> {
     let (mut last, mut timed, mut skipped): (Option<u64>, bool, usize) = (None, false, 0);
     let mut interval = default_tick_interval();
     for (n, line) in BufReader::new(reader).lines().enumerate() {
-        while !play() {
+        while !play() && !stop.load(Ordering::Relaxed) {
             std::thread::sleep(REPLAY_POLL);
+        }
+        if stop.load(Ordering::Relaxed) {
+            return Ok(skipped);
         }
         let stamped: Stamped = match serde_json::from_str(&line?) {
             Ok(s) => s,
             Err(e) => {
                 if skipped == 0 {
-                    eprintln!("{}:{}: {e}", path.display(), n + 1);
+                    eprintln!("{name}:{}: {e}", n + 1);
                 }
                 skipped += 1;
                 continue;
@@ -73,7 +83,7 @@ fn play_once(hub: &SharedHub, path: &Path, play: &dyn Fn() -> bool) -> Result<us
     }
     // Without any, the loop would replay the file as fast as it can, forever.
     if !timed {
-        bail!("{}: no line has a time or tick", path.display());
+        bail!("{name}: no line has a time or tick");
     }
     Ok(skipped)
 }

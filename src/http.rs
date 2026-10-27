@@ -3,6 +3,7 @@
 use crate::cache::{map_geometry, map_geometry_gzip, overview};
 use crate::hub::{SharedHub, subscribe};
 use crate::sessions::{Session, Sessions, Viewer};
+use crate::token::Source;
 use crate::{App, Matches, is_name, lock, sessions};
 use anyhow::{Result, anyhow, bail};
 use flate2::Compression;
@@ -390,7 +391,10 @@ fn start(app: &App, sessions: &Sessions, query: &str) -> Result<Arc<Session>> {
     let token = param(query, "t").unwrap_or_default();
     let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs());
     let t = keys.open(token, now)?;
-    sessions.open(&t.connect, t.owner.as_deref())
+    match t.source {
+        Source::Connect(connect) => sessions.open(&connect, t.owner.as_deref()),
+        Source::Demo(demo) => sessions.open_demo(demo, t.owner.as_deref()),
+    }
 }
 
 const KILLICONS_V1_CSS: &str =
