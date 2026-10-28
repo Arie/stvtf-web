@@ -366,12 +366,13 @@ export function drawBackground(r) {
 }
 
 // Auto zoom frames the fight: clumps of players first. A player on their own joins the
-// framing only after STRAGGLE_MS (a respawn usually rejoins by then) and is then brought in
-// slowly. The camera holds its framing until the fight leaves it or tightens a lot, and
-// glides: never wider than the full framing, never tighter than MIN_SPAN units.
-const MIN_SPAN = 2600, ACTION_PAD = 500, CLUMP_LINK = 1500, STRAGGLE_MS = 3000;
+// framing only after STRAGGLE_MS without closing in on the fight by CLOSING (one walking back
+// from spawn is on the way and left out) and is then brought in slowly. The camera holds its framing until the fight leaves it, tightens a lot, or stays
+// somewhat tighter for SETTLE_MS, and glides: never wider than the full framing, never
+// tighter than MIN_SPAN units.
+const MIN_SPAN = 2600, ACTION_PAD = 500, CLUMP_LINK = 1500, STRAGGLE_MS = 3000, CLOSING = 300, SETTLE_MS = 500;
 const straggling = new Map();
-let lastFrame = performance.now();
+let lastFrame = performance.now(), tighterSince = null;
 
 // Players linked within CLUMP_LINK of each other form a clump; keep the biggest one and any
 // other clump of three or more.
@@ -398,8 +399,15 @@ export function followAction(players) {
   const fight = alive.length ? fightingPlayers(alive) : [];
   const loners = alive.filter(p => !fight.includes(p));
   for (const id of straggling.keys()) if (!loners.some(p => p.id === id)) straggling.delete(id);
-  for (const p of loners) if (!straggling.has(p.id)) straggling.set(p.id, now);
-  const framed = [...fight, ...loners.filter(p => now - straggling.get(p.id) > STRAGGLE_MS)];
+  // Each loner's closest approach to the fight so far; coming closer starts their wait again,
+  // until they are framed (then they stay framed, so the camera does not pump).
+  const gap = p => Math.min(...fight.map(f => Math.hypot(p.pos[0] - f.pos[0], p.pos[1] - f.pos[1])));
+  for (const p of loners) {
+    const s = straggling.get(p.id), d = gap(p);
+    if (!s) straggling.set(p.id, { since: now, near: d });
+    else if (d < s.near - CLOSING && now - s.since <= STRAGGLE_MS) Object.assign(s, { since: now, near: d });
+  }
+  const framed = [...fight, ...loners.filter(p => now - straggling.get(p.id).since > STRAGGLE_MS)];
   let wanted = { ...full };
   if (framed.length) {
     // Along the rotated axes, like the framing, so the box matches the panel.
@@ -413,20 +421,24 @@ export function followAction(players) {
     wanted = { cx: uc * c + vc * sn, cy: -uc * sn + vc * c, scale };
   }
   // Hold the current framing while it still works: everyone fighting is well inside it, the
-  // action has not shifted by a quarter view and there is no big zoom-in to gain.
+  // action has not shifted by a quarter view and there is no big zoom-in to gain, nor a
+  // smaller one that has lasted.
   const hold = state.camTarget;
   let keep = false;
   if (hold) {
+    if (wanted.scale <= hold.scale * 1.1) tighterSince = null;
+    else tighterSince ??= now;
     const [hu, hv] = toUV([hold.cx, hold.cy]), halfW = w / 2 / hold.scale, halfH = h / 2 / hold.scale;
     const inView = p => { const [pu, pv] = toUV(p.pos); return Math.abs(pu - hu) < halfW * 0.8 && Math.abs(pv - hv) < halfH * 0.8; };
     const [wu, wv] = toUV([wanted.cx, wanted.cy]);
     const shifted = Math.abs(wu - hu) > halfW * 0.5 || Math.abs(wv - hv) > halfH * 0.5;
     const fightInside = fight.every(inView);
-    keep = framed.length > 0 && framed.every(inView) && !shifted && wanted.scale < hold.scale * 1.4;
+    const settled = tighterSince != null && now - tighterSince > SETTLE_MS;
+    keep = framed.length > 0 && framed.every(inView) && !shifted && wanted.scale < hold.scale * 1.4 && !settled;
     // Only a straggler is out of view: bring them in, but slowly.
     wanted.slow = fightInside && !shifted;
   }
-  if (!keep) state.camTarget = wanted;
+  if (!keep) { state.camTarget = wanted; tighterSince = null; }
   const target = state.camTarget;
   // A critically damped spring keeps the camera's speed continuous; zooming out (someone is
   // about to leave the frame) is quicker than zooming in.
@@ -437,7 +449,7 @@ export function followAction(players) {
   [fy, cam.vy] = smoothDamp(focusCy, target.cy, cam.vy, pan, dt);
   let z = Math.log(v.scale);
   const zoomOut = target.slow ? 3.5 : 1.4;
-  [z, cam.vz] = smoothDamp(z, Math.log(target.scale), cam.vz, target.scale < v.scale ? zoomOut : 3, dt);
+  [z, cam.vz] = smoothDamp(z, Math.log(target.scale), cam.vz, target.scale < v.scale ? zoomOut : 1.6, dt);
   v.scale = Math.exp(z);
   v.cy = viewCy(fy, v.scale);
 }
