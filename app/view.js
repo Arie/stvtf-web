@@ -38,15 +38,28 @@ function demostfAlias(map, known) {
   return null;
 }
 
+// Whether an overview of another version of the map covers this version's own bounds (at least
+// half of it does). Versions can move the whole map: koth_clearcut's overview is nowhere near
+// koth_clearcut_b18, while the overviews that line up cover all or nearly all of it.
+function sameLayout(b, g) {
+  if (!g?.bounds) return true;
+  const [[x0, y0], [x1, y1]] = g.bounds, lo = b.boundary_min, hi = b.boundary_max;
+  const w = Math.min(x1, hi.x) - Math.max(x0, lo.x), h = Math.min(y1, hi.y) - Math.max(y0, lo.y);
+  return w > 0 && h > 0 && w * h >= 0.5 * (hi.x - lo.x) * (hi.y - lo.y);
+}
+
 export async function loadMap(map) {
   state.map = map; state.geometry = null; state.geoCanvas = null; state.overview = null; state.fitted = false; state.framed = false;
   state.spawns = null; state.mapData = false;
   $("map").textContent = map;
   const known = await demostfBoundaries();
   const alias = demostfAlias(map, known);
+  const geometry = fetch(asset(`map/${encodeURIComponent(map)}`)).then(r => r.json());
   if (alias) {
     const img = new Image();
-    img.onload = () => {
+    img.onload = async () => {
+      if (alias !== map && !sameLayout(known[alias], await geometry.catch(() => null))) return;
+      if (state.map !== map) return;
       state.overview = { img: OVERLAY ? withoutBlack(img) : flattened(img), b: known[alias] };
       $("bgtoggle").hidden = false;
       if (!state.fitted) fitTo(known[alias].boundary_min, known[alias].boundary_max);
@@ -55,7 +68,7 @@ export async function loadMap(map) {
   }
   $("bgtoggle").hidden = true;
   try {
-    const g = await (await fetch(asset(`map/${encodeURIComponent(map)}`))).json();
+    const g = await geometry;
     if (state.map !== map) return;
     state.geometry = g;
     state.spawns = g.spawns || null;
