@@ -10,9 +10,10 @@ use flate2::Compression;
 use flate2::read::GzDecoder;
 use flate2::write::GzEncoder;
 use serde::Deserialize;
-use std::io::{Read, Write};
+use std::io::{BufWriter, Read, Write};
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Instant;
 use stvtf::Line;
 use stvtf::output::{Stamped, Status};
 
@@ -48,14 +49,17 @@ fn fetch(id: u64, snapshot_hz: f32, stop: &AtomicBool) -> Result<Option<Vec<u8>>
     if stop.load(Ordering::Relaxed) {
         return Ok(None);
     }
+    let started = Instant::now();
     let mut demo = Vec::new();
     // One byte over the limit tells a demo that is too big from one that just fits.
     ureq::get(&demo_url(id)?).call()?.into_reader().take(MAX_DEMO + 1).read_to_end(&mut demo)?;
     if demo.len() as u64 > MAX_DEMO {
         bail!("demo {id} is over {} MiB", MAX_DEMO >> 20);
     }
+    let fetched = started.elapsed();
     // Kept for the whole match: half the size of a fast level (a 24-minute demo is under 6 MiB).
-    let mut gz = GzEncoder::new(Vec::new(), Compression::default());
+    // Buffered: flate2 runs the compressor on every write, and serde writes a line in many small pieces.
+    let mut gz = BufWriter::new(GzEncoder::new(Vec::new(), Compression::default()));
     let mut written = Ok(());
     stvtf::decode::demo_file(&demo, snapshot_hz, &mut |line| {
         if written.is_ok() {
@@ -64,7 +68,15 @@ fn fetch(id: u64, snapshot_hz: f32, stop: &AtomicBool) -> Result<Option<Vec<u8>>
     })
     .with_context(|| format!("decoding demo {id}"))?;
     written?;
-    Ok(Some(gz.finish()?))
+    let output = gz.into_inner().map_err(std::io::IntoInnerError::into_error)?.finish()?;
+    eprintln!(
+        "stvtf-web: demo {id}: {} MiB fetched in {:.1} s, decoded to {} MiB in {:.1} s",
+        demo.len() >> 20,
+        fetched.as_secs_f64(),
+        output.len() >> 20,
+        started.elapsed().saturating_sub(fetched).as_secs_f64()
+    );
+    Ok(Some(output))
 }
 
 /// Plays demos.tf demo `id` into `hub` once, holding still while `play` says nobody watches,
