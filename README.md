@@ -267,6 +267,7 @@ about 150 ms behind the newest data, so everything lines up with the movement.
   [demos.tf viewer](https://demos.tf/viewer) uses (`maps.demos.tf`), looked up the
   same way it does. About 50 competitive maps. The server fetches them once into `--cache`
   (default `cache/`) and serves them itself, so viewers do not each load them from demos.tf.
+  Bounds that do not line up with their image are corrected in `app/view.js`.
 - **map geometry**: for any map, drawn from the map's BSP from fastdl
   (`fastdl.serveme.tf/maps/`): upward faces coloured by what their texture is made of
   (grass, dirt, concrete, metal, wood, tile, water, lava, snow), terrain displacements at their

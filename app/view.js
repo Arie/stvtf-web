@@ -18,10 +18,15 @@ const HUD_MIN_WIDTH = 800, HUD_COLUMN = 268, SCOREBOARD_HEIGHT = 140;
 const FRAME_PAD = 600;
 
 // ---------- map backgrounds
+// demos.tf's bounds that do not line up with their image, fitted to the map's cart track and walls.
+const BOUNDS_FIXES = {
+  pl_upward: { boundary_min: { x: -2761, y: -4412 }, boundary_max: { x: 2961, y: 2112 } },
+  koth_ashville_rc1: { boundary_min: { x: -1491, y: -3903 }, boundary_max: { x: 1433, y: 3907 } },
+};
 let boundaries = null;
 async function demostfBoundaries() {
   if (!boundaries) {
-    try { boundaries = await (await fetch(asset("overview/boundaries.json"))).json(); }
+    try { boundaries = { ...await (await fetch(asset("overview/boundaries.json"))).json(), ...BOUNDS_FIXES }; }
     catch { boundaries = {}; }
   }
   return boundaries;
