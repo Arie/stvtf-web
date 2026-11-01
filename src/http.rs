@@ -943,14 +943,14 @@ mod tests {
         let loopback: IpAddr = "127.0.0.1".parse().unwrap();
         let (one, _hub) = one_match();
         let _open: Vec<_> = (0..MAX_STREAMS_PER_CLIENT).map(|_| one.stream_slot(loopback).unwrap()).collect();
-        assert!(request_to(&one, b"GET /events HTTP/1.1\r\n\r\n").1.starts_with("HTTP/1.1 429"));
+        assert!(EventStream::open(&one, "GET /events HTTP/1.1\r\n\r\n").read_to("HTTP/1.1").starts_with("HTTP/1.1 429"));
 
         let sessions = Sessions::new(false, 1, 20.0);
         sessions.pin("demo", |_| {});
         let m = sessions.get("demo").unwrap();
-        let many = app(Matches::Many(sessions));
+        let many = Arc::new(app(Matches::Many(sessions)));
         let _open: Vec<_> = (0..MAX_STREAMS_PER_CLIENT).map(|_| many.stream_slot(loopback).unwrap()).collect();
-        assert!(request_to(&many, b"GET /w/demo/events HTTP/1.1\r\n\r\n").1.starts_with("HTTP/1.1 429"));
+        assert!(EventStream::open(&many, "GET /w/demo/events HTTP/1.1\r\n\r\n").read_to("HTTP/1.1").starts_with("HTTP/1.1 429"));
         assert!(!m.watched());
     }
 
@@ -981,8 +981,8 @@ mod tests {
         let (app, hub) = one_match();
         let full: IpAddr = "203.0.113.9".parse().unwrap();
         let _open: Vec<_> = (0..MAX_STREAMS_PER_CLIENT).map(|_| app.stream_slot(full).unwrap()).collect();
-        let send = b"GET /events HTTP/1.1\r\nX-Forwarded-For: 203.0.113.9\r\n\r\n";
-        assert!(request_to(&app, send).1.starts_with("HTTP/1.1 429"));
+        let mut refused = EventStream::open(&app, "GET /events HTTP/1.1\r\nX-Forwarded-For: 203.0.113.9\r\n\r\n");
+        assert!(refused.read_to("HTTP/1.1").starts_with("HTTP/1.1 429"));
         let mut other = EventStream::open(&app, "GET /events HTTP/1.1\r\nX-Forwarded-For: 203.0.113.10\r\n\r\n");
         other.read_to("retry:");
         other.close(&hub);
