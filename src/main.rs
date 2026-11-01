@@ -379,6 +379,15 @@ mod testing {
     use stvtf::Line;
     use stvtf::output;
 
+    /// Stands in for [`stvtf::watch::watch`], so no test connects to a server: it runs until stopped.
+    #[expect(clippy::unnecessary_wraps, reason = "the same signature as the real one")]
+    pub(crate) fn watch(_: &watch::Watch, stop: &AtomicBool, _: &mut dyn FnMut(Line)) -> Result<(), watch::WatchError> {
+        while !stop.load(Ordering::Relaxed) {
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        Ok(())
+    }
+
     pub(crate) fn app(matches: Matches) -> App {
         App {
             matches,

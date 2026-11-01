@@ -1,6 +1,8 @@
 //! The latest state of a match and the queues of the pages watching it.
 
 use crate::lock;
+#[cfg(test)]
+use crate::testing::watch;
 use serde::Serialize;
 use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::sync::atomic::AtomicBool;
@@ -10,6 +12,8 @@ use std::time::Instant;
 use stvtf::Line;
 use stvtf::output::{PlayerId, Status, Team, round1};
 use stvtf::watch::Watch;
+#[cfg(not(test))]
+use stvtf::watch::watch;
 
 /// The latest match state for browsers that join late, and a queue per browser.
 #[derive(Default)]
@@ -246,7 +250,7 @@ pub(crate) fn watch_into(
 ) -> Result<(), stvtf::watch::WatchError> {
     let mut w = Watch::new(target, password);
     w.snapshot_hz = hz;
-    let result = stvtf::watch::watch(&w, stop, &mut |line| publish(hub, &line));
+    let result = watch(&w, stop, &mut |line| publish(hub, &line));
     if let Err(e) = &result {
         publish(hub, &Line::Status(Status::GaveUp { reason: e.to_string() }));
     }

@@ -563,7 +563,6 @@ mod tests {
 
     #[test]
     fn a_user_watches_one_match_at_a_time() {
-        // Unreachable but well-formed servers: the watchers just keep retrying until stopped.
         let s = Sessions::new(false, 8, 20.0);
         let a = s.open("192.0.2.1:27020 tv", Some("u1")).unwrap();
         let again = s.open("192.0.2.1:27020 tv", Some("u1")).unwrap();
