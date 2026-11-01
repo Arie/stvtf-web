@@ -3,7 +3,7 @@
 
 use std::ffi::OsStr;
 use std::io::{BufRead, BufReader, Read, Write};
-use std::net::{TcpListener, TcpStream};
+use std::net::{TcpListener, TcpStream, UdpSocket};
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use std::thread::sleep;
@@ -121,11 +121,23 @@ fn a_stopped_server_exits_cleanly_and_the_next_one_has_its_matches() {
     let args: [&OsStr; 3] = ["--no-warm".as_ref(), "--sessions".as_ref(), store.as_os_str()];
     let mut first = Server::run(dir.clone(), &args);
 
-    let body = "connect=192.0.2.1%3A27020";
-    let mut post = TcpStream::connect(&first.address).unwrap();
-    write!(post, "POST /watch HTTP/1.1\r\nContent-Length: {}\r\n\r\n{body}", body.len()).unwrap();
+    // A server that turns the watcher away, not an unreachable one: it only notices a stop between
+    // its attempts, and those wait up to 9 s for an answer from nowhere.
+    let tv = UdpSocket::bind("127.0.0.1:0").unwrap();
+    let port = tv.local_addr().unwrap().port();
+    std::thread::spawn(move || {
+        let mut packet = [0; 2048];
+        while let Ok((n, from)) = tv.recv_from(&mut packet) {
+            // Connectionless, "rejected", the nonce the request came with, and why.
+            let reply = [b"\xff\xff\xff\xff9", &packet[5..n.max(9)][..4], b"not now\0"].concat();
+            let _ = tv.send_to(&reply, from);
+        }
+    });
+    let body = format!("connect=127.0.0.1%3A{port}");
+    let mut form = TcpStream::connect(&first.address).unwrap();
+    write!(form, "POST /watch HTTP/1.1\r\nContent-Length: {}\r\n\r\n{body}", body.len()).unwrap();
     let mut started = String::new();
-    post.read_to_string(&mut started).unwrap();
+    form.read_to_string(&mut started).unwrap();
     assert!(started.starts_with("HTTP/1.1 303"), "{started}");
     let page = started.lines().find_map(|l| l.strip_prefix("Location: ")).unwrap().to_string();
     assert!(first.get(&page).starts_with("HTTP/1.1 200"));
