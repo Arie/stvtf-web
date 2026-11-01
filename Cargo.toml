@@ -40,3 +40,8 @@ must_use_candidate = "allow"
 dbg_macro = "warn"
 todo = "warn"
 unimplemented = "warn"
+
+# The map tests are nearly all this crate's own code: this makes them about 7x faster, and debug
+# assertions and overflow checks stay on.
+[profile.dev]
+opt-level = 1
