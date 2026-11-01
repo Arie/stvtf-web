@@ -1,0 +1,41 @@
+{"type":"kill","tick":100,"victim":4,"attacker":3,"assister":5,"weapon":"quake_rl","crit":true,"headshot":false,"backstab":false,"suicide":false,"dominated":true,"revenge":false,"feign":false,"airborne":true,"victim_pos":[1.0,2.0,3.0],"attacker_pos":[4.0,5.0,6.0]}
+{"type":"flag","tick":101,"event":"captured","player":3,"carrier":null,"team":"red"}
+{"type":"uber","tick":102,"medic":5,"target":3,"medigun":"kritzkrieg"}
+{"type":"uber_ready","tick":103,"medic":5,"medigun":"medigun"}
+{"type":"medic_death","tick":104,"medic":5,"attacker":4,"healing":1200,"drop":true}
+{"type":"capture_blocked","tick":105,"point":1,"name":"Mid","blocker":3,"victim":4}
+{"type":"building_destroyed","tick":106,"owner":4,"attacker":3,"object":"sentry","id":77,"weapon":"tf_projectile_rocket","was_building":false}
+{"type":"banner","tick":107,"player":3,"kind":"buff_banner"}
+{"type":"point_captured","tick":108,"point":2,"name":"Last","team":"blue","cappers":[3,null]}
+{"type":"round_start","tick":109,"full_reset":true}
+{"type":"round_win","tick":110,"team":"red","reason":1,"round_time":120.5}
+{"type":"scores","tick":111,"red":3,"blue":2,"game_over":true}
+{"type":"stalemate","tick":112}
+{"type":"overtime","tick":113}
+{"type":"game_over","tick":114,"reason":"Reached Win Limit"}
+{"type":"player_leave","tick":115,"player":4,"name":"silvo","reason":"Disconnect by user."}
+{"type":"team_change","tick":116,"player":3,"team":"red","old_team":"none","disconnect":false}
+{"type":"chat","tick":117,"player":3,"name":"can of tuna","text":"gg","parts":[{"c":"team","t":"can of tuna"},{"c":null,"t":": gg"}],"kind":"ChatAll"}
+{"type":"capture_broken","tick":118,"point":1,"name":"Mid"}
+{"type":"killed_capper","tick":119,"point":1,"killer":3,"victim":4,"assister":null}
+{"type":"medic_defended","tick":120,"player":3,"medic":5}
+{"type":"vote_options","tick":121,"options":["Yes","No"]}
+{"type":"vote_cast","tick":122,"player":3,"option":0,"team":"red"}
+{"type":"tournament","tick":123,"player":3,"ready":true}
+{"type":"announcer","tick":124,"sound":"Announcer.RoundEnds60seconds","team":"red"}
+{"type":"time_remaining","tick":125,"seconds":90}
+{"type":"pass_score","tick":126,"scorer":3,"assister":5,"points":2}
+{"type":"pass_stolen","tick":127,"victim":4,"attacker":3}
+{"type":"pass_blocked","tick":128,"owner":4,"blocker":3}
+{"type":"ball_carrier_killed","tick":129,"attacker":3,"victim":4,"assister":null}
+{"type":"robot_killed","tick":130,"attacker":3,"weapon":"quake_rl"}
+{"type":"special_score","tick":131,"player":3}
+{"type":"team_leader_killed","tick":132,"killer":3,"victim":4}
+{"type":"rocket_open","tick":133,"team":"blue"}
+{"type":"point_locked","tick":134,"point":0,"name":"First","locked":true}
+{"type":"sapped","tick":135,"player":3,"owner":4,"object":"dispenser","sapper":88}
+{"type":"vote_started","tick":136,"team":"red","caller":3,"issue":"#TF_vote_kick_player_cheating","details":"silvo","yes_no":true,"target":4}
+{"type":"vote_passed","tick":137,"team":"red","issue":"#TF_vote_passed_kick_player","details":"silvo"}
+{"type":"vote_failed","tick":138,"team":"red","reason":3}
+{"type":"voice_command","tick":139,"player":3,"menu":0,"item":0}
+{"type":"server_text","tick":140,"text":"Welcome to the server"}

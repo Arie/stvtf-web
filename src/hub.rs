@@ -517,4 +517,18 @@ mod tests {
         publish(&hub, &snapshot(1, None, Vec::new()));
         assert!(hub.lock().unwrap().clients.is_empty());
     }
+
+    /// `testdata/lines.jsonl` is what `app/` is tested with too: a line stvtf renames or gives
+    /// another shape fails here, and what the page does not read from it fails there.
+    #[test]
+    fn the_sample_lines_are_what_stvtf_sends() {
+        let samples = include_str!("../testdata/lines.jsonl");
+        for sample in samples.lines() {
+            let line: Line = serde_json::from_str(sample).unwrap_or_else(|e| panic!("{sample}: {e}"));
+            let written: Value = serde_json::to_value(&line).unwrap();
+            assert_eq!(written, serde_json::from_str::<Value>(sample).unwrap());
+            let page_only = matches!(line, Line::VoiceCommand(_) | Line::ServerText(_));
+            assert_eq!(route(&line), if page_only { Route::Detail } else { Route::Feed }, "{sample}");
+        }
+    }
 }
