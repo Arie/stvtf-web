@@ -1,4 +1,4 @@
-import { $, OVERLAY, OPT, overlayUnit, canvas, uiScale, ctx, state, canvasSize } from "./core.js";
+import { $, OVERLAY, OPT, PLAIN_BG, overlayUnit, canvas, uiScale, ctx, state, canvasSize } from "./core.js";
 import { env, asset } from "./env.js";
 
 // Map geometry: at least this many world units per pixel, and a canvas at most this wide;
@@ -10,6 +10,11 @@ const KIND_COLOURS = { __proto__: null, grass: "#56703d", dirt: "#86704f", concr
   wood: "#7f5a39", tile: "#76665a", water: "#2c5a63", lava: "#93401f", snow: "#c7d1d8", other: "#6c6c6c" };
 // Water shows the floor under it; raised floors cast a short soft shadow (canvas pixels).
 const WATER_ALPHA = 0.45, SHADOW_COLOUR = "rgba(0,0,0,0.45)", SHADOW_BLUR = 6, SHADOW_OFFSET = 3;
+// bg=flat: floors in these shades, lowest to highest. bg=outline: a line round the playable area in
+// this colour with a dark edge, as a share of the canvas's longest side.
+const FLAT_SHADES = ["#2a2e33", "#373c42", "#464c53"], OUTLINE_COLOUR = "#e4e8ec", OUTLINE_EDGE = "#14161a", OUTLINE_WIDTH = 1 / 400, OUTLINE_EDGE_WIDTH = 1 / 200;
+// Gaps up to about twice this share of the canvas's longest side are filled in both.
+const GAP_CLOSE = 1 / 150, PLAIN_SIDE = 1024;
 // Payload track: ties this far apart and this long, rails this far either side (canvas pixels).
 const TIE_STEP = 7, TIE_LENGTH = 10, RAIL_GAP = 3, TIE_COLOUR = "#3a2c20", RAIL_COLOUR = "#cdc8bc";
 // The HUD's player columns (shown on screens wider than this) and the scoreboard, in CSS pixels.
@@ -129,6 +134,42 @@ function scaled(hex, s) {
   return `rgb(${ch(16)} ${ch(8)} ${ch(0)})`;
 }
 
+// A canvas the size of `shape`, holding what draw(context) puts on it.
+function canvasLike(shape, draw) {
+  const o = document.createElement("canvas"); o.width = shape.width; o.height = shape.height;
+  draw(o.getContext("2d"));
+  return o;
+}
+// Draws a shape at each of 16 points round a circle: with source-over that spreads it outwards.
+function around(c, shape, r) {
+  for (let i = 0; i < 16; i++) c.drawImage(shape, Math.cos(i / 8 * Math.PI) * r, Math.sin(i / 8 * Math.PI) * r);
+}
+// The shape with its cracks and narrow gaps filled: spread outwards, then eaten back as far. In
+// passes, because one ring of copies of a thin sliver is a comb rather than a solid disc.
+function withoutGaps(shape) {
+  const r = Math.max(2, Math.max(shape.width, shape.height) * GAP_CLOSE);
+  const passes = (start, mode) => [0.5, 0.25, 0.25].reduce((from, k) => canvasLike(shape, c => {
+    c.drawImage(from, 0, 0);
+    c.globalCompositeOperation = mode;
+    around(c, from, r * k);
+  }), start);
+  return passes(passes(shape, "source-over"), "destination-in");
+}
+const tinted = (shape, colour) => canvasLike(shape, c => {
+  c.drawImage(shape, 0, 0);
+  c.globalCompositeOperation = "source-in"; c.fillStyle = colour; c.fillRect(0, 0, shape.width, shape.height);
+});
+// A line round a shape: the shape spread outwards in the line's colours, the shape cut out.
+function outlineOf(shape) {
+  const side = Math.max(shape.width, shape.height);
+  const ring = (colour, width) => canvasLike(shape, c => around(c, tinted(shape, colour), Math.max(1, side * width)));
+  return canvasLike(shape, c => {
+    c.drawImage(ring(OUTLINE_EDGE, OUTLINE_EDGE_WIDTH), 0, 0);
+    c.drawImage(ring(OUTLINE_COLOUR, OUTLINE_WIDTH), 0, 0);
+    c.globalCompositeOperation = "destination-out"; c.drawImage(shape, 0, 0);
+  });
+}
+
 function renderGeometry(g) {
   const [lo, hi] = g.bounds;
   // World units per pixel; huge maps (MGE) get coarser so the canvas stays within browser limits.
@@ -143,22 +184,24 @@ function renderGeometry(g) {
   const cut = hi[2] - GEOMETRY_PAD + ROOF_ABOVE;
   const X = x => (x - lo[0]) / res, Y = y => (hi[1] - y) / res;
   const patterns = {};
-  c.lineWidth = 1; c.shadowBlur = SHADOW_BLUR; c.shadowOffsetX = c.shadowOffsetY = SHADOW_OFFSET;
+  c.lineWidth = 1;
+  if (!PLAIN_BG) { c.shadowBlur = SHADOW_BLUR; c.shadowOffsetX = c.shadowOffsetY = SHADOW_OFFSET; }
   for (const f of g.floors) {
     if (f.z > cut) continue;
     const t = Math.max(0, Math.min(1, (f.z - zlo) / (zhi - zlo || 1)));
     const k = f.k in KIND_COLOURS ? f.k : "other", water = k === "water";
-    c.fillStyle = c.strokeStyle = scaled(KIND_COLOURS[k], 0.70 + 0.40 * t);
+    c.fillStyle = c.strokeStyle = PLAIN_BG ? FLAT_SHADES[Math.min(FLAT_SHADES.length - 1, Math.floor(t * FLAT_SHADES.length))] : scaled(KIND_COLOURS[k], 0.70 + 0.40 * t);
     c.beginPath();
     for (let i = 0; i < f.p.length; i += 2) (i ? c.lineTo : c.moveTo).call(c, X(f.p[i]), Y(f.p[i + 1]));
     c.closePath();
     // Terrain is one smooth surface, so its cells do not shadow each other.
-    c.shadowColor = f.d || water ? "transparent" : SHADOW_COLOUR;
-    c.globalAlpha = water ? WATER_ALPHA : 1;
+    c.shadowColor = PLAIN_BG || f.d || water ? "transparent" : SHADOW_COLOUR;
+    c.globalAlpha = water && !PLAIN_BG ? WATER_ALPHA : 1;
     c.fill();
     c.shadowColor = "transparent";
     // The floor's own colour round its edge, so neighbouring polygons leave no hairline seams.
     c.stroke();
+    if (PLAIN_BG) continue;
     if (!(k in patterns)) patterns[k] = kindTile(k) && c.createPattern(kindTile(k), "repeat");
     if (patterns[k]) { c.fillStyle = patterns[k]; c.fill(); }
   }
@@ -166,7 +209,7 @@ function renderGeometry(g) {
   // Walls only where a floor was drawn: the rest are scenery's, out over the background.
   c.strokeStyle = "#0b0c0e"; c.lineWidth = 1.2; c.globalCompositeOperation = "source-atop";
   c.beginPath();
-  for (const wl of g.walls) {
+  if (!PLAIN_BG) for (const wl of g.walls) {
     if (wl.z - WALL_BASE > cut) continue;
     c.moveTo(X(wl.p[0]), Y(wl.p[1])); c.lineTo(X(wl.p[2]), Y(wl.p[3]));
   }
@@ -190,6 +233,16 @@ function renderGeometry(g) {
     c.globalCompositeOperation = "destination-in";
     c.drawImage(mc, X(pa.origin[0]), Y(pa.origin[1] + pa.h * pa.cell), pa.w * pa.cell / res, pa.h * pa.cell / res);
   } catch (e) { console.warn("no playable area", e); } finally { c.globalCompositeOperation = "source-over"; }
+  if (PLAIN_BG) {
+    // On a smaller copy: filling the gaps takes many full-canvas draws, and none of it is fine detail.
+    const shrink = Math.min(1, PLAIN_SIDE / Math.max(w, h));
+    const small = canvasLike({ width: Math.ceil(w * shrink), height: Math.ceil(h * shrink) }, s => s.drawImage(oc, 0, 0, Math.ceil(w * shrink), Math.ceil(h * shrink)));
+    const solid = withoutGaps(small);
+    if (PLAIN_BG === "outline") return { canvas: outlineOf(solid), lo, hi };
+    c.globalCompositeOperation = "destination-over"; c.drawImage(tinted(solid, FLAT_SHADES[0]), 0, 0, w, h);
+    c.globalCompositeOperation = "source-over";
+    return { canvas: oc, lo, hi };
+  }
   const track = (g.track || []).map(([x1, y1, , x2, y2]) => [X(x1), Y(y1), X(x2), Y(y2)]);
   c.strokeStyle = TIE_COLOUR; c.lineWidth = 2;
   c.beginPath();
@@ -347,11 +400,14 @@ function flattened(img) {
 // The map picture is an element under the canvas, moved with a CSS transform: the compositor
 // scales and turns it, so the canvas does not redraw a full-screen image every frame.
 const bgBox = $("bg");
+// bgopacity=0..1: how strongly the background shows, whichever it is.
+const BG_OPACITY = (v => (Number.isFinite(v) ? String(Math.max(0, Math.min(1, v))) : null))(Number(OPT.get("bgopacity") || NaN));
 let bgShown = null, bgTransform = "";
 export function drawBackground(r) {
   ctx.clearRect(0, 0, r.width, r.height);
   let pic = null, lo, hi;
-  if (state.bg === "overview" && state.overview) {
+  // The overview also stands in once it is clear this map has no geometry.
+  if (state.overview && (state.bg === "overview" || (state.mapData && !state.geoCanvas))) {
     const { img, b } = state.overview;
     pic = img; lo = [b.boundary_min.x, b.boundary_min.y]; hi = [b.boundary_max.x, b.boundary_max.y];
   } else if (state.geoCanvas) {
@@ -359,7 +415,7 @@ export function drawBackground(r) {
   }
   if (pic !== bgShown) {
     bgBox.replaceChildren(...(pic ? [pic] : []));
-    if (pic) pic.style.opacity = OVERLAY && pic !== state.geoCanvas?.canvas ? "0.95" : "";
+    if (pic) pic.style.opacity = BG_OPACITY ?? (OVERLAY && pic !== state.geoCanvas?.canvas ? "0.95" : "");
     bgShown = pic; bgTransform = "";
   }
   if (!pic) return;

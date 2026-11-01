@@ -1,4 +1,4 @@
-import { $, DELAY, OPT, OVERLAY, PAGE, canvas, uiScale, applyScale, state } from "./core.js";
+import { $, DELAY, OPT, OVERLAY, PAGE, PLAIN_BG, canvas, optOn, uiScale, applyScale, state } from "./core.js";
 import { env } from "./env.js";
 import { layerOn, setLayer, setOverkill, overkillOn } from "./layers.js";
 import { viewCy, frameMap, toScreen } from "./view.js";
@@ -61,6 +61,9 @@ env.keys.addEventListener("keydown", e => {
 for (const cls of ["nohud", "noscore"]) {
   try { if (!OVERLAY && env.storage && localStorage.getItem(cls) === "1") env.el.classList.add(cls); } catch {}
 }
+// The address beats the saved choice for this visit, without changing it. The overlay's
+// scoreboard is off unless asked for (renderScoreboard).
+if (!OVERLAY) env.el.classList.toggle("noscore", !optOn("score", !env.el.classList.contains("noscore")));
 
 function setAutoZoom(on) {
   if (OVERLAY || state.autoZoom === on) return;
@@ -124,6 +127,7 @@ for (const b of env.root.querySelectorAll("#bgtoggle button")) {
     state.bg = b.dataset.bg;
     for (const o of env.root.querySelectorAll("#bgtoggle button")) o.classList.toggle("on", o === b);
   });
+  if (b.dataset.bg === (PLAIN_BG ? "geometry" : OPT.get("bg"))) b.click();
 }
 canvas.addEventListener("wheel", e => {
   e.preventDefault();

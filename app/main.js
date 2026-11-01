@@ -1,4 +1,4 @@
-import { OVERLAY, canvas, ctx, state, renderTick, canvasSize } from "./core.js";
+import { OVERLAY, canvas, ctx, state, renderTick, canvasSize, optOn } from "./core.js";
 import { EMBEDDED, embedState } from "./embed.js";
 import { fireEvents } from "./events.js";
 import { updatePanel, renderScoreboard, shownScore } from "./hud.js";
@@ -8,6 +8,8 @@ import { drawMarks, drawPacks, drawJumpTrails } from "./overkill.js";
 import { drawProjectiles, drawHealBeams, drawPlayers, drawEffects } from "./players.js";
 import { openStream } from "./stream.js";
 import { frameMap, drawBackground, followAction } from "./view.js";
+
+const SHOW_BUILDINGS = optOn("buildings", !OVERLAY), SHOW_PROJECTILES = optOn("projectiles", !OVERLAY), SHOW_BEAMS = optOn("beams");
 
 // ---------- interpolation
 function lerpAngle(a, b, t) { const d = ((b - a + 540) % 360) - 180; return a + d * t; }
@@ -92,15 +94,15 @@ function draw() {
     if (layerOn("pickups")) drawPacks();
     if (layerOn("caps")) drawCapAreas(f.snap);
     drawObjectives(f.snap, tick);
-    drawBuildings(f.snap);
+    if (SHOW_BUILDINGS) drawBuildings(f.snap);
     if (layerOn("jumps")) drawJumpTrails(f.players);
     // Above the players in the overlay, where a dot would otherwise cover them.
-    if (!OVERLAY) drawProjectiles(f.projectiles);
+    if (SHOW_PROJECTILES && !OVERLAY) drawProjectiles(f.projectiles);
     drawEffects(byId);
-    drawHealBeams(f.players, byId);
+    if (SHOW_BEAMS) drawHealBeams(f.players, byId);
     drawPlayers(f.players);
     drawFlags(f.snap, f.players, tick);
-    if (OVERLAY) drawProjectiles(f.projectiles);
+    if (SHOW_PROJECTILES && OVERLAY) drawProjectiles(f.projectiles);
     updatePanel(f.players, f.snap);
   }
 }

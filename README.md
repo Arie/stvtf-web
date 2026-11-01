@@ -87,23 +87,55 @@ broadcasts: add it to OBS as a Browser source of any size (for example 480x480 o
 frames itself around the spawns and points of the map, upright like the main view, and
 then glides in on the area where the living players are.
 
-It shows the map, players as team dots with class icon, view direction and health ring,
-an X where a player died until they respawn, übers, heal beams, sentries, projectiles, the
+It shows the map, players as team dots with class icon and view direction,
+an X where a player died until they respawn, übers, heal beams, the
 intelligence (or bball ball) at home, dropped or on its carrier,
-shots and explosions, control points (squares filling left to right while captured) and
-the active spawn rooms.
+control points (squares filling left to right while captured) and
+the active spawn rooms. Health rings, projectiles, buildings and shots stay out of it unless
+asked for with their [display options](#display-options).
 
-Query options, e.g. `/overlay?names=1&score=1&panel=0.6`:
+Besides the [display options](#display-options), it takes these, e.g.
+`/overlay?names=1&score=1&panel=0.6`:
 
 | option | |
 |---|---|
-| `names=1` | player names under the dots |
-| `score=1` | a small scoreboard (scores, round timer, points) at the top |
 | `panel=0..1` | opacity of a dark backdrop behind the whole panel (default 0, none) |
 | `zoom=map` | keep the whole map in view instead of zooming to where the players are |
 | `rotate=auto\|<degrees>` | map rotation (default 0, upright like the main view; `auto` turns a quarter when that fills the panel clearly better) |
 | `ui=<factor>` | scale all markers (default 1; marker size already follows the panel size) |
 | `dot=<px>` | fixed player dot radius instead |
+
+## Display options
+
+These work on the main view and the overlay alike: `1` shows a thing, `0` hides it, and anything
+else leaves the view's default. For a minimap in the corner of a stream, for example:
+`/overlay?beams=0&deaths=0&caps=0`.
+On the main view they beat the settings saved in the browser for that visit without changing
+them; pressing a key or using the settings panel still applies and saves as usual.
+
+| option | shows | main view | overlay |
+|---|---|---|---|
+| `names` | player names under the dots | on | off |
+| `score` | the scoreboard | on | off |
+| `health` | the health ring around the dots (the HUD's cards keep theirs) | on | off |
+| `projectiles` | rockets, grenades, stickies and the like | on | off |
+| `beams` | heal beams | on | on |
+| `buildings` | sentries, dispensers and teleporters, with their shots, upgrades and repairs, and the one an engineer carries | on | off |
+| `shots` | shot tracers, explosions, flames and airblasts | on | off |
+| `deaths` | the X where a player fell, until they respawn; `0` also drops the main view's brief kill marks | off | on |
+| `caps`, `heals`, `hits`, `marks`, `jumps`, `pickups`, `points`, `flow`, `loadout`, `effects` | the overkill layers of the settings panel; those that need detail lines make the overlay ask for them too | on | `caps` only |
+
+`bg` picks the background; `g` switches between the overview and the geometry, and a map with
+only one of them shows that one:
+
+| `bg=` | |
+|---|---|
+| `overview` | the demos.tf overview (the default) |
+| `geometry` | the map geometry, with its textures, walls and shadows |
+| `flat` | the map geometry as a plain shape, in three shades for height |
+| `outline` | only a line round the map's playable area |
+
+`bgopacity=0..1` sets how strongly the background shows, with any of them.
 
 ## Delay
 
@@ -115,7 +147,7 @@ server that much later, so it also starts that much later; `o` keeps the delay.
 ## Embedding
 
 A site embeds a match by putting a start link (from serveme.tf's API) in an iframe. The link
-can say where it lands: `view=overlay`, `delay=<s>` and the overlay's query options carry over,
+can say where it lands: `view=overlay`, `delay=<s>` and the display and overlay options carry over,
 so `/start?t=…&view=overlay&delay=5&names=1` opens `/w/<id>/overlay/5?names=1`. `side=0` leaves
 out the events and chat beside the map, for a site that shows its own.
 
@@ -173,7 +205,7 @@ Instead of an iframe, a site can put the map straight into its page:
 ```
 
 `src` is a start link or a match page (`https://stv.tf/w/<id>/`). The attributes `view="overlay"`,
-`delay`, `side` and the overlay's options do what they do on a link. The element fires the
+`delay`, `side` and the display and overlay options do what they do on a link. The element fires the
 messages above as events named by their `type`, with the message as `detail`, and has
 `follow({steamid64 | steamid | id})` (no argument stops following) and `setLayer(name, on)`. It is
 16:9 unless sized otherwise, keeps its own styles in a shadow root, and takes the keyboard
@@ -233,7 +265,7 @@ All play the demo match:
   chat, and `g` switches between the demos.tf overview and the map geometry. The map takes
   the space they leave. `o` switches to the broadcast overlay and back. `?`, or the ? button,
   lists them. `k` (or the gear button) opens the overkill layer settings, `x` switches all of them
-  on or off, `j` the jump trails and `l` the loadouts; choices are kept per browser. All layers are on by default (the overlay shows capture areas only). Layers that
+  on or off, `j` the jump trails and `l` the loadouts; choices are kept per browser. All layers are on by default (the overlay shows capture areas only), and [query options](#display-options) can set them. Layers that
   need detail lines make the page ask the stream for `?detail=1`.
 - Spawn rooms from the map file: each team's active one in team colour, the rest as dashed
   outlines. A spawn point tied to a control point is enabled while its team owns that point

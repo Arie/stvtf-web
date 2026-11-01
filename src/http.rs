@@ -401,7 +401,34 @@ const KILLICONS_V1_CSS: &str =
     concat!(include_str!("../killicons/killicons.css"), "\n.killicon.crit { filter: drop-shadow(0 0 3px #ff4b3a); }\n");
 
 /// Display options a start link can carry over to the page.
-const VIEW_OPTIONS: [&str; 8] = ["names", "score", "panel", "rotate", "dot", "ui", "zoom", "side"];
+const VIEW_OPTIONS: [&str; 26] = [
+    "names",
+    "score",
+    "panel",
+    "rotate",
+    "dot",
+    "ui",
+    "zoom",
+    "side",
+    "bg",
+    "bgopacity",
+    "health",
+    "projectiles",
+    "beams",
+    "buildings",
+    "shots",
+    "deaths",
+    "caps",
+    "heals",
+    "hits",
+    "marks",
+    "jumps",
+    "pickups",
+    "points",
+    "flow",
+    "loadout",
+    "effects",
+];
 
 /// Where a start link lands below `/w/<id>/`: `view=overlay`, `delay=<s>` and the display options
 /// become `overlay/4.5?names=1`. Anything else, or a delay out of range, is left out.
@@ -506,6 +533,13 @@ mod tests {
     use crate::testing::TempDir;
     use crate::testing::app;
     use crate::{App, Matches, TcpListener, token};
+
+    #[test]
+    fn start_links_carry_every_display_toggle() {
+        let toggles = "names=0&score=1&bg=geometry&bgopacity=0.4&health=0&projectiles=0&beams=0&buildings=0&shots=0&deaths=0\
+                       &caps=0&heals=1&hits=1&marks=1&jumps=1&pickups=1&points=0&flow=1&loadout=0&effects=0";
+        assert_eq!(start_view(&format!("view=overlay&{toggles}&x=y")), format!("overlay?{toggles}"));
+    }
 
     /// Runs `serve` on one connection, with `send` written by the client; returns serve's result and the response.
     fn request_to(app: &App, send: &[u8]) -> (Result<()>, String) {

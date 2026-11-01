@@ -1,4 +1,4 @@
-import { TEAM, CLASS, icon, OVERLAY, OPT, overlayUnit, uiScale, ctx, state } from "./core.js";
+import { TEAM, CLASS, icon, OVERLAY, optOn, overlayUnit, uiScale, ctx, state } from "./core.js";
 import { layerOn } from "./layers.js";
 import { toScreen, screenAngle, px, playerRad, drawText } from "./view.js";
 
@@ -234,6 +234,12 @@ function iconSprite(cls, size) {
   return c;
 }
 
+// What the query string can turn off, or on where a view leaves it out.
+const SHOW_NAMES = optOn("names", !OVERLAY), SHOW_HEALTH = optOn("health", !OVERLAY), SHOW_SHOTS = optOn("shots", !OVERLAY), SHOW_BUILDINGS = optOn("buildings", !OVERLAY);
+// deaths: the X kept where a player fell (the overlay's), and the main view's brief kill marks.
+const SHOW_FALLEN = optOn("deaths", OVERLAY), SHOW_KILLS = optOn("deaths");
+const SHOT_EFFECTS = new Set(["shot", "boom", "airblast"]), BUILDING_EFFECTS = new Set(["sentryshot", "upgrade", "repair"]);
+
 export function drawPlayers(players) {
   const alive = [];
   // The followed player is drawn last, so their dot and name are on top.
@@ -242,8 +248,8 @@ export function drawPlayers(players) {
     if (p.team !== "red" && p.team !== "blue") continue;
     if (!p.alive) {
       // The overlay keeps an X where each dead player fell until they respawn, like a CS radar.
-      if (OVERLAY && p.pos) {
-        const [x, y] = toScreen(p.pos[0], p.pos[1]), s = overlayUnit() * 0.6;
+      if (SHOW_FALLEN && p.pos) {
+        const [x, y] = toScreen(p.pos[0], p.pos[1]), s = playerRad() * 0.6;
         ctx.save(); ctx.globalAlpha = 0.75; ctx.lineCap = "round";
         ctx.strokeStyle = "#000"; ctx.lineWidth = 5;
         ctx.beginPath(); ctx.moveTo(x - s, y - s); ctx.lineTo(x + s, y + s); ctx.moveTo(x + s, y - s); ctx.lineTo(x - s, y + s); ctx.stroke();
@@ -276,6 +282,7 @@ export function drawPlayers(players) {
     if (layerOn("effects") && p.conds?.length) drawStatusInside(p.conds, p.id, x, y, rad);
     ctx.beginPath(); ctx.arc(x, y, rad, 0, Math.PI * 2);
     ctx.lineWidth = OVERLAY ? Math.max(1.5, rad * 0.16) : 1.5; ctx.strokeStyle = "#000"; ctx.stroke();
+    if (!SHOW_HEALTH) continue;
     const max = p.max_hp || 1, frac = Math.max(0, Math.min(1, p.hp / max));
     const ring = (from, to, color) => {
       ctx.beginPath(); ctx.arc(x, y, rad + 2.5, -Math.PI / 2 + Math.PI * 2 * from, -Math.PI / 2 + Math.PI * 2 * to);
@@ -288,7 +295,7 @@ export function drawPlayers(players) {
     if (over > 0) ring(0, over, "#1f4fe0");
   }
   // Flames over the dots, so they show in a fight, but under the class icons.
-  for (const { p, x, y, rad } of alive) if (p.flames) drawFlames(p, x, y, rad, screenAngle(p.yaw));
+  if (SHOW_SHOTS) for (const { p, x, y, rad } of alive) if (p.flames) drawFlames(p, x, y, rad, screenAngle(p.yaw));
   for (const { p, x, y, rad, cloaked } of alive) {
     ctx.globalAlpha = cloaked ? 0.35 : 1;
     const img = iconSprite(p.class, rad * 1.65);
@@ -300,7 +307,7 @@ export function drawPlayers(players) {
       ctx.textAlign = "center"; ctx.textBaseline = "middle";
       ctx.fillText(CLASS[p.class] || "?", x, y + 0.5);
     }
-    if (p.carrying) {
+    if (SHOW_BUILDINGS && p.carrying) {
       // The building an engineer carries, as a small badge like the ones on the map.
       const s = Math.max(12, rad), bx = x - rad * 0.95, by = y - rad * 0.95;
       ctx.beginPath(); ctx.roundRect(bx - s / 2, by - s / 2, s, s, 2);
@@ -317,7 +324,7 @@ export function drawPlayers(players) {
     ctx.globalAlpha = cloaked ? 0.35 : 1;
     drawStatus(p.conds, p.id, x, y, rad);
   }
-  if (!OVERLAY || OPT.get("names") === "1") for (const { p, x, y, rad, cloaked } of alive) {
+  if (SHOW_NAMES) for (const { p, x, y, rad, cloaked } of alive) {
     ctx.globalAlpha = cloaked ? 0.35 : 1;
     const size = OVERLAY ? Math.round(Math.max(11, rad * 0.95)) : Math.round(12 * uiScale());
     drawText(p.name.slice(0, OVERLAY ? 12 : 18), `700 ${size}px system-ui`, "#e8e8e8", "#0b0c0e", x, y + rad + 4, true);
@@ -397,6 +404,7 @@ export function drawEffects(byId) {
   const now = performance.now();
   state.effects = state.effects.filter(e => now - e.t0 < e.life);
   for (const e of state.effects) {
+    if ((!SHOW_SHOTS && SHOT_EFFECTS.has(e.kind)) || (!SHOW_BUILDINGS && BUILDING_EFFECTS.has(e.kind))) continue;
     const k = (now - e.t0) / e.life;
     ctx.globalAlpha = 1 - k;
     if (e.kind === "shot") {
@@ -427,7 +435,7 @@ export function drawEffects(byId) {
       ctx.strokeStyle = "#000"; ctx.lineWidth = 3;
       const ty = y - playerRad() - 4 - k * 22;
       ctx.strokeText("-" + e.ev.amount, x, ty); ctx.fillText("-" + e.ev.amount, x, ty);
-    } else if (e.kind === "kill" && !OVERLAY) {
+    } else if (e.kind === "kill" && !OVERLAY && SHOW_KILLS) {
       const v = e.ev.victim_pos;
       if (!v) continue;
       const [x, y] = toScreen(v[0], v[1]), s = 7;
