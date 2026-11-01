@@ -11,7 +11,7 @@ use stvtf::output::{Stamped, Status};
 
 /// A replay's pause between passes, how often a paused one checks for viewers, and the longest
 /// gap it waits out between two lines (map loads and tick resets would stall it).
-const REPLAY_PAUSE: Duration = Duration::from_secs(3);
+const REPLAY_PAUSE: Duration = if cfg!(test) { Duration::from_millis(1) } else { Duration::from_secs(3) };
 const REPLAY_POLL: Duration = Duration::from_millis(250);
 const MAX_REPLAY_GAP_MS: u64 = 1000;
 
