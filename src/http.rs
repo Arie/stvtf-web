@@ -538,6 +538,7 @@ mod tests {
     use crate::testing::{TempDir, app, server};
     use crate::{App, Matches, TcpListener, token};
     use flate2::read::GzDecoder;
+    use std::path::PathBuf;
     use std::time::Instant;
     use stvtf::Line;
     use stvtf::output::{self, PlayerId};
@@ -985,5 +986,32 @@ mod tests {
         let mut other = EventStream::open(&app, "GET /events HTTP/1.1\r\nX-Forwarded-For: 203.0.113.10\r\n\r\n");
         other.read_to("retry:");
         other.close(&hub);
+    }
+
+    /// A cache holding a BSP that cannot be built: it is gone once a build was tried, no network needed.
+    fn broken_map(name: &str) -> (TempDir, PathBuf) {
+        let dir = TempDir::new("map");
+        let bsp = dir.join(format!("{name}.bsp"));
+        std::fs::write(&bsp, b"not a bsp").unwrap();
+        (dir, bsp)
+    }
+
+    #[test]
+    fn with_many_matches_only_a_map_being_watched_is_built() {
+        let (dir, bsp) = broken_map("cp_watched");
+        let sessions = Sessions::new(false, 1, 20.0);
+        sessions.pin("demo", |_| {});
+        let m = sessions.get("demo").unwrap();
+        let mut app = app(Matches::Many(sessions));
+        app.cache = dir.to_path_buf();
+        let refused = request_to(&app, b"GET /map/cp_watched HTTP/1.1\r\n\r\n").1;
+        assert!(refused.starts_with("HTTP/1.1 404") && refused.contains("no match is on"), "{refused}");
+        assert!(bsp.exists(), "not built");
+        publish(&m.hub, &server("cp_elsewhere"));
+        assert!(request_to(&app, b"GET /map/cp_watched HTTP/1.1\r\n\r\n").1.contains("no match is on"));
+        publish(&m.hub, &server("cp_watched"));
+        let tried = request_to(&app, b"GET /map/cp_watched HTTP/1.1\r\n\r\n").1;
+        assert!(tried.starts_with("HTTP/1.1 404") && !tried.contains("no match is on"), "{tried}");
+        assert!(!bsp.exists(), "built, and dropped when it turned out broken");
     }
 }
