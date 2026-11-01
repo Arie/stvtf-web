@@ -19,7 +19,7 @@ const post = m => {
   else if (EMBEDDED) window.parent.postMessage({ stvtf: 1, ...m }, "*");
 };
 const STEAMID64_BASE = 76561197960265728n;
-const steamid64 = id => { const n = /^\[U:1:(\d+)\]$/.exec(id || "")?.[1]; return n ? String(STEAMID64_BASE + BigInt(n)) : null; };
+export const steamid64 = id => { const n = /^\[U:1:(\d+)\]$/.exec(id || "")?.[1]; return n ? String(STEAMID64_BASE + BigInt(n)) : null; };
 // Absolute, since the parent page loads them from its own origin.
 const SPRITE = asset("killicons/v1/killicons.webp");
 let itemImages = {};

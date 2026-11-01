@@ -37,7 +37,7 @@ async function demostfBoundaries() {
   return boundaries;
 }
 // demos.tf's own lookup: exact name, then names with version suffixes trimmed.
-function demostfAlias(map, known) {
+export function demostfAlias(map, known) {
   const trim = m => { while (m.lastIndexOf("_") > m.indexOf("_")) m = m.slice(0, m.lastIndexOf("_")); return m; };
   if (map.startsWith("cp_gullywash_f") && !map.startsWith("cp_gullywash_final")) return "cp_gullywash_f6";
   if (known[map]) return map;
@@ -51,7 +51,7 @@ function demostfAlias(map, known) {
 // Whether an overview of another version of the map covers this version's own bounds (at least
 // half of it does). Versions can move the whole map: koth_clearcut's overview is nowhere near
 // koth_clearcut_b18, while the overviews that line up cover all or nearly all of it.
-function sameLayout(b, g) {
+export function sameLayout(b, g) {
   if (!g?.bounds) return true;
   const [[x0, y0], [x1, y1]] = g.bounds, lo = b.boundary_min, hi = b.boundary_max;
   const w = Math.min(x1, hi.x) - Math.max(x0, lo.x), h = Math.min(y1, hi.y) - Math.max(y0, lo.y);
@@ -437,7 +437,7 @@ let lastFrame = performance.now(), tighterSince = null;
 
 // Players linked within CLUMP_LINK of each other form a clump; keep the biggest one and any
 // other clump of three or more.
-function fightingPlayers(alive) {
+export function fightingPlayers(alive) {
   const group = alive.map((_, i) => i);
   const root = i => (group[i] === i ? i : (group[i] = root(group[i])));
   for (let i = 0; i < alive.length; i++)
