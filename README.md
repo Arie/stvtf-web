@@ -360,8 +360,13 @@ cargo fmt                          # format (settings in rustfmt.toml)
 cargo clippy --all-targets         # lints (configured under [lints] in Cargo.toml)
 cargo test
 cargo deny check                   # advisories, licences, sources (deny.toml; cargo install cargo-deny)
-npm ci && npm run lint             # ESLint on app/ (eslint.config.mjs)
+npm ci && npm run lint             # ESLint on app/ and test/ (eslint.config.mjs)
+npm test                           # the page's modules in Node, with test/js/setup.js standing in for a browser
 ```
+
+CI also fails below 90% line coverage of the Rust code (`cargo llvm-cov --fail-under-lines 90`, with
+`cargo install cargo-llvm-cov` and `rustup component add llvm-tools`). `testdata/lines.jsonl` is one
+line of each kind the feed and chat show: Rust checks it against stvtf, the page's tests read it.
 
 `ln -s ../../.githooks/pre-commit .git/hooks/pre-commit` once per clone runs fmt, clippy and ESLint
 before each commit (not `core.hooksPath`, which would replace any global git hooks).

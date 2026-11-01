@@ -107,7 +107,12 @@ jobs:
           for map in cp_process_f12 cp_gullywash_f9 pl_upward_f12 pl_swiftwater_final1 mge_training_v8_beta4b cp_sunshine; do
             [ -f "testdata/maps/$map.bsp" ] || curl -fsSL -o "testdata/maps/$map.bsp" "https://fastdl.serveme.tf/maps/$map.bsp"
           done
-      - run: cargo test --locked
+      - run: rustup component add llvm-tools
+      - uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
+        with:
+          tool: cargo-llvm-cov
+      # The tests, which must also keep this much of the code covered (93.8% when set).
+      - run: cargo llvm-cov --locked --fail-under-lines 90
 
   deny:
     name: cargo-deny
