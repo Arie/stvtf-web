@@ -151,4 +151,21 @@ mod tests {
         assert!(Keys::from_hex("abc").is_err());
         assert!(Keys::from_hex(&format!("é{}", "0".repeat(62))).is_err(), "non-ASCII, 64 bytes long");
     }
+
+    #[test]
+    fn sealed_data_too_short_to_be_any_is_refused_without_a_panic() {
+        let keys = Keys::from_hex(KEY).unwrap();
+        assert_eq!(keys.unseal(&keys.seal(b"")).unwrap(), b"", "just a nonce and a tag");
+        for short in [&b""[..], b"short", &[0; NONCE_BYTES], &[0; NONCE_BYTES + TAG_BYTES - 1]] {
+            assert_eq!(keys.unseal(short).unwrap_err().to_string(), "too short", "{} bytes", short.len());
+        }
+    }
+
+    #[test]
+    fn a_token_is_good_up_to_and_including_its_expiry() {
+        let keys = Keys::from_hex(KEY).unwrap();
+        let t = seal(r#"{"connect":"1.2.3.4:27020","exp":1000}"#, [3; 12]);
+        assert!(keys.open(&t, 1000).is_ok());
+        assert!(keys.open(&t, 1001).is_err());
+    }
 }

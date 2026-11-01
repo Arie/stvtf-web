@@ -779,4 +779,57 @@ mod tests {
         assert_ne!(first.id, second.id);
         s.stop_all();
     }
+
+    #[test]
+    fn a_match_is_idle_only_once_its_last_viewer_left() {
+        let s = Sessions::new(false, 8, 20.0);
+        let m = s.open("192.0.2.50:27020 tv", None).unwrap();
+        let (a, b) = (Viewer::new(m.clone()), Viewer::new(m.clone()));
+        s.reap(Duration::ZERO);
+        assert!(s.get(&m.id).is_some(), "two are watching");
+        drop(a);
+        s.reap(Duration::ZERO);
+        assert!(s.get(&m.id).is_some(), "one is still watching");
+        drop(b);
+        s.reap(Duration::from_hours(1));
+        assert!(s.get(&m.id).is_some(), "it lingers");
+        s.reap(Duration::ZERO);
+        assert!(s.get(&m.id).is_none());
+    }
+
+    #[test]
+    fn only_match_ids_are_looked_up_in_the_store() {
+        let root = TempDir::new("storeids");
+        let dir = root.join("store");
+        std::fs::create_dir(&dir).unwrap();
+        std::fs::write(dir.join(CURRENT), "mark").unwrap();
+        std::fs::write(root.join("outside"), "x").unwrap();
+        let mut s = Sessions::new(false, 8, 20.0);
+        s.store = Some(Store { dir: dir.clone(), keys: None });
+        for name in [CURRENT, "../outside"] {
+            assert!(s.get(name).is_none(), "{name}");
+        }
+        // Anything picked up and found unreadable would have been deleted.
+        assert_eq!(std::fs::read(dir.join(CURRENT)).unwrap(), b"mark");
+        assert!(root.join("outside").exists());
+        let unreadable = "0".repeat(2 * ID_BYTES);
+        std::fs::write(dir.join(&unreadable), "not a match").unwrap();
+        assert!(s.get(&unreadable).is_none());
+        assert!(!dir.join(&unreadable).exists(), "a saved match that cannot be read is dropped");
+    }
+
+    #[test]
+    fn a_match_id_is_exactly_as_long_as_they_are_made_and_hex() {
+        assert!(is_id(&random_id()));
+        for bad in ["", "abc", &"a".repeat(31), &"a".repeat(33), &"g".repeat(32), &format!("../{}", "a".repeat(29))] {
+            assert!(!is_id(bad), "{bad}");
+        }
+    }
+
+    #[test]
+    fn documentation_and_broadcast_addresses_are_not_public() {
+        for ip in ["192.0.2.1", "198.51.100.1", "203.0.113.1", "255.255.255.255"] {
+            assert!(!is_public(ip.parse().unwrap()), "{ip}");
+        }
+    }
 }
