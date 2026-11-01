@@ -649,19 +649,18 @@ fn within(pts: &[[f64; 2]], q: [f64; 2]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::bsp::tests::{map, process, swiftwater};
+    use crate::bsp::tests::{map, process, process_built, swiftwater_built};
     use crate::bsp::{Bounds, LUMP_LENGTH, contains_point as contains, geometry, lump_entry};
 
     #[test]
     fn process_keeps_the_playable_floors_only() {
-        let Some(data) = process() else { return };
-        let g = geometry(&data).unwrap();
+        let Some(g) = process_built() else { return };
         // Every spawn point and pack has a kept floor within 64 units under it.
         for p in g.spawns.points.iter().map(|s| s.pos).chain(g.packs.iter().map(|p| p.pos)) {
             assert!(g.floors.iter().any(|f| contains(&f.p, p[0], p[1]) && (p[2] - f.z).abs() < 64.0), "{p:?}");
         }
         // The mask is at the voxel's size and covers them all.
-        let m = g.playable.unwrap();
+        let m = g.playable.as_ref().unwrap();
         let bytes = STANDARD.decode(&m.bits).unwrap();
         assert_eq!(m.cell, 16.0);
         for p in g.spawns.points.iter().map(|s| s.pos).chain(g.packs.iter().map(|p| p.pos)) {
@@ -683,10 +682,7 @@ mod tests {
 
     #[test]
     fn swiftwater_cave_and_track_loop_grass_are_kept() {
-        let Some(data) = swiftwater() else { return };
-        let t = std::time::Instant::now();
-        let g = geometry(&data).unwrap();
-        eprintln!("pl_swiftwater_final1 built in {:.2?}", t.elapsed());
+        let Some(g) = swiftwater_built() else { return };
         // The cave floor and the grass inside the track loop (both lost before the terrain rule).
         for (x, y) in [(4263.0, -2873.0), (1617.0, -2993.0)] {
             assert!(g.floors.iter().any(|f| contains(&f.p, x, y)), "({x}, {y})");

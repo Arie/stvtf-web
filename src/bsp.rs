@@ -803,6 +803,7 @@ pub(super) fn contains_point(p: &[f64], x: f64, y: f64) -> bool {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+    use std::sync::OnceLock;
 
     /// The map `name` from `testdata/maps`, or None when it is not there: the test then skips itself,
     /// except where the maps are required (CI).
@@ -818,6 +819,18 @@ pub(crate) mod tests {
     fn missing(path: &str, required: bool) {
         assert!(!required, "{path} is missing");
         eprintln!("skipping: {path} is missing");
+    }
+
+    /// The geometry of `cp_process_f12`, built once for the tests that only read it.
+    pub(super) fn process_built() -> Option<&'static Geometry> {
+        static BUILT: OnceLock<Option<Geometry>> = OnceLock::new();
+        BUILT.get_or_init(|| process().map(|data| geometry(&data).unwrap())).as_ref()
+    }
+
+    /// The geometry of `pl_swiftwater_final1`, built once for the tests that only read it.
+    pub(super) fn swiftwater_built() -> Option<&'static Geometry> {
+        static BUILT: OnceLock<Option<Geometry>> = OnceLock::new();
+        BUILT.get_or_init(|| swiftwater().map(|data| geometry(&data).unwrap())).as_ref()
     }
 
     #[test]
@@ -954,8 +967,7 @@ pub(crate) mod tests {
 
     #[test]
     fn process_floors_within_the_playable_area() {
-        let Some(data) = process() else { return };
-        let g = geometry(&data).unwrap();
+        let Some(g) = process_built() else { return };
         let [lo, hi] = g.bounds.unwrap();
         // cp_process is symmetric around the middle point at the origin.
         assert!(lo[0] < -5000.0 && hi[0] > 5000.0, "{lo:?} {hi:?}");
@@ -967,8 +979,7 @@ pub(crate) mod tests {
 
     #[test]
     fn process_floors_have_material_kinds() {
-        let Some(data) = process() else { return };
-        let g = geometry(&data).unwrap();
+        let Some(g) = process_built() else { return };
         let of = |k| g.floors.iter().filter(|f| f.k == k).count();
         assert!(of(Kind::Concrete) + of(Kind::Metal) > 100, "{} concrete, {} metal", of(Kind::Concrete), of(Kind::Metal));
         assert!(of(Kind::Other) < g.floors.len(), "every floor is other");
@@ -981,8 +992,7 @@ pub(crate) mod tests {
 
     #[test]
     fn swiftwater_trench_has_no_water() {
-        let Some(data) = swiftwater() else { return };
-        let g = geometry(&data).unwrap();
+        let Some(g) = swiftwater_built() else { return };
         assert!(!g.floors.iter().any(|f| f.k == Kind::Water), "the slab under the trench bed is buried");
     }
 
@@ -1069,8 +1079,7 @@ pub(crate) mod tests {
 
     #[test]
     fn process_packs_and_capture_areas() {
-        let Some(data) = process() else { return };
-        let g = geometry(&data).unwrap();
+        let Some(g) = process_built() else { return };
         for i in 0..5 {
             let n = g.cap_areas.iter().filter(|a| a.point == Some(i)).count();
             eprintln!("cap areas point {i}: {n}");

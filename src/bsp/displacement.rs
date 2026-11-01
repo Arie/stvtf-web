@@ -155,7 +155,7 @@ fn read(info: &[u8], verts: &[u8], disp: usize, face: &super::Face, base: [Vec3;
 mod tests {
     use super::*;
     use crate::bsp::contains_point as contains;
-    use crate::bsp::tests::swiftwater;
+    use crate::bsp::tests::{swiftwater, swiftwater_built};
     use crate::bsp::{LUMP_LENGTH, geometry, lump_entry};
     use std::collections::HashMap;
 
@@ -190,7 +190,7 @@ mod tests {
             .collect();
         assert!(!zs.is_empty() && zs.iter().all(|z| *z < -650.0), "{zs:?}");
         // Kept terrain near (3874, 378) sits at about -949; its base face is at -1028.
-        let g = geometry(&data).unwrap();
+        let g = swiftwater_built().unwrap();
         let zs: Vec<f64> = g.floors.iter().filter(|f| f.d && contains(&f.p, 3874.0, 378.0)).map(|f| f.z).collect();
         assert!(!zs.is_empty() && zs.iter().all(|z| *z > -990.0), "{zs:?}");
     }

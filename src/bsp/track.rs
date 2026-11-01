@@ -65,8 +65,8 @@ mod tests {
 
     #[test]
     fn process_has_no_track() {
-        let Some(data) = super::super::tests::process() else { return };
-        assert_eq!(super::super::geometry(&data).unwrap().track.len(), 0);
+        let Some(g) = super::super::tests::process_built() else { return };
+        assert_eq!(g.track.len(), 0);
     }
 
     #[test]
