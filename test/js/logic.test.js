@@ -41,7 +41,7 @@ test("the fight is the biggest group and any other of at least three", () => {
   const fighting = players => fightingPlayers(players).map(p => p.pos[0]);
   // 1500 units links two players, and a chain of links is one group.
   assert.deepEqual(fighting(at(0, 1000, 2000, 9000, 10000, 20000)), [0, 1000, 2000]);
-  assert.deepEqual(fighting(at(0, 1000, 2000, 9000, 10000, 11000, 20000)), [0, 1000, 2000, 9000, 10000, 11000]);
+  assert.deepEqual(fighting(at(0, 1000, 2000, 3000, 9000, 10000, 11000, 15000, 16000)), [0, 1000, 2000, 3000, 9000, 10000, 11000]);
   assert.deepEqual(fighting(at(0, 5000)), [0, 5000], "alone, each is as big as any");
   assert.deepEqual(fighting(at(0, 1499, 5000)), [0, 1499]);
   assert.deepEqual(fighting(at(0, 1500, 5000)), [0, 1500, 5000], "just too far to link");
