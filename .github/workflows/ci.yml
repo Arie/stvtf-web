@@ -107,7 +107,11 @@ jobs:
           for map in cp_process_f12 cp_gullywash_f9 pl_upward_f12 pl_swiftwater_final1 mge_training_v8_beta4b cp_sunshine; do
             [ -f "testdata/maps/$map.bsp" ] || curl -fsSL -o "testdata/maps/$map.bsp" "https://fastdl.serveme.tf/maps/$map.bsp"
           done
-      - run: cargo test --locked
+      # Optimized, or the map tests take minutes; with the checks a debug build has.
+      - run: cargo test --locked --release
+        env:
+          CARGO_PROFILE_RELEASE_DEBUG_ASSERTIONS: true
+          CARGO_PROFILE_RELEASE_OVERFLOW_CHECKS: true
 
   deny:
     name: cargo-deny
