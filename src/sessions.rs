@@ -526,7 +526,7 @@ pub fn is_public(ip: IpAddr) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::testing::TempDir;
+    use crate::testing::{TempDir, script, server};
 
     #[test]
     fn only_public_addresses_pass() {
@@ -762,5 +762,21 @@ mod tests {
         let (a, b) = (random_id(), random_id());
         assert_eq!(a.len(), 32);
         assert_ne!(a, b);
+    }
+
+    #[test]
+    fn a_match_whose_watcher_gave_up_is_started_again() {
+        let s = Sessions::new(false, 8, 20.0);
+        script("192.0.2.200:27020", vec![server("cp_process_f12")], Some("wrong password"));
+        let first = s.open("192.0.2.200:27020 tv", None).unwrap();
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while !first.done.load(Ordering::Relaxed) {
+            assert!(Instant::now() < deadline, "the watcher should have given up");
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        assert!(s.on_map("cp_process_f12"), "what it saw before giving up is kept");
+        let second = s.open("192.0.2.200:27020 tv", None).unwrap();
+        assert_ne!(first.id, second.id);
+        s.stop_all();
     }
 }

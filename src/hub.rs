@@ -275,6 +275,7 @@ pub(crate) fn subscribe(hub: &SharedHub, detail: bool) -> Receiver<Arc<str>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::testing::{script, server};
     use serde_json::Value;
     use stvtf::output::{self, PlayerId, Team};
 
@@ -428,5 +429,27 @@ mod tests {
         assert_eq!(types(&detail), ["pass_get", "pass_score", "npc_damage"]);
         let kept: Value = serde_json::from_str(hub.lock().unwrap().history.back().unwrap()).unwrap();
         assert_eq!((kept["type"].as_str(), &kept["names"]["3"]["name"]), (Some("pass_score"), &Value::from("can of tuna")));
+    }
+
+    #[test]
+    fn pages_hear_a_watch_and_why_it_gave_up() {
+        let hub = SharedHub::default();
+        let page = subscribe(&hub, false);
+        script("hub-gives-up", vec![server("cp_process_f12")], Some("wrong password"));
+        let result = watch_into(&hub, "hub-gives-up", "tv", 20.0, &AtomicBool::new(false));
+        assert_eq!(result.unwrap_err().to_string(), "wrong password");
+        let lines: Vec<Value> = page.try_iter().map(|l| serde_json::from_str(&l).unwrap()).collect();
+        assert_eq!(lines.len(), 2, "{lines:?}");
+        assert_eq!(lines[0]["map"], "cp_process_f12");
+        assert_eq!(lines[1]["type"], "status");
+        assert!(lines[1].to_string().contains("wrong password"), "{}", lines[1]);
+    }
+
+    #[test]
+    fn a_watch_that_was_stopped_tells_the_pages_nothing() {
+        let hub = SharedHub::default();
+        let page = subscribe(&hub, false);
+        assert!(watch_into(&hub, "hub-stopped", "tv", 20.0, &AtomicBool::new(true)).is_ok());
+        assert_eq!(types(&page), Vec::<String>::new());
     }
 }

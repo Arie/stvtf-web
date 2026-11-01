@@ -379,9 +379,33 @@ mod testing {
     use stvtf::Line;
     use stvtf::output;
 
-    /// Stands in for [`stvtf::watch::watch`], so no test connects to a server: it runs until stopped.
-    #[expect(clippy::unnecessary_wraps, reason = "the same signature as the real one")]
-    pub(crate) fn watch(_: &watch::Watch, stop: &AtomicBool, _: &mut dyn FnMut(Line)) -> Result<(), watch::WatchError> {
+    /// What the stand-in for a server's watcher does.
+    struct Script {
+        target: String,
+        lines: Vec<Line>,
+        give_up: Option<String>,
+    }
+
+    static SCRIPTS: Mutex<Vec<Script>> = Mutex::new(Vec::new());
+
+    /// The watcher of `target` will send `lines` and then, if it says why, give up.
+    pub(crate) fn script(target: &str, lines: Vec<Line>, give_up: Option<&str>) {
+        lock(&SCRIPTS).push(Script { target: target.to_string(), lines, give_up: give_up.map(str::to_string) });
+    }
+
+    /// Stands in for [`stvtf::watch::watch`], so no test connects to a server: it does what its
+    /// [`script`] says, and without one, or if the script does not give up, runs until stopped.
+    pub(crate) fn watch(w: &watch::Watch, stop: &AtomicBool, emit: &mut dyn FnMut(Line)) -> Result<(), watch::WatchError> {
+        let script = {
+            let mut scripts = lock(&SCRIPTS);
+            scripts.iter().position(|s| s.target == w.target).map(|i| scripts.remove(i))
+        };
+        if let Some(script) = script {
+            script.lines.into_iter().for_each(&mut *emit);
+            if let Some(why) = script.give_up {
+                return Err(watch::WatchError::Other(anyhow::anyhow!(why)));
+            }
+        }
         while !stop.load(Ordering::Relaxed) {
             std::thread::sleep(Duration::from_millis(1));
         }
