@@ -3,8 +3,8 @@
 //! as soon as it is decoded, and the output when the match ends.
 
 use crate::hub::{SharedHub, publish};
-use crate::lock;
 use crate::replay::play_lines;
+use crate::{is_name, lock};
 use anyhow::{Context, Result, bail};
 use flate2::Compression;
 use flate2::read::GzDecoder;
@@ -30,13 +30,18 @@ struct Info {
     url: String,
 }
 
-/// Where demos.tf keeps demo `id`: on one of its own hosts, so a token cannot make us fetch
-/// anything else.
 fn demo_url(id: u64) -> Result<String> {
     let body = ureq::get(&format!("{API}{id}")).call().with_context(|| format!("demos.tf has no demo {id}"))?.into_string()?;
-    let info: Info = serde_json::from_str(&body).with_context(|| format!("demos.tf's answer about demo {id}"))?;
+    file_url(id, &body)
+}
+
+/// Where demos.tf's answer `body` says demo `id` is: on one of its own hosts, so a token cannot make
+/// us fetch anything else.
+fn file_url(id: u64, body: &str) -> Result<String> {
+    let info: Info = serde_json::from_str(body).with_context(|| format!("demos.tf's answer about demo {id}"))?;
     let host = info.url.strip_prefix("https://").and_then(|rest| rest.split('/').next()).unwrap_or_default();
-    if host != "demos.tf" && !host.ends_with(".demos.tf") {
+    // Only a plain name: anything else (`?`, `#`, `@`, a port) can put the real host elsewhere.
+    if !is_name(host, b".-") || (host != "demos.tf" && !host.ends_with(".demos.tf")) {
         bail!("demos.tf keeps demo {id} somewhere else: {}", info.url);
     }
     Ok(info.url)
@@ -95,4 +100,36 @@ pub(crate) fn play(hub: &SharedHub, id: u64, snapshot_hz: f32, play: &dyn Fn() -
         Err(e) => publish(hub, &Line::Status(Status::GaveUp { reason: format!("{e:#}") })),
     }
     played
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn demos_are_fetched_only_from_demos_tf() {
+        for url in ["https://demos.tf/1.dem", "https://static.demos.tf/1.dem", "https://a.b.demos.tf/x/1.dem"] {
+            let body = format!(r#"{{"url":"{url}"}}"#);
+            assert_eq!(file_url(1, &body).unwrap(), url);
+        }
+        for url in [
+            "http://demos.tf/1.dem",
+            "https://evil.example/1.dem",
+            "https://evildemos.tf/1.dem",
+            "https://demos.tf.evil.example/1.dem",
+            "https://evil.example?.demos.tf/1.dem",
+            "https://evil.example#.demos.tf/1.dem",
+            "https://evil.example\\\\.demos.tf/1.dem",
+            "https://evil.example%2f.demos.tf/1.dem",
+            "https://demos.tf@evil.example/1.dem",
+            "https://evil.example@static.demos.tf/1.dem",
+            "https://demos.tf:8443/1.dem",
+            "",
+        ] {
+            let body = format!(r#"{{"url":"{url}"}}"#);
+            assert!(file_url(1, &body).is_err(), "{url}");
+        }
+        assert!(file_url(1, "not json").is_err());
+        assert!(file_url(1, "{}").is_err());
+    }
 }
