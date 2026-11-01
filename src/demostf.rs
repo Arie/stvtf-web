@@ -132,4 +132,11 @@ mod tests {
         assert!(file_url(1, "not json").is_err());
         assert!(file_url(1, "{}").is_err());
     }
+
+    #[test]
+    fn a_demo_stopped_before_its_turn_is_not_fetched_and_says_nothing() {
+        let hub = SharedHub::default();
+        play(&hub, 1, 20.0, &|| true, &AtomicBool::new(true)).unwrap();
+        assert_eq!(crate::hub::subscribe(&hub, false).try_iter().count(), 0);
+    }
 }

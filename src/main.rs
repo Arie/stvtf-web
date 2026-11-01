@@ -491,4 +491,32 @@ mod tests {
         assert!(app.stream_slot(a).is_some());
         assert!(app.streams.lock().unwrap().is_empty(), "closed streams are forgotten");
     }
+
+    #[test]
+    fn a_server_of_many_matches_starts_with_its_demos_and_the_saved_matches() {
+        let (demos, store) = (TempDir::new("manydemos"), TempDir::new("manystore"));
+        std::fs::write(demos.join("rd.jsonl"), "").unwrap();
+        std::fs::write(demos.join("notes.txt"), "").unwrap();
+        let demo = demos.join("rd.jsonl");
+        let args = ["--demos", demos.to_str().unwrap(), "--demo", demo.to_str().unwrap(), "--sessions", store.to_str().unwrap()];
+        let options = Options::parse(args.map(String::from)).unwrap().unwrap();
+
+        let before = many(&options, None).unwrap();
+        let running = before.open("192.0.2.77:27020 tv", None).unwrap();
+        before.stop_all();
+
+        let after = many(&options, None).unwrap();
+        assert!(after.get(&running.id).is_some(), "picked up");
+        assert!(after.get("rd").is_some() && after.get("demo").is_some(), "the demos are there");
+        assert!(after.get("notes").is_none());
+        after.stop_all();
+    }
+
+    #[test]
+    fn a_missing_demo_folder_stops_the_server_from_starting() {
+        let dir = TempDir::new("nodemos");
+        let missing = dir.join("nothing");
+        let options = Options::parse(["--demos".to_string(), missing.to_str().unwrap().to_string()]).unwrap().unwrap();
+        assert!(many(&options, None).is_err());
+    }
 }
