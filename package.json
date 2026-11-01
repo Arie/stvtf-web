@@ -3,7 +3,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "lint": "eslint app"
+    "lint": "eslint app test",
+    "test": "node --import ./test/js/setup.js --test \"test/js/*.test.js\""
   },
   "devDependencies": {
     "@eslint/js": "9.39.1",
