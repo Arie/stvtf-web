@@ -22,6 +22,10 @@ const DAY: Duration = Duration::from_hours(24);
 /// Builds a map that is not in the cache yet only when `fetch`: otherwise anyone could have every
 /// map on fastdl downloaded and kept here.
 pub(crate) fn map_geometry(cache: &Path, name: &str, fetch: bool) -> Result<Vec<u8>> {
+    map_geometry_from(FASTDL, cache, name, fetch)
+}
+
+fn map_geometry_from(fastdl: &str, cache: &Path, name: &str, fetch: bool) -> Result<Vec<u8>> {
     if !is_name(name, b"_") {
         bail!("bad map name");
     }
@@ -39,7 +43,7 @@ pub(crate) fn map_geometry(cache: &Path, name: &str, fetch: bool) -> Result<Vec<
     } else {
         let mut d = Vec::new();
         // One byte over the limit tells a map that is too big from one that just fits.
-        ureq::get(&format!("{FASTDL}{name}.bsp")).call()?.into_reader().take(MAX_BSP + 1).read_to_end(&mut d)?;
+        ureq::get(&format!("{fastdl}{name}.bsp")).call()?.into_reader().take(MAX_BSP + 1).read_to_end(&mut d)?;
         if d.len() as u64 > MAX_BSP {
             bail!("{name}.bsp is over {} MiB", MAX_BSP >> 20);
         }
@@ -157,6 +161,7 @@ pub(crate) fn write_atomic(path: &Path, data: &[u8]) -> std::io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::bsp::tests::process;
     use crate::lock;
     use crate::testing::TempDir;
     use std::io::{BufRead, BufReader};
@@ -304,5 +309,45 @@ mod tests {
         let err = overview_from(&base, &cache, "boundaries.json").unwrap_err().to_string();
         assert!(err.contains("over 8 MiB"), "{err}");
         assert!(!cache.join("demostf/boundaries.json").exists());
+    }
+
+    #[test]
+    fn a_map_that_cannot_be_downloaded_is_an_error_and_leaves_nothing() {
+        let cache = TempDir::new("nomap");
+        let (base, asked) = web_server(Vec::new());
+        assert!(map_geometry_from(&base, &cache, "cp_gone", true).is_err());
+        assert_eq!(*lock(&asked), ["/cp_gone.bsp"]);
+        assert_eq!(std::fs::read_dir(&cache).unwrap().count(), 0);
+    }
+
+    #[test]
+    fn a_broken_download_is_not_kept() {
+        let cache = TempDir::new("baddownload");
+        let (base, asked) = web_server(vec![("/cp_bad.bsp", b"not a bsp".to_vec())]);
+        for _ in 0..2 {
+            assert!(map_geometry_from(&base, &cache, "cp_bad", true).is_err());
+        }
+        assert_eq!(lock(&asked).len(), 2, "the next request fetches it again");
+        assert_eq!(std::fs::read_dir(&cache).unwrap().count(), 0);
+    }
+
+    /// Downloading, building, keeping the geometry and dropping the BSP, and the gzipped copy of it.
+    #[test]
+    fn a_map_is_downloaded_and_built_once() {
+        let Some(data) = process() else { return };
+        let cache = TempDir::new("built");
+        let (base, asked) = web_server(vec![("/cp_built.bsp", data)]);
+        let json = map_geometry_from(&base, &cache, "cp_built", true).unwrap();
+        assert!(!cache.join("cp_built.bsp").exists(), "only a bump of the suffix needs it again");
+        assert!(serde_json::from_slice::<serde_json::Value>(&json).unwrap()["floors"].as_array().is_some_and(|f| !f.is_empty()));
+        assert_eq!(map_geometry_from(&base, &cache, "cp_built", false).unwrap(), json, "read back, even with no match on it");
+        assert_eq!(lock(&asked).len(), 1);
+
+        let gz = map_geometry_gzip(&cache, "cp_built", false).unwrap();
+        let mut unzipped = Vec::new();
+        flate2::read::GzDecoder::new(&gz[..]).read_to_end(&mut unzipped).unwrap();
+        assert_eq!(unzipped, json);
+        std::fs::remove_file(cache.join("cp_built.v7.json")).unwrap();
+        assert_eq!(map_geometry_gzip(&cache, "cp_built", false).unwrap(), gz, "the gzipped copy is kept");
     }
 }

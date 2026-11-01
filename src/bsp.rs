@@ -801,7 +801,7 @@ pub(super) fn contains_point(p: &[f64], x: f64, y: f64) -> bool {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
     /// The map `name` from `testdata/maps`, or None when it is not there: the test then skips itself,
@@ -826,7 +826,7 @@ mod tests {
         missing("nowhere.bsp", true);
     }
 
-    pub(super) fn process() -> Option<Vec<u8>> {
+    pub(crate) fn process() -> Option<Vec<u8>> {
         map("cp_process_f12")
     }
 
