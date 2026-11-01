@@ -330,8 +330,10 @@ fn main() -> Result<()> {
     });
     if let Matches::Many(_) = app.matches {
         keep_house(app.clone(), &STOP);
-        let warming = app.clone();
-        std::thread::spawn(move || warm(&warming));
+        if !options.no_warm {
+            let warming = app.clone();
+            std::thread::spawn(move || warm(&warming));
+        }
         if console_prompt {
             let (console, url) = (app.clone(), format!("http://{}{}", options.listen, app.base));
             std::thread::spawn(move || prompt(&console, &url));

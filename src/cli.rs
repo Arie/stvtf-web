@@ -14,13 +14,13 @@ stvtf-web: live top-down viewer of a TF2 match in the browser
 
   stvtf-web HOST:TVPORT [--password tv] [--listen 127.0.0.1:8080] [--hz 20] [--cache DIR] [--backpack DIR]
   stvtf-web HOST[:PORT] [tv] / 'connect HOST:PORT; password \"tv\"'
-  stvtf-web [--public] [--max-matches 20] [--base-path /live] [--demo MATCH.jsonl[.gz]] [--demos DIR] [--sessions DIR]   (watch any server: paste a connect string on the page)
+  stvtf-web [--public] [--max-matches 20] [--base-path /live] [--demo MATCH.jsonl[.gz]] [--demos DIR] [--sessions DIR] [--no-warm]   (watch any server: paste a connect string on the page; --no-warm: no maps built in advance)
      With STVTF_TOKEN_KEY (64 hex digits) set, matches start only from a site's encrypted /start?t= links;
      --home URL then sends visitors of / to that site.
   stvtf-web --replay FILE.jsonl [--listen 127.0.0.1:8080]   (stvtf output, at game speed)";
 const FLAGS: [&str; 12] =
     ["password", "listen", "hz", "cache", "backpack", "replay", "max-matches", "base-path", "demo", "demos", "sessions", "home"];
-const SWITCHES: [&str; 1] = ["public"];
+const SWITCHES: [&str; 2] = ["public", "no-warm"];
 const DEFAULT_LISTEN: &str = "127.0.0.1:8080";
 const DEFAULT_MAX_MATCHES: usize = 20;
 const DEFAULT_CACHE: &str = "cache";
@@ -44,6 +44,8 @@ pub(crate) struct Options {
     pub(crate) sessions: Option<PathBuf>,
     pub(crate) home: Option<String>,
     pub(crate) public: bool,
+    /// Leave building the most played maps to their first viewers.
+    pub(crate) no_warm: bool,
 }
 
 impl Options {
@@ -73,6 +75,7 @@ impl Options {
             sessions: take("sessions").map(PathBuf::from),
             home: take("home"),
             public: take("public").is_some(),
+            no_warm: take("no-warm").is_some(),
         }))
     }
 }
@@ -174,6 +177,7 @@ mod tests {
         assert_eq!((defaults.listen.as_str(), defaults.max_matches, defaults.public), (DEFAULT_LISTEN, DEFAULT_MAX_MATCHES, false));
         assert_eq!(options(&["--base-path", "/live/"]).unwrap().unwrap().base_path, "/live");
         assert!(options(&["--help"]).unwrap().is_none());
+        assert!(!defaults.no_warm && options(&["--no-warm"]).unwrap().unwrap().no_warm);
     }
 
     #[test]
