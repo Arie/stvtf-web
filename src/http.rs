@@ -384,10 +384,11 @@ fn serve_backpack(s: &mut TcpStream, app: &App, file: &str) -> std::io::Result<(
 /// the modules' relative imports carry it along.
 pub(crate) fn app_version() -> &'static str {
     static VERSION: std::sync::OnceLock<String> = std::sync::OnceLock::new();
-    VERSION.get_or_init(|| {
-        let hash = APP.iter().flat_map(|(.., body)| body.iter()).fold(FNV_OFFSET_BASIS, |h, b| (h ^ u64::from(*b)).wrapping_mul(FNV_PRIME));
-        format!("{hash:016x}")
-    })
+    VERSION.get_or_init(|| format!("{:016x}", fnv1a(APP.iter().flat_map(|(.., body)| body.iter().copied()))))
+}
+
+fn fnv1a(bytes: impl Iterator<Item = u8>) -> u64 {
+    bytes.fold(FNV_OFFSET_BASIS, |h, b| (h ^ u64::from(b)).wrapping_mul(FNV_PRIME))
 }
 
 /// The match a site's `/start?t=` token asks for.
@@ -1013,5 +1014,104 @@ mod tests {
         let tried = request_to(&app, b"GET /map/cp_watched HTTP/1.1\r\n\r\n").1;
         assert!(tried.starts_with("HTTP/1.1 404") && !tried.contains("no match is on"), "{tried}");
         assert!(!bsp.exists(), "built, and dropped when it turned out broken");
+    }
+
+    #[test]
+    fn a_backpack_name_cannot_leave_its_folder() {
+        let root = TempDir::new("backpackroot");
+        let backpack = root.join("backpack");
+        std::fs::create_dir(&backpack).unwrap();
+        std::fs::write(root.join("secret.webp"), b"secret").unwrap();
+        let mut a = app(Matches::One(SharedHub::default()));
+        a.backpack = backpack;
+        let response = request_to(&a, b"GET /backpack/../secret.webp HTTP/1.1\r\n\r\n").1;
+        assert!(response.starts_with("HTTP/1.1 404") && !response.contains("secret"), "{response}");
+    }
+
+    #[test]
+    fn a_match_no_longer_watched_says_where_to_start_it_again() {
+        let mut a = app(Matches::Many(Sessions::new(false, 1, 20.0)));
+        let gone = |a: &App| request_to(a, b"GET /w/nope/ HTTP/1.1\r\n\r\n").1;
+        let page = gone(&a);
+        assert!(page.starts_with("HTTP/1.1 404") && page.contains(HTML) && page.contains("paste its connect string"), "{page}");
+        a.keys = Some(Arc::new(token::Keys::from_hex(&"00".repeat(32)).unwrap()));
+        let text = gone(&a);
+        assert!(text.starts_with("HTTP/1.1 404") && text.contains(TEXT) && text.contains("open it again from the site"), "{text}");
+    }
+
+    /// The head of a response, which may have a binary body.
+    fn head_of(app: &App, path: &str) -> String {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let mut client = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+        let (server, _) = listener.accept().unwrap();
+        write!(client, "GET {path} HTTP/1.1\r\n\r\n").unwrap();
+        serve(server, app).unwrap();
+        let mut response = Vec::new();
+        client.read_to_end(&mut response).unwrap();
+        let end = response.windows(4).position(|w| w == b"\r\n\r\n").unwrap();
+        String::from_utf8_lossy(&response[..end]).into_owned()
+    }
+
+    #[test]
+    fn the_fixed_files_are_served_as_what_they_are() {
+        let a = app(Matches::One(SharedHub::default()));
+        for (path, ctype) in [
+            ("/killicons.css", CSS),
+            ("/killicons.webp", WEBP),
+            ("/killicons/v1/killicons.webp", WEBP),
+            ("/examples/embed.html", HTML),
+            ("/examples/tf2pugs.html", HTML),
+            ("/examples/tf2pugs-js.html", HTML),
+            ("/icons/scout.svg", SVG),
+        ] {
+            let head = head_of(&a, path);
+            assert!(head.starts_with("HTTP/1.1 200") && head.contains(&format!("Content-Type: {ctype}")), "{path}: {head}");
+        }
+        for path in ["/icons/nope.svg", "/icons/scout", "/nothing"] {
+            assert!(head_of(&a, path).starts_with("HTTP/1.1 404"), "{path}");
+        }
+    }
+
+    #[test]
+    fn cached_overviews_keep_and_maps_do_not() {
+        let cache = TempDir::new("cachedheads");
+        std::fs::create_dir(cache.join("demostf")).unwrap();
+        std::fs::write(cache.join("demostf/boundaries.json"), b"{}").unwrap();
+        std::fs::write(cache.join("demostf/cp_x.webp"), b"RIFF").unwrap();
+        std::fs::write(cache.join("cp_x.v7.json"), b"{}").unwrap();
+        let mut a = app(Matches::One(SharedHub::default()));
+        a.cache = cache.to_path_buf();
+
+        let list = head_of(&a, "/overview/boundaries.json");
+        assert!(list.contains("Content-Type: application/json") && list.contains("max-age=86400"), "{list}");
+        let image = head_of(&a, "/overview/cp_x.webp");
+        assert!(image.contains("Content-Type: image/webp") && image.contains("max-age=86400"), "{image}");
+        let map = head_of(&a, "/map/cp_x");
+        assert!(
+            map.contains("Content-Type: application/json") && map.contains("Vary: Accept-Encoding") && !map.contains("max-age"),
+            "{map}"
+        );
+    }
+
+    #[test]
+    fn a_form_may_be_as_long_as_the_limit_and_no_longer() {
+        let a = app(Matches::Many(Sessions::new(false, 1, 20.0)));
+        let post = |len: u64| {
+            let body = format!("connect={}", "+".repeat(len as usize - "connect=".len()));
+            request_to(&a, format!("POST /watch HTTP/1.1\r\nContent-Length: {len}\r\n\r\n{body}").as_bytes()).1
+        };
+        let fits = post(MAX_REQUEST);
+        assert!(fits.starts_with("HTTP/1.1 400") && fits.contains("no server address"), "{fits}");
+        assert!(post(MAX_REQUEST + 1).starts_with("HTTP/1.1 413"));
+    }
+
+    #[test]
+    fn the_version_is_a_hash_of_the_page_files() {
+        // FNV-1a's published test vectors.
+        assert_eq!(fnv1a(b"".iter().copied()), 0xcbf2_9ce4_8422_2325);
+        assert_eq!(fnv1a(b"a".iter().copied()), 0xaf63_dc4c_8601_ec8c);
+        assert_eq!(fnv1a(b"foobar".iter().copied()), 0x8594_4171_f739_67e8);
+        assert_eq!(app_version().len(), 16);
+        assert!(app_version().bytes().all(|b| b.is_ascii_hexdigit()));
     }
 }
