@@ -47,7 +47,8 @@ With any number of matches, it fetches the demos.tf overviews and builds the geo
 maps in `maps.txt` (the most played on serveme.tf) when it starts, so their first viewer does
 not wait for the BSP download; other maps are built when a match on them is first viewed (and
 no others, so nobody can fill the cache with every map on fastdl). Different maps are built at
-the same time, each map once. Only the geometry stays in the cache, not the BSP.
+the same time, each map once. Only the geometry stays in the cache, not the BSP. `--no-warm`
+leaves all of it to the first viewers.
 
 `--demo MATCH.jsonl[.gz]` adds a fixed match at `/w/demo/`: a saved `stvtf` output played on
 a loop, to show the viewer off without a live game. It needs no token, is never disconnected,
