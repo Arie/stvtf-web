@@ -163,10 +163,7 @@ mod tests {
     use super::*;
     use crate::bsp::tests::process;
     use crate::lock;
-    use crate::testing::TempDir;
-    use std::io::{BufRead, BufReader};
-    use std::net::TcpListener;
-    use std::sync::{Arc, Mutex};
+    use crate::testing::{TempDir, web_server};
 
     #[test]
     fn write_atomic_replaces_the_file() {
@@ -229,30 +226,6 @@ mod tests {
         assert!(map_geometry(&cache, "broken", true).is_err());
         // So the next request downloads it again instead of failing on it forever.
         assert!(!bsp.exists());
-    }
-
-    /// A web server with these files; says what it was asked for. Answers until the tests end.
-    fn web_server(files: Vec<(&'static str, Vec<u8>)>) -> (String, Arc<Mutex<Vec<String>>>) {
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        let base = format!("http://{}/", listener.local_addr().unwrap());
-        let asked: Arc<Mutex<Vec<String>>> = Arc::default();
-        let log = Arc::clone(&asked);
-        std::thread::spawn(move || {
-            for mut conn in listener.incoming().flatten() {
-                let mut line = String::new();
-                BufReader::new(&conn).read_line(&mut line).unwrap();
-                let path = line.split_whitespace().nth(1).unwrap_or_default().to_string();
-                let found = files.iter().find(|(name, _)| *name == path).map(|(_, body)| body);
-                lock(&log).push(path);
-                let head = found.map_or_else(
-                    || "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".to_string(),
-                    |body| format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", body.len()),
-                );
-                let _ = conn.write_all(head.as_bytes());
-                let _ = conn.write_all(found.map_or(&[][..], |body| body));
-            }
-        });
-        (base, asked)
     }
 
     fn make_old(path: &Path) {
