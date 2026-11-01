@@ -832,4 +832,13 @@ mod tests {
             assert!(!is_public(ip.parse().unwrap()), "{ip}");
         }
     }
+
+    #[test]
+    fn stopping_all_waits_for_every_watcher_to_finish() {
+        let s = Sessions::new(false, 8, 20.0);
+        let (a, b) = (s.open("192.0.2.60:27020 tv", None).unwrap(), s.open("192.0.2.61:27020 tv", None).unwrap());
+        s.stop_all();
+        assert!(a.done.load(Ordering::Relaxed) && b.done.load(Ordering::Relaxed));
+        assert!(s.get(&a.id).is_none() && s.get(&b.id).is_none());
+    }
 }
