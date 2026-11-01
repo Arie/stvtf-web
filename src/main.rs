@@ -502,11 +502,20 @@ mod tests {
         let options = Options::parse(args.map(String::from)).unwrap().unwrap();
 
         let before = many(&options, None).unwrap();
+        testing::script("192.0.2.77:27020", vec![server("cp_restored")], None);
         let running = before.open("192.0.2.77:27020 tv", None).unwrap();
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        while !before.on_map("cp_restored") {
+            assert!(std::time::Instant::now() < deadline, "the watcher should have said its map");
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        before.persist();
         before.stop_all();
 
         let after = many(&options, None).unwrap();
-        assert!(after.get(&running.id).is_some(), "picked up");
+        // Before anyone asks for it by id, which would pick it up anyway.
+        assert!(after.on_map("cp_restored"), "picked up");
+        assert!(after.get(&running.id).is_some());
         assert!(after.get("rd").is_some() && after.get("demo").is_some(), "the demos are there");
         assert!(after.get("notes").is_none());
         after.stop_all();
