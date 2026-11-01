@@ -89,6 +89,10 @@ fn geometry_path(cache: &Path, name: &str) -> PathBuf {
 /// not each load them from demos.tf's own server. The list is fetched again after a day; while
 /// demos.tf is down, what the cache has is served.
 pub(crate) fn overview(cache: &Path, file: &str) -> Result<Vec<u8>> {
+    overview_from(DEMOSTF, cache, file)
+}
+
+fn overview_from(demostf: &str, cache: &Path, file: &str) -> Result<Vec<u8>> {
     let image = match file.strip_suffix(".webp") {
         _ if file == "boundaries.json" => None,
         Some(map) if is_name(map, b"_") => Some(map),
@@ -103,11 +107,11 @@ pub(crate) fn overview(cache: &Path, file: &str) -> Result<Vec<u8>> {
         return Ok(std::fs::read(&path)?);
     }
     // Only the maps demos.tf has: any other name would be a request to demos.tf every time.
-    if image.is_some_and(|map| !demostf_maps(cache).iter().any(|m| m == map)) {
+    if image.is_some_and(|map| !demostf_maps_from(demostf, cache).iter().any(|m| m == map)) {
         bail!("no such overview");
     }
     let mut body = Vec::new();
-    let fetched = ureq::get(&format!("{DEMOSTF}{remote}"))
+    let fetched = ureq::get(&format!("{demostf}{remote}"))
         .call()
         .map_err(anyhow::Error::from)
         .and_then(|r| Ok(r.into_reader().take(MAX_OVERVIEW + 1).read_to_end(&mut body)?));
@@ -122,9 +126,13 @@ pub(crate) fn overview(cache: &Path, file: &str) -> Result<Vec<u8>> {
 }
 
 /// The maps demos.tf has an overview of, from its `boundaries.json`.
-#[expect(clippy::zero_sized_map_values, reason = "only the keys are read; the values are skipped unparsed")]
 pub(crate) fn demostf_maps(cache: &Path) -> Vec<String> {
-    overview(cache, "boundaries.json")
+    demostf_maps_from(DEMOSTF, cache)
+}
+
+#[expect(clippy::zero_sized_map_values, reason = "only the keys are read; the values are skipped unparsed")]
+fn demostf_maps_from(demostf: &str, cache: &Path) -> Vec<String> {
+    overview_from(demostf, cache, "boundaries.json")
         .ok()
         .and_then(|b| serde_json::from_slice::<BTreeMap<String, IgnoredAny>>(&b).ok())
         .map(|m| m.into_keys().collect())
@@ -149,7 +157,11 @@ pub(crate) fn write_atomic(path: &Path, data: &[u8]) -> std::io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::lock;
     use crate::testing::TempDir;
+    use std::io::{BufRead, BufReader};
+    use std::net::TcpListener;
+    use std::sync::{Arc, Mutex};
 
     #[test]
     fn write_atomic_replaces_the_file() {
@@ -212,5 +224,85 @@ mod tests {
         assert!(map_geometry(&cache, "broken", true).is_err());
         // So the next request downloads it again instead of failing on it forever.
         assert!(!bsp.exists());
+    }
+
+    /// A web server with these files; says what it was asked for. Answers until the tests end.
+    fn web_server(files: Vec<(&'static str, Vec<u8>)>) -> (String, Arc<Mutex<Vec<String>>>) {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let base = format!("http://{}/", listener.local_addr().unwrap());
+        let asked: Arc<Mutex<Vec<String>>> = Arc::default();
+        let log = Arc::clone(&asked);
+        std::thread::spawn(move || {
+            for mut conn in listener.incoming().flatten() {
+                let mut line = String::new();
+                BufReader::new(&conn).read_line(&mut line).unwrap();
+                let path = line.split_whitespace().nth(1).unwrap_or_default().to_string();
+                let found = files.iter().find(|(name, _)| *name == path).map(|(_, body)| body);
+                lock(&log).push(path);
+                let head = found.map_or_else(
+                    || "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".to_string(),
+                    |body| format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", body.len()),
+                );
+                let _ = conn.write_all(head.as_bytes());
+                let _ = conn.write_all(found.map_or(&[][..], |body| body));
+            }
+        });
+        (base, asked)
+    }
+
+    fn make_old(path: &Path) {
+        let two_days_ago = std::time::SystemTime::now() - 2 * DAY;
+        std::fs::File::options().write(true).open(path).unwrap().set_modified(two_days_ago).unwrap();
+    }
+
+    #[test]
+    fn an_overview_is_fetched_once_and_kept() {
+        let cache = TempDir::new("fetched");
+        let (base, asked) = web_server(vec![
+            ("/boundaries.json", br#"{"cp_listed": {}}"#.to_vec()),
+            ("/images/cp_listed.webp", b"RIFF".to_vec()),
+            ("/images/cp_unlisted.webp", b"RIFF".to_vec()),
+        ]);
+        for _ in 0..2 {
+            assert_eq!(overview_from(&base, &cache, "cp_listed.webp").unwrap(), b"RIFF");
+        }
+        assert_eq!(*lock(&asked), ["/boundaries.json", "/images/cp_listed.webp"]);
+        assert!(overview_from(&base, &cache, "cp_unlisted.webp").is_err());
+        assert_eq!(lock(&asked).len(), 2, "a map demos.tf does not list is not asked for");
+    }
+
+    #[test]
+    fn the_list_of_overviews_is_fetched_again_after_a_day() {
+        let cache = TempDir::new("stale");
+        let (base, asked) = web_server(vec![("/boundaries.json", b"new".to_vec())]);
+        let list = cache.join("demostf/boundaries.json");
+        std::fs::create_dir_all(list.parent().unwrap()).unwrap();
+        std::fs::write(&list, b"old").unwrap();
+        assert_eq!(overview_from(&base, &cache, "boundaries.json").unwrap(), b"old", "still fresh");
+        assert!(lock(&asked).is_empty());
+        make_old(&list);
+        assert_eq!(overview_from(&base, &cache, "boundaries.json").unwrap(), b"new");
+        assert_eq!(std::fs::read(&list).unwrap(), b"new");
+    }
+
+    #[test]
+    fn while_demos_tf_is_down_a_cached_list_is_served() {
+        let cache = TempDir::new("down");
+        let (base, _) = web_server(Vec::new());
+        assert!(overview_from(&base, &cache, "boundaries.json").is_err(), "and nothing is cached yet");
+        let list = cache.join("demostf/boundaries.json");
+        std::fs::write(&list, b"old").unwrap();
+        make_old(&list);
+        assert_eq!(overview_from(&base, &cache, "boundaries.json").unwrap(), b"old");
+    }
+
+    #[test]
+    fn an_overview_over_the_limit_is_refused_and_not_kept() {
+        let cache = TempDir::new("big");
+        let limit = usize::try_from(MAX_OVERVIEW).unwrap();
+        let (base, _) = web_server(vec![("/boundaries.json", vec![b'x'; limit + 1])]);
+        let err = overview_from(&base, &cache, "boundaries.json").unwrap_err().to_string();
+        assert!(err.contains("over 8 MiB"), "{err}");
+        assert!(!cache.join("demostf/boundaries.json").exists());
     }
 }
