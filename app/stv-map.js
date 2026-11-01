@@ -8,7 +8,10 @@ import { configure } from "./env.js";
 const BASE = new URL("../../", import.meta.url);
 // See asset() in env.js.
 const cors = url => { url.searchParams.set("cors", "1"); return url; };
-const OPTIONS = ["side", "names", "score", "panel", "rotate", "dot", "ui", "zoom"];
+const OPTIONS = [
+  "side", "names", "score", "panel", "rotate", "dot", "ui", "zoom", "bg", "bgopacity", "health", "projectiles", "beams", "buildings", "shots", "deaths",
+  "caps", "heals", "hits", "marks", "jumps", "pickups", "points", "flow", "loadout", "effects",
+];
 let mounted = null;
 
 // Chrome ignores @font-face inside a shadow root, so the HUD's font goes on the page.

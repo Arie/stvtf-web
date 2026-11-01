@@ -26,9 +26,13 @@ export const DELAY_MS = (Number(DELAY) || 0) * 1000;
 export const PAGE = env.path.replace(DELAY_PART, "/");
 
 // /overlay: a fixed, transparent minimap for broadcasts. Options in the query string:
-// names=1, score=1, panel=0..1 (backdrop opacity, none by default), rotate=auto|<degrees>, dot=<px>.
+// panel=0..1 (backdrop opacity, none by default), rotate=auto|<degrees>, dot=<px>.
 export const OVERLAY = /\/overlay\/?$/.test(PAGE);
 export const OPT = new URLSearchParams(env.search);
+// A display toggle in the query string, on either view: 1 on, 0 off, anything else the default.
+export const optOn = (name, def = true) => { const v = OPT.get(name); return v === "1" || (v !== "0" && def); };
+// bg=flat or bg=outline: the map geometry drawn plainly, in place of its usual look.
+export const PLAIN_BG = ["flat", "outline"].includes(OPT.get("bg")) ? OPT.get("bg") : null;
 if (OVERLAY) {
   env.el.classList.add("overlay");
   if (OPT.has("panel")) env.el.style.setProperty("--overlay-opacity", OPT.get("panel"));
