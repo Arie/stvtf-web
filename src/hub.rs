@@ -452,4 +452,69 @@ mod tests {
         assert!(watch_into(&hub, "hub-stopped", "tv", 20.0, &AtomicBool::new(true)).is_ok());
         assert_eq!(types(&page), Vec::<String>::new());
     }
+
+    #[test]
+    fn a_map_change_forgets_the_match_so_far() {
+        let hub = SharedHub::default();
+        publish(&hub, &snapshot(1, None, vec![player(3, "can of tuna", Team::Red)]));
+        publish(&hub, &kill(2, 3, 3));
+        let before = hub.lock().unwrap().changes;
+        publish(&hub, &Line::Status(Status::MapChange));
+        assert_eq!(types(&subscribe(&hub, false)), ["status", "data_age"], "no snapshot or kill from the old map");
+        assert!(hub.lock().unwrap().changes > before, "the emptied feed is saved");
+        publish(&hub, &kill(3, 3, 3));
+        let page = subscribe(&hub, false);
+        let kill = page.try_iter().map(|l| serde_json::from_str::<Value>(&l).unwrap()).find(|l| l["type"] == "kill").unwrap();
+        assert!(kill.get("names").is_none(), "names from the old map are gone: {kill}");
+    }
+
+    #[test]
+    fn only_a_new_map_starts_a_new_history() {
+        let hub = SharedHub::default();
+        publish(&hub, &server("cp_process_f12"));
+        publish(&hub, &kill(1, 3, 4));
+        let saved = hub.lock().unwrap().changes;
+        publish(&hub, &server("cp_process_f12"));
+        assert_eq!(hub.lock().unwrap().history.len(), 1, "a signon restart keeps it");
+        assert_eq!(hub.lock().unwrap().changes, saved, "and has nothing new to save");
+        publish(&hub, &server("cp_badlands"));
+        assert!(hub.lock().unwrap().history.is_empty());
+        assert_eq!(hub.lock().unwrap().map.as_deref(), Some("cp_badlands"));
+    }
+
+    #[test]
+    fn the_history_keeps_only_the_latest_lines() {
+        let hub = SharedHub::default();
+        for tick in 1..=HISTORY as u32 + 1 {
+            publish(&hub, &kill(tick, 3, 4));
+        }
+        let h = hub.lock().unwrap();
+        let tick = |l: &Arc<str>| serde_json::from_str::<Value>(l).unwrap()["tick"].as_u64().unwrap();
+        assert_eq!(h.history.len(), HISTORY);
+        assert_eq!(tick(h.history.front().unwrap()), 2, "the oldest went");
+        assert_eq!(tick(h.history.back().unwrap()), HISTORY as u64 + 1);
+    }
+
+    #[test]
+    fn a_page_that_falls_behind_is_dropped_and_others_keep_going() {
+        let hub = SharedHub::default();
+        let (slow, fast) = (subscribe(&hub, false), subscribe(&hub, false));
+        for tick in 1..=PAGE_QUEUE as u32 + 1 {
+            publish(&hub, &snapshot(tick, None, Vec::new()));
+            fast.try_iter().for_each(drop);
+        }
+        assert_eq!(hub.lock().unwrap().clients.len(), 1);
+        assert_eq!(slow.try_iter().count(), PAGE_QUEUE, "what it had queued it can still read");
+        assert!(slow.try_recv().is_err_and(|e| e == std::sync::mpsc::TryRecvError::Disconnected), "and then it reconnects");
+        publish(&hub, &snapshot(PAGE_QUEUE as u32 + 2, None, Vec::new()));
+        assert_eq!(fast.try_iter().count(), 1);
+    }
+
+    #[test]
+    fn a_page_that_left_is_forgotten() {
+        let hub = SharedHub::default();
+        drop(subscribe(&hub, false));
+        publish(&hub, &snapshot(1, None, Vec::new()));
+        assert!(hub.lock().unwrap().clients.is_empty());
+    }
 }
