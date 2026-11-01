@@ -145,4 +145,61 @@ mod tests {
         let loading: Stamped = serde_json::from_str(r#"{"type":"round_active","tick":0}"#).unwrap();
         assert_eq!(line_time(&loading, tick), None, "tick 0 is a map load, not a time");
     }
+
+    fn recording(map: &str) -> String {
+        serde_json::to_string(&server(map)).unwrap().replace(r#""tick":0"#, r#""tick":5"#) + "\n"
+    }
+
+    #[test]
+    fn gzipped_recordings_play() {
+        let dir = TempDir::new("gz");
+        let path = dir.join("match.jsonl.gz");
+        let mut gz = flate2::write::GzEncoder::new(std::fs::File::create(&path).unwrap(), flate2::Compression::fast());
+        std::io::Write::write_all(&mut gz, recording("cp_badlands").as_bytes()).unwrap();
+        gz.finish().unwrap();
+        let hub = SharedHub::default();
+        play_once(&hub, &path, &|| true).unwrap();
+        assert_eq!(hub.lock().unwrap().map.as_deref(), Some("cp_badlands"));
+    }
+
+    #[test]
+    fn a_replay_holds_still_until_someone_watches() {
+        let hub = SharedHub::default();
+        let watching = std::cell::Cell::new(false);
+        let checks = std::cell::Cell::new(0);
+        let play = || {
+            assert!(hub.lock().unwrap().map.is_none(), "nothing plays before anyone watches");
+            checks.set(checks.get() + 1);
+            watching.replace(true)
+        };
+        let never = AtomicBool::new(false);
+        play_lines(&hub, recording("cp_badlands").as_bytes(), "test", &play, &never).unwrap();
+        assert_eq!(checks.get(), 2);
+        assert_eq!(hub.lock().unwrap().map.as_deref(), Some("cp_badlands"));
+    }
+
+    #[test]
+    fn a_stopped_replay_plays_nothing_more() {
+        let hub = SharedHub::default();
+        let stopped = AtomicBool::new(true);
+        assert_eq!(play_lines(&hub, recording("cp_badlands").as_bytes(), "test", &|| false, &stopped).unwrap(), 0);
+        assert!(hub.lock().unwrap().map.is_none());
+    }
+
+    #[test]
+    fn each_pass_of_a_replay_is_a_new_match() {
+        let dir = TempDir::new("loop");
+        let path = dir.join("match.jsonl");
+        std::fs::write(&path, recording("cp_badlands")).unwrap();
+        let hub = SharedHub::default();
+        // Gone after the first pass, which is the only way a replay ends.
+        let play = || {
+            let _ = std::fs::remove_file(&path);
+            true
+        };
+        let err = replay(&hub, &path, &play).unwrap_err();
+        assert!(format!("{err:#}").contains("opening"), "{err:#}");
+        let status = crate::hub::subscribe(&hub, false).try_recv().unwrap();
+        assert!(status.contains("map_change"), "{status}");
+    }
 }
