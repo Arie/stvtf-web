@@ -340,7 +340,7 @@ sets the directory (default `backpack`, `/usr/share/stvtf/backpack` in the Docke
 ## Tests
 
 ```
-cargo test --release
+cargo test
 ```
 
 The BSP tests run against the maps in `testdata/maps/` (`cp_process_f12`, `cp_gullywash_f9`,
