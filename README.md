@@ -342,10 +342,11 @@ sets the directory (default `backpack`, `/usr/share/stvtf/backpack` in the Docke
 cargo test --release
 ```
 
-The BSP tests run against maps in `cache/` (`cp_process_f12`, `cp_gullywash_f9`,
-`pl_upward_f12`, `pl_swiftwater_final1`, `mge_training_v8_beta4b`) and each is skipped when its
-map has not been downloaded yet (run the viewer on a match on it once, or for example
-`curl -o cache/cp_process_f12.bsp https://fastdl.serveme.tf/maps/cp_process_f12.bsp`).
+The BSP tests run against the maps in `testdata/maps/` (`cp_process_f12`, `cp_gullywash_f9`,
+`pl_upward_f12`, `pl_swiftwater_final1`, `mge_training_v8_beta4b`, `cp_sunshine`). Each test skips
+itself when its map has not been downloaded, for example with
+`curl -o testdata/maps/cp_process_f12.bsp https://fastdl.serveme.tf/maps/cp_process_f12.bsp`,
+except when `CI` is set, where a missing map fails it.
 Tests that write files do so in a temporary directory that is removed afterwards, also when
 they fail.
 

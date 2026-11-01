@@ -701,8 +701,7 @@ mod tests {
     #[test]
     fn maps_with_nothing_to_seed_keep_every_floor() {
         // Review focus 1: a map with no spawns, packs, points or track.
-        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/cache/mge_training_v8_beta4b.bsp");
-        let Ok(data) = std::fs::read(path) else { return eprintln!("{path} not downloaded; skipped") };
+        let Some(data) = map("mge_training_v8_beta4b") else { return };
         let g = geometry(&data).unwrap();
         assert!(g.floors.len() > 1000);
     }

@@ -804,13 +804,26 @@ pub(super) fn contains_point(p: &[f64], x: f64, y: f64) -> bool {
 mod tests {
     use super::*;
 
-    /// The map `name` from the cache, or None (said on stderr) when it is not there.
+    /// The map `name` from `testdata/maps`, or None when it is not there: the test then skips itself,
+    /// except where the maps are required (CI).
     pub(super) fn map(name: &str) -> Option<Vec<u8>> {
-        let data = std::fs::read(format!("{}/cache/{name}.bsp", env!("CARGO_MANIFEST_DIR"))).ok();
+        let path = format!("{}/testdata/maps/{name}.bsp", env!("CARGO_MANIFEST_DIR"));
+        let data = std::fs::read(&path).ok();
         if data.is_none() {
-            eprintln!("skipping: cache/{name}.bsp is missing");
+            missing(&path, std::env::var_os("CI").is_some());
         }
         data
+    }
+
+    fn missing(path: &str, required: bool) {
+        assert!(!required, "{path} is missing");
+        eprintln!("skipping: {path} is missing");
+    }
+
+    #[test]
+    #[should_panic(expected = "is missing")]
+    fn a_missing_map_fails_where_maps_are_required() {
+        missing("nowhere.bsp", true);
     }
 
     pub(super) fn process() -> Option<Vec<u8>> {
@@ -941,7 +954,7 @@ mod tests {
 
     #[test]
     fn process_floors_within_the_playable_area() {
-        let Some(data) = process() else { return eprintln!("cache/cp_process_f12.bsp not downloaded; skipped") };
+        let Some(data) = process() else { return };
         let g = geometry(&data).unwrap();
         let [lo, hi] = g.bounds.unwrap();
         // cp_process is symmetric around the middle point at the origin.
@@ -1042,8 +1055,7 @@ mod tests {
 
     #[test]
     fn maps_without_points_or_pickups_are_framed_by_their_floors() {
-        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/cache/mge_training_v8_beta4b.bsp");
-        let Ok(data) = std::fs::read(path) else { return eprintln!("{path} not downloaded; skipped") };
+        let Some(data) = map("mge_training_v8_beta4b") else { return };
         let g = geometry(&data).unwrap();
         let [lo, hi] = g.bounds.unwrap();
         // Players fighting in an arena, far from the one spawn point.
@@ -1057,7 +1069,7 @@ mod tests {
 
     #[test]
     fn process_packs_and_capture_areas() {
-        let Some(data) = process() else { return eprintln!("cache/cp_process_f12.bsp not downloaded; skipped") };
+        let Some(data) = process() else { return };
         let g = geometry(&data).unwrap();
         for i in 0..5 {
             let n = g.cap_areas.iter().filter(|a| a.point == Some(i)).count();
@@ -1072,8 +1084,7 @@ mod tests {
 
     #[test]
     fn payload_capture_areas_follow_the_cart_and_are_skipped() {
-        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/cache/pl_upward_f12.bsp");
-        let Ok(data) = std::fs::read(path) else { return eprintln!("{path} not downloaded; skipped") };
+        let Some(data) = map("pl_upward_f12") else { return };
         assert!(geometry(&data).unwrap().cap_areas.is_empty());
     }
 
@@ -1097,8 +1108,7 @@ mod tests {
 
     #[test]
     fn gullywash_points_numbered_from_one_map_to_the_games_indices() {
-        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/cache/cp_gullywash_f9.bsp");
-        let Ok(data) = std::fs::read(path) else { return eprintln!("{path} not downloaded; skipped") };
+        let Some(data) = map("cp_gullywash_f9") else { return };
         let g = geometry(&data).unwrap();
         // Blu's last point is index 0, at x 3768; red's last is 4, at x -3766.
         let x = |i: i64| g.cap_areas.iter().find(|a| a.point == Some(i)).map(|a| a.min[0]);
@@ -1108,8 +1118,7 @@ mod tests {
 
     #[test]
     fn swiftwater_teamless_spawn_rooms_take_their_spawn_points_team() {
-        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/cache/pl_swiftwater_final1.bsp");
-        let Ok(data) = std::fs::read(path) else { return eprintln!("{path} not downloaded; skipped") };
+        let Some(data) = map("pl_swiftwater_final1") else { return };
         let teams: Vec<Team> = spawns(&Entities::read(&data).unwrap()).rooms.iter().map(|r| r.team).collect();
         let (b, r) = (Team::Blue, Team::Red);
         assert_eq!(teams, [b, b, r, r, b, r]);

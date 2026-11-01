@@ -95,15 +95,17 @@ jobs:
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: stvtf-web
-      # The BSP tests skip themselves without this map; CI always runs them.
+      # A BSP test fails without its map when CI is set. Bump the key when the list changes.
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: stvtf-web/cache/cp_process_f12.bsp
-          key: bsp-cp_process_f12
-      - name: Download test map
+          path: stvtf-web/testdata/maps
+          key: test-maps-v1
+      - name: Download test maps
         run: |
-          mkdir -p cache
-          [ -f cache/cp_process_f12.bsp ] || curl -fsSL -o cache/cp_process_f12.bsp https://fastdl.serveme.tf/maps/cp_process_f12.bsp
+          mkdir -p testdata/maps
+          for map in cp_process_f12 cp_gullywash_f9 pl_upward_f12 pl_swiftwater_final1 mge_training_v8_beta4b cp_sunshine; do
+            [ -f "testdata/maps/$map.bsp" ] || curl -fsSL -o "testdata/maps/$map.bsp" "https://fastdl.serveme.tf/maps/$map.bsp"
+          done
       - run: cargo test --locked
 
   deny:
