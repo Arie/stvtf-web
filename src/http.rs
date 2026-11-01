@@ -175,7 +175,7 @@ pub(crate) fn serve(mut s: TcpStream, app: &App) -> Result<()> {
     let mut reader = BufReader::new(s.try_clone()?.take(MAX_REQUEST));
     let request = read_request(&mut reader)?;
     let peer = s.peer_addr()?.ip();
-    let client = client_key(request.forwarded.filter(|_| on_our_network(peer)).unwrap_or(peer));
+    let client = client_of(request.forwarded, peer);
     match &app.matches {
         _ if request.path == "/up" => respond(&mut s, "200 OK", TEXT, b"ok")?,
         Matches::One(hub) => serve_one(s, app, hub, &request, client)?,
@@ -317,6 +317,11 @@ fn on_our_network(ip: IpAddr) -> bool {
         v4 @ IpAddr::V4(_) => !sessions::is_public(v4),
         IpAddr::V6(v6) => v6.is_loopback() || v6.is_unique_local(),
     }
+}
+
+/// Who is asking: what the proxy says if the connection is from one of ours, or else whoever connected.
+fn client_of(forwarded: Option<IpAddr>, peer: IpAddr) -> IpAddr {
+    client_key(forwarded.filter(|_| on_our_network(peer)).unwrap_or(peer))
 }
 
 /// What a client is counted by: its address, or for IPv6 its /64, which one user usually has all of.
@@ -946,5 +951,39 @@ mod tests {
         let _open: Vec<_> = (0..MAX_STREAMS_PER_CLIENT).map(|_| many.stream_slot(loopback).unwrap()).collect();
         assert!(request_to(&many, b"GET /w/demo/events HTTP/1.1\r\n\r\n").1.starts_with("HTTP/1.1 429"));
         assert!(!m.watched());
+    }
+
+    #[test]
+    fn only_a_proxy_of_ours_is_believed_about_the_client() {
+        let ip = |s: &str| s.parse::<IpAddr>().unwrap();
+        let claimed = Some(ip("203.0.113.9"));
+        assert_eq!(client_of(claimed, ip("172.18.0.2")), ip("203.0.113.9"));
+        assert_eq!(client_of(claimed, ip("141.94.96.119")), ip("141.94.96.119"), "a stranger cannot choose whose streams count");
+        assert_eq!(client_of(None, ip("172.18.0.2")), ip("172.18.0.2"));
+    }
+
+    #[test]
+    fn the_client_is_the_last_forwarded_address() {
+        let forwarded = |header: &str| {
+            let send = format!("GET / HTTP/1.1\r\n{header}\r\n\r\n");
+            read_request(&mut send.as_bytes()).unwrap().forwarded.map(|ip| ip.to_string())
+        };
+        assert_eq!(forwarded("X-Forwarded-For: 203.0.113.9").as_deref(), Some("203.0.113.9"));
+        assert_eq!(forwarded("x-forwarded-for: 198.51.100.7, 203.0.113.9").as_deref(), Some("203.0.113.9"));
+        assert_eq!(forwarded("X-Forwarded-For: 2001:db8::1").as_deref(), Some("2001:db8::1"));
+        assert_eq!(forwarded("X-Forwarded-For: 203.0.113.9, nonsense"), None);
+        assert_eq!(forwarded("Host: x"), None);
+    }
+
+    #[test]
+    fn streams_behind_a_proxy_are_capped_per_forwarded_client() {
+        let (app, hub) = one_match();
+        let full: IpAddr = "203.0.113.9".parse().unwrap();
+        let _open: Vec<_> = (0..MAX_STREAMS_PER_CLIENT).map(|_| app.stream_slot(full).unwrap()).collect();
+        let send = b"GET /events HTTP/1.1\r\nX-Forwarded-For: 203.0.113.9\r\n\r\n";
+        assert!(request_to(&app, send).1.starts_with("HTTP/1.1 429"));
+        let mut other = EventStream::open(&app, "GET /events HTTP/1.1\r\nX-Forwarded-For: 203.0.113.10\r\n\r\n");
+        other.read_to("retry:");
+        other.close(&hub);
     }
 }
