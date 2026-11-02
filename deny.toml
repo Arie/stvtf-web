@@ -24,3 +24,4 @@ allow-wildcard-paths = true
 [sources]
 unknown-registry = "deny"
 unknown-git = "deny"
+allow-git = ["https://codeberg.org/Kanarie/parser.git"]
