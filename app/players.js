@@ -327,7 +327,7 @@ export function drawPlayers(players) {
   if (SHOW_NAMES) for (const { p, x, y, rad, cloaked } of alive) {
     ctx.globalAlpha = cloaked ? 0.35 : 1;
     const size = OVERLAY ? Math.round(Math.max(11, rad * 0.95)) : Math.round(12 * uiScale());
-    drawText(p.name.slice(0, OVERLAY ? 12 : 18), `700 ${size}px system-ui`, "#e8e8e8", "#0b0c0e", x, y + rad + 4, true);
+    drawText([...p.name].slice(0, OVERLAY ? 12 : 18).join(""), `700 ${size}px system-ui`, "#e8e8e8", "#0b0c0e", x, y + rad + 4, true);
   }
   ctx.globalAlpha = 1;
 }
