@@ -186,6 +186,8 @@ aside h3 { margin: 0 0 6px; font-size: 11px; text-transform: uppercase; letter-s
 #chat .srvtext { color: var(--dim); font-size: 11px; font-family: ui-monospace, monospace; }
 #chat time { display: inline-block; min-width: 30px; color: var(--dim); font-size: 10px; font-variant-numeric: tabular-nums; }
 .t-red { color: var(--red); } .t-blue { color: var(--blue); }
+/* A player's name is theirs alone: a right-to-left override in it stops at its end. */
+.who, .t-red, .t-blue, .bn, .card .nm b, #follow-name { unicode-bidi: isolate; }
 #feed div.ev { display: flex; align-items: center; gap: 5px; padding: 3px 7px; margin: 0 0 2px; border-radius: 3px;
   background: #0b0c0e8c; white-space: nowrap; overflow: hidden; }
 #feed .ev time { color: var(--dim); font-size: 10px; font-variant-numeric: tabular-nums; min-width: 30px; }
