@@ -26,16 +26,15 @@ Behind a site such as serveme.tf, which signs users in and decides what they may
 it with `--public --base-path /live` and `STVTF_TOKEN_KEY` (64 hex digits) shared with the
 site. Matches then start only from the site's `/start?t=TOKEN` links: the token is AES-256-GCM
 (`base64url(12-byte nonce | ciphertext | tag)` of `{"connect", "owner", "exp"}`), so the
-SourceTV password in it is never readable in a URL, and a user (`owner`) watches one match at
-a time: starting another stops the previous one, unless someone else opened it too, in which
-case it is left running for them. A null owner is unlimited.
+SourceTV password in it is never readable in a URL. `owner` is the user's Steam id (or null): it
+goes in the log with every match started or opened, and limits nothing.
 
 A token with `"demo": <id>` in place of `connect` plays that [demos.tf](https://demos.tf) demo
 instead: fetched from demos.tf, decoded once (one demo at a time) and kept in memory only as its
 gzipped stvtf output, it plays through once at game speed, holding still while nobody watches.
 Everyone who opens the same demo while it plays watches it together, from where it is. It ends
 like a live match, 3 minutes after its last viewer left, and it is not picked up again after a
-restart. The owner limit and `--max-matches` count it like any other match. `--home URL` sends visitors of `/` to the site (each
+restart. `--max-matches` counts it like any other match. `--home URL` sends visitors of `/` to the site (each
 serveme.tf region uses its own `/stv` page); without it `/` answers 403.
 
 `--sessions DIR` keeps a file per running match there (encrypted with `STVTF_TOKEN_KEY` when

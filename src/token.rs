@@ -31,7 +31,7 @@ pub enum Source {
 #[derive(Debug)]
 pub struct Start {
     pub source: Source,
-    /// None: unlimited (admins, casters); otherwise one match at a time for this user.
+    /// Who asked for it, a Steam id, for the log.
     pub owner: Option<String>,
 }
 

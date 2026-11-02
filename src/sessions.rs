@@ -29,11 +29,8 @@ pub struct Session {
     pub hub: SharedHub,
     server: SocketAddr,
     password: String,
-    /// Who started it, for the one-match-per-user limit; None is unlimited.
-    owner: Mutex<Option<String>>,
-    /// Someone besides its owner opened it: starting another match releases it from the owner's
-    /// limit rather than stopping it under the others watching.
-    shared: AtomicBool,
+    /// Who started it (a Steam id from the start token), for the log; it limits nothing.
+    owner: Option<String>,
     /// A fixed session (the demo): always there, outside the match limit.
     pinned: bool,
     /// The demos.tf demo it plays instead of watching `server`.
@@ -62,8 +59,7 @@ impl Session {
             hub,
             server,
             password,
-            owner: Mutex::new(owner),
-            shared: AtomicBool::new(false),
+            owner,
             pinned,
             demo: None,
             stop: AtomicBool::new(false),
@@ -76,10 +72,6 @@ impl Session {
             thread: Mutex::new(None),
             saving: Mutex::new(None),
         }
-    }
-
-    fn owner(&self) -> Option<String> {
-        lock(&self.owner).clone()
     }
 
     /// Whether any browser has its event stream open.
@@ -158,8 +150,6 @@ struct SavedMatch {
     password: String,
     owner: Option<String>,
     #[serde(default)]
-    shared: bool,
-    #[serde(default)]
     map: Option<String>,
     /// The feed's history lines, as sent to pages.
     #[serde(default)]
@@ -199,14 +189,7 @@ impl Store {
             }
             (h.changes, h.map.clone(), h.history.iter().map(ToString::to_string).collect())
         };
-        let saved = SavedMatch {
-            server: s.server,
-            password: s.password.clone(),
-            owner: s.owner(),
-            shared: s.shared.load(Ordering::Relaxed),
-            map,
-            history,
-        };
+        let saved = SavedMatch { server: s.server, password: s.password.clone(), owner: s.owner.clone(), map, history };
         let plain = serde_json::to_vec(&saved)?;
         std::fs::create_dir_all(&self.dir)?;
         let data = self.keys.as_ref().map_or_else(|| plain.clone(), |k| k.seal(&plain));
@@ -256,9 +239,8 @@ impl Sessions {
         self.lock().values().any(|s| lock(&s.hub).map.as_deref() == Some(map))
     }
 
-    /// The session for a connect string, joining one already watching that server. An `owner`
-    /// watches one match at a time: starting another stops the one they started before, or, if
-    /// someone else opened that one too, leaves it to them.
+    /// The session for a connect string, joining one already watching that server. `owner`, who
+    /// asked for it, is only logged: anyone may watch any number of matches.
     pub fn open(&self, line: &str, owner: Option<&str>) -> Result<Arc<Session>> {
         let (target, password) = parse_connect(line).ok_or_else(|| anyhow!("no server address"))?;
         let password = password.unwrap_or_else(|| DEFAULT_TV_PASSWORD.into());
@@ -274,7 +256,7 @@ impl Sessions {
         {
             return Ok(join(s, owner));
         }
-        self.make_room(&mut map, owner)?;
+        self.check_room(&map)?;
         let s = self.start(&mut map, random_id(), server, password, owner.map(str::to_string), SharedHub::default());
         eprintln!("stvtf-web: match {} started on {server}, owner {}", s.label(), owner.unwrap_or("-"));
         if let Some(store) = &self.store
@@ -293,7 +275,7 @@ impl Sessions {
         if let Some(s) = map.values().find(|s| s.demo == Some(demo) && !s.done.load(Ordering::Relaxed)) {
             return Ok(join(s, owner));
         }
-        self.make_room(&mut map, owner)?;
+        self.check_room(&map)?;
         let nowhere = SocketAddr::from((Ipv4Addr::UNSPECIFIED, 0));
         let mut session = Session::new(random_id(), SharedHub::default(), nowhere, String::new(), owner.map(str::to_string), false);
         session.demo = Some(demo);
@@ -311,23 +293,8 @@ impl Sessions {
         Ok(s)
     }
 
-    /// Makes room for a match `owner` starts: theirs before it stops, or is left to the others
-    /// who opened it too, and there must be fewer than `max` matches.
-    fn make_room(&self, map: &mut HashMap<String, Arc<Session>>, owner: Option<&str>) -> Result<()> {
-        if let Some(o) = owner {
-            let previous: Vec<String> = map.values().filter(|s| s.owner().as_deref() == Some(o)).map(|s| s.id.clone()).collect();
-            for id in previous {
-                if map[&id].shared.load(Ordering::Relaxed) {
-                    let p = &map[&id];
-                    *lock(&p.owner) = None;
-                    // Saved again with no owner, though its feed has not changed.
-                    *lock(&p.saving) = None;
-                    eprintln!("stvtf-web: match {} released by owner {o}", p.label());
-                } else if let Some(p) = map.remove(&id) {
-                    self.end(&p, "replaced");
-                }
-            }
-        }
+    /// Whether another match may start: there must be fewer than `max`.
+    fn check_room(&self, map: &HashMap<String, Arc<Session>>) -> Result<()> {
         if map.values().filter(|s| !s.pinned).count() >= self.max {
             bail!("already watching {} matches, the most this server does", self.max);
         }
@@ -390,9 +357,7 @@ impl Sessions {
             h.map = saved.map;
             h.history = saved.history.into_iter().map(Into::into).collect();
         }
-        let s = self.start(map, id.to_string(), saved.server, saved.password, saved.owner, hub);
-        s.shared.store(saved.shared, Ordering::Relaxed);
-        Some(s)
+        Some(self.start(map, id.to_string(), saved.server, saved.password, saved.owner, hub))
     }
 
     /// Saves every running match, with its feed so far, unless a newer process took the store
@@ -467,12 +432,10 @@ impl Sessions {
     }
 }
 
-/// Joins `s`, a match already running: once someone besides its owner opens it, it is no longer
-/// only theirs to stop.
+/// Joins `s`, a match already running, for `owner`; logged, so the log shows everyone who asked
+/// for a match and not only who started it.
 fn join(s: &Arc<Session>, owner: Option<&str>) -> Arc<Session> {
-    if s.owner().as_deref() != owner {
-        s.shared.store(true, Ordering::Relaxed);
-    }
+    eprintln!("stvtf-web: match {} opened, owner {}", s.label(), owner.unwrap_or("-"));
     s.clone()
 }
 
@@ -562,31 +525,14 @@ mod tests {
     }
 
     #[test]
-    fn a_user_watches_one_match_at_a_time() {
+    fn a_user_may_watch_any_number_of_matches() {
         let s = Sessions::new(false, 8, 20.0);
         let a = s.open("192.0.2.1:27020 tv", Some("u1")).unwrap();
-        let again = s.open("192.0.2.1:27020 tv", Some("u1")).unwrap();
+        let again = s.open("192.0.2.1:27020 tv", Some("u2")).unwrap();
         assert_eq!(a.id, again.id, "the same match is the same session");
+        assert_eq!(again.owner.as_deref(), Some("u1"), "still the one who started it");
         let b = s.open("192.0.2.2:27020 tv", Some("u1")).unwrap();
-        assert!(s.get(&a.id).is_none(), "starting another match stops the first");
-        let other = s.open("192.0.2.3:27020 tv", Some("u2")).unwrap();
-        let unlimited = s.open("192.0.2.4:27020 tv", None).unwrap();
-        assert!(s.get(&b.id).is_some() && s.get(&other.id).is_some() && s.get(&unlimited.id).is_some());
-        s.stop_all();
-    }
-
-    #[test]
-    fn a_match_someone_else_opened_is_left_to_them() {
-        let s = Sessions::new(false, 8, 20.0);
-        let a = s.open("192.0.2.1:27020 tv", Some("u1")).unwrap();
-        // A caster joins u1's match and shares the link.
-        assert_eq!(s.open("192.0.2.1:27020 tv", None).unwrap().id, a.id);
-        let b = s.open("192.0.2.2:27020 tv", Some("u1")).unwrap();
-        assert!(s.get(&a.id).is_some(), "still watched for the caster");
-        assert_eq!(a.owner(), None, "and no longer u1's");
-        s.open("192.0.2.3:27020 tv", Some("u1")).unwrap();
-        assert!(s.get(&b.id).is_none(), "a match only u1 opened is replaced");
-        assert!(s.get(&a.id).is_some());
+        assert!(s.get(&a.id).is_some() && s.get(&b.id).is_some(), "starting another match stops none");
         s.stop_all();
     }
 
@@ -601,10 +547,8 @@ mod tests {
         assert_eq!(s.open_demo(1, Some("u2")).unwrap().id, a.id, "joined where it is");
         let server = s.open("192.0.2.1:27020 tv", None).unwrap();
         assert_ne!(server.id, a.id);
-        let b = s.open_demo(2, Some("u3")).unwrap();
-        s.open_demo(3, Some("u3")).unwrap();
-        assert!(s.get(&b.id).is_none(), "a user plays one demo at a time");
-        let full = s.open_demo(4, None).err().unwrap().to_string();
+        s.open_demo(2, Some("u3")).unwrap();
+        let full = s.open_demo(3, Some("u3")).err().unwrap().to_string();
         assert!(full.contains("already watching 3"), "demos count towards the limit: {full}");
         s.persist();
         assert!(!dir.join(&a.id).exists(), "the next process could not pick a demo up where it is");
@@ -660,7 +604,7 @@ mod tests {
         after.store = store();
         assert_eq!(after.restore(), 1);
         let again = after.get(&m.id).expect("same link");
-        assert_eq!((again.server, again.password.as_str(), again.owner().as_deref()), (m.server, "hunter2", Some("u1")));
+        assert_eq!((again.server, again.password.as_str(), again.owner.as_deref()), (m.server, "hunter2", Some("u1")));
         assert_eq!(again.hub.lock().unwrap().history.len(), 1, "feed so far");
         after.reap(Duration::ZERO);
         assert!(!dir.join(&m.id).exists(), "a dropped match is forgotten");
@@ -683,15 +627,15 @@ mod tests {
     }
 
     #[test]
-    fn a_replaced_match_is_not_saved_again() {
+    fn an_ended_match_is_not_saved_again() {
         let dir = TempDir::new("sessions");
         let mut s = Sessions::new(false, 4, 20.0);
         s.store = Some(Store { dir: dir.to_path_buf(), keys: None });
         let a = s.open("192.0.2.1:27020 tv", Some("u1")).unwrap();
         assert!(dir.join(&a.id).exists());
-        // persist() took `a` from the list just before u1 started another match.
-        s.open("192.0.2.2:27020 tv", Some("u1")).unwrap();
-        assert!(!dir.join(&a.id).exists(), "the replaced match is forgotten");
+        // persist() took `a` from the list just before it was reaped.
+        s.reap(Duration::ZERO);
+        assert!(!dir.join(&a.id).exists(), "the ended match is forgotten");
         s.store.as_ref().unwrap().save(&a).unwrap();
         assert!(!dir.join(&a.id).exists(), "and stays forgotten");
         s.stop_all();
@@ -708,7 +652,7 @@ mod tests {
         s.store = Some(Store { dir: dir.to_path_buf(), keys: None });
         assert_eq!(s.restore(), 1);
         let m = s.get(&id).expect("same link");
-        assert_eq!((m.password.as_str(), m.owner().as_deref()), ("tv", None));
+        assert_eq!((m.password.as_str(), m.owner.as_deref()), ("tv", None));
         let hub = m.hub.lock().unwrap();
         assert_eq!(hub.map.as_deref(), Some("cp_badlands"));
         assert_eq!(hub.history.iter().map(ToString::to_string).collect::<Vec<_>>(), [r#"{"type":"kill"}"#]);
@@ -732,7 +676,7 @@ mod tests {
         // Started after the new release read the folder, before the proxy switched to it.
         let m = old.open("192.0.2.1:27020 tv", Some("u1")).unwrap();
         let again = new.get(&m.id).expect("the page reconnecting to the new release finds it");
-        assert_eq!((again.server, again.owner().as_deref()), (m.server, Some("u1")));
+        assert_eq!((again.server, again.owner.as_deref()), (m.server, Some("u1")));
         assert!(new.get(&random_id()).is_none(), "a match nobody saved is still unknown");
         assert!(new.get("../current").is_none(), "only match ids are looked up");
         old.stop_all();
@@ -746,8 +690,8 @@ mod tests {
         let m = old.open("192.0.2.1:27020 tv", Some("u1")).unwrap();
         let (new, restored) = start_on(&dir);
         assert_eq!(restored, 1);
-        // Its owner moves on once the proxy switched: the new release ends it.
-        new.open("192.0.2.2:27020 tv", Some("u1")).unwrap();
+        // Nobody watches it once the proxy switched: the new release ends it.
+        new.reap(Duration::ZERO);
         assert!(!dir.join(&m.id).exists());
         // The old release still has it, with lines it got since its last save, and saves on SIGTERM.
         m.hub.lock().unwrap().changes += 1;
