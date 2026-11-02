@@ -14,6 +14,15 @@ const CLASS_ORDER = ["scout", "soldier", "pyro", "demoman", "heavy", "engineer",
 const classRank = c => { const i = CLASS_ORDER.indexOf(c); return i < 0 ? CLASS_ORDER.length : i; };
 export const byClass = (a, b) => classRank(a.class) - classRank(b.class) || a.name.localeCompare(b.name, undefined, { sensitivity: "base" }) || a.id - b.id;
 
+// Invisible characters a name or chat line could hide behind: zero-width spaces, direction marks
+// and overrides. The zero-width joiner and non-joiner stay: emoji and some scripts need them.
+const INVISIBLE = /[\u061c\u180e\u200b\u200e\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]/g;
+const INVISIBLE_ESCAPED = /\\u(061c|180e|200[bef]|202[a-e]|206[0-46-9]|feff)/i;
+// A message from the stream, without them. Most have none, and skip the slower parse.
+export const parseMessage = data => data.search(INVISIBLE) >= 0 || INVISIBLE_ESCAPED.test(data)
+  ? JSON.parse(data, (_, v) => typeof v === "string" ? v.replace(INVISIBLE, "") : v)
+  : JSON.parse(data);
+
 export const ICONS = {};
 for (const c of CLASS_ORDER) { if (c !== "unknown") { ICONS[c] = new Image(); ICONS[c].src = asset(`icons/${c}.svg`); } }
 export const icon = c => ICONS[c]?.complete && ICONS[c].naturalWidth ? ICONS[c] : null;

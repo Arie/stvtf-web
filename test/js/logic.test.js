@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { byClass, msPerTick, observeTick, optOn, renderTick, setTickInterval, state, statusText } from "../../app/core.js";
+import { byClass, msPerTick, observeTick, optOn, parseMessage, renderTick, setTickInterval, state, statusText } from "../../app/core.js";
 import { command, steamid64 } from "../../app/embed.js";
 import { layerOn } from "../../app/layers.js";
 import { demostfAlias, fightingPlayers, sameLayout } from "../../app/view.js";
@@ -111,4 +111,12 @@ test("the sidebar keeps one word while SourceTV signs on, however often it is dr
   assert.deepEqual(run("no data", drop, "connecting", "new", "full"), ["reconnecting", "reconnecting", "reconnecting", "live"]);
   assert.deepEqual(statusText("connecting", drop), ["waiting for SourceTV", "timed out"], "the reason goes in the tooltip");
   assert.deepEqual(statusText("connecting", { state: "gave_up", reason: "wrong password" }), ["gave up: wrong password", "wrong password"]);
+});
+
+test("stream messages lose invisible characters but keep emoji joiners", () => {
+  const raw = JSON.stringify({ type: "chat", name: "a\u202eb\u200bc", text: "\u{1F469}\u200d\u{1F4BB}", players: [{ name: "\u2066x\u2069" }] });
+  assert.deepEqual(parseMessage(raw), { type: "chat", name: "abc", text: "\u{1F469}\u200d\u{1F4BB}", players: [{ name: "x" }] });
+  assert.deepEqual(parseMessage(raw), parseMessage(raw));
+  assert.equal(parseMessage('{"name":"a\\u202Eb"}').name, "ab");
+  assert.equal(parseMessage('{"name":"plain"}').name, "plain");
 });

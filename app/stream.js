@@ -1,4 +1,4 @@
-import { $, DELAY, DELAY_MS, OVERLAY, PAGE, state, observeTick, setStatus, setTickInterval, statusText } from "./core.js";
+import { $, DELAY, DELAY_MS, OVERLAY, PAGE, parseMessage, state, observeTick, setStatus, setTickInterval, statusText } from "./core.js";
 import { embedMap, embedStatus } from "./embed.js";
 import { asset } from "./env.js";
 import { killiconsLoaded, CHAT_TYPES, chat, feedEvent } from "./feed.js";
@@ -28,7 +28,7 @@ export function openStream() {
   const url = new URL(EVENTS_URL);
   if (detailNeeded()) url.searchParams.set("detail", "1");
   const s = es = new EventSource(url);
-  s.onmessage = e => { const m = JSON.parse(e.data); waiting(m); later(() => handle(m)); };
+  s.onmessage = e => { const m = parseMessage(e.data); waiting(m); later(() => handle(m)); };
   s.onopen = () => later(() => {
     if (opened) { $("feed").replaceChildren(); $("chat").replaceChildren(); }
     opened = true;
