@@ -55,8 +55,8 @@ does not count towards `--max-matches` and holds still while nobody is watching.
 `--demos DIR` does the same for every `NAME.jsonl[.gz]` in a folder, at `/w/NAME/` (NAME of
 letters, digits, `_` and `-`).
 
-stv.tf runs this way: `config/deploy.yml` is its Kamal config (`kamal deploy -d eu|na|au|sea`),
-one app per region on the serveme.tf web hosts, with `STVTF_TOKEN_KEY` read from
+stv.tf runs this way: `config/deploy.yml` is its Kamal config (`kamal deploy -d eu|na|au|sea`,
+or `bin/build` once and then `bin/deploy [REGION...]` for all regions in parallel), one app per region on the serveme.tf web hosts, with `STVTF_TOKEN_KEY` read from
 `~/.config/stvtf/token.key` (shared with serveme.tf). It pushes to and pulls from ghcr.io with
 the classic token in `~/.config/stvtf/ghcr.token`, which has only the `write:packages` scope,
 because Kamal leaves the registry login on every host.

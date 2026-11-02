@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# Deploy the checked-out commits to the given region(s). The image must already be pushed
+# (run bin/build first).
+#
+# Usage:
+#   bin/deploy            # all four regions in parallel
+#   bin/deploy eu         # one region
+#   bin/deploy eu na      # a subset, in parallel
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+# With uncommitted changes in either checkout, every Kamal run picks a fresh random version,
+# so a deploy would look for an image bin/build never pushed. Pass the built one as VERSION.
+if [[ -z "${VERSION:-}" ]] && [[ -n "$(git status --porcelain)$(git -C ../stvtf status --porcelain)" ]]; then
+  echo "Uncommitted changes in stvtf-web or stvtf: set VERSION to the tag bin/build pushed." >&2
+  exit 1
+fi
+
+regions=("$@")
+[[ ${#regions[@]} -eq 0 ]] && regions=(eu na au sea)
+
+pids=()
+for d in "${regions[@]}"; do
+  kamal deploy --skip-push -d "$d" &
+  pids+=($!)
+done
+status=0
+for pid in "${pids[@]}"; do
+  wait "$pid" || status=1
+done
+exit $status

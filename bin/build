@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# Build the stv.tf image and push it to GHCR. One image serves all four regions; Kamal tags it
+# with the version config/deploy.yml names after the stvtf-web and stvtf commits. The builder
+# settings are the same for every destination, so eu stands in for them all.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+exec kamal build push -d eu "$@"
