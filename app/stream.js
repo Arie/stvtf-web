@@ -1,4 +1,4 @@
-import { $, DELAY, DELAY_MS, OVERLAY, PAGE, state, observeTick, setStatus, setTickInterval } from "./core.js";
+import { $, DELAY, DELAY_MS, OVERLAY, PAGE, state, observeTick, setStatus, setTickInterval, statusText } from "./core.js";
 import { embedMap, embedStatus } from "./embed.js";
 import { asset } from "./env.js";
 import { killiconsLoaded, CHAT_TYPES, chat, feedEvent } from "./feed.js";
@@ -98,10 +98,12 @@ function handle(m) {
     }
     case "status":
       embedStatus(m.state);
-      if (m.state === "map_change") { resetMatch(); setStatus("map changing", false); }
-      else if (m.state === "full") setStatus("live", true);
-      else if (m.state === "disconnected" || m.state === "connect_failed") setStatus(m.state + ": " + (m.reason || ""), false);
-      else setStatus(m.state, false);
+      if (m.state === "map_change") resetMatch();
+      {
+        const [text, why] = statusText($("status").textContent, m);
+        // A drop while waiting keeps the reason of the last one in the tooltip.
+        setStatus(text, text === "live", why || ($("status").textContent === text ? $("status").title : ""));
+      }
       break;
     case "data_age":
       state.lastData = performance.now() - m.ms;

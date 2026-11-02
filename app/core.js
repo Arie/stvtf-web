@@ -86,4 +86,26 @@ export function observeTick(tick) {
 }
 export function renderTick() { return nowTick() - snapGap - JITTER_MS / msPerTick; }
 
-export function setStatus(text, ok) { const s = $("status"); s.textContent = text; s.className = ok ? "ok" : "bad"; }
+export function setStatus(text, ok, why = "") { const s = $("status"); s.textContent = text; s.className = ok ? "ok" : "bad"; s.title = why; }
+
+// The sidebar's word for a status line from stvtf, given the word it shows now. Signon runs
+// connecting, new, prespawn and spawn before data flows, and a server that is starting up or
+// changing map can let SourceTV in and drop it several times first: all of that keeps one word
+// until the match is live, instead of flicking through the steps. Returns [text, why]; the
+// reason a connection failed is the why, for the tooltip.
+export function statusText(shown, m) {
+  const why = m.reason || "";
+  switch (m.state) {
+    case "full": return ["live", ""];
+    case "map_change": case "changelevel": return ["map changing", ""];
+    case "gave_up": return [`gave up: ${why}`, why];
+    case "disconnected": case "connect_failed":
+      if (shown === "map changing") return [shown, why];
+      return [shown === "live" || shown === "no data" || shown === "reconnecting" ? "reconnecting" : "waiting for SourceTV", why];
+    default:
+      // A step of signon (or a relay coming up): whatever it was waiting for, it still is.
+      if (shown === "live" || shown === "no data") return ["reconnecting", ""];
+      return [WAITING.has(shown) ? shown : "connecting", ""];
+  }
+}
+const WAITING = new Set(["connecting", "reconnecting", "map changing", "waiting for SourceTV"]);

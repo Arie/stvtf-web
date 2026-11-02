@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { byClass, msPerTick, observeTick, optOn, renderTick, setTickInterval, state } from "../../app/core.js";
+import { byClass, msPerTick, observeTick, optOn, renderTick, setTickInterval, state, statusText } from "../../app/core.js";
 import { command, steamid64 } from "../../app/embed.js";
 import { layerOn } from "../../app/layers.js";
 import { demostfAlias, fightingPlayers, sameLayout } from "../../app/view.js";
@@ -96,4 +96,19 @@ test("an embedding page can switch known layers only", () => {
   assert.equal(layerOn("caps"), true);
   command({ type: "layer", name: "made_up", on: true });
   assert.equal(layerOn("made_up"), undefined);
+});
+
+test("the sidebar keeps one word while SourceTV signs on, however often it is dropped", () => {
+  const run = (shown, ...lines) => lines.map(m => (shown = statusText(shown, typeof m === "string" ? { state: m } : m)[0]));
+  const drop = { state: "disconnected", reason: "timed out" };
+  // A server starting up: in and dropped during signon, then failing to connect, then live.
+  assert.deepEqual(run("waiting for data", "connecting", "new", "prespawn", "spawn", drop, "connecting", { state: "connect_failed", reason: "no answer" }, "connecting", "new", "spawn", "full"),
+    ["connecting", "connecting", "connecting", "connecting", "waiting for SourceTV", "waiting for SourceTV", "waiting for SourceTV", "waiting for SourceTV", "waiting for SourceTV", "waiting for SourceTV", "live"]);
+  // A map change, signing on again, dropped once on the way.
+  assert.deepEqual(run("live", "changelevel", "map_change", "new", "prespawn", drop, "connecting", "spawn", "full"),
+    ["map changing", "map changing", "map changing", "map changing", "map changing", "map changing", "map changing", "live"]);
+  // Dropped while live.
+  assert.deepEqual(run("no data", drop, "connecting", "new", "full"), ["reconnecting", "reconnecting", "reconnecting", "live"]);
+  assert.deepEqual(statusText("connecting", drop), ["waiting for SourceTV", "timed out"], "the reason goes in the tooltip");
+  assert.deepEqual(statusText("connecting", { state: "gave_up", reason: "wrong password" }), ["gave up: wrong password", "wrong password"]);
 });
