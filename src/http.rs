@@ -397,7 +397,6 @@ fn fnv1a(bytes: impl Iterator<Item = u8>) -> u64 {
     bytes.fold(FNV_OFFSET_BASIS, |h, b| (h ^ u64::from(b)).wrapping_mul(FNV_PRIME))
 }
 
-/// The match a site's `/start?t=` token asks for.
 fn unix_now() -> u64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs())
 }
@@ -413,6 +412,7 @@ fn list_matches(s: &mut TcpStream, keys: &token::Keys, sessions: &Sessions, requ
     Ok(())
 }
 
+/// The match a site's `/start?t=` token asks for.
 fn start(app: &App, sessions: &Sessions, query: &str) -> Result<Arc<Session>> {
     let keys = app.keys.as_ref().ok_or_else(|| anyhow!("this server starts matches from its own page"))?;
     let token = param(query, "t").unwrap_or_default();
@@ -670,7 +670,7 @@ mod tests {
         let home = request_to(&app, b"GET / HTTP/1.1\r\n\r\n").1;
         assert!(home.starts_with("HTTP/1.1 302") && home.contains("Location: https://serveme.tf/stv\r\n"), "{home}");
         assert!(post_watch(&app, "192.0.2.1%3A27020+tv").starts_with("HTTP/1.1 403"));
-        let exp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs() + 60;
+        let exp = unix_now() + 60;
         let t =
             token::seal(&key, &format!(r#"{{"connect":"connect 192.0.2.1:27020; password \"tv\"","owner":"u1","exp":{exp}}}"#), [3; 12]);
         let response = request_to(&app, format!("GET /start?t={t} HTTP/1.1\r\n\r\n").as_bytes()).1;

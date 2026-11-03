@@ -98,16 +98,20 @@ impl Session {
         format!("{} {}", &self.id[..self.id.len().min(LABEL_ID_LEN)], map.as_deref().unwrap_or("-"))
     }
 
+    /// Not the demo nor a demos.tf demo.
+    fn watches_server(&self) -> bool {
+        !self.pinned && self.demo.is_none()
+    }
+
     fn listed(&self) -> Listed {
         let h = lock(&self.hub);
-        let watches_server = !self.pinned && self.demo.is_none();
         Listed {
             id: self.id.clone(),
             reservation: self.reservation(),
             demo: self.demo,
             pinned: self.pinned,
             owner: self.owner.clone(),
-            server: watches_server.then_some(self.server),
+            server: self.watches_server().then_some(self.server),
             map: h.map.clone(),
             watching_for: self.started.elapsed().as_secs(),
             viewers: self.viewers.load(Ordering::Relaxed),
@@ -115,7 +119,7 @@ impl Session {
             views: self.views.load(Ordering::Relaxed),
             done: self.done.load(Ordering::Relaxed),
             data_age: h.data_age().map(|d| stvtf::output::round1(d.as_secs_f64())),
-            summary: h.summary.clone(),
+            summary: h.summary(),
         }
     }
 
@@ -325,9 +329,8 @@ impl Sessions {
             bail!("{target} is not a public address");
         }
         let mut map = self.lock();
-        if let Some(s) = map
-            .values()
-            .find(|s| !s.pinned && s.demo.is_none() && s.server == server && s.password == password && !s.done.load(Ordering::Relaxed))
+        if let Some(s) =
+            map.values().find(|s| s.watches_server() && s.server == server && s.password == password && !s.done.load(Ordering::Relaxed))
         {
             s.link(reservation);
             return Ok(join(s, owner));
