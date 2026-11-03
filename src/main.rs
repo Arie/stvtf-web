@@ -231,7 +231,7 @@ fn prompt(app: &App, url: &str) {
         if line.trim().is_empty() {
             continue;
         }
-        match sessions.open(&line, None) {
+        match sessions.open(&line, None, None) {
             Ok(m) => eprintln!("watching: {url}/w/{}/  (overlay: {url}/w/{}/overlay)", m.id, m.id),
             Err(e) => eprintln!("{e:#}"),
         }
@@ -530,7 +530,7 @@ mod tests {
 
         let before = many(&options, None).unwrap();
         testing::script("192.0.2.77:27020", vec![server("cp_restored")], None);
-        let running = before.open("192.0.2.77:27020 tv", None).unwrap();
+        let running = before.open("192.0.2.77:27020 tv", None, None).unwrap();
         let deadline = std::time::Instant::now() + Duration::from_secs(5);
         while !before.on_map("cp_restored") {
             assert!(std::time::Instant::now() < deadline, "the watcher should have said its map");

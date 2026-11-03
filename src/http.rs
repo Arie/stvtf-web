@@ -4,7 +4,7 @@ use crate::cache::{map_geometry, map_geometry_gzip, overview};
 use crate::hub::{SharedHub, subscribe};
 use crate::sessions::{Session, Sessions, Viewer};
 use crate::token::Source;
-use crate::{App, Matches, is_name, lock, sessions};
+use crate::{App, Matches, is_name, lock, sessions, token};
 use anyhow::{Result, anyhow, bail};
 use flate2::Compression;
 use flate2::write::GzEncoder;
@@ -95,6 +95,8 @@ struct Request {
     gzip: bool,
     /// The client's address as the proxy in front says it.
     forwarded: Option<IpAddr>,
+    /// An `Authorization: Bearer` token.
+    bearer: Option<String>,
 }
 
 /// The request line and headers.
@@ -105,7 +107,8 @@ fn read_request(reader: &mut impl BufRead) -> Result<Request> {
     let method = words.next().unwrap_or("GET").to_string();
     let target = words.next().unwrap_or("/");
     let (path, query) = target.split_once('?').unwrap_or((target, ""));
-    let mut request = Request { method, path: path.to_string(), query: query.to_string(), length: 0, gzip: false, forwarded: None };
+    let mut request =
+        Request { method, path: path.to_string(), query: query.to_string(), length: 0, gzip: false, forwarded: None, bearer: None };
     loop {
         let mut header = String::new();
         if reader.read_line(&mut header)? == 0 {
@@ -120,6 +123,8 @@ fn read_request(reader: &mut impl BufRead) -> Result<Request> {
         } else if name.eq_ignore_ascii_case("x-forwarded-for") {
             // The proxy in front adds the address it saw last; earlier ones are the client's say-so.
             request.forwarded = value.rsplit(',').next().and_then(|a| a.trim().parse::<IpAddr>().ok());
+        } else if name.eq_ignore_ascii_case("authorization") {
+            request.bearer = value.trim().strip_prefix("Bearer ").map(|t| t.trim().to_string());
         } else if name.eq_ignore_ascii_case("accept-encoding") {
             request.gzip = value.split(',').any(|e| e.split(';').next().is_some_and(|e| e.trim().eq_ignore_ascii_case("gzip")));
         }
@@ -209,6 +214,7 @@ fn serve_many(
     let started = |s: &mut TcpStream, m: &Session| app.redirect(s, "303 See Other", &format!("/w/{}/", m.id));
     match (request.path.as_str(), request.method.as_str()) {
         (path @ ("/" | "/watch"), _) if app.keys.is_some() => front_door(&mut s, app, path)?,
+        ("/matches", "GET") if let Some(keys) = &app.keys => list_matches(&mut s, keys, sessions, request)?,
         ("/start", _) => match start(app, sessions, &request.query) {
             // <stv-map> asks where the match is instead of following the redirect.
             Ok(m) if param(&request.query, "format") == Some("json") => {
@@ -230,7 +236,7 @@ fn serve_many(
             reader.read_exact(&mut body)?;
             let form = String::from_utf8_lossy(&body);
             let line = param(&form, "connect").map(form_decode).unwrap_or_default();
-            match sessions.open(&line, None) {
+            match sessions.open(&line, None, None) {
                 Ok(m) => started(&mut s, &m)?,
                 Err(e) => respond(&mut s, "400 Bad Request", HTML, &app.page(&landing(&format!("{e:#}"))))?,
             }
@@ -392,13 +398,27 @@ fn fnv1a(bytes: impl Iterator<Item = u8>) -> u64 {
 }
 
 /// The match a site's `/start?t=` token asks for.
+fn unix_now() -> u64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs())
+}
+
+/// Every match, for the site in front, with a list token.
+fn list_matches(s: &mut TcpStream, keys: &token::Keys, sessions: &Sessions, request: &Request) -> Result<()> {
+    if request.bearer.as_deref().is_none_or(|t| keys.open_list(t, unix_now()).is_err()) {
+        respond_with(s, "401 Unauthorized", &[("Content-Type", TEXT), ("WWW-Authenticate", "Bearer")], b"needs a list token")?;
+        return Ok(());
+    }
+    let body = serde_json::to_vec(&serde_json::json!({ "matches": sessions.list() }))?;
+    respond_with(s, "200 OK", &[("Content-Type", JSON), ("Cache-Control", "no-store")], &body)?;
+    Ok(())
+}
+
 fn start(app: &App, sessions: &Sessions, query: &str) -> Result<Arc<Session>> {
     let keys = app.keys.as_ref().ok_or_else(|| anyhow!("this server starts matches from its own page"))?;
     let token = param(query, "t").unwrap_or_default();
-    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs());
-    let t = keys.open(token, now)?;
+    let t = keys.open(token, unix_now())?;
     match t.source {
-        Source::Connect(connect) => sessions.open(&connect, t.owner.as_deref()),
+        Source::Connect(connect) => sessions.open(&connect, t.owner.as_deref(), t.reservation),
         Source::Demo(demo) => sessions.open_demo(demo, t.owner.as_deref()),
     }
 }
@@ -666,6 +686,31 @@ mod tests {
         let json = request_to(&app, format!("GET /start?t={t}&format=json HTTP/1.1\r\n\r\n").as_bytes()).1;
         assert!(json.contains(&format!(r#"{{"page":"{location}"}}"#)) && json.contains("Access-Control-Allow-Origin: *"), "{json}");
         assert!(request_to(&app, b"GET /start?t=bogus HTTP/1.1\r\n\r\n").1.starts_with("HTTP/1.1 400"));
+        if let Matches::Many(s) = &app.matches {
+            s.stop_all();
+        }
+    }
+
+    #[test]
+    fn the_site_lists_the_matches_with_a_list_token() {
+        let key = "11".repeat(32);
+        let mut app = app(Matches::Many(Sessions::new(false, 4, 20.0)));
+        assert!(request_to(&app, b"GET /matches HTTP/1.1\r\n\r\n").1.starts_with("HTTP/1.1 404"), "only behind a site");
+        app.keys = Some(Arc::new(token::Keys::from_hex(&key).unwrap()));
+        let exp = unix_now() + 60;
+        let start = token::seal(&key, &format!(r#"{{"connect":"192.0.2.1:27020 tv","reservation":5,"exp":{exp}}}"#), [4; 12]);
+        assert!(request_to(&app, format!("GET /start?t={start} HTTP/1.1\r\n\r\n").as_bytes()).1.starts_with("HTTP/1.1 303"));
+        let list = token::seal(&key, &format!(r#"{{"list":true,"exp":{exp}}}"#), [5; 12]);
+        for refused in [String::new(), format!("Authorization: Bearer {start}\r\n"), "Authorization: Bearer bogus\r\n".into()] {
+            let response = request_to(&app, format!("GET /matches HTTP/1.1\r\n{refused}\r\n").as_bytes()).1;
+            assert!(response.starts_with("HTTP/1.1 401"), "{refused}: {response}");
+        }
+        let response = request_to(&app, format!("GET /matches HTTP/1.1\r\nAuthorization: Bearer {list}\r\n\r\n").as_bytes()).1;
+        assert!(response.starts_with("HTTP/1.1 200") && response.contains("Cache-Control: no-store"), "{response}");
+        let body: serde_json::Value = serde_json::from_str(response.split("\r\n\r\n").nth(1).unwrap()).unwrap();
+        assert_eq!(body["matches"][0]["reservation"], 5);
+        assert_eq!(body["matches"][0]["server"], "192.0.2.1:27020");
+        assert!(request_to(&app, format!("GET /start?t={list} HTTP/1.1\r\n\r\n").as_bytes()).1.starts_with("HTTP/1.1 400"));
         if let Matches::Many(s) = &app.matches {
             s.stop_all();
         }

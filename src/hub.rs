@@ -8,9 +8,9 @@ use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::sync::atomic::AtomicBool;
 use std::sync::mpsc::{Receiver, SyncSender, TrySendError, sync_channel};
 use std::sync::{Arc, Mutex};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use stvtf::Line;
-use stvtf::output::{PlayerId, Status, Team, round1};
+use stvtf::output::{Class, PlayerId, Round, Score, Status, Team, round1};
 use stvtf::watch::Watch;
 #[cfg(not(test))]
 use stvtf::watch::watch;
@@ -36,6 +36,36 @@ pub(crate) struct Hub {
     names: HashMap<PlayerId, Seen>,
     /// Seconds per tick, from the server line.
     tick_interval: Option<f64>,
+    /// What the list of matches shows of this one.
+    pub(crate) summary: Summary,
+}
+
+/// A match at a glance, from the latest server line and snapshot.
+#[derive(Debug, Clone, Default, Serialize)]
+pub(crate) struct Summary {
+    pub(crate) hostname: Option<String>,
+    pub(crate) round: Option<Round>,
+    pub(crate) round_time: Option<f64>,
+    pub(crate) time_left: Option<f64>,
+    pub(crate) match_time: Option<f64>,
+    pub(crate) win_limit: Option<i64>,
+    pub(crate) score: Option<Score>,
+    pub(crate) players: Vec<Rostered>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub(crate) struct Rostered {
+    pub(crate) name: String,
+    pub(crate) steamid: String,
+    pub(crate) team: Team,
+    pub(crate) class: Class,
+}
+
+impl Hub {
+    /// How long ago the latest snapshot came in.
+    pub(crate) fn data_age(&self) -> Option<Duration> {
+        self.snapshot_at.map(|t| t.elapsed())
+    }
 }
 
 /// Seconds per tick of a server that has not said yet.
@@ -191,6 +221,7 @@ pub(crate) fn publish(hub: &SharedHub, line: &Line) {
                 h.history.clear();
                 h.names.clear();
                 h.changes += 1;
+                h.summary = Summary { hostname: h.summary.hostname.take(), ..Summary::default() };
             }
             h.status = Some(json.clone());
         }
@@ -203,6 +234,7 @@ pub(crate) fn publish(hub: &SharedHub, line: &Line) {
                 h.changes += 1;
             }
             (h.server, h.snapshot, h.round_clock) = (Some(json.clone()), None, None);
+            h.summary = Summary { hostname: Some(server.hostname.clone()), ..Summary::default() };
             h.tick_interval = Some(server.tick_interval).filter(|i| *i > 0.0);
         }
         Line::World(_) => h.world = Some(json.clone()),
@@ -216,6 +248,17 @@ pub(crate) fn publish(hub: &SharedHub, line: &Line) {
                 seen.name.clone_from(&p.name);
                 seen.team = p.team;
             }
+            let summary = &mut h.summary;
+            summary.round = Some(snapshot.round);
+            (summary.round_time, summary.time_left, summary.match_time) = (snapshot.round_time, snapshot.time_left, snapshot.match_time);
+            (summary.win_limit, summary.score) = (snapshot.win_limit, Some(snapshot.score.clone()));
+            summary.players.clear();
+            summary.players.extend(snapshot.players.iter().map(|p| Rostered {
+                name: p.name.clone(),
+                steamid: p.steamid.clone(),
+                team: p.team,
+                class: p.class,
+            }));
         }
         _ if route == Route::Feed => {
             let interval = h.tick_interval.unwrap_or_else(default_tick_interval);
@@ -291,7 +334,7 @@ mod tests {
             name: name.to_string(),
             steamid: "BOT".to_string(),
             team,
-            class: output::Class::Scout,
+            class: Class::Scout,
             alive: true,
             hp: 125,
             max_hp: 125,
@@ -318,12 +361,12 @@ mod tests {
             projectiles: Vec::new(),
             buildings: Vec::new(),
             objectives: Vec::new(),
-            round: output::Round::Running,
+            round: Round::Running,
             round_time,
             time_left: None,
             win_limit: None,
             match_time: None,
-            score: output::Score { red: 0, blue: 0 },
+            score: Score { red: 0, blue: 0 },
             captures: None,
             points: None,
             mvm: None,
@@ -378,6 +421,20 @@ mod tests {
         expected["names"] = serde_json::json!({"3": {"name": "can of tuna", "team": "red"}});
         expected["at"] = 33.0.into();
         assert_eq!(past, expected);
+    }
+
+    #[test]
+    fn the_summary_follows_the_latest_snapshot_and_map() {
+        let hub = SharedHub::default();
+        publish(&hub, &server("cp_process_f12"));
+        publish(&hub, &snapshot(1, Some(12.0), vec![player(3, "can of tuna", Team::Red), player(4, "silvo", Team::Blue)]));
+        let summary = hub.lock().unwrap().summary.clone();
+        assert_eq!(summary.hostname.as_deref(), Some("SourceTV"));
+        assert_eq!((summary.round, summary.round_time, summary.players.len()), (Some(Round::Running), Some(12.0), 2));
+        assert!(hub.lock().unwrap().data_age().is_some());
+        publish(&hub, &server("koth_product_final"));
+        let summary = hub.lock().unwrap().summary.clone();
+        assert!(summary.players.is_empty() && summary.round.is_none(), "a new map starts empty");
     }
 
     #[test]

@@ -4,7 +4,7 @@
 
 use crate::cache::write_atomic;
 use crate::cli::{DEFAULT_TV_PASSWORD, parse_connect};
-use crate::hub::{SharedHub, watch_into};
+use crate::hub::{SharedHub, Summary, watch_into};
 use crate::{demostf, lock, token};
 use aes_gcm::aead::OsRng;
 use aes_gcm::aead::rand_core::RngCore;
@@ -14,7 +14,7 @@ use std::collections::HashMap;
 use std::fmt::Write as _;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
@@ -31,6 +31,8 @@ pub struct Session {
     password: String,
     /// Who started it (a Steam id from the start token), for the log; it limits nothing.
     owner: Option<String>,
+    /// The site's reservation the server belongs to, 0 for none: the latest start link that said.
+    reservation: AtomicU64,
     /// A fixed session (the demo): always there, outside the match limit.
     pinned: bool,
     /// The demos.tf demo it plays instead of watching `server`.
@@ -60,6 +62,7 @@ impl Session {
             server,
             password,
             owner,
+            reservation: AtomicU64::new(0),
             pinned,
             demo: None,
             stop: AtomicBool::new(false),
@@ -74,6 +77,16 @@ impl Session {
         }
     }
 
+    pub fn reservation(&self) -> Option<u64> {
+        Some(self.reservation.load(Ordering::Relaxed)).filter(|&r| r != 0)
+    }
+
+    fn link(&self, reservation: Option<u64>) {
+        if let Some(r) = reservation {
+            self.reservation.store(r, Ordering::Relaxed);
+        }
+    }
+
     /// Whether any browser has its event stream open.
     pub fn watched(&self) -> bool {
         self.viewers.load(Ordering::Relaxed) > 0
@@ -85,6 +98,27 @@ impl Session {
         format!("{} {}", &self.id[..self.id.len().min(LABEL_ID_LEN)], map.as_deref().unwrap_or("-"))
     }
 
+    fn listed(&self) -> Listed {
+        let h = lock(&self.hub);
+        let watches_server = !self.pinned && self.demo.is_none();
+        Listed {
+            id: self.id.clone(),
+            reservation: self.reservation(),
+            demo: self.demo,
+            pinned: self.pinned,
+            owner: self.owner.clone(),
+            server: watches_server.then_some(self.server),
+            map: h.map.clone(),
+            watching_for: self.started.elapsed().as_secs(),
+            viewers: self.viewers.load(Ordering::Relaxed),
+            peak: self.peak.load(Ordering::Relaxed),
+            views: self.views.load(Ordering::Relaxed),
+            done: self.done.load(Ordering::Relaxed),
+            data_age: h.data_age().map(|d| stvtf::output::round1(d.as_secs_f64())),
+            summary: h.summary.clone(),
+        }
+    }
+
     fn ended(&self, why: &str) {
         eprintln!(
             "stvtf-web: match {} ended ({why}) after {} min, peak {} viewers, {} views",
@@ -94,6 +128,30 @@ impl Session {
             self.views.load(Ordering::Relaxed),
         );
     }
+}
+
+/// A match as the site's list of matches shows it. Never the password.
+#[derive(Debug, Serialize)]
+pub struct Listed {
+    pub id: String,
+    pub reservation: Option<u64>,
+    pub demo: Option<u64>,
+    pub pinned: bool,
+    pub owner: Option<String>,
+    /// The server watched; none for a demo.
+    pub server: Option<SocketAddr>,
+    pub map: Option<String>,
+    /// Seconds since this process started watching it.
+    pub watching_for: u64,
+    pub viewers: usize,
+    pub peak: usize,
+    pub views: usize,
+    /// The watcher gave up or was stopped.
+    pub done: bool,
+    /// Seconds since the latest snapshot.
+    pub data_age: Option<f64>,
+    #[serde(flatten)]
+    pub summary: Summary,
 }
 
 /// Counts a browser on a session's event stream until dropped.
@@ -150,6 +208,8 @@ struct SavedMatch {
     password: String,
     owner: Option<String>,
     #[serde(default)]
+    reservation: Option<u64>,
+    #[serde(default)]
     map: Option<String>,
     /// The feed's history lines, as sent to pages.
     #[serde(default)]
@@ -189,7 +249,14 @@ impl Store {
             }
             (h.changes, h.map.clone(), h.history.iter().map(ToString::to_string).collect())
         };
-        let saved = SavedMatch { server: s.server, password: s.password.clone(), owner: s.owner.clone(), map, history };
+        let saved = SavedMatch {
+            server: s.server,
+            password: s.password.clone(),
+            owner: s.owner.clone(),
+            reservation: s.reservation(),
+            map,
+            history,
+        };
         let plain = serde_json::to_vec(&saved)?;
         std::fs::create_dir_all(&self.dir)?;
         let data = self.keys.as_ref().map_or_else(|| plain.clone(), |k| k.seal(&plain));
@@ -234,14 +301,22 @@ impl Sessions {
         self.pick_up(&mut map, store, id)
     }
 
+    /// Every match, the oldest first.
+    pub fn list(&self) -> Vec<Listed> {
+        let mut all: Vec<Listed> = self.lock().values().map(|s| s.listed()).collect();
+        all.sort_by(|a, b| b.watching_for.cmp(&a.watching_for).then_with(|| a.id.cmp(&b.id)));
+        all
+    }
+
     /// Whether any match, the demo included, is on `map`.
     pub fn on_map(&self, map: &str) -> bool {
         self.lock().values().any(|s| lock(&s.hub).map.as_deref() == Some(map))
     }
 
     /// The session for a connect string, joining one already watching that server. `owner`, who
-    /// asked for it, is only logged: anyone may watch any number of matches.
-    pub fn open(&self, line: &str, owner: Option<&str>) -> Result<Arc<Session>> {
+    /// asked for it, is only logged: anyone may watch any number of matches. `reservation` links
+    /// the match to the site's reservation for the list of matches.
+    pub fn open(&self, line: &str, owner: Option<&str>, reservation: Option<u64>) -> Result<Arc<Session>> {
         let (target, password) = parse_connect(line).ok_or_else(|| anyhow!("no server address"))?;
         let password = password.unwrap_or_else(|| DEFAULT_TV_PASSWORD.into());
         // Connect to the address that was checked, not whatever the name resolves to later.
@@ -254,10 +329,12 @@ impl Sessions {
             .values()
             .find(|s| !s.pinned && s.demo.is_none() && s.server == server && s.password == password && !s.done.load(Ordering::Relaxed))
         {
+            s.link(reservation);
             return Ok(join(s, owner));
         }
         self.check_room(&map)?;
         let s = self.start(&mut map, random_id(), server, password, owner.map(str::to_string), SharedHub::default());
+        s.link(reservation);
         eprintln!("stvtf-web: match {} started on {server}, owner {}", s.label(), owner.unwrap_or("-"));
         if let Some(store) = &self.store
             && let Err(e) = store.save(&s)
@@ -357,7 +434,9 @@ impl Sessions {
             h.map = saved.map;
             h.history = saved.history.into_iter().map(Into::into).collect();
         }
-        Some(self.start(map, id.to_string(), saved.server, saved.password, saved.owner, hub))
+        let s = self.start(map, id.to_string(), saved.server, saved.password, saved.owner, hub);
+        s.link(saved.reservation);
+        Some(s)
     }
 
     /// Saves every running match, with its feed so far, unless a newer process took the store
@@ -519,20 +598,49 @@ mod tests {
     #[test]
     fn public_sessions_refuse_internal_servers() {
         let s = Sessions::new(true, 4, 20.0);
-        let err = s.open("connect 127.0.0.1:27020; password tv", None).err().unwrap().to_string();
+        let err = s.open("connect 127.0.0.1:27020; password tv", None, None).err().unwrap().to_string();
         assert!(err.contains("not a public address"), "{err}");
-        assert!(s.open("10.0.0.5 tv", None).is_err());
+        assert!(s.open("10.0.0.5 tv", None, None).is_err());
     }
 
     #[test]
     fn a_user_may_watch_any_number_of_matches() {
         let s = Sessions::new(false, 8, 20.0);
-        let a = s.open("192.0.2.1:27020 tv", Some("u1")).unwrap();
-        let again = s.open("192.0.2.1:27020 tv", Some("u2")).unwrap();
+        let a = s.open("192.0.2.1:27020 tv", Some("u1"), None).unwrap();
+        let again = s.open("192.0.2.1:27020 tv", Some("u2"), None).unwrap();
         assert_eq!(a.id, again.id, "the same match is the same session");
         assert_eq!(again.owner.as_deref(), Some("u1"), "still the one who started it");
-        let b = s.open("192.0.2.2:27020 tv", Some("u1")).unwrap();
+        let b = s.open("192.0.2.2:27020 tv", Some("u1"), None).unwrap();
         assert!(s.get(&a.id).is_some() && s.get(&b.id).is_some(), "starting another match stops none");
+        s.stop_all();
+    }
+
+    #[test]
+    fn the_list_says_what_is_watched_and_never_the_password() {
+        let s = Sessions::new(false, 8, 20.0);
+        s.pin("demo", |_| {});
+        let m = s.open("connect 192.0.2.1:27020; password \"hunter2\"", Some("u1"), Some(9)).unwrap();
+        let _viewer = Viewer::new(m.clone());
+        let list = s.list();
+        let listed = list.iter().find(|l| l.id == m.id).unwrap();
+        assert_eq!((listed.reservation, listed.owner.as_deref(), listed.viewers, listed.peak), (Some(9), Some("u1"), 1, 1));
+        assert_eq!(listed.server, Some("192.0.2.1:27020".parse().unwrap()));
+        let demo = list.iter().find(|l| l.id == "demo").unwrap();
+        assert!(demo.pinned && demo.server.is_none());
+        assert!(!serde_json::to_string(&list).unwrap().contains("hunter2"));
+        s.stop_all();
+    }
+
+    #[test]
+    fn a_start_link_with_a_reservation_links_the_match() {
+        let s = Sessions::new(false, 8, 20.0);
+        let pasted = s.open("192.0.2.1:27020 tv", None, None).unwrap();
+        assert_eq!(pasted.reservation(), None);
+        s.open("192.0.2.1:27020 tv", None, Some(7)).unwrap();
+        assert_eq!(pasted.reservation(), Some(7), "joining from the reservation links it");
+        s.open("192.0.2.1:27020 tv", None, None).unwrap();
+        assert_eq!(pasted.reservation(), Some(7), "a pasted link keeps the link");
+        assert_eq!(s.open("192.0.2.2:27020 tv", None, Some(8)).unwrap().reservation(), Some(8));
         s.stop_all();
     }
 
@@ -545,7 +653,7 @@ mod tests {
         s.store = Some(Store { dir: dir.to_path_buf(), keys: None });
         let a = s.open_demo(1, Some("u1")).unwrap();
         assert_eq!(s.open_demo(1, Some("u2")).unwrap().id, a.id, "joined where it is");
-        let server = s.open("192.0.2.1:27020 tv", None).unwrap();
+        let server = s.open("192.0.2.1:27020 tv", None, None).unwrap();
         assert_ne!(server.id, a.id);
         s.open_demo(2, Some("u3")).unwrap();
         let full = s.open_demo(3, Some("u3")).err().unwrap().to_string();
@@ -577,7 +685,7 @@ mod tests {
         s.pin("demo", |_| {});
         s.reap(Duration::ZERO);
         assert!(s.get("demo").is_some());
-        let m = s.open("192.0.2.1:27020 tv", None).unwrap();
+        let m = s.open("192.0.2.1:27020 tv", None, None).unwrap();
         assert!(s.get(&m.id).is_some(), "the demo is outside the match limit");
         s.stop_all();
     }
@@ -589,7 +697,7 @@ mod tests {
         let store = || Some(Store { dir: dir.to_path_buf(), keys: Some(keys.clone()) });
         let mut before = Sessions::new(false, 4, 20.0);
         before.store = store();
-        let m = before.open("connect 192.0.2.1:27020; password \"hunter2\"", Some("u1")).unwrap();
+        let m = before.open("connect 192.0.2.1:27020; password \"hunter2\"", Some("u1"), Some(42)).unwrap();
         {
             let mut h = m.hub.lock().unwrap();
             h.history.push_back(r#"{"type":"kill","history":true}"#.into());
@@ -606,6 +714,7 @@ mod tests {
         let again = after.get(&m.id).expect("same link");
         assert_eq!((again.server, again.password.as_str(), again.owner.as_deref()), (m.server, "hunter2", Some("u1")));
         assert_eq!(again.hub.lock().unwrap().history.len(), 1, "feed so far");
+        assert_eq!(again.reservation(), Some(42));
         after.reap(Duration::ZERO);
         assert!(!dir.join(&m.id).exists(), "a dropped match is forgotten");
         after.stop_all();
@@ -616,7 +725,7 @@ mod tests {
         let dir = TempDir::new("sessions");
         let mut s = Sessions::new(false, 4, 20.0);
         s.store = Some(Store { dir: dir.to_path_buf(), keys: None });
-        let m = s.open("192.0.2.1:27020 tv", None).unwrap();
+        let m = s.open("192.0.2.1:27020 tv", None, None).unwrap();
         std::fs::remove_file(dir.join(&m.id)).unwrap();
         s.persist();
         assert!(!dir.join(&m.id).exists(), "unchanged since it was saved");
@@ -631,7 +740,7 @@ mod tests {
         let dir = TempDir::new("sessions");
         let mut s = Sessions::new(false, 4, 20.0);
         s.store = Some(Store { dir: dir.to_path_buf(), keys: None });
-        let a = s.open("192.0.2.1:27020 tv", Some("u1")).unwrap();
+        let a = s.open("192.0.2.1:27020 tv", Some("u1"), None).unwrap();
         assert!(dir.join(&a.id).exists());
         // persist() took `a` from the list just before it was reaped.
         s.reap(Duration::ZERO);
@@ -674,7 +783,7 @@ mod tests {
         let dir = TempDir::new("sessions");
         let ((old, _), (new, _)) = (start_on(&dir), start_on(&dir));
         // Started after the new release read the folder, before the proxy switched to it.
-        let m = old.open("192.0.2.1:27020 tv", Some("u1")).unwrap();
+        let m = old.open("192.0.2.1:27020 tv", Some("u1"), None).unwrap();
         let again = new.get(&m.id).expect("the page reconnecting to the new release finds it");
         assert_eq!((again.server, again.owner.as_deref()), (m.server, Some("u1")));
         assert!(new.get(&random_id()).is_none(), "a match nobody saved is still unknown");
@@ -687,7 +796,7 @@ mod tests {
     fn a_release_taken_over_leaves_the_saved_matches_alone() {
         let dir = TempDir::new("sessions");
         let (old, _) = start_on(&dir);
-        let m = old.open("192.0.2.1:27020 tv", Some("u1")).unwrap();
+        let m = old.open("192.0.2.1:27020 tv", Some("u1"), None).unwrap();
         let (new, restored) = start_on(&dir);
         assert_eq!(restored, 1);
         // Nobody watches it once the proxy switched: the new release ends it.
@@ -712,14 +821,14 @@ mod tests {
     fn a_match_whose_watcher_gave_up_is_started_again() {
         let s = Sessions::new(false, 8, 20.0);
         script("192.0.2.200:27020", vec![server("cp_process_f12")], Some("wrong password"));
-        let first = s.open("192.0.2.200:27020 tv", None).unwrap();
+        let first = s.open("192.0.2.200:27020 tv", None, None).unwrap();
         let deadline = Instant::now() + Duration::from_secs(5);
         while !first.done.load(Ordering::Relaxed) {
             assert!(Instant::now() < deadline, "the watcher should have given up");
             std::thread::sleep(Duration::from_millis(1));
         }
         assert!(s.on_map("cp_process_f12"), "what it saw before giving up is kept");
-        let second = s.open("192.0.2.200:27020 tv", None).unwrap();
+        let second = s.open("192.0.2.200:27020 tv", None, None).unwrap();
         assert_ne!(first.id, second.id);
         s.stop_all();
     }
@@ -727,7 +836,7 @@ mod tests {
     #[test]
     fn a_match_is_idle_only_once_its_last_viewer_left() {
         let s = Sessions::new(false, 8, 20.0);
-        let m = s.open("192.0.2.50:27020 tv", None).unwrap();
+        let m = s.open("192.0.2.50:27020 tv", None, None).unwrap();
         let (a, b) = (Viewer::new(m.clone()), Viewer::new(m.clone()));
         s.reap(Duration::ZERO);
         assert!(s.get(&m.id).is_some(), "two are watching");
@@ -780,7 +889,7 @@ mod tests {
     #[test]
     fn stopping_all_waits_for_every_watcher_to_finish() {
         let s = Sessions::new(false, 8, 20.0);
-        let (a, b) = (s.open("192.0.2.60:27020 tv", None).unwrap(), s.open("192.0.2.61:27020 tv", None).unwrap());
+        let (a, b) = (s.open("192.0.2.60:27020 tv", None, None).unwrap(), s.open("192.0.2.61:27020 tv", None, None).unwrap());
         s.stop_all();
         assert!(a.done.load(Ordering::Relaxed) && b.done.load(Ordering::Relaxed));
         assert!(s.get(&a.id).is_none() && s.get(&b.id).is_none());

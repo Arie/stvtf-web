@@ -2,7 +2,8 @@
 //! what they may watch, then hands the browser a short-lived token for us. The token is
 //! AES-256-GCM encrypted, so the `SourceTV` password inside it is never readable in a URL:
 //! base64url(12-byte nonce | ciphertext | 16-byte tag) of `{"connect", "owner", "exp"}`, or of
-//! `{"demo", "owner", "exp"}` for a demos.tf demo.
+//! `{"demo", "owner", "exp"}` for a demos.tf demo, with an optional `"reservation"` (the site's
+//! reservation number). `{"list": true, "exp"}` lets the site read the list of matches instead.
 
 use aes_gcm::aead::{Aead, AeadCore, KeyInit, OsRng};
 use aes_gcm::{Aes256Gcm, Nonce};
@@ -18,6 +19,11 @@ struct Claims {
     /// A demos.tf demo, by its number, instead of a server.
     demo: Option<u64>,
     owner: Option<String>,
+    /// The site's reservation the server belongs to.
+    reservation: Option<u64>,
+    /// A token to list the matches with, which starts none.
+    #[serde(default)]
+    list: bool,
     exp: u64,
 }
 
@@ -33,6 +39,7 @@ pub struct Start {
     pub source: Source,
     /// Who asked for it, a Steam id, for the log.
     pub owner: Option<String>,
+    pub reservation: Option<u64>,
 }
 
 pub struct Keys(Aes256Gcm);
@@ -73,19 +80,33 @@ impl Keys {
         self.0.decrypt(Nonce::from_slice(nonce), data).map_err(|_| anyhow!("does not decrypt with this key"))
     }
 
-    pub fn open(&self, token: &str, now: u64) -> Result<Start> {
+    fn claims(&self, token: &str, now: u64) -> Result<Claims> {
         let raw = URL_SAFE_NO_PAD.decode(token.trim()).map_err(|_| anyhow!("malformed token"))?;
         let plain = self.unseal(&raw).map_err(|_| anyhow!("invalid token"))?;
         let claims: Claims = serde_json::from_slice(&plain).map_err(|_| anyhow!("invalid token"))?;
         if claims.exp < now {
             bail!("this link has expired; open the match again from the site");
         }
-        let source = match (claims.connect, claims.demo) {
-            (Some(connect), None) => Source::Connect(connect),
-            (None, Some(demo)) => Source::Demo(demo),
+        Ok(claims)
+    }
+
+    pub fn open(&self, token: &str, now: u64) -> Result<Start> {
+        let claims = self.claims(token, now)?;
+        let source = match (claims.connect, claims.demo, claims.list) {
+            (Some(connect), None, false) => Source::Connect(connect),
+            (None, Some(demo), false) => Source::Demo(demo),
             _ => bail!("invalid token"),
         };
-        Ok(Start { source, owner: claims.owner })
+        Ok(Start { source, owner: claims.owner, reservation: claims.reservation })
+    }
+
+    /// Whether `token` lets its holder list the matches.
+    pub fn open_list(&self, token: &str, now: u64) -> Result<()> {
+        let claims = self.claims(token, now)?;
+        if !claims.list || claims.connect.is_some() || claims.demo.is_some() {
+            bail!("invalid token");
+        }
+        Ok(())
     }
 }
 
@@ -117,6 +138,23 @@ mod tests {
         assert!(Keys::from_hex(KEY).unwrap().open(&unlimited, 1000).unwrap().owner.is_none());
         let demo = seal(r#"{"demo":1527264,"owner":null,"exp":2000}"#, [9; 12]);
         assert_eq!(Keys::from_hex(KEY).unwrap().open(&demo, 1000).unwrap().source, Source::Demo(1_527_264));
+        let reserved = seal(r#"{"connect":"1.2.3.4:27020","owner":null,"reservation":1291843,"exp":2000}"#, [10; 12]);
+        assert_eq!(Keys::from_hex(KEY).unwrap().open(&reserved, 1000).unwrap().reservation, Some(1_291_843));
+    }
+
+    #[test]
+    fn list_tokens_list_and_start_nothing() {
+        let keys = Keys::from_hex(KEY).unwrap();
+        let list = seal(r#"{"list":true,"exp":2000}"#, [11; 12]);
+        assert!(keys.open_list(&list, 1000).is_ok());
+        assert!(keys.open_list(&list, 2001).is_err());
+        assert!(keys.open(&list, 1000).is_err());
+        let start = seal(r#"{"connect":"1.2.3.4:27020","exp":2000}"#, [12; 12]);
+        assert!(keys.open_list(&start, 1000).is_err());
+        for both in [r#"{"list":true,"connect":"1.2.3.4:27020","exp":2000}"#, r#"{"list":true,"demo":1,"exp":2000}"#] {
+            let t = seal(both, [13; 12]);
+            assert!(keys.open(&t, 1000).is_err() && keys.open_list(&t, 1000).is_err(), "{both}");
+        }
     }
 
     #[test]

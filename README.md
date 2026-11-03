@@ -27,7 +27,14 @@ it with `--public --base-path /live` and `STVTF_TOKEN_KEY` (64 hex digits) share
 site. Matches then start only from the site's `/start?t=TOKEN` links: the token is AES-256-GCM
 (`base64url(12-byte nonce | ciphertext | tag)` of `{"connect", "owner", "exp"}`), so the
 SourceTV password in it is never readable in a URL. `owner` is the user's Steam id (or null): it
-goes in the log with every match started or opened, and limits nothing.
+goes in the log with every match started or opened, and limits nothing. An optional `"reservation"`
+(the site's reservation number) links the match to that reservation in the list of matches.
+
+`GET /matches` with `Authorization: Bearer TOKEN`, a token of `{"list": true, "exp"}` sealed the
+same way, answers `{"matches": [...]}`: per match its id (the link is `/w/<id>/`), reservation,
+demo, owner, server address (never the password), map, hostname, round state and clocks, score,
+players with team and class, viewers now, at most and in all, seconds watched and seconds since
+the latest snapshot. A start token does not list and a list token starts nothing.
 
 A token with `"demo": <id>` in place of `connect` plays that [demos.tf](https://demos.tf) demo
 instead: fetched from demos.tf, decoded once (one demo at a time) and kept in memory only as its
