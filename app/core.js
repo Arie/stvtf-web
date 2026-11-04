@@ -89,12 +89,12 @@ export function uiScale() {
   return OVERLAY ? 1 : Math.max(0.75, Math.min(2.5, (env.el.clientHeight || innerHeight) / 1080));
 }
 export function applyScale() {
-  env.el.style.setProperty("--s", uiScale());
+  env.el.style.setProperty("--s", String(uiScale()));
 }
 applyScale();
 
 export const $ = id => env.root.getElementById(id);
-export const canvas = $("c");
+export const canvas = /** @type {HTMLCanvasElement} */ ($("c"));
 export const ctx = canvas.getContext("2d");
 // The canvas size, kept up to date by an observer: asking the layout for it forces a reflow.
 let size = null;

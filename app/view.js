@@ -654,6 +654,7 @@ let lastFrame = performance.now(),
 // Players linked within CLUMP_LINK of each other form a clump; keep the biggest one and any
 // other clump of three or more. Players fresh from spawn come out together, so they do not count
 // towards a clump's size (unless everyone is fresh): a wave walking out is not the fight.
+/** @param {{ pos: number[] }[]} alive @param {(p: { pos: number[] }) => boolean} [fresh] */
 export function fightingPlayers(alive, fresh = () => false) {
   const group = alive.map((_, i) => i);
   const root = i => (group[i] === i ? i : (group[i] = root(group[i])));

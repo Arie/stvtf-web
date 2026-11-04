@@ -56,6 +56,7 @@ jobs:
       - run: npm ci --ignore-scripts
       - run: npm run format:check
       - run: npx eslint app test
+      - run: npm run typecheck
       - run: npm test
 
   clippy:

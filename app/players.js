@@ -450,7 +450,7 @@ const SHOT_EFFECTS = new Set(["shot", "boom", "airblast"]),
 export function drawPlayers(players) {
   const alive = [];
   // The followed player is drawn last, so their dot and name are on top.
-  players = [...players].sort((a, b) => (a.id === state.follow) - (b.id === state.follow));
+  players = [...players].sort((a, b) => Number(a.id === state.follow) - Number(b.id === state.follow));
   for (const p of players) {
     if (p.team !== "red" && p.team !== "blue") continue;
     if (!p.alive) {
@@ -488,6 +488,7 @@ export function drawPlayers(players) {
       base = rad + 3,
       len = rad * 0.8,
       half = len * 0.6;
+    /** @returns {[number, number]} */
     const at = (f, l) => [x + Math.cos(a) * f - Math.sin(a) * l, y + Math.sin(a) * f + Math.cos(a) * l];
     ctx.beginPath();
     for (const [f, l] of [

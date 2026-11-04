@@ -407,7 +407,7 @@ export function banner(text, team) {
   const b = $("banner");
   b.textContent = text;
   b.style.color = TEAM[team] || "#fff";
-  b.style.opacity = 1;
+  b.style.opacity = "1";
   clearTimeout(bannerTimer);
-  bannerTimer = setTimeout(() => (b.style.opacity = 0), BANNER_MS);
+  bannerTimer = setTimeout(() => (b.style.opacity = "0"), BANNER_MS);
 }

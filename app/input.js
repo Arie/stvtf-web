@@ -56,7 +56,12 @@ env.keys.addEventListener("keyup", e => {
 });
 env.keys.addEventListener("blur", () => showBoard(false));
 env.keys.addEventListener("keydown", e => {
-  if (e.ctrlKey || e.metaKey || e.altKey || e.composedPath()[0].closest?.("input:not([type=checkbox]), textarea"))
+  if (
+    e.ctrlKey ||
+    e.metaKey ||
+    e.altKey ||
+    /** @type {Element} */ (e.composedPath()[0]).closest?.("input:not([type=checkbox]), textarea")
+  )
     return;
   if (e.key === "Tab") {
     e.preventDefault();
@@ -94,7 +99,8 @@ env.keys.addEventListener("keydown", e => {
       setSidebar(env.el.classList.contains("noside"));
       break;
     case "g":
-      if (!$("bgtoggle").hidden) env.root.querySelector("#bgtoggle button:not(.on)").click();
+      if (!$("bgtoggle").hidden)
+        /** @type {HTMLButtonElement} */ (env.root.querySelector("#bgtoggle button:not(.on)")).click();
       break;
     case "o":
       if (!env.component)
@@ -148,22 +154,24 @@ function followAt(cx, cy) {
 }
 for (const id of ["hud-blue", "hud-red"]) {
   $(id).addEventListener("click", e => {
-    const c = e.target.closest(".card");
+    const c = /** @type {HTMLElement} */ (/** @type {Element} */ (e.target).closest(".card"));
     if (c) setFollow(Number(c.dataset.id));
   });
 }
 $("follow-stop").addEventListener("click", () => setFollow(null));
 $("settingstoggle").addEventListener("click", () => toggleExclusive("settings"));
 $("settings").addEventListener("change", e => {
-  const id = e.target.dataset.layer;
-  if (id === "*") setOverkill(e.target.checked);
-  else if (id) setLayer(id, e.target.checked);
+  const box = /** @type {HTMLInputElement} */ (e.target),
+    id = box.dataset.layer;
+  if (id === "*") setOverkill(box.checked);
+  else if (id) setLayer(id, box.checked);
 });
 
 $("helptoggle").addEventListener("click", () => toggleExclusive("help"));
 $("autozoom").addEventListener("click", () => setAutoZoom(true));
 $("feed").addEventListener("click", e => {
-  const id = Number(e.target.closest(".who[data-id]")?.dataset.id);
+  const who = /** @type {HTMLElement} */ (/** @type {Element} */ (e.target).closest(".who[data-id]"));
+  const id = Number(who?.dataset.id);
   if (!OVERLAY && Number.isFinite(id) && id !== state.follow) setFollow(id);
 });
 
@@ -182,7 +190,7 @@ try {
 } catch {}
 // side=0: no events and chat beside the map, for a site that shows its own.
 if (OPT.get("side") === "0") env.el.classList.add("noside");
-for (const b of env.root.querySelectorAll("#bgtoggle button")) {
+for (const b of /** @type {NodeListOf<HTMLButtonElement>} */ (env.root.querySelectorAll("#bgtoggle button"))) {
   b.addEventListener("click", () => {
     state.bg = b.dataset.bg;
     for (const o of env.root.querySelectorAll("#bgtoggle button")) o.classList.toggle("on", o === b);
