@@ -7,10 +7,37 @@ import { configure } from "./env.js";
 
 const BASE = new URL("../../", import.meta.url);
 // See asset() in env.js.
-const cors = url => { url.searchParams.set("cors", "1"); return url; };
+const cors = url => {
+  url.searchParams.set("cors", "1");
+  return url;
+};
 const OPTIONS = [
-  "side", "names", "score", "panel", "rotate", "dot", "ui", "zoom", "bg", "bgopacity", "health", "projectiles", "beams", "buildings", "shots", "deaths",
-  "caps", "heals", "hits", "marks", "jumps", "pickups", "points", "flow", "loadout", "effects",
+  "side",
+  "names",
+  "score",
+  "panel",
+  "rotate",
+  "dot",
+  "ui",
+  "zoom",
+  "bg",
+  "bgopacity",
+  "health",
+  "projectiles",
+  "beams",
+  "buildings",
+  "shots",
+  "deaths",
+  "caps",
+  "heals",
+  "hits",
+  "marks",
+  "jumps",
+  "pickups",
+  "points",
+  "flow",
+  "loadout",
+  "effects",
 ];
 let mounted = null;
 
@@ -19,8 +46,15 @@ function addFonts() {
   if (document.getElementById("stvtf-fonts")) return;
   const style = document.createElement("style");
   style.id = "stvtf-fonts";
-  style.textContent = [["Regular", 400], ["Bold", 700]].map(([w, n]) =>
-    `@font-face { font-family: "HUD Condensed"; src: url("${cors(new URL(`fonts/RobotoCondensed-${w}.ttf`, BASE))}") format("truetype"); font-weight: ${n}; }`).join("\n");
+  style.textContent = [
+    ["Regular", 400],
+    ["Bold", 700],
+  ]
+    .map(
+      ([w, n]) =>
+        `@font-face { font-family: "HUD Condensed"; src: url("${cors(new URL(`fonts/RobotoCondensed-${w}.ttf`, BASE))}") format("truetype"); font-weight: ${n}; }`,
+    )
+    .join("\n");
   document.head.append(style);
 }
 
@@ -38,7 +72,10 @@ async function matchPage(src) {
   return page;
 }
 
-const loaded = link => new Promise(resolve => { link.onload = link.onerror = resolve; });
+const loaded = link =>
+  new Promise(resolve => {
+    link.onload = link.onerror = resolve;
+  });
 
 class StvMap extends HTMLElement {
   #command = null;
@@ -67,12 +104,19 @@ class StvMap extends HTMLElement {
       shadow.append(...links, app);
       await Promise.all(links.map(loaded));
 
-      const overlay = this.getAttribute("view") === "overlay", delay = this.getAttribute("delay") || "";
+      const overlay = this.getAttribute("view") === "overlay",
+        delay = this.getAttribute("delay") || "";
       const search = new URLSearchParams(OPTIONS.filter(o => this.hasAttribute(o)).map(o => [o, this.getAttribute(o)]));
       if (!this.hasAttribute("tabindex")) this.tabIndex = 0;
       configure({
-        root: shadow, el: app, keys: this, base: BASE.href, storage: false, component: true,
-        path: page + (overlay ? "overlay" : "") + (delay && (overlay ? "/" : "") + delay), search: `?${search}`,
+        root: shadow,
+        el: app,
+        keys: this,
+        base: BASE.href,
+        storage: false,
+        component: true,
+        path: page + (overlay ? "overlay" : "") + (delay && (overlay ? "/" : "") + delay),
+        search: `?${search}`,
         emit: m => this.dispatchEvent(new CustomEvent(m.type, { detail: m })),
       });
       this.#command = (await import("./embed.js")).command;
@@ -87,8 +131,12 @@ class StvMap extends HTMLElement {
   }
 
   // A player by `steamid64`, `steamid` or `id`; none stops following.
-  follow(player = {}) { this.#command?.({ type: "follow", ...player }); }
-  setLayer(name, on) { this.#command?.({ type: "layer", name, on }); }
+  follow(player = {}) {
+    this.#command?.({ type: "follow", ...player });
+  }
+  setLayer(name, on) {
+    this.#command?.({ type: "layer", name, on });
+  }
 }
 
 if (!customElements.get("stv-map")) customElements.define("stv-map", StvMap);

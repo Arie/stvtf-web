@@ -4,12 +4,18 @@ import { layerOn, setLayer, setOverkill, overkillOn } from "./layers.js";
 import { viewCy, frameMap, toScreen } from "./view.js";
 
 // A resize (or hiding the events) only refits the whole-map framing; auto zoom glides to it.
-const refit = () => { applyScale(); if (state.framed) frameMap(true); };
+const refit = () => {
+  applyScale();
+  if (state.framed) frameMap(true);
+};
 addEventListener("resize", refit);
 // An element on another site changes size without the window.
 if (env.component) new ResizeObserver(refit).observe(env.el);
 let drag = null;
-canvas.addEventListener("mousedown", e => drag = { x: e.clientX, y: e.clientY, cx: state.view.cx, cy: state.view.cy, moved: false });
+canvas.addEventListener(
+  "mousedown",
+  e => (drag = { x: e.clientX, y: e.clientY, cx: state.view.cx, cy: state.view.cy, moved: false }),
+);
 window.addEventListener("mouseup", e => {
   if (drag && !drag.moved) followAt(e.clientX, e.clientY);
   drag = null;
@@ -17,7 +23,11 @@ window.addEventListener("mouseup", e => {
 window.addEventListener("mousemove", e => {
   if (!drag) return;
   if (!drag.moved && Math.hypot(e.clientX - drag.x, e.clientY - drag.y) < 4) return;
-  if (!drag.moved) { drag.moved = true; setFollow(null); setAutoZoom(false); }
+  if (!drag.moved) {
+    drag.moved = true;
+    setFollow(null);
+    setAutoZoom(false);
+  }
   state.view.cx = drag.cx - (e.clientX - drag.x) / state.view.scale;
   state.view.cy = drag.cy + (e.clientY - drag.y) / state.view.scale;
 });
@@ -25,7 +35,9 @@ window.addEventListener("mousemove", e => {
 // o: the overlay or back.
 function toggle(cls) {
   const on = env.el.classList.toggle(cls);
-  try { if (env.storage) localStorage.setItem(cls, on ? "1" : "0"); } catch {}
+  try {
+    if (env.storage) localStorage.setItem(cls, on ? "1" : "0");
+  } catch {}
   dispatchEvent(new Event("resize"));
 }
 function toggleExclusive(id) {
@@ -39,27 +51,65 @@ function showBoard(on) {
   $("board").hidden = !on;
   state.lastPanel = 0;
 }
-env.keys.addEventListener("keyup", e => { if (e.key === "Tab") showBoard(false); });
+env.keys.addEventListener("keyup", e => {
+  if (e.key === "Tab") showBoard(false);
+});
 env.keys.addEventListener("blur", () => showBoard(false));
 env.keys.addEventListener("keydown", e => {
-  if (e.ctrlKey || e.metaKey || e.altKey || e.composedPath()[0].closest?.("input:not([type=checkbox]), textarea")) return;
-  if (e.key === "Tab") { e.preventDefault(); showBoard(true); return; }
+  if (e.ctrlKey || e.metaKey || e.altKey || e.composedPath()[0].closest?.("input:not([type=checkbox]), textarea"))
+    return;
+  if (e.key === "Tab") {
+    e.preventDefault();
+    showBoard(true);
+    return;
+  }
   switch (e.key) {
-    case "Escape": setFollow(null); $("help").hidden = true; $("settings").hidden = true; break;
-    case "?": toggleExclusive("help"); break;
-    case "k": if (!OVERLAY) toggleExclusive("settings"); break;
-    case "x": if (!OVERLAY) setOverkill(!overkillOn()); break;
-    case "j": if (!OVERLAY) setLayer("jumps", !layerOn("jumps")); break;
-    case "l": if (!OVERLAY) setLayer("loadout", !layerOn("loadout")); break;
-    case "h": toggle("nohud"); break;
-    case "s": toggle("noscore"); break;
-    case "e": setSidebar(env.el.classList.contains("noside")); break;
-    case "g": if (!$("bgtoggle").hidden) env.root.querySelector("#bgtoggle button:not(.on)").click(); break;
-    case "o": if (!env.component) location.replace(OVERLAY ? PAGE.replace(/overlay\/?$/, "") + DELAY : PAGE.replace(/(index\.html)?$/, "overlay") + (DELAY && "/" + DELAY)); break;
+    case "Escape":
+      setFollow(null);
+      $("help").hidden = true;
+      $("settings").hidden = true;
+      break;
+    case "?":
+      toggleExclusive("help");
+      break;
+    case "k":
+      if (!OVERLAY) toggleExclusive("settings");
+      break;
+    case "x":
+      if (!OVERLAY) setOverkill(!overkillOn());
+      break;
+    case "j":
+      if (!OVERLAY) setLayer("jumps", !layerOn("jumps"));
+      break;
+    case "l":
+      if (!OVERLAY) setLayer("loadout", !layerOn("loadout"));
+      break;
+    case "h":
+      toggle("nohud");
+      break;
+    case "s":
+      toggle("noscore");
+      break;
+    case "e":
+      setSidebar(env.el.classList.contains("noside"));
+      break;
+    case "g":
+      if (!$("bgtoggle").hidden) env.root.querySelector("#bgtoggle button:not(.on)").click();
+      break;
+    case "o":
+      if (!env.component)
+        location.replace(
+          OVERLAY
+            ? PAGE.replace(/overlay\/?$/, "") + DELAY
+            : PAGE.replace(/(index\.html)?$/, "overlay") + (DELAY && "/" + DELAY),
+        );
+      break;
   }
 });
 for (const cls of ["nohud", "noscore"]) {
-  try { if (!OVERLAY && env.storage && localStorage.getItem(cls) === "1") env.el.classList.add(cls); } catch {}
+  try {
+    if (!OVERLAY && env.storage && localStorage.getItem(cls) === "1") env.el.classList.add(cls);
+  } catch {}
 }
 // The address beats the saved choice for this visit, without changing it. The overlay's
 // scoreboard is off unless asked for (renderScoreboard).
@@ -68,7 +118,8 @@ if (!OVERLAY) env.el.classList.toggle("noscore", !optOn("score", !env.el.classLi
 function setAutoZoom(on) {
   if (OVERLAY || state.autoZoom === on) return;
   state.autoZoom = on;
-  state.camTarget = null; state.cam = null;
+  state.camTarget = null;
+  state.cam = null;
   $("autozoom").hidden = on;
 }
 
@@ -82,12 +133,16 @@ export function setFollow(id) {
 }
 function followAt(cx, cy) {
   const r = canvas.getBoundingClientRect();
-  let best = null, bestD = 18 * uiScale();
+  let best = null,
+    bestD = 18 * uiScale();
   for (const p of state.lastPlayers) {
     if (!p.alive) continue;
     const [x, y] = toScreen(p.pos[0], p.pos[1]);
     const d = Math.hypot(x - (cx - r.left), y - (cy - r.top));
-    if (d < bestD) { best = p; bestD = d; }
+    if (d < bestD) {
+      best = p;
+      bestD = d;
+    }
   }
   if (best) setFollow(best.id);
 }
@@ -101,7 +156,8 @@ $("follow-stop").addEventListener("click", () => setFollow(null));
 $("settingstoggle").addEventListener("click", () => toggleExclusive("settings"));
 $("settings").addEventListener("change", e => {
   const id = e.target.dataset.layer;
-  if (id === "*") setOverkill(e.target.checked); else if (id) setLayer(id, e.target.checked);
+  if (id === "*") setOverkill(e.target.checked);
+  else if (id) setLayer(id, e.target.checked);
 });
 
 $("helptoggle").addEventListener("click", () => toggleExclusive("help"));
@@ -115,11 +171,15 @@ function setSidebar(show) {
   env.el.classList.toggle("noside", !show);
   $("sidetoggle").textContent = show ? "›" : "‹";
   $("sidetoggle").title = show ? "Hide events and chat (e)" : "Show events and chat (e)";
-  try { if (env.storage) localStorage.setItem("sidebar", show ? "1" : "0"); } catch {}
+  try {
+    if (env.storage) localStorage.setItem("sidebar", show ? "1" : "0");
+  } catch {}
   dispatchEvent(new Event("resize"));
 }
 $("sidetoggle").addEventListener("click", () => setSidebar(env.el.classList.contains("noside")));
-try { if (!OVERLAY && env.storage && localStorage.getItem("sidebar") === "0") setSidebar(false); } catch {}
+try {
+  if (!OVERLAY && env.storage && localStorage.getItem("sidebar") === "0") setSidebar(false);
+} catch {}
 // side=0: no events and chat beside the map, for a site that shows its own.
 if (OPT.get("side") === "0") env.el.classList.add("noside");
 for (const b of env.root.querySelectorAll("#bgtoggle button")) {
@@ -129,15 +189,24 @@ for (const b of env.root.querySelectorAll("#bgtoggle button")) {
   });
   if (b.dataset.bg === (PLAIN_BG ? "geometry" : OPT.get("bg"))) b.click();
 }
-canvas.addEventListener("wheel", e => {
-  e.preventDefault();
-  setAutoZoom(false);
-  const r = canvas.getBoundingClientRect(), v = state.view;
-  const mx = e.clientX - r.left - r.width / 2, my = e.clientY - r.top - r.height / 2;
-  const wx = v.cx + mx / v.scale, wy = v.cy - my / v.scale;
-  v.scale *= Math.exp(-e.deltaY * 0.0015);
-  v.cx = wx - mx / v.scale; v.cy = wy + my / v.scale;
-  // No further out than the whole map, framed as at the start.
-  const full = state.full;
-  if (full && v.scale <= full.scale) Object.assign(v, { scale: full.scale, cx: full.cx, cy: viewCy(full.cy, full.scale) });
-}, { passive: false });
+canvas.addEventListener(
+  "wheel",
+  e => {
+    e.preventDefault();
+    setAutoZoom(false);
+    const r = canvas.getBoundingClientRect(),
+      v = state.view;
+    const mx = e.clientX - r.left - r.width / 2,
+      my = e.clientY - r.top - r.height / 2;
+    const wx = v.cx + mx / v.scale,
+      wy = v.cy - my / v.scale;
+    v.scale *= Math.exp(-e.deltaY * 0.0015);
+    v.cx = wx - mx / v.scale;
+    v.cy = wy + my / v.scale;
+    // No further out than the whole map, framed as at the start.
+    const full = state.full;
+    if (full && v.scale <= full.scale)
+      Object.assign(v, { scale: full.scale, cx: full.cx, cy: viewCy(full.cy, full.scale) });
+  },
+  { passive: false },
+);

@@ -1,4 +1,16 @@
-import { $, DELAY, DELAY_MS, OVERLAY, PAGE, parseMessage, state, observeTick, setStatus, setTickInterval, statusText } from "./core.js";
+import {
+  $,
+  DELAY,
+  DELAY_MS,
+  OVERLAY,
+  PAGE,
+  parseMessage,
+  state,
+  observeTick,
+  setStatus,
+  setTickInterval,
+  statusText,
+} from "./core.js";
 import { embedMap, embedStatus } from "./embed.js";
 import { asset } from "./env.js";
 import { killiconsLoaded, CHAT_TYPES, chat, feedEvent } from "./feed.js";
@@ -27,12 +39,20 @@ export function openStream() {
   es?.close();
   const url = new URL(EVENTS_URL);
   if (detailNeeded()) url.searchParams.set("detail", "1");
-  const s = es = new EventSource(url);
-  s.onmessage = e => { const m = parseMessage(e.data); waiting(m); later(() => handle(m)); };
-  s.onopen = () => later(() => {
-    if (opened) { $("feed").replaceChildren(); $("chat").replaceChildren(); }
-    opened = true;
-  });
+  const s = (es = new EventSource(url));
+  s.onmessage = e => {
+    const m = parseMessage(e.data);
+    waiting(m);
+    later(() => handle(m));
+  };
+  s.onopen = () =>
+    later(() => {
+      if (opened) {
+        $("feed").replaceChildren();
+        $("chat").replaceChildren();
+      }
+      opened = true;
+    });
   s.onerror = () => setStatus("stream lost, retrying", false);
 }
 
@@ -40,7 +60,12 @@ export function openStream() {
 // the last data came in.
 setInterval(() => {
   const age = state.lastData == null ? 0 : (performance.now() - state.lastData) / 1000;
-  const t = age < 60 ? `${Math.floor(age)}s` : age < 3600 ? `${Math.floor(age / 60)}m ${Math.floor(age % 60)}s` : `${Math.floor(age / 3600)}h ${Math.floor(age / 60 % 60)}m`;
+  const t =
+    age < 60
+      ? `${Math.floor(age)}s`
+      : age < 3600
+        ? `${Math.floor(age / 60)}m ${Math.floor(age % 60)}s`
+        : `${Math.floor(age / 3600)}h ${Math.floor((age / 60) % 60)}m`;
   $("age").textContent = age < 5 ? "" : `last data ${t} ago`;
   if (age >= 5 && $("status").textContent === "live") setStatus("no data", false);
 }, 1000);
@@ -62,16 +87,20 @@ function waiting(m) {
     }
   } else if (m.type === "status" && holdUntil == null) {
     empty.textContent =
-      m.state === "full" ? "SourceTV has just started: its first data comes tv_delay after that…"
-      : m.reason ? `SourceTV ${m.state.replaceAll("_", " ")}: ${m.reason}`
-      : "connecting to SourceTV…";
+      m.state === "full"
+        ? "SourceTV has just started: its first data comes tv_delay after that…"
+        : m.reason
+          ? `SourceTV ${m.state.replaceAll("_", " ")}: ${m.reason}`
+          : "connecting to SourceTV…";
   }
 }
 function countDown() {
   const empty = $("empty");
   if (empty.style.display === "none") return;
   const left = Math.max(1, Math.ceil((holdUntil - performance.now()) / 1000));
-  empty.textContent = OVERLAY ? `starting in ${left}s…` : `holding the match back ${DELAY}s to line up with the stream: ${left}s…`;
+  empty.textContent = OVERLAY
+    ? `starting in ${left}s…`
+    : `holding the match back ${DELAY}s to line up with the stream: ${left}s…`;
   setTimeout(countDown, 250);
 }
 
@@ -117,7 +146,8 @@ function handle(m) {
       state.snaps.push(m);
       if (state.snaps.length > SNAPS_KEPT) state.snaps.shift();
       for (const p of m.players) state.players.set(p.id, p);
-      $("empty").style.display = "none"; $("empty").classList.remove("holding");
+      $("empty").style.display = "none";
+      $("empty").classList.remove("holding");
       break;
     case "world":
       break;
@@ -128,9 +158,25 @@ function handle(m) {
 
 // A map change (or a signon restart) starts from nothing: drop everything from the old map.
 function resetMatch(keepFollow = false) {
-  state.snaps = []; state.events = []; state.effects = []; state.marks = []; state.scorches = []; state.trails = []; state.packsTaken.clear(); state.tickOffset = null; state.lastTick = 0;
-  state.players.clear(); cartState.clear(); state.lastPlayers = []; state.clock = ""; state.lastScores = null; state.spawnSeen = {};
+  state.snaps = [];
+  state.events = [];
+  state.effects = [];
+  state.marks = [];
+  state.scorches = [];
+  state.trails = [];
+  state.packsTaken.clear();
+  state.tickOffset = null;
+  state.lastTick = 0;
+  state.players.clear();
+  cartState.clear();
+  state.lastPlayers = [];
+  state.clock = "";
+  state.lastScores = null;
+  state.spawnSeen = {};
   if (state.follow != null && !keepFollow) setFollow(null);
-  $("hud-blue").replaceChildren(); $("hud-red").replaceChildren(); hudNodes.clear(); $("cps").innerHTML = "";
+  $("hud-blue").replaceChildren();
+  $("hud-red").replaceChildren();
+  hudNodes.clear();
+  $("cps").innerHTML = "";
   $("scoreboard").hidden = true;
 }

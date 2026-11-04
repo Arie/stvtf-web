@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { $ } from "../../app/core.js";
 import { chat, esc, feedEvent, killiconsLoaded } from "../../app/feed.js";
 
-const HOSTILE = '<img src=x onerror=alert(1)>';
+const HOSTILE = "<img src=x onerror=alert(1)>";
 const PLAYERS = {
   3: { id: 3, name: "can of tuna", team: "red" },
   4: { id: 4, name: "silvo", team: "blue" },
@@ -11,8 +11,16 @@ const PLAYERS = {
 };
 const p = id => PLAYERS[id];
 const lastRow = box => $(box).children[0]?.innerHTML;
-const feedRow = ev => { $("feed").replaceChildren(); feedEvent(ev, p); return lastRow("feed"); };
-const chatRow = ev => { $("chat").replaceChildren(); chat(ev, p); return lastRow("chat"); };
+const feedRow = ev => {
+  $("feed").replaceChildren();
+  feedEvent(ev, p);
+  return lastRow("feed");
+};
+const chatRow = ev => {
+  $("chat").replaceChildren();
+  chat(ev, p);
+  return lastRow("chat");
+};
 const safe = html => {
   assert.ok(html, "a row is drawn");
   assert.ok(!html.includes("<img") && !html.includes("<script"), html);
@@ -39,7 +47,8 @@ test("the feed does not trust what a server sends", () => {
     { type: "vote_started", caller: 3, issue: "#TF_vote_kick_player_other", details: HOSTILE },
     { type: "player_leave", name: HOSTILE },
     { type: "map", map: HOSTILE },
-  ]) safe(feedRow(ev));
+  ])
+    safe(feedRow(ev));
 });
 
 test("chat does not trust what a server sends", () => {
@@ -48,14 +57,27 @@ test("chat does not trust what a server sends", () => {
     { type: "chat", player: 3, text: HOSTILE },
     { type: "chat", name: HOSTILE, text: "hi" },
     { type: "chat", text: HOSTILE },
-    { type: "chat", player: 3, parts: [{ c: "team", t: HOSTILE }, { c: "FF0000", t: HOSTILE }, { c: null, t: HOSTILE }] },
+    {
+      type: "chat",
+      player: 3,
+      parts: [
+        { c: "team", t: HOSTILE },
+        { c: "FF0000", t: HOSTILE },
+        { c: null, t: HOSTILE },
+      ],
+    },
     { type: "server_text", text: HOSTILE },
     { type: "voice_command", player: 6, menu: 0, item: 0 },
-  ]) safe(chatRow(ev));
+  ])
+    safe(chatRow(ev));
 });
 
 test("a chat colour is only ever a colour", () => {
-  assert.ok(chatRow({ type: "chat", player: 3, parts: [{ c: "FF0000", t: "red" }] }).includes('<span style="color:#FF0000">red</span>'));
+  assert.ok(
+    chatRow({ type: "chat", player: 3, parts: [{ c: "FF0000", t: "red" }] }).includes(
+      '<span style="color:#FF0000">red</span>',
+    ),
+  );
   const row = chatRow({ type: "chat", player: 3, parts: [{ c: 'FF0000;background:url(//evil)"', t: "x" }] });
   assert.ok(!row.includes("style=") && !row.includes("evil"), row);
 });
@@ -66,7 +88,8 @@ test("a vote's issue cannot reach Object's own properties", () => {
 });
 
 test("kills within ten seconds count up a streak, and a feign does not", () => {
-  const kill = (tick, more = {}) => feedRow({ type: "kill", tick, attacker: 4, victim: 3, weapon: "scattergun", ...more });
+  const kill = (tick, more = {}) =>
+    feedRow({ type: "kill", tick, attacker: 4, victim: 3, weapon: "scattergun", ...more });
   assert.ok(!kill(1000).includes("2K"));
   assert.ok(kill(1500).includes("2K"));
   assert.ok(!kill(1600, { feign: true }).includes("3K"));
@@ -76,19 +99,28 @@ test("kills within ten seconds count up a streak, and a feign does not", () => {
 });
 
 test("an airshot is a projectile hitting someone in the air", () => {
-  const air = weapon => feedRow({ type: "kill", tick: 1, attacker: 3, victim: 4, weapon, airborne: true }).includes("AIRSHOT");
+  const air = weapon =>
+    feedRow({ type: "kill", tick: 1, attacker: 3, victim: 4, weapon, airborne: true }).includes("AIRSHOT");
   assert.ok(air("quake_rl"));
   assert.ok(!air("scattergun"));
 });
 
 test("a known weapon gets its icon, an unknown one its name", async () => {
   await killiconsLoaded;
-  assert.ok(feedRow({ type: "kill", tick: 1, victim: 4, weapon: "quake_rl", crit: true }).includes('class="killicon killicon-quake_rl crit"'));
-  assert.ok(feedRow({ type: "kill", tick: 1, victim: 4, weapon: "made_up" }).includes('<span class="w">made_up</span>'));
+  assert.ok(
+    feedRow({ type: "kill", tick: 1, victim: 4, weapon: "quake_rl", crit: true }).includes(
+      'class="killicon killicon-quake_rl crit"',
+    ),
+  );
+  assert.ok(
+    feedRow({ type: "kill", tick: 1, victim: 4, weapon: "made_up" }).includes('<span class="w">made_up</span>'),
+  );
 });
 
 test("a player who left shows as unknown rather than breaking the row", () => {
-  assert.ok(feedRow({ type: "kill", tick: 1, attacker: 3, victim: 99, weapon: "x" }).includes('<span class="w">?</span>'));
+  assert.ok(
+    feedRow({ type: "kill", tick: 1, attacker: 3, victim: 99, weapon: "x" }).includes('<span class="w">?</span>'),
+  );
 });
 
 test("what is not news draws no row", () => {
@@ -104,7 +136,9 @@ test("what is not news draws no row", () => {
 
 test("rows name the point, and fall back on its number", () => {
   assert.ok(feedRow({ type: "point_captured", team: "red", name: "Mid", point: 1 }).includes("RED captured Mid"));
-  assert.ok(feedRow({ type: "point_captured", team: "blue", name: "#cp_token", point: 1 }).includes("BLU captured point 2"));
+  assert.ok(
+    feedRow({ type: "point_captured", team: "blue", name: "#cp_token", point: 1 }).includes("BLU captured point 2"),
+  );
 });
 
 test("a round's end gives the score once it is known", () => {

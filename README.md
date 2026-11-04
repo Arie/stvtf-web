@@ -367,14 +367,15 @@ cargo fmt                          # format (settings in rustfmt.toml)
 cargo clippy --all-targets         # lints (configured under [lints] in Cargo.toml)
 cargo test
 cargo deny check                   # advisories, licences, sources (deny.toml; cargo install cargo-deny)
-npm ci && npm run lint             # ESLint on app/ and test/ (eslint.config.mjs)
+npm ci && npm run format           # Prettier on the JavaScript (.prettierrc.json); format:check only checks
+npm run lint                       # ESLint on app/ and test/ (eslint.config.mjs)
 npm test                           # the page's modules in Node, with test/js/setup.js standing in for a browser
 ```
 
 `testdata/lines.jsonl` is one
 line of each kind the feed and chat show: Rust checks it against stvtf, the page's tests read it.
 
-`ln -s ../../.githooks/pre-commit .git/hooks/pre-commit` once per clone runs fmt, clippy and ESLint
+`ln -s ../../.githooks/pre-commit .git/hooks/pre-commit` once per clone runs fmt, clippy, Prettier and ESLint
 before each commit (not `core.hooksPath`, which would replace any global git hooks).
 
 CI (`.github/workflows/ci.yml`) runs these on every push to `main` and every pull request,

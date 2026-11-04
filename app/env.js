@@ -19,7 +19,9 @@ export const env = {
   component: false,
 };
 
-export function configure(o) { Object.assign(env, o); }
+export function configure(o) {
+  Object.assign(env, o);
+}
 // On another site every file is read cross-origin: a copy cached before the server sent CORS
 // headers (Cloudflare's, the browser's) would fail it, so these addresses are its own.
 export const asset = path => {

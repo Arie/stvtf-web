@@ -18,7 +18,10 @@ const LAYERS = {
 const layerState = {};
 for (const [name, l] of Object.entries(LAYERS)) {
   layerState[name] = OVERLAY ? name === "caps" : l.def;
-  try { const v = !OVERLAY && env.storage && localStorage.getItem("layer." + name); if (v === "1" || v === "0") layerState[name] = v === "1"; } catch {}
+  try {
+    const v = !OVERLAY && env.storage && localStorage.getItem("layer." + name);
+    if (v === "1" || v === "0") layerState[name] = v === "1";
+  } catch {}
   // The address beats the saved choice for this visit, without changing it.
   layerState[name] = optOn(name, layerState[name]);
 }
@@ -27,7 +30,9 @@ export const detailNeeded = () => Object.entries(LAYERS).some(([n, l]) => l.deta
 export function setLayer(name, on) {
   const had = detailNeeded();
   layerState[name] = on;
-  try { if (env.storage) localStorage.setItem("layer." + name, on ? "1" : "0"); } catch {}
+  try {
+    if (env.storage) localStorage.setItem("layer." + name, on ? "1" : "0");
+  } catch {}
   renderSettings();
   if (had !== detailNeeded()) openStream();
 }
@@ -35,7 +40,9 @@ export function setOverkill(on) {
   const had = detailNeeded();
   for (const name of Object.keys(LAYERS)) {
     layerState[name] = on;
-    try { if (env.storage) localStorage.setItem("layer." + name, on ? "1" : "0"); } catch {}
+    try {
+      if (env.storage) localStorage.setItem("layer." + name, on ? "1" : "0");
+    } catch {}
   }
   renderSettings();
   if (had !== detailNeeded()) openStream();
@@ -44,7 +51,11 @@ export const overkillOn = () => Object.keys(LAYERS).every(layerOn);
 export function renderSettings() {
   const box = $("settings");
   if (!box) return;
-  const row = (id, label, key, on, cls) => `<label class="${cls}"><input type="checkbox" data-layer="${id}"${on ? " checked" : ""}>${label}${key ? `<kbd>${key}</kbd>` : ""}</label>`;
-  box.innerHTML = row("*", "Overkill (all)", "x", overkillOn(), "master") +
-    Object.entries(LAYERS).map(([n, l]) => row(n, l.label, l.key, layerState[n], "")).join("");
+  const row = (id, label, key, on, cls) =>
+    `<label class="${cls}"><input type="checkbox" data-layer="${id}"${on ? " checked" : ""}>${label}${key ? `<kbd>${key}</kbd>` : ""}</label>`;
+  box.innerHTML =
+    row("*", "Overkill (all)", "x", overkillOn(), "master") +
+    Object.entries(LAYERS)
+      .map(([n, l]) => row(n, l.label, l.key, layerState[n], ""))
+      .join("");
 }

@@ -9,24 +9,37 @@ import { drawProjectiles, drawHealBeams, drawPlayers, drawEffects } from "./play
 import { openStream } from "./stream.js";
 import { frameMap, drawBackground, followAction } from "./view.js";
 
-const SHOW_BUILDINGS = optOn("buildings", !OVERLAY), SHOW_PROJECTILES = optOn("projectiles", !OVERLAY), SHOW_BEAMS = optOn("beams");
+const SHOW_BUILDINGS = optOn("buildings", !OVERLAY),
+  SHOW_PROJECTILES = optOn("projectiles", !OVERLAY),
+  SHOW_BEAMS = optOn("beams");
 
 // ---------- interpolation
-function lerpAngle(a, b, t) { const d = ((b - a + 540) % 360) - 180; return a + d * t; }
+function lerpAngle(a, b, t) {
+  const d = ((b - a + 540) % 360) - 180;
+  return a + d * t;
+}
 function frameAt(tick) {
   const s = state.snaps;
   if (!s.length) return null;
   const i = s.findIndex(x => x.tick > tick);
-  if (i === -1) { const l = s[s.length - 1]; return { snap: l, players: l.players, projectiles: l.projectiles }; }
+  if (i === -1) {
+    const l = s[s.length - 1];
+    return { snap: l, players: l.players, projectiles: l.projectiles };
+  }
   if (i === 0) return { snap: s[0], players: s[0].players, projectiles: s[0].projectiles };
-  const a = s[i - 1], b = s[i], t = (tick - a.tick) / (b.tick - a.tick);
+  const a = s[i - 1],
+    b = s[i],
+    t = (tick - a.tick) / (b.tick - a.tick);
   const prev = new Map(a.players.map(p => [p.id, p]));
   const players = b.players.map(p => {
     const q = prev.get(p.id);
     if (!q || !q.alive || !p.alive) return t < 0.5 && q ? q : p;
-    return { ...p,
+    return {
+      ...p,
       pos: [0, 1, 2].map(k => q.pos[k] + (p.pos[k] - q.pos[k]) * t),
-      yaw: lerpAngle(q.yaw, p.yaw, t), hp: t < 0.5 ? q.hp : p.hp };
+      yaw: lerpAngle(q.yaw, p.yaw, t),
+      hp: t < 0.5 ? q.hp : p.hp,
+    };
   });
   // Projectiles: lerp the ones in both snapshots, keep their heading from the movement;
   // new ones appear where they were first seen.
@@ -34,9 +47,13 @@ function frameAt(tick) {
   const projectiles = b.projectiles.map(p => {
     const q = before.get(p.id);
     if (!q) return p;
-    const dx = p.pos[0] - q.pos[0], dy = p.pos[1] - q.pos[1];
-    return { ...p, pos: [0, 1, 2].map(k => q.pos[k] + (p.pos[k] - q.pos[k]) * t),
-      heading: Math.hypot(dx, dy) > MIN_HEADING_STEP ? Math.atan2(dy, dx) * 180 / Math.PI : null };
+    const dx = p.pos[0] - q.pos[0],
+      dy = p.pos[1] - q.pos[1];
+    return {
+      ...p,
+      pos: [0, 1, 2].map(k => q.pos[k] + (p.pos[k] - q.pos[k]) * t),
+      heading: Math.hypot(dx, dy) > MIN_HEADING_STEP ? (Math.atan2(dy, dx) * 180) / Math.PI : null,
+    };
   });
   return { snap: t < 0.5 ? a : b, players, projectiles };
 }
@@ -44,10 +61,14 @@ function frameAt(tick) {
 // At most 60 fps: the data comes about 17 times a second, and a 120 or 240 Hz screen would otherwise
 // redraw the whole map 2 to 4 times as often for nothing.
 // A frame is drawn when the next 60 fps slot is nearer than the refresh after it.
-const FRAME_MS = 1000 / 60, MAX_REFRESH_MS = 50, REFRESH_SMOOTHING = 0.1;
+const FRAME_MS = 1000 / 60,
+  MAX_REFRESH_MS = 50,
+  REFRESH_SMOOTHING = 0.1;
 // A projectile faces where it moved, once it moved this many units between snapshots.
 const MIN_HEADING_STEP = 4;
-let lastDraw = -Infinity, lastRefresh = 0, refreshMs = FRAME_MS;
+let lastDraw = -Infinity,
+  lastRefresh = 0,
+  refreshMs = FRAME_MS;
 function frame(now) {
   const gap = now - lastRefresh;
   lastRefresh = now;
@@ -55,15 +76,21 @@ function frame(now) {
   if (gap > 0 && gap < MAX_REFRESH_MS) refreshMs += (gap - refreshMs) * REFRESH_SMOOTHING;
   if (now - lastDraw + refreshMs / 2 >= FRAME_MS) {
     lastDraw = now;
-    try { draw(); } catch (e) { console.error(e); }
+    try {
+      draw();
+    } catch (e) {
+      console.error(e);
+    }
   }
   requestAnimationFrame(frame);
 }
 
 function draw() {
-  const r = canvasSize(), dpr = window.devicePixelRatio || 1;
+  const r = canvasSize(),
+    dpr = window.devicePixelRatio || 1;
   if (canvas.width !== Math.round(r.width * dpr) || canvas.height !== Math.round(r.height * dpr)) {
-    canvas.width = Math.round(r.width * dpr); canvas.height = Math.round(r.height * dpr);
+    canvas.width = Math.round(r.width * dpr);
+    canvas.height = Math.round(r.height * dpr);
   }
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   // Round joins: outlined text with sharp (miter) joins grows spikes off pointed glyphs like "y".
@@ -112,7 +139,8 @@ function draw() {
 const UNDRAWN_MS = 250;
 function advance() {
   if (performance.now() - lastDraw < UNDRAWN_MS) return;
-  const tick = renderTick(), f = frameAt(tick);
+  const tick = renderTick(),
+    f = frameAt(tick);
   if (!f) return;
   state.lastPlayers = f.players;
   fireEvents(tick, new Map(f.players.map(p => [p.id, p])));
@@ -125,4 +153,11 @@ renderSettings();
 openStream();
 
 requestAnimationFrame(frame);
-if (EMBEDDED) setInterval(() => { try { advance(); } catch (e) { console.error(e); } }, UNDRAWN_MS);
+if (EMBEDDED)
+  setInterval(() => {
+    try {
+      advance();
+    } catch (e) {
+      console.error(e);
+    }
+  }, UNDRAWN_MS);

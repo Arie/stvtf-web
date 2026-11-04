@@ -4,11 +4,14 @@
   "type": "module",
   "scripts": {
     "lint": "eslint app test",
+    "format": "prettier --write \"app/**/*.js\" \"test/**/*.js\" eslint.config.mjs",
+    "format:check": "prettier --check \"app/**/*.js\" \"test/**/*.js\" eslint.config.mjs",
     "test": "node --import ./test/js/setup.js --test \"test/js/*.test.js\""
   },
   "devDependencies": {
     "@eslint/js": "9.39.1",
     "eslint": "9.39.1",
-    "globals": "16.5.0"
+    "globals": "16.5.0",
+    "prettier": "3.9.10"
   }
 }

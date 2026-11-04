@@ -1,32 +1,58 @@
 import { env, asset } from "./env.js";
 // Milliseconds per server tick, from the server line (15 on a 66-tick server, which TF2 runs).
 export let msPerTick = 15;
-export function setTickInterval(seconds) { if (seconds > 0) msPerTick = seconds * 1000; }
+export function setTickInterval(seconds) {
+  if (seconds > 0) msPerTick = seconds * 1000;
+}
 // Playback runs this far behind the newest snapshot beyond the spacing between snapshots, so a
 // late one still arrives before it is needed.
 const JITTER_MS = 105;
 // The tick clock jumps instead of easing when it is off by this much (a stall, a seek).
 const CLOCK_JUMP_TICKS = 40;
 export const TEAM = { red: "#d0453f", blue: "#4f8fc0", none: "#9a9a9a", spectator: "#9a9a9a" };
-export const CLASS = { scout: "Sc", soldier: "So", pyro: "Py", demoman: "De", heavy: "He", engineer: "En", medic: "Me", sniper: "Sn", spy: "Sp", unknown: "?" };
+export const CLASS = {
+  scout: "Sc",
+  soldier: "So",
+  pyro: "Py",
+  demoman: "De",
+  heavy: "He",
+  engineer: "En",
+  medic: "Me",
+  sniper: "Sn",
+  spy: "Sp",
+  unknown: "?",
+};
 // logs.tf order, as on serveme; same-class players by name so rows don't swap between snapshots.
 const CLASS_ORDER = ["scout", "soldier", "pyro", "demoman", "heavy", "engineer", "medic", "sniper", "spy", "unknown"];
-const classRank = c => { const i = CLASS_ORDER.indexOf(c); return i < 0 ? CLASS_ORDER.length : i; };
-export const byClass = (a, b) => classRank(a.class) - classRank(b.class) || a.name.localeCompare(b.name, undefined, { sensitivity: "base" }) || a.id - b.id;
+const classRank = c => {
+  const i = CLASS_ORDER.indexOf(c);
+  return i < 0 ? CLASS_ORDER.length : i;
+};
+export const byClass = (a, b) =>
+  classRank(a.class) - classRank(b.class) ||
+  a.name.localeCompare(b.name, undefined, { sensitivity: "base" }) ||
+  a.id - b.id;
 
 // Invisible characters a name or chat line could hide behind: zero-width spaces, direction marks
 // and overrides. The zero-width joiner and non-joiner stay: emoji and some scripts need them.
 const INVISIBLE = /[\u061c\u180e\u200b\u200e\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]/g;
 const INVISIBLE_ESCAPED = /\\u(061c|180e|200[bef]|202[a-e]|206[0-46-9]|feff)/i;
 // A message from the stream, without them. Most have none, and skip the slower parse.
-export const parseMessage = data => data.search(INVISIBLE) >= 0 || INVISIBLE_ESCAPED.test(data)
-  ? JSON.parse(data, (_, v) => typeof v === "string" ? v.replace(INVISIBLE, "") : v)
-  : JSON.parse(data);
+export const parseMessage = data =>
+  data.search(INVISIBLE) >= 0 || INVISIBLE_ESCAPED.test(data)
+    ? JSON.parse(data, (_, v) => (typeof v === "string" ? v.replace(INVISIBLE, "") : v))
+    : JSON.parse(data);
 
 export const ICONS = {};
 // Loaded with CORS (every response allows it), so the players layer can read their pixels.
-for (const c of CLASS_ORDER) { if (c !== "unknown") { ICONS[c] = new Image(); ICONS[c].crossOrigin = "anonymous"; ICONS[c].src = asset(`icons/${c}.svg`); } }
-export const icon = c => ICONS[c]?.complete && ICONS[c].naturalWidth ? ICONS[c] : null;
+for (const c of CLASS_ORDER) {
+  if (c !== "unknown") {
+    ICONS[c] = new Image();
+    ICONS[c].crossOrigin = "anonymous";
+    ICONS[c].src = asset(`icons/${c}.svg`);
+  }
+}
+export const icon = c => (ICONS[c]?.complete && ICONS[c].naturalWidth ? ICONS[c] : null);
 
 // Seconds after the last / (/w/<id>/5, /w/<id>/overlay/5) hold the match back by that much, to line
 // up with a stream of it. PAGE is the path without them: /w/<id>/ or /w/<id>/overlay/.
@@ -40,7 +66,10 @@ export const PAGE = env.path.replace(DELAY_PART, "/");
 export const OVERLAY = /\/overlay\/?$/.test(PAGE);
 export const OPT = new URLSearchParams(env.search);
 // A display toggle in the query string, on either view: 1 on, 0 off, anything else the default.
-export const optOn = (name, def = true) => { const v = OPT.get(name); return v === "1" || (v !== "0" && def); };
+export const optOn = (name, def = true) => {
+  const v = OPT.get(name);
+  return v === "1" || (v !== "0" && def);
+};
 // bg=flat or bg=outline: the map geometry drawn plainly, in place of its usual look.
 export const PLAIN_BG = ["flat", "outline"].includes(OPT.get("bg")) ? OPT.get("bg") : null;
 if (OVERLAY) {
@@ -56,8 +85,12 @@ export function overlayUnit() {
 }
 
 // 1080p is the design size; 4K gets the same layout at twice the size.
-export function uiScale() { return OVERLAY ? 1 : Math.max(0.75, Math.min(2.5, (env.el.clientHeight || innerHeight) / 1080)); }
-export function applyScale() { env.el.style.setProperty("--s", uiScale()); }
+export function uiScale() {
+  return OVERLAY ? 1 : Math.max(0.75, Math.min(2.5, (env.el.clientHeight || innerHeight) / 1080));
+}
+export function applyScale() {
+  env.el.style.setProperty("--s", uiScale());
+}
 applyScale();
 
 export const $ = id => env.root.getElementById(id);
@@ -65,18 +98,37 @@ export const canvas = $("c");
 export const ctx = canvas.getContext("2d");
 // The canvas size, kept up to date by an observer: asking the layout for it forces a reflow.
 let size = null;
-new ResizeObserver(([e]) => { size = { width: e.contentRect.width, height: e.contentRect.height }; }).observe(canvas);
+new ResizeObserver(([e]) => {
+  size = { width: e.contentRect.width, height: e.contentRect.height };
+}).observe(canvas);
 export const canvasSize = () => size ?? (size = canvas.getBoundingClientRect());
 
 export const state = {
-  map: null, snaps: [], events: [], effects: [], players: new Map(),
-  tickOffset: null, lastTick: 0, geometry: null, geoCanvas: null, overview: null,
-  marks: [], scorches: [], trails: [], packsTaken: new Map(),
-  view: { cx: 0, cy: 0, scale: 0.08, rot: 0 }, fitted: false,
+  map: null,
+  snaps: [],
+  events: [],
+  effects: [],
+  players: new Map(),
+  tickOffset: null,
+  lastTick: 0,
+  geometry: null,
+  geoCanvas: null,
+  overview: null,
+  marks: [],
+  scorches: [],
+  trails: [],
+  packsTaken: new Map(),
+  view: { cx: 0, cy: 0, scale: 0.08, rot: 0 },
+  fitted: false,
   // Auto zoom on the fight; the main view turns it off when panned or zoomed by hand.
-  autoZoom: !OVERLAY || OPT.get("zoom") !== "map", bg: "overview", follow: null,
+  autoZoom: !OVERLAY || OPT.get("zoom") !== "map",
+  bg: "overview",
+  follow: null,
   // The players last drawn, the score line for the feed, rooms seen spawning, when the HUD last refreshed.
-  lastPlayers: [], lastScores: null, spawnSeen: {}, lastPanel: 0,
+  lastPlayers: [],
+  lastScores: null,
+  spawnSeen: {},
+  lastPanel: 0,
 };
 
 // ---------- tick clock: server tick at a local instant, smoothed over snapshot arrivals
@@ -84,7 +136,8 @@ function nowTick() {
   return state.tickOffset == null ? 0 : performance.now() / msPerTick + state.tickOffset;
 }
 // Ticks between snapshots, smoothed: stvtf's rate cap and the STV's tv_snapshotrate set it.
-let lastSnapTick = null, snapGap = 4;
+let lastSnapTick = null,
+  snapGap = 4;
 export function observeTick(tick) {
   if (state.tickOffset == null) lastSnapTick = null;
   const gap = lastSnapTick == null ? 0 : tick - lastSnapTick;
@@ -94,9 +147,16 @@ export function observeTick(tick) {
   if (state.tickOffset == null || Math.abs(est - state.tickOffset) > CLOCK_JUMP_TICKS) state.tickOffset = est;
   else state.tickOffset = Math.max(state.tickOffset * 0.97 + est * 0.03, state.tickOffset - 0.5);
 }
-export function renderTick() { return nowTick() - snapGap - JITTER_MS / msPerTick; }
+export function renderTick() {
+  return nowTick() - snapGap - JITTER_MS / msPerTick;
+}
 
-export function setStatus(text, ok, why = "") { const s = $("status"); s.textContent = text; s.className = ok ? "ok" : "bad"; s.title = why; }
+export function setStatus(text, ok, why = "") {
+  const s = $("status");
+  s.textContent = text;
+  s.className = ok ? "ok" : "bad";
+  s.title = why;
+}
 
 // The sidebar's word for a status line from stvtf, given the word it shows now. Signon runs
 // connecting, new, prespawn and spawn before data flows, and a server that is starting up or
@@ -106,12 +166,20 @@ export function setStatus(text, ok, why = "") { const s = $("status"); s.textCon
 export function statusText(shown, m) {
   const why = m.reason || "";
   switch (m.state) {
-    case "full": return ["live", ""];
-    case "map_change": case "changelevel": return ["map changing", ""];
-    case "gave_up": return [`gave up: ${why}`, why];
-    case "disconnected": case "connect_failed":
+    case "full":
+      return ["live", ""];
+    case "map_change":
+    case "changelevel":
+      return ["map changing", ""];
+    case "gave_up":
+      return [`gave up: ${why}`, why];
+    case "disconnected":
+    case "connect_failed":
       if (shown === "map changing") return [shown, why];
-      return [shown === "live" || shown === "no data" || shown === "reconnecting" ? "reconnecting" : "waiting for SourceTV", why];
+      return [
+        shown === "live" || shown === "no data" || shown === "reconnecting" ? "reconnecting" : "waiting for SourceTV",
+        why,
+      ];
     default:
       // A step of signon (or a relay coming up): whatever it was waiting for, it still is.
       if (shown === "live" || shown === "no data") return ["reconnecting", ""];
