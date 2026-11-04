@@ -63,10 +63,5 @@
     "max-params": {
       "count": 1
     }
-  },
-  "test/js/setup.js": {
-    "no-nested-ternary": {
-      "count": 1
-    }
   }
 }

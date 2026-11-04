@@ -1,8 +1,10 @@
 // What app/ expects of a browser, so its modules load in Node. Unknown properties answer with a
 // stand-in that takes anything, so drawing and layout do nothing; what a test reads is real.
+// A property of a stand-in: what was set on it, or a new stand-in that it then keeps.
+const kept = (t, k) => (k in t ? t[k] : (t[k] = anything()));
 const anything = () =>
   new Proxy(function () {}, {
-    get: (t, k) => (k === Symbol.toPrimitive ? () => 0 : k in t ? t[k] : (t[k] = anything())),
+    get: (t, k) => (k === Symbol.toPrimitive ? () => 0 : kept(t, k)),
     set: (t, k, v) => {
       t[k] = v;
       return true;
@@ -40,7 +42,7 @@ class FakeElement {
     this.children = [];
   }
 }
-const element = () => new Proxy(new FakeElement(), { get: (t, k) => (k in t ? t[k] : (t[k] = anything())) });
+const element = () => new Proxy(new FakeElement(), { get: kept });
 
 const byId = new Map();
 globalThis.window = globalThis;
