@@ -661,7 +661,8 @@ export function drawSpawnRooms(snap) {
       ctx.stroke();
       const top = corners.reduce((a, b) => (b[1] < a[1] || (b[1] === a[1] && b[0] < a[0]) ? b : a));
       if (!OVERLAY && Math.hypot(corners[1][0] - corners[0][0], corners[1][1] - corners[0][1]) > 40) {
-        drawText("SPAWN", `800 ${Math.round(10 * uiScale())}px system-ui`, col, null, top[0] + 4, top[1] + 3, false);
+        const font = `800 ${Math.round(10 * uiScale())}px system-ui`;
+        drawText("SPAWN", { font, fill: col, outline: null }, top[0] + 4, top[1] + 3, false);
       }
     } else {
       ctx.setLineDash([4, 4]);

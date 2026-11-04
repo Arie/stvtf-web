@@ -220,9 +220,11 @@ export function textSprite(text, font, fill, outline) {
   }
   return sp;
 }
-// Draws a text sprite with the top of its text at y, centred on x or starting at x.
-export function drawText(text, font, fill, outline, x, y, centre) {
-  const { c, w, h } = textSprite(text, font, fill, outline);
+// Draws a text sprite in `look`'s font, fill and outline (or none), with the top of its text at
+// y, centred on x or starting at x.
+/** @param {string} text @param {{ font: string, fill: string, outline: string | null }} look */
+export function drawText(text, look, x, y, centre) {
+  const { c, w, h } = textSprite(text, look.font, look.fill, look.outline);
   ctx.drawImage(c, centre ? x - w / 2 : x - TEXT_PAD, y - TEXT_PAD, w, h);
 }
 

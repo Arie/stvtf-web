@@ -6,10 +6,5 @@
     "max-lines": {
       "count": 1
     }
-  },
-  "app/view.js": {
-    "max-params": {
-      "count": 1
-    }
   }
 }
