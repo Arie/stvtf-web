@@ -1,9 +1,11 @@
-import { msPerTick, TEAM, OVERLAY, overlayUnit, uiScale, ctx, state } from "./core.js";
+import { msPerTick, TEAM, OVERLAY, overlayUnit, uiScale, ctx, state, optOn } from "./core.js";
 import { toScreen, screenAngle, px, playerRad } from "./view.js";
 import { layerOn } from "./layers.js";
 /** @typedef {import("../types/stream").Objective} Objective */
 /** @typedef {import("../types/stream").Player} Player */
 /** @typedef {import("../types/stream").Snapshot} Snapshot */
+// numbers=0 leaves the number (and the cap rate) off the control points.
+const SHOW_NUMBERS = optOn("numbers");
 
 // The payload cart: a mine cart in the pushing team's colour carrying TF2's big black bomb, facing
 // along the track. Heading comes from movement (kept while stopped); rolling back still faces forward.
@@ -345,18 +347,23 @@ function drawPoint(o, snap, tick) {
   ctx.lineWidth = OVERLAY ? Math.max(2, u * 0.18) : 2;
   ctx.strokeStyle = TEAM[o.owner] || "#b8bcc2";
   ctx.stroke();
+  if (SHOW_NUMBERS) drawPointNumber(o, capping, x, y, half);
+  ctx.restore();
+}
+
+// The point's number, or while it is capped the cap rate (×2 for two cappers, as TF2's HUD shows it).
+function drawPointNumber(o, capping, x, y, half) {
+  const u = OVERLAY ? overlayUnit() : 0;
   ctx.fillStyle = "#fff";
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   ctx.font = `800 ${Math.round(OVERLAY ? u * 1.3 : Math.max(12 * uiScale(), half * 0.9))}px system-ui`;
-  // While capping, the cap rate (×2 for two cappers, as TF2's HUD shows it) instead of the number.
   const n = layerOn("points") && capping && o.on_point ? o.on_point[o.capping_team] : 0;
   const text = n > 0 ? `\u00d7${n}` : String(o.index + 1);
   ctx.lineWidth = 3;
   ctx.strokeStyle = "#0b0c0e";
   ctx.strokeText(text, x, y + 1);
   ctx.fillText(text, x, y + 1);
-  ctx.restore();
 }
 
 // Capture areas: just an outline in the owner's colour; progress is shown on the point square.
