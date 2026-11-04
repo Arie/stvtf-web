@@ -26,13 +26,14 @@ const SVG: &str = "image/svg+xml";
 const TTF: &str = "font/ttf";
 
 /// The page's stylesheet and modules, served at `/app/<version>/`: `main.js` imports the rest.
-const APP: [(&str, &str, &[u8]); 19] = [
+const APP: [(&str, &str, &[u8]); 20] = [
     ("style.css", CSS, include_bytes!("../app/style.css")),
     ("env.js", JS, include_bytes!("../app/env.js")),
     ("core.js", JS, include_bytes!("../app/core.js")),
     ("layers.js", JS, include_bytes!("../app/layers.js")),
     ("stream.js", JS, include_bytes!("../app/stream.js")),
     ("view.js", JS, include_bytes!("../app/view.js")),
+    ("camera.js", JS, include_bytes!("../app/camera.js")),
     ("input.js", JS, include_bytes!("../app/input.js")),
     ("events.js", JS, include_bytes!("../app/events.js")),
     ("feed.js", JS, include_bytes!("../app/feed.js")),

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { closingIn, fightingPlayers } from "../../app/camera.js";
 import {
   byClass,
   msPerTick,
@@ -13,7 +14,7 @@ import {
 } from "../../app/core.js";
 import { command, steamid64 } from "../../app/embed.js";
 import { layerOn } from "../../app/layers.js";
-import { closingIn, demostfAlias, fightingPlayers, sameLayout } from "../../app/view.js";
+import { demostfAlias, sameLayout } from "../../app/view.js";
 
 test("players sort by class, then name whatever its case, then id", () => {
   const rows = [

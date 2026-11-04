@@ -9,7 +9,8 @@ import { drawHealBeams, drawPlayers } from "./players.js";
 import { drawProjectiles } from "./projectiles.js";
 import { drawEffects } from "./effects.js";
 import { openStream } from "./stream.js";
-import { frameMap, drawBackground, followAction } from "./view.js";
+import { followAction } from "./camera.js";
+import { frameMap, drawBackground } from "./view.js";
 
 const SHOW_BUILDINGS = optOn("buildings", !OVERLAY),
   SHOW_PROJECTILES = optOn("projectiles", !OVERLAY),
