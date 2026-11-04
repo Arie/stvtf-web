@@ -41,8 +41,8 @@ instead: fetched from demos.tf, decoded once (one demo at a time) and kept in me
 gzipped stvtf output, it plays through once at game speed, holding still while nobody watches.
 Everyone who opens the same demo while it plays watches it together, from where it is. It ends
 like a live match, 3 minutes after its last viewer left, and it is not picked up again after a
-restart. `--max-matches` counts it like any other match. `--home URL` sends visitors of `/` to the site (each
-serveme.tf region uses its own `/stv` page); without it `/` answers 403.
+restart. `--max-matches` counts it like any other match. `--home URL` sends visitors of `/` to
+the site (each serveme.tf region uses its own `/stv` page); without it `/` answers 403.
 
 `--sessions DIR` keeps a file per running match there (encrypted with `STVTF_TOKEN_KEY` when
 set), and on start picks the matches up again under the same links, with their feed so far:
@@ -62,9 +62,11 @@ does not count towards `--max-matches` and holds still while nobody is watching.
 `--demos DIR` does the same for every `NAME.jsonl[.gz]` in a folder, at `/w/NAME/` (NAME of
 letters, digits, `_` and `-`).
 
-stv.tf runs this way: `config/deploy.yml` is its Kamal config (`kamal deploy -d eu|na|au|sea`,
-or `bin/build` once and then `bin/deploy [REGION...]` for all regions in parallel), one app per region on the serveme.tf web hosts, with `STVTF_TOKEN_KEY` read from
-`~/.config/stvtf/token.key` (shared with serveme.tf). It pushes to and pulls from ghcr.io with
+stv.tf runs this way: `config/deploy.yml` is its Kamal config, one app per region on the
+serveme.tf web hosts, with `STVTF_TOKEN_KEY` read from `~/.config/stvtf/token.key` (shared
+with serveme.tf). `bin/build` builds and pushes the one image all regions run, and
+`bin/deploy [REGION...]` deploys it to the given regions (all four by default) in parallel;
+`kamal deploy -d eu|na|au|sea` builds and deploys a single region. It pushes to and pulls from ghcr.io with
 the classic token in `~/.config/stvtf/ghcr.token`, which has only the `write:packages` scope,
 because Kamal leaves the registry login on every host.
 
@@ -79,9 +81,11 @@ game port, it tries game port + 5.
 Given a server, it watches just that match at `http://127.0.0.1:8080/`. `--replay` plays a
 saved `stvtf connect` output at its recorded speed, which is handy when working on the page.
 
-The map zooms to where the players are fighting. Dragging or scrolling takes over
-the camera; the "Auto zoom" button hands it back. It is turned so blue's spawns are on the
-left and red's on the right, as on the HUD (`rotate`, below, changes that).
+The camera keeps every living player in view, as tightly as it can: it catches up quickly
+when one is leaving the view, and brings in a player who has just spawned gently. Before a
+round it takes in both teams at once. Dragging or scrolling takes over the camera; the "Auto
+zoom" button hands it back. The map is turned so blue's spawns are on the left and red's on the
+right, as on the HUD (`rotate`, below, changes that).
 
 Stop it with Ctrl-C: the first one disconnects every match from SourceTV cleanly (otherwise the
 server holds the slot for 300 s), a second one exits at once. With `--replay` there is nothing
@@ -344,7 +348,18 @@ sets the directory (default `backpack`, `/usr/share/stvtf/backpack` in the Docke
   Its child modules: `material` (a floor's kind from its texture name), `displacement`
   (terrain at its real height), `track` (the payload cart's track) and `reach` (the flood fill
   of the playable area).
-- `index.html` and `app/`: the page, its stylesheet and ES modules (canvas, no build step), embedded in the binary.
+- `index.html` and `app/`: the page, its stylesheet and ES modules (canvas, no build step),
+  embedded in the binary and listed in `src/http.rs`:
+  - `main.js` draws each frame; `stream.js` takes the event stream in; `core.js` holds the
+    shared state, options and tick clock; `env.js` where the page runs (its own, or `<stv-map>`).
+  - `view.js` loads the map and frames it (rotation, the screen transform, the background),
+    `geometry.js` draws the map geometry, and `camera.js` is the auto zoom.
+  - `players.js`, `status.js`, `projectiles.js`, `effects.js`, `buildings.js`, `objectives.js`,
+    `spawns.js` and `overkill.js` draw what is on the map; `events.js` turns events into effects.
+  - `hud.js` (player cards and scoreboard), `feed.js` (events and chat), `input.js` (keys,
+    mouse, follow) and `layers.js` (the overkill settings) are the rest of the page.
+  - `embed.js` and `stv-map.js` talk to a page embedding the map.
+- `types/`: the stream's lines and the page's state as TypeScript declarations, for `tsc` only.
 
 ## Tests
 
