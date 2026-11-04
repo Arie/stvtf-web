@@ -7,17 +7,19 @@ import { viewArea, viewCentre, focusOf, playerRad } from "./view.js";
 // the last FRESH_MS: they are brought in too, but gently. Before the round starts nobody counts
 // as fresh, and the view takes in everyone in ROUND_START_S.
 // The camera holds its framing until someone in it reaches its margin, it tightens a lot, or
-// stays a quarter tighter for SETTLE_MS; it glides, and never zooms in so far that a settled
+// stays a quarter tighter for SETTLE_MS; it glides, with some weight (its aim glides toward a new
+// framing in AIM_S first, so it never sets off abruptly), and never zooms in so far that a settled
 // player leaves the view. Never wider than the full framing, never tighter than MIN_SPAN units
 // (less in the overlay). Markers have a minimum size in pixels, so the framing keeps them clear
 // of the edge with a margin of one and a half markers on screen besides a small padding in map
 // units.
 const MIN_SPAN = OVERLAY ? 1600 : 2600,
-  ACTION_PAD = 150,
+  ACTION_PAD = 300,
   ROUND_START_S = 0.4,
   SETTLE_MS = 2000,
   FRESH_MS = 10000,
-  ESCAPE_S = 0.5;
+  ESCAPE_S = 0.5,
+  AIM_S = 0.3;
 // When each player last came alive (a respawn).
 const spawnedAt = new Map(),
   wasAlive = new Map();
@@ -133,11 +135,17 @@ function glide(v, target, dt, { escaping, keep, at }) {
     pan = t.pan;
   // The framing point glides, and the view is put back round it at the new zoom.
   const focus = focusOf(v);
+  // The aim glides toward the framing, and the camera toward the aim: a new framing starts the
+  // camera off gently instead of at once.
+  const aim = (cam.aim ??= { cx: focus.cx, cy: focus.cy, z: Math.log(v.scale), vx: 0, vy: 0, vz: 0 });
+  [aim.cx, aim.vx] = smoothDamp(aim.cx, target.cx, aim.vx, AIM_S, dt);
+  [aim.cy, aim.vy] = smoothDamp(aim.cy, target.cy, aim.vy, AIM_S, dt);
+  [aim.z, aim.vz] = smoothDamp(aim.z, Math.log(target.scale), aim.vz, AIM_S, dt);
   let fx, fy;
-  [fx, cam.vx] = smoothDamp(focus.cx, target.cx, cam.vx, pan, dt);
-  [fy, cam.vy] = smoothDamp(focus.cy, target.cy, cam.vy, pan, dt);
+  [fx, cam.vx] = smoothDamp(focus.cx, aim.cx, cam.vx, pan, dt);
+  [fy, cam.vy] = smoothDamp(focus.cy, aim.cy, cam.vy, pan, dt);
   let z = Math.log(v.scale);
-  [z, cam.vz] = smoothDamp(z, Math.log(target.scale), cam.vz, target.scale < v.scale ? t.out : t.in, dt);
+  [z, cam.vz] = smoothDamp(z, aim.z, cam.vz, Math.exp(aim.z) < v.scale ? t.out : t.in, dt);
   // Zooming in while still panning would cut off the far side: wait for the pan.
   const limit = Math.max(v.scale, deepestZoom(keep, { cx: fx, cy: fy }, at));
   if (Math.exp(z) > limit) {

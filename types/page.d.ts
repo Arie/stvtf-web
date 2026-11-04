@@ -65,7 +65,13 @@ export type State = {
   framed?: boolean;
   autoZoom: boolean;
   camTarget?: Framing | null;
-  cam?: { vx: number; vy: number; vz: number } | null;
+  /** The camera's spring velocities, and the aim it glides toward (which glides toward the framing). */
+  cam?: {
+    vx: number;
+    vy: number;
+    vz: number;
+    aim?: { cx: number; cy: number; z: number; vx: number; vy: number; vz: number };
+  } | null;
   bg: string;
   /** The followed player's id. */
   follow: number | null;
