@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { closingIn, fightingPlayers } from "../../app/camera.js";
+import { behindLines, closingIn, fightingPlayers } from "../../app/camera.js";
 import {
   byClass,
   msPerTick,
@@ -76,18 +76,21 @@ test("the fight is the biggest group and any other of at least three", () => {
   assert.deepEqual(fighting(at(0, 1500, 5000)), [0, 1500, 5000], "just too far to link");
 });
 
-test("players fresh from spawn do not make their group the fight", () => {
-  const at = (...xs) => xs.map(x => ({ id: x, pos: [x, 0] }));
-  const fighting = (players, fresh) => fightingPlayers(players, p => fresh.includes(p.id)).map(p => p.pos[0]);
-  // Two still fighting on one side, a wave of four just out of spawn on the other.
-  assert.deepEqual(fighting(at(0, 1000, 9000, 9100, 9200, 9300), [9000, 9100, 9200, 9300]), [0, 1000]);
-  assert.deepEqual(fighting(at(0, 9000, 9100, 9200), [9000, 9100, 9200]), [0], "even a lone fighter");
-  assert.deepEqual(
-    fighting(at(0, 100, 200, 1000, 9000, 9100), [1000]),
-    [0, 100, 200, 1000],
-    "a fresh one in the fight is in it",
+test("behind enemy lines is past more than half of the other team", () => {
+  const at = (...ps) => ps.map(([x, y, team]) => ({ id: `${team}${x},${y}`, pos: [x, y], team }));
+  const behind = players => behindLines(players).map(p => p.id);
+  // Red holds the left, blue the right; one red scout has slipped round to blue's back line.
+  const flank = at(
+    [0, 0, "red"],
+    [200, 300, "red"],
+    [8000, 900, "red"],
+    [5000, 0, "blue"],
+    [5200, 400, "blue"],
+    [6000, -300, "blue"],
   );
-  assert.deepEqual(fighting(at(0, 100, 9000), [0, 100, 9000]), [0, 100], "everyone fresh: by size again");
+  assert.deepEqual(behind(flank), ["red8000,900"]);
+  assert.deepEqual(behind(at([0, 0, "red"], [5000, 0, "blue"])), [], "two fronts facing each other");
+  assert.deepEqual(behind(at([0, 0, "red"], [100, 0, "red"])), [], "one team alone");
 });
 
 test("a loner closes in on the fight only by moving", () => {
