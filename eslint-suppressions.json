@@ -1,12 +1,4 @@
 {
-  "app/events.js": {
-    "complexity": {
-      "count": 1
-    },
-    "max-lines-per-function": {
-      "count": 1
-    }
-  },
   "app/hud.js": {
     "complexity": {
       "count": 2
