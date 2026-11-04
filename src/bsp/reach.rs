@@ -448,9 +448,18 @@ pub(super) fn reach(data: &[u8], disps: &[Displacement], bounds: &Bounds, seeds:
         bail!("grid of {dims:?} voxels");
     }
     let grid = Grid { origin: bounds.lo.map(|v| f64::from(v - MARGIN)), vox: f64::from(vox), dims };
+    let blocked = blocked(data, disps, &grid)?;
+    let near = near_ground(&blocked, &grid);
+    let start = start_voxels(seeds, &grid, &blocked, &near);
+    let free = room_for_players(blocked, near, &grid);
+    Ok(flood(start, &free, &grid).map(|reached| Reach { grid, reached, floor_work_left: Cell::new(MAX_FLOOR_WORK) }))
+}
+
+/// The voxels the world's solid brushes and terrain fill.
+fn blocked(data: &[u8], disps: &[Displacement], grid: &Grid) -> Result<Bits> {
     let lumps = Lumps::read(data)?;
     let head = i32_at(&lump(data, LUMP_MODELS)?, MODEL_HEADNODE)?;
-    let mut marks = Blocker { grid: &grid, disps, blocked: Bits::new(grid.len()), work_left: MAX_BRUSH_WORK };
+    let mut marks = Blocker { grid, disps, blocked: Bits::new(grid.len()), work_left: MAX_BRUSH_WORK };
     let mut sides_left = MAX_BRUSH_SIDES;
     for b in lumps.world_brushes(head)? {
         let brush = lumps.brush(b, &mut sides_left)?;
@@ -459,12 +468,14 @@ pub(super) fn reach(data: &[u8], disps: &[Displacement], bounds: &Bounds, seeds:
         }
     }
     marks.terrain();
-    let blocked = marks.blocked;
+    Ok(marks.blocked)
+}
 
-    let [nx, ny, nz] = dims;
-    // Space at most NEAR_GROUND above a blocked voxel.
+/// Space at most `NEAR_GROUND` above a blocked voxel.
+fn near_ground(blocked: &Bits, grid: &Grid) -> Bits {
+    let [nx, ny, nz] = grid.dims;
     let mut near = Bits::new(grid.len());
-    let height = (NEAR_GROUND / vox) as usize;
+    let height = (NEAR_GROUND / grid.vox as f32) as usize;
     for col in (0..nx * ny).map(|c| c * nz) {
         let mut run = usize::MAX;
         for z in 0..nz {
@@ -474,11 +485,17 @@ pub(super) fn reach(data: &[u8], disps: &[Displacement], bounds: &Bounds, seeds:
             }
         }
     }
+    near
+}
+
+/// Where the fill starts: for each seed, the first free voxel near it (a seed can sit just
+/// inside a brush), if that is near the ground.
+fn start_voxels(seeds: &[Vec3], grid: &Grid, blocked: &Bits, near: &Bits) -> Vec<usize> {
+    let nz = grid.dims[2];
     let mut start = Vec::new();
     for p in seeds {
         let at = [0, 1, 2].map(|a| grid.at(a, f64::from(p[a]) + if a == 2 { f64::from(SEED_UP) } else { 0.0 }));
         let [Some(x), Some(y), Some(z)] = at else { continue };
-        // The first free voxel near it: a seed can sit just inside a brush.
         let free = SEED_TRIES
             .iter()
             .filter_map(|dz| z.checked_add_signed(*dz).filter(|&z| z < nz))
@@ -486,7 +503,13 @@ pub(super) fn reach(data: &[u8], disps: &[Displacement], bounds: &Bounds, seeds:
             .find(|&i| !blocked.get(i));
         start.extend(free.filter(|&i| near.get(i)));
     }
-    // Players are 48 units wide: space beside a wall, closer than half that, is not somewhere one fits.
+    start
+}
+
+/// The voxels near the ground with room for a player. Players are 48 units wide: space beside a
+/// wall, closer than half that, is not somewhere one fits. Takes both grids, to free them.
+fn room_for_players(blocked: Bits, near: Bits, grid: &Grid) -> Bits {
+    let [nx, ny, nz] = grid.dims;
     let mut free = Bits::new(grid.len());
     for x in 0..nx {
         for y in 0..ny {
@@ -506,9 +529,15 @@ pub(super) fn reach(data: &[u8], disps: &[Displacement], bounds: &Bounds, seeds:
     for (f, n) in free.0.iter_mut().zip(&near.0) {
         *f = !*f & n;
     }
+    // Both grids are large: they go before the flood fill makes its own.
     drop(near);
+    free
+}
 
-    // A flood fill, 6-connected; the seeds count as reached even where they are now beside a wall.
+/// A flood fill through `free`, 6-connected; the seeds count as reached even where they are now
+/// beside a wall. None when no seed has a voxel.
+fn flood(start: Vec<usize>, free: &Bits, grid: &Grid) -> Option<Bits> {
+    let [nx, ny, nz] = grid.dims;
     let mut reached = Bits::new(grid.len());
     let mut queue: VecDeque<u32> = VecDeque::new();
     for i in start {
@@ -518,7 +547,7 @@ pub(super) fn reach(data: &[u8], disps: &[Displacement], bounds: &Bounds, seeds:
         }
     }
     if queue.is_empty() {
-        return Ok(None);
+        return None;
     }
     let (sy, sx) = (nz, ny * nz);
     while let Some(i) = queue.pop_front() {
@@ -539,7 +568,7 @@ pub(super) fn reach(data: &[u8], disps: &[Displacement], bounds: &Bounds, seeds:
             }
         }
     }
-    Ok(Some(Reach { grid, reached, floor_work_left: Cell::new(MAX_FLOOR_WORK) }))
+    Some(reached)
 }
 
 impl Reach {
