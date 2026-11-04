@@ -24,7 +24,8 @@ export const parseMessage = data => data.search(INVISIBLE) >= 0 || INVISIBLE_ESC
   : JSON.parse(data);
 
 export const ICONS = {};
-for (const c of CLASS_ORDER) { if (c !== "unknown") { ICONS[c] = new Image(); ICONS[c].src = asset(`icons/${c}.svg`); } }
+// Loaded with CORS (every response allows it), so the players layer can read their pixels.
+for (const c of CLASS_ORDER) { if (c !== "unknown") { ICONS[c] = new Image(); ICONS[c].crossOrigin = "anonymous"; ICONS[c].src = asset(`icons/${c}.svg`); } }
 export const icon = c => ICONS[c]?.complete && ICONS[c].naturalWidth ? ICONS[c] : null;
 
 // Seconds after the last / (/w/<id>/5, /w/<id>/overlay/5) hold the match back by that much, to line

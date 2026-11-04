@@ -218,7 +218,33 @@ export function drawHealBeams(players, byId) {
 }
 
 // The class icons are SVGs, which Firefox rasterizes again on every draw: each size is drawn once.
-const iconSprites = new Map();
+// Their art sits in a padded box (some fill only half of it), so each is cropped to a square
+// around what it draws: the art itself fills the size asked for.
+const ICON_SIZE = 1.55, iconSprites = new Map(), iconBoxes = new Map();
+function iconBox(cls, img) {
+  let box = iconBoxes.get(cls);
+  if (box) return box;
+  const w = img.naturalWidth, h = img.naturalHeight, n = 128;
+  box = { x: 0, y: 0, side: Math.max(w, h) };
+  try {
+    const c = document.createElement("canvas");
+    c.width = c.height = n;
+    const g = c.getContext("2d", { willReadFrequently: true });
+    g.drawImage(img, 0, 0, n, n);
+    const a = g.getImageData(0, 0, n, n).data;
+    let x0 = n, y0 = n, x1 = -1, y1 = -1;
+    for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
+      if (a[(y * n + x) * 4 + 3] < 16) continue;
+      x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y);
+    }
+    if (x1 >= 0) {
+      const side = Math.max(x1 - x0, y1 - y0) + 1, cx = (x0 + x1 + 1) / 2, cy = (y0 + y1 + 1) / 2;
+      box = { x: (cx - side / 2) * w / n, y: (cy - side / 2) * h / n, side: side * Math.max(w, h) / n };
+    }
+  } catch { /* unreadable (cross-origin): the whole box */ }
+  iconBoxes.set(cls, box);
+  return box;
+}
 function iconSprite(cls, size) {
   const img = icon(cls);
   if (!img) return null;
@@ -226,9 +252,10 @@ function iconSprite(cls, size) {
   let c = iconSprites.get(key);
   if (!c) {
     if (iconSprites.size > 64) iconSprites.clear();
+    const b = iconBox(cls, img);
     c = document.createElement("canvas");
     c.width = c.height = n;
-    c.getContext("2d").drawImage(img, 0, 0, n, n);
+    c.getContext("2d").drawImage(img, b.x, b.y, b.side, b.side, 0, 0, n, n);
     iconSprites.set(key, c);
   }
   return c;
@@ -298,9 +325,9 @@ export function drawPlayers(players) {
   if (SHOW_SHOTS) for (const { p, x, y, rad } of alive) if (p.flames) drawFlames(p, x, y, rad, screenAngle(p.yaw));
   for (const { p, x, y, rad, cloaked } of alive) {
     ctx.globalAlpha = cloaked ? 0.35 : 1;
-    const img = iconSprite(p.class, rad * 1.65);
+    // The art's longer side, cropped of its padding: about 1.3x as big as before, still on the disc.
+    const s = rad * ICON_SIZE, img = iconSprite(p.class, s);
     if (img) {
-      const s = rad * 1.65;
       ctx.drawImage(img, x - s / 2, y - s / 2, s, s);
     } else {
       ctx.fillStyle = "#fff"; ctx.font = `bold ${Math.round(Math.max(9, rad * 0.9))}px system-ui`;
@@ -309,10 +336,10 @@ export function drawPlayers(players) {
     }
     if (SHOW_BUILDINGS && p.carrying) {
       // The building an engineer carries, as a small badge like the ones on the map.
-      const s = Math.max(12, rad), bx = x - rad * 0.95, by = y - rad * 0.95;
-      ctx.beginPath(); ctx.roundRect(bx - s / 2, by - s / 2, s, s, 2);
+      const bs = Math.max(12, rad), bx = x - rad * 0.95, by = y - rad * 0.95;
+      ctx.beginPath(); ctx.roundRect(bx - bs / 2, by - bs / 2, bs, bs, 2);
       ctx.fillStyle = TEAM[p.team] || TEAM.none; ctx.fill(); ctx.lineWidth = 1.5; ctx.strokeStyle = "#000"; ctx.stroke();
-      ctx.fillStyle = "#fff"; ctx.font = `800 ${Math.round(s * 0.62)}px system-ui`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.fillStyle = "#fff"; ctx.font = `800 ${Math.round(bs * 0.62)}px system-ui`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
       ctx.fillText(p.carrying[0].toUpperCase(), bx, by + 0.5);
     }
     if (p.id === state.follow) {
