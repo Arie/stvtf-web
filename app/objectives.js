@@ -1,7 +1,6 @@
 import { msPerTick, TEAM, OVERLAY, overlayUnit, uiScale, ctx, state } from "./core.js";
-import { toScreen, screenAngle, px, playerRad, drawText } from "./view.js";
+import { toScreen, screenAngle, px, playerRad } from "./view.js";
 import { layerOn } from "./layers.js";
-/** @typedef {import("../types/stream").GameEvent} GameEvent */
 /** @typedef {import("../types/stream").Objective} Objective */
 /** @typedef {import("../types/stream").Player} Player */
 /** @typedef {import("../types/stream").Snapshot} Snapshot */
@@ -305,55 +304,59 @@ export function drawObjectives(snap, tick) {
       continue;
     }
     // The flag and the pass time ball go on top of the players (drawFlags).
-    if (o.kind !== "control_point") continue;
-    const [x, y] = toScreen(o.pos[0], o.pos[1]);
-    // Points are squares like TF2's HUD, so they never read as players: the owner's colour,
-    // filled left to right in the capping team's colour while a capture is under way.
-    const u = OVERLAY ? overlayUnit() : 0;
-    const half = OVERLAY ? u * 1.2 : px(110, 11);
-    const x0 = x - half,
-      y0 = y - half,
-      side = half * 2,
-      corner = Math.max(2, half * 0.18);
-    // Advance between snapshots at the rate stvtf extrapolates from the cap times and cappers.
-    const progress = Math.max(
-      0,
-      Math.min(1, o.cap_progress + ((o.cap_rate || 0) * Math.max(0, tick - snap.tick) * msPerTick) / 1000),
-    );
-    const capping = o.capping_team !== "none" && progress > 0;
+    if (o.kind === "control_point") drawPoint(o, snap, tick);
+  }
+}
+
+// Points are squares like TF2's HUD, so they never read as players: the owner's colour, filled
+// left to right in the capping team's colour while a capture is under way.
+/** @param {Objective} o @param {Snapshot} snap @param {number} tick */
+function drawPoint(o, snap, tick) {
+  const [x, y] = toScreen(o.pos[0], o.pos[1]);
+  const u = OVERLAY ? overlayUnit() : 0;
+  const half = OVERLAY ? u * 1.2 : px(110, 11);
+  const x0 = x - half,
+    y0 = y - half,
+    side = half * 2,
+    corner = Math.max(2, half * 0.18);
+  // Advance between snapshots at the rate stvtf extrapolates from the cap times and cappers.
+  const progress = Math.max(
+    0,
+    Math.min(1, o.cap_progress + ((o.cap_rate || 0) * Math.max(0, tick - snap.tick) * msPerTick) / 1000),
+  );
+  const capping = o.capping_team !== "none" && progress > 0;
+  ctx.save();
+  ctx.beginPath();
+  ctx.roundRect(x0, y0, side, side, corner);
+  ctx.fillStyle = (TEAM[o.owner] || TEAM.none) + (OVERLAY ? "e6" : "99");
+  ctx.fill();
+  if (capping) {
     ctx.save();
-    ctx.beginPath();
-    ctx.roundRect(x0, y0, side, side, corner);
-    ctx.fillStyle = (TEAM[o.owner] || TEAM.none) + (OVERLAY ? "e6" : "99");
-    ctx.fill();
-    if (capping) {
-      ctx.save();
-      ctx.clip();
-      ctx.fillStyle = TEAM[o.capping_team];
-      ctx.fillRect(x0, y0, side * progress, side);
-      ctx.restore();
-    }
-    if (o.locked) {
-      ctx.fillStyle = "#0b0c0e99";
-      ctx.fill();
-    }
-    // Outlined in the colour of the team holding it, grey while nobody does.
-    ctx.lineWidth = OVERLAY ? Math.max(2, u * 0.18) : 2;
-    ctx.strokeStyle = TEAM[o.owner] || "#b8bcc2";
-    ctx.stroke();
-    ctx.fillStyle = "#fff";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.font = `800 ${Math.round(OVERLAY ? u * 1.3 : Math.max(12 * uiScale(), half * 0.9))}px system-ui`;
-    // While capping, the cap rate (×2 for two cappers, as TF2's HUD shows it) instead of the number.
-    const n = layerOn("points") && capping && o.on_point ? o.on_point[o.capping_team] : 0;
-    const text = n > 0 ? `\u00d7${n}` : String(o.index + 1);
-    ctx.lineWidth = 3;
-    ctx.strokeStyle = "#0b0c0e";
-    ctx.strokeText(text, x, y + 1);
-    ctx.fillText(text, x, y + 1);
+    ctx.clip();
+    ctx.fillStyle = TEAM[o.capping_team];
+    ctx.fillRect(x0, y0, side * progress, side);
     ctx.restore();
   }
+  if (o.locked) {
+    ctx.fillStyle = "#0b0c0e99";
+    ctx.fill();
+  }
+  // Outlined in the colour of the team holding it, grey while nobody does.
+  ctx.lineWidth = OVERLAY ? Math.max(2, u * 0.18) : 2;
+  ctx.strokeStyle = TEAM[o.owner] || "#b8bcc2";
+  ctx.stroke();
+  ctx.fillStyle = "#fff";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.font = `800 ${Math.round(OVERLAY ? u * 1.3 : Math.max(12 * uiScale(), half * 0.9))}px system-ui`;
+  // While capping, the cap rate (×2 for two cappers, as TF2's HUD shows it) instead of the number.
+  const n = layerOn("points") && capping && o.on_point ? o.on_point[o.capping_team] : 0;
+  const text = n > 0 ? `\u00d7${n}` : String(o.index + 1);
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = "#0b0c0e";
+  ctx.strokeText(text, x, y + 1);
+  ctx.fillText(text, x, y + 1);
+  ctx.restore();
 }
 
 // Capture areas: just an outline in the owner's colour; progress is shown on the point square.
@@ -505,171 +508,4 @@ export function drawFlags(snap, players, tick) {
     }
     ctx.restore();
   }
-}
-
-// S1-S3 / D1-D3 / T1-T3 like the engineer's HUD (MS for a mini-sentry); the sentry's aim
-// sticks out, a teleporter exit gets a ring, and buildings under construction are faint.
-/** @param {Snapshot} snap */
-export function drawBuildings(snap) {
-  for (const b of snap.buildings || []) {
-    const [x, y] = toScreen(b.pos[0], b.pos[1]),
-      s = OVERLAY ? overlayUnit() * 1.9 : px(44, 18);
-    const label = b.kind === "sentry" && b.mini ? "MS" : (b.kind[0] || "?").toUpperCase() + (b.level || 1);
-    ctx.save();
-    if (b.building) ctx.globalAlpha = 0.55;
-    if (b.kind === "sentry") {
-      const target =
-        b.attacking && b.target != null ? state.lastPlayers.find(p => p.id === b.target && p.alive && p.pos) : null;
-      if (target) {
-        const [tx, ty] = toScreen(target.pos[0], target.pos[1]);
-        ctx.beginPath();
-        ctx.moveTo(x, y);
-        ctx.lineTo(tx, ty);
-        ctx.setLineDash([6, 5]);
-        ctx.strokeStyle = (TEAM[b.team] || "#fff") + "aa";
-        ctx.lineWidth = 1.5;
-        ctx.stroke();
-        ctx.setLineDash([]);
-      }
-      const a = screenAngle(b.aim ?? b.yaw ?? 0);
-      ctx.beginPath();
-      ctx.moveTo(x, y);
-      ctx.lineTo(x + Math.cos(a) * s * 1.2, y + Math.sin(a) * s * 1.2);
-      ctx.strokeStyle = "#fff";
-      ctx.lineWidth = 3;
-      ctx.stroke();
-    }
-    // The team colour drains from the top as health drops.
-    const hpf = Math.max(0, Math.min(1, b.hp / (b.max_hp || 1)));
-    const tele = b.kind === "teleporter",
-      shape = () => {
-        ctx.beginPath();
-        if (tele) ctx.arc(x, y, s / 2, 0, Math.PI * 2);
-        else ctx.roundRect(x - s / 2, y - s / 2, s, s, 3);
-      };
-    shape();
-    ctx.fillStyle = "rgba(11,12,14,0.6)";
-    ctx.fill();
-    ctx.save();
-    ctx.clip();
-    ctx.fillStyle = TEAM[b.team] || TEAM.none;
-    ctx.fillRect(x - s / 2, y + s / 2 - s * hpf, s, s * hpf);
-    ctx.restore();
-    ctx.lineWidth = b.sapped ? 2.5 : 1.5;
-    ctx.strokeStyle = b.sapped ? "#fff" : "#000";
-    ctx.stroke();
-    if (b.kind === "teleporter" && b.entrance === false) {
-      ctx.beginPath();
-      ctx.arc(x, y, s * 0.72, 0, Math.PI * 2);
-      ctx.strokeStyle = TEAM[b.team] || "#fff";
-      ctx.lineWidth = 2;
-      ctx.stroke();
-    }
-    ctx.fillStyle = "#fff";
-    ctx.font = `800 ${Math.round(Math.max(9, s * 0.5))}px system-ui`;
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillText(label, x, y + 0.5);
-    if (b.sapped) {
-      ctx.fillStyle = "#fff";
-      ctx.font = `800 ${Math.round(9 * uiScale())}px system-ui`;
-      ctx.fillText("SAPPED", x, y + s / 2 + 7);
-    }
-    ctx.restore();
-  }
-}
-
-// ---------- spawn rooms: which are in use
-// A spawn point tied to a control point is enabled for its team while that team owns the
-// point (TF2's rule); untied ones always are. Of the enabled rooms a team spawns in the most
-// forward one: the one farthest from its main spawn (the room with the most spawn points).
-// Once a team has been seen spawning since the last change of ownership, that room wins.
-let ownersKey = "",
-  ownersChanged = 0;
-// Spawn points stand up to SPAWN_SLACK above or below their room's box (as in bsp.rs).
-const SPAWN_SLACK = 64;
-const inRoom = (r, p) =>
-  p[0] >= r.min[0] &&
-  p[0] <= r.max[0] &&
-  p[1] >= r.min[1] &&
-  p[1] <= r.max[1] &&
-  p[2] >= r.min[2] - SPAWN_SLACK &&
-  p[2] <= r.max[2] + SPAWN_SLACK;
-const centre = r => [(r.min[0] + r.max[0]) / 2, (r.min[1] + r.max[1]) / 2];
-/** @param {GameEvent} ev */
-export function noteSpawn(ev) {
-  const rooms = state.spawns?.rooms || [];
-  const i = ev.pos ? rooms.findIndex(r => r.team === ev.team && inRoom(r, ev.pos)) : -1;
-  if (i >= 0) state.spawnSeen[ev.team] = { room: i, at: performance.now() };
-}
-/** @param {Snapshot} snap */
-function activeRooms(snap) {
-  const s = state.spawns;
-  if (!s) return new Set();
-  const owner = {};
-  for (const o of snap.objectives || []) if (o.kind === "control_point") owner[o.index] = o.owner;
-  const key = JSON.stringify(owner);
-  if (key !== ownersKey) {
-    ownersKey = key;
-    ownersChanged = performance.now();
-  }
-  const live = s.points.filter(
-    p => !p.disabled && (p.point == null || owner[p.point] === undefined || owner[p.point] === p.team),
-  );
-  const active = new Set();
-  for (const team of ["red", "blue"]) {
-    const seen = state.spawnSeen[team];
-    if (seen && seen.at >= ownersChanged) {
-      active.add(seen.room);
-      continue;
-    }
-    const rooms = s.rooms
-      .map((r, i) => ({ r, i, n: s.points.filter(p => p.team === team && inRoom(r, p.pos)).length }))
-      .filter(x => x.r.team === team);
-    const main = rooms.reduce((a, b) => (b.n > (a?.n ?? -1) ? b : a), null);
-    if (!main) continue;
-    const enabled = rooms.filter(x => !x.r.disabled && live.some(p => p.team === team && inRoom(x.r, p.pos)));
-    const far = x => Math.hypot(centre(x.r)[0] - centre(main.r)[0], centre(x.r)[1] - centre(main.r)[1]);
-    const pick = enabled.reduce((a, b) => (!a || far(b) > far(a) ? b : a), null);
-    if (pick) active.add(pick.i);
-  }
-  return active;
-}
-/** @param {Snapshot} snap */
-export function drawSpawnRooms(snap) {
-  const rooms = state.spawns?.rooms;
-  if (!rooms?.length) return;
-  const active = activeRooms(snap);
-  rooms.forEach((r, i) => {
-    if (OVERLAY && !active.has(i)) return;
-    const corners = [
-      [r.min[0], r.min[1]],
-      [r.max[0], r.min[1]],
-      [r.max[0], r.max[1]],
-      [r.min[0], r.max[1]],
-    ].map(([x, y]) => toScreen(x, y));
-    const col = TEAM[r.team] || "#999";
-    ctx.save();
-    ctx.beginPath();
-    corners.forEach(([x, y], k) => (k ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
-    ctx.closePath();
-    if (active.has(i)) {
-      ctx.fillStyle = col + "2e";
-      ctx.fill();
-      ctx.strokeStyle = col;
-      ctx.lineWidth = OVERLAY ? 1.5 : 2;
-      ctx.stroke();
-      const top = corners.reduce((a, b) => (b[1] < a[1] || (b[1] === a[1] && b[0] < a[0]) ? b : a));
-      if (!OVERLAY && Math.hypot(corners[1][0] - corners[0][0], corners[1][1] - corners[0][1]) > 40) {
-        const font = `800 ${Math.round(10 * uiScale())}px system-ui`;
-        drawText("SPAWN", { font, fill: col, outline: null }, top[0] + 4, top[1] + 3, false);
-      }
-    } else {
-      ctx.setLineDash([4, 4]);
-      ctx.strokeStyle = col + "66";
-      ctx.lineWidth = 1;
-      ctx.stroke();
-    }
-    ctx.restore();
-  });
 }

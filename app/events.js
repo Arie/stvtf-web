@@ -3,8 +3,8 @@ import { embedEvent } from "./embed.js";
 import { banner, teamName, pointName, flagName, chat, feedEvent } from "./feed.js";
 import { showTimeAdded } from "./hud.js";
 import { layerOn } from "./layers.js";
-import { noteSpawn } from "./objectives.js";
 import { addScorch, nearFreshScorch } from "./overkill.js";
+import { noteSpawn } from "./spawns.js";
 /** @typedef {import("../types/stream").Player} Player */
 
 // ---------- events become effects when playback reaches their tick

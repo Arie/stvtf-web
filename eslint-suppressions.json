@@ -1,10 +1,2 @@
 {
-  "app/objectives.js": {
-    "complexity": {
-      "count": 2
-    },
-    "max-lines": {
-      "count": 1
-    }
-  }
 }

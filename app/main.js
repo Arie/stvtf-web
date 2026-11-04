@@ -1,15 +1,17 @@
+import { drawBuildings } from "./buildings.js";
+import { followAction } from "./camera.js";
 import { OVERLAY, canvas, ctx, state, renderTick, canvasSize, optOn } from "./core.js";
 import { EMBEDDED, embedState } from "./embed.js";
 import { fireEvents } from "./events.js";
 import { updatePanel, renderScoreboard, shownScore } from "./hud.js";
 import { layerOn, renderSettings } from "./layers.js";
-import { drawObjectives, drawCapAreas, drawFlags, drawBuildings, drawSpawnRooms } from "./objectives.js";
+import { drawObjectives, drawCapAreas, drawFlags } from "./objectives.js";
 import { drawMarks, drawPacks, drawJumpTrails } from "./overkill.js";
 import { drawHealBeams, drawPlayers } from "./players.js";
 import { drawProjectiles } from "./projectiles.js";
 import { drawEffects } from "./effects.js";
+import { drawSpawnRooms } from "./spawns.js";
 import { openStream } from "./stream.js";
-import { followAction } from "./camera.js";
 import { frameMap, drawBackground } from "./view.js";
 
 const SHOW_BUILDINGS = optOn("buildings", !OVERLAY),
