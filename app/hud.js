@@ -69,55 +69,40 @@ function weaponImage(p) {
   }
   return itemImages[p.weapon.item] || null;
 }
+/** @param {Player} p @param {number} f the health bar's fill */
+function cardClass(p, f) {
+  return [
+    "card",
+    p.id === state.follow && "followed",
+    !p.alive && "dead",
+    p.alive && p.hp > p.max_hp && "over",
+    p.alive && f < 0.35 && "low",
+    p.ubered && "ub",
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+// How far into the overheal a player is, 0 to 1, of the most there is (150% of max, rounded down to 5).
 /** @param {Player} p */
-function card(p) {
-  const el = node(
-    `p${p.id}`,
-    `<div class="card"><div class="fill"></div><div class="oh"></div><span class="ci"></span><div class="nm"><b></b><small><span></span><img class="wp" alt="" hidden></small></div><span class="fx"></span><div class="hp"></div></div>`,
-  );
-  const f = p.alive ? Math.max(0, Math.min(1, p.hp / (p.max_hp || 1))) : 0;
-  if (el.dataset.id !== String(p.id)) el.dataset.id = p.id;
-  setClass(
-    el,
-    [
-      "card",
-      p.id === state.follow && "followed",
-      !p.alive && "dead",
-      p.alive && p.hp > p.max_hp && "over",
-      p.alive && f < 0.35 && "low",
-      p.ubered && "ub",
-    ]
-      .filter(Boolean)
-      .join(" "),
-  );
-  setStyle(el.children[0], "clipPath", `inset(0px ${(100 - f * 100).toFixed(1)}% 0px 0px)`);
-  const oc =
-    p.alive && p.hp > p.max_hp
-      ? Math.min(1, (p.hp - p.max_hp) / (Math.floor((p.max_hp * 1.5) / 5) * 5 - p.max_hp || 1))
-      : 0;
-  setStyle(el.children[1], "clipPath", `inset(0px ${(100 - oc * 100).toFixed(1)}% 0px 0px)`);
-  setHTML(
-    el.children[2],
-    ICONS[p.class] ? `<img src="${asset(`icons/${p.class}.svg`)}" alt="${p.class}">` : CLASS[p.class] || "?",
-  );
-  setText2(el.querySelector(".nm b"), p.name);
-  const sub = p.ping != null ? `${p.ping} ms` : "";
-  const [subEl, wp] = el.querySelector(".nm small").children;
-  const fx =
-    layerOn("effects") && p.alive
-      ? [
-          ["Burning", "burn", "On fire"],
-          ["Urine", "jar", "Jarate"],
-          ["MadMilk", "milk", "Mad Milk"],
-          ["Bleeding", "bleed", "Bleeding"],
-        ]
-          .filter(([c]) => p.conds?.includes(c))
-          .map(([, k, t]) => `<i class="${k}" title="${t}"></i>`)
-          .join("")
-      : "";
-  setHTML(el.children[4], fx);
-  setHTML(subEl, `${p.ubered ? `<span class="tag">${UBER_LABEL[p.ubered] || "ÜBER"}</span>` : ""}${sub}`);
-  const w = weaponImage(p);
+function overheal(p) {
+  if (!(p.alive && p.hp > p.max_hp)) return 0;
+  return Math.min(1, (p.hp - p.max_hp) / (Math.floor((p.max_hp * 1.5) / 5) * 5 - p.max_hp || 1));
+}
+/** @param {Player} p */
+function conditionIcons(p) {
+  if (!(layerOn("effects") && p.alive)) return "";
+  return [
+    ["Burning", "burn", "On fire"],
+    ["Urine", "jar", "Jarate"],
+    ["MadMilk", "milk", "Mad Milk"],
+    ["Bleeding", "bleed", "Bleeding"],
+  ]
+    .filter(([c]) => p.conds?.includes(c))
+    .map(([, k, t]) => `<i class="${k}" title="${t}"></i>`)
+    .join("");
+}
+/** @param {HTMLImageElement} wp @param {string | null} w */
+function showWeapon(wp, w) {
   if (w && wp.dataset.img !== w) {
     wp.dataset.img = w;
     wp.style.display = "";
@@ -127,9 +112,44 @@ function card(p) {
     };
   }
   wp.hidden = !w;
-  setText2(el.children[5], p.alive ? String(p.hp) : p.respawn > 0 ? `${Math.ceil(p.respawn)}s` : "DEAD");
+}
+/** @param {Player} p */
+function hpText(p) {
+  if (p.alive) return String(p.hp);
+  if (p.respawn > 0) return `${Math.ceil(p.respawn)}s`;
+  return "DEAD";
+}
+/** @param {Player} p */
+function card(p) {
+  const el = node(
+    `p${p.id}`,
+    `<div class="card"><div class="fill"></div><div class="oh"></div><span class="ci"></span><div class="nm"><b></b><small><span></span><img class="wp" alt="" hidden></small></div><span class="fx"></span><div class="hp"></div></div>`,
+  );
+  const f = p.alive ? Math.max(0, Math.min(1, p.hp / (p.max_hp || 1))) : 0;
+  if (el.dataset.id !== String(p.id)) el.dataset.id = p.id;
+  setClass(el, cardClass(p, f));
+  setStyle(el.children[0], "clipPath", `inset(0px ${(100 - f * 100).toFixed(1)}% 0px 0px)`);
+  const oc = overheal(p);
+  setStyle(el.children[1], "clipPath", `inset(0px ${(100 - oc * 100).toFixed(1)}% 0px 0px)`);
+  setHTML(
+    el.children[2],
+    ICONS[p.class] ? `<img src="${asset(`icons/${p.class}.svg`)}" alt="${p.class}">` : CLASS[p.class] || "?",
+  );
+  setText2(el.querySelector(".nm b"), p.name);
+  const sub = p.ping != null ? `${p.ping} ms` : "";
+  const [subEl, wp] = el.querySelector(".nm small").children;
+  setHTML(el.children[4], conditionIcons(p));
+  setHTML(subEl, `${p.ubered ? `<span class="tag">${UBER_LABEL[p.ubered] || "ÜBER"}</span>` : ""}${sub}`);
+  showWeapon(/** @type {HTMLImageElement} */ (wp), weaponImage(p));
+  setText2(el.children[5], hpText(p));
   setClass(el.children[5], !p.alive && p.respawn > 0 ? "hp rs" : "hp");
   return el;
+}
+/** @param {import("../types/stream").Medigun} g @param {number} pct */
+function chargeLabel(g, pct) {
+  if (g.releasing) return "ACTIVE";
+  if (pct >= FULL_CHARGE) return "READY";
+  return "ÜBERCHARGE";
 }
 /** @param {Player} p */
 function chargeMeter(p) {
@@ -152,7 +172,7 @@ function chargeMeter(p) {
     el.children[1],
     g.kind === "vaccinator" ? [25, 50, 75].map(x => `<i class="seg" style="left:${x}%"></i>`).join("") : "",
   );
-  setText2(el.children[2], g.releasing ? "ACTIVE" : pct >= FULL_CHARGE ? "READY" : "ÜBERCHARGE");
+  setText2(el.children[2], chargeLabel(g, pct));
   setText2(
     el.children[3],
     (MEDIGUN_NAME[g.kind] || g.kind) + (g.kind === "vaccinator" && g.resist ? ` · ${g.resist}` : ""),
@@ -258,15 +278,65 @@ export function shownScore(snap) {
     snap.captures &&
     objectives.some(o => (o.kind === "flag" && (o.team === "red" || o.team === "blue")) || o.kind === "goal");
   const destruction = snap.points && /^(rd|pd)_/.test(state.map || "");
-  return destruction ? snap.points : ctf ? snap.captures : snap.score;
+  if (destruction) return snap.points;
+  return ctf ? snap.captures : snap.score;
+}
+// King of the hill: each team's timer, side by side in the middle like TF2's HUD; the one
+// ticking (the team holding the point) bright, the other dimmed.
+function kothTimers(byTeam, left) {
+  const running = ["blue", "red"].some(t => !byTeam(t).paused);
+  return ["blue", "red"]
+    .map(t => {
+      const tm = byTeam(t),
+        s = left(tm);
+      return `<em class="kt ${t}${running && tm.paused ? " idle" : ""}${!tm.paused && s <= LOW_SECONDS ? " low" : ""}">${clock(s)}</em>`;
+    })
+    .join("");
+}
+function mainTimerText(main, mapLeft, left) {
+  if (main) return clock(left(main));
+  if (mapLeft != null) return clock(mapLeft);
+  return "";
+}
+// Under the round timer, the map time; else in Mann vs. Machine the robots left in the wave, where
+// the map time would go.
+/** @param {Snapshot} snap */
+function mapTimerText(snap, underRound, mapLeft) {
+  const robots = snap.mvm ? (snap.mvm.classes || []).filter(c => !c.support).reduce((n, c) => n + c.count, 0) : 0;
+  if (underRound && mapLeft != null) return `MAP ${clock(mapLeft)}`;
+  if (robots > 0) return `${robots} ROBOT${robots === 1 ? "" : "S"}`;
+  return "";
+}
+// Events are stamped with time into the round, which (unlike the round timer) never jumps.
+/** @param {Snapshot} snap @param {number} tick */
+function timeIntoRound(snap, tick) {
+  if (snap.round_time == null) return null;
+  return snap.round_time + (snap.round === "running" ? (Math.max(0, tick - snap.tick) * msPerTick) / 1000 : 0);
+}
+/** @param {Snapshot} snap */
+function roundLabel(snap, main) {
+  if (main?.setup) return "SETUP";
+  // Mann vs. Machine: the wave, like its HUD.
+  if (snap.mvm) return `WAVE ${snap.mvm.wave} / ${snap.mvm.waves}`;
+  return ROUND_LABEL[snap.round] ?? "";
+}
+// The time the low-time warning watches: a running round timer, or the map time when there is none.
+function watchedTimeLeft(main, mapLeft, left) {
+  if (main && !main.paused) return left(main);
+  if (!main) return mapLeft;
+  return null;
 }
 
-/** @param {Snapshot} snap @param {number} tick */
-export function renderScoreboard(snap, tick) {
+/** @param {Snapshot} snap */
+function renderScores(snap) {
   $("scoreboard").hidden = OVERLAY && OPT.get("score") !== "1";
   const scores = shownScore(snap);
   setText("score-blue", String(scores?.blue ?? 0));
   setText("score-red", String(scores?.red ?? 0));
+}
+/** @param {Snapshot} snap @param {number} tick */
+export function renderScoreboard(snap, tick) {
+  renderScores(snap);
   const timers = snap.timers || [];
   const left = t => (t.paused ? t.remaining : t.remaining - (Math.max(0, tick - snap.tick) * msPerTick) / 1000);
   const main = timers.find(t => t.team === "none") || (timers.length === 1 ? timers[0] : null);
@@ -274,50 +344,20 @@ export function renderScoreboard(snap, tick) {
   // Like TF2's HUD: the round timer when one is active, else the map's mp_timelimit; with
   // both, the map time goes underneath.
   const mapLeft = snap.time_left == null ? null : snap.time_left - (Math.max(0, tick - snap.tick) * msPerTick) / 1000;
-  // King of the hill: each team's timer, side by side in the middle like TF2's HUD; the one
-  // ticking (the team holding the point) bright, the other dimmed.
   const koth = !main && byTeam("blue") && byTeam("red");
-  if (koth) {
-    const running = ["blue", "red"].some(t => !byTeam(t).paused);
-    setHTML(
-      $("timer-main"),
-      ["blue", "red"]
-        .map(t => {
-          const tm = byTeam(t),
-            s = left(tm);
-          return `<em class="kt ${t}${running && tm.paused ? " idle" : ""}${!tm.paused && s <= LOW_SECONDS ? " low" : ""}">${clock(s)}</em>`;
-        })
-        .join(""),
-    );
-  } else setText("timer-main", main ? clock(left(main)) : mapLeft != null ? clock(mapLeft) : "");
+  if (koth) setHTML($("timer-main"), kothTimers(byTeam, left));
+  else setText("timer-main", mainTimerText(main, mapLeft, left));
   $("scoreboard").classList.toggle("koth", Boolean(koth));
-  // Mann vs. Machine: the robots left in the wave where the map time would go.
-  const robots = snap.mvm ? (snap.mvm.classes || []).filter(c => !c.support).reduce((n, c) => n + c.count, 0) : 0;
-  setText(
-    "timer-map",
-    (main || koth) && mapLeft != null
-      ? `MAP ${clock(mapLeft)}`
-      : robots > 0
-        ? `${robots} ROBOT${robots === 1 ? "" : "S"}`
-        : "",
-  );
-  // Events are stamped with time into the round, which (unlike the round timer) never jumps.
-  const into =
-    snap.round_time == null
-      ? null
-      : snap.round_time + (snap.round === "running" ? (Math.max(0, tick - snap.tick) * msPerTick) / 1000 : 0);
+  setText("timer-map", mapTimerText(snap, main || koth, mapLeft));
+  const into = timeIntoRound(snap, tick);
   state.clock = into == null ? "" : mmss(into);
-  setText("timer-blue", !koth && byTeam("blue") ? clock(left(byTeam("blue"))) : "");
-  setText("timer-red", !koth && byTeam("red") ? clock(left(byTeam("red"))) : "");
-  // Mann vs. Machine: the wave, like its HUD.
-  const label = main?.setup
-    ? "SETUP"
-    : snap.mvm
-      ? `WAVE ${snap.mvm.wave} / ${snap.mvm.waves}`
-      : (ROUND_LABEL[snap.round] ?? "");
+  const side = team => (!koth && byTeam(team) ? clock(left(byTeam(team))) : "");
+  setText("timer-blue", side("blue"));
+  setText("timer-red", side("red"));
+  const label = roundLabel(snap, main);
   // A paused round timer is not a paused game (KotH, no match started): it just stands still.
   setText("round-label", label || (main && !main.paused && left(main) <= 0 ? "OVERTIME" : ""));
-  const shown = main && !main.paused ? left(main) : !main ? mapLeft : null;
+  const shown = watchedTimeLeft(main, mapLeft, left);
   $("timer-main").parentElement.classList.toggle("low", shown != null && shown <= LOW_SECONDS);
 }
 /** @param {Snapshot} snap */

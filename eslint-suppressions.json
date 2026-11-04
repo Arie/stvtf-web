@@ -1,12 +1,4 @@
 {
-  "app/hud.js": {
-    "complexity": {
-      "count": 2
-    },
-    "no-nested-ternary": {
-      "count": 7
-    }
-  },
   "app/objectives.js": {
     "complexity": {
       "count": 2
