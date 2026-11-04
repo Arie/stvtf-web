@@ -1,6 +1,6 @@
 # Built with the directory holding both repositories as context (stvtf-web depends on ../stvtf):
 #   docker build -f stvtf-web/Dockerfile .
-FROM rust:1-bookworm AS build
+FROM rust:1-trixie AS build
 WORKDIR /src
 COPY stvtf ./stvtf
 COPY stvtf-web ./stvtf-web
@@ -10,7 +10,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/src/stvtf-web/target \
     cd stvtf-web && cargo build --release --locked && cp target/release/stvtf-web /usr/local/bin/
 
-FROM debian:bookworm-slim
+FROM debian:trixie-slim
 RUN useradd --system --home /data stvtf && mkdir -p /data && chown stvtf /data
 COPY --from=build /usr/local/bin/stvtf-web /usr/local/bin/stvtf-web
 COPY stvtf-web/backpack /usr/share/stvtf/backpack
