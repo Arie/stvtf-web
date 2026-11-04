@@ -430,9 +430,10 @@ export function drawBackground(r) {
 // framing only after STRAGGLE_MS without closing in on the fight by CLOSING (one walking back
 // from spawn is on the way and left out) and is then brought in slowly. The camera holds its framing until the fight leaves it, tightens a lot, or stays
 // somewhat tighter for SETTLE_MS, and glides: never wider than the full framing, never
-// tighter than MIN_SPAN units. The overlay frames tighter: its markers are sized in pixels, so
-// it keeps them clear of the edge with a margin of one and a half markers rather than map units.
-const MIN_SPAN = OVERLAY ? 1600 : 2600, ACTION_PAD = OVERLAY ? 150 : 500, CLUMP_LINK = 1500, STRAGGLE_MS = 3000, CLOSING = 300, SETTLE_MS = 500;
+// tighter than MIN_SPAN units (less in the overlay). Markers have a minimum size in pixels, so
+// the framing keeps them clear of the edge with a margin of one and a half markers on screen
+// besides a small padding in map units.
+const MIN_SPAN = OVERLAY ? 1600 : 2600, ACTION_PAD = 150, CLUMP_LINK = 1500, STRAGGLE_MS = 3000, CLOSING = 300, SETTLE_MS = 500;
 const straggling = new Map();
 let lastFrame = performance.now(), tighterSince = null;
 
@@ -478,8 +479,8 @@ export function followAction(players) {
     let v0 = Math.min(...uv.map(p => p[1])) - ACTION_PAD, v1 = Math.max(...uv.map(p => p[1])) + ACTION_PAD;
     const grow = (a, b) => { const m = (a + b) / 2, half = Math.max((b - a) / 2, MIN_SPAN / 2); return [m - half, m + half]; };
     [u0, u1] = grow(u0, u1); [v0, v1] = grow(v0, v1);
-    const m = OVERLAY ? 1.5 * overlayUnit() : 0;
-    const scale = Math.max(full.scale, Math.min((w - 2 * m) / (u1 - u0), (h - 2 * m) / (v1 - v0)) * (OVERLAY ? 1 : 0.96));
+    const m = 1.5 * playerRad();
+    const scale = Math.max(full.scale, Math.min((w - 2 * m) / (u1 - u0), (h - 2 * m) / (v1 - v0)));
     const uc = (u0 + u1) / 2, vc = (v0 + v1) / 2;
     wanted = { cx: uc * c + vc * sn, cy: -uc * sn + vc * c, scale };
   }
