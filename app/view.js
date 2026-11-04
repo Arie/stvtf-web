@@ -435,20 +435,31 @@ export function drawBackground(r) {
 // besides a small padding in map units.
 const MIN_SPAN = OVERLAY ? 1600 : 2600, ACTION_PAD = 150, CLUMP_LINK = 1500, STRAGGLE_MS = 3000, CLOSING = 300, SETTLE_MS = 500;
 const straggling = new Map();
+// When each player last came alive, to tell a wave fresh out of spawn (for FRESH_MS) from the fight.
+const FRESH_MS = 8000, spawnedAt = new Map(), wasAlive = new Map();
 let lastFrame = performance.now(), tighterSince = null;
 
 // Players linked within CLUMP_LINK of each other form a clump; keep the biggest one and any
-// other clump of three or more.
-export function fightingPlayers(alive) {
+// other clump of three or more. Players fresh from spawn come out together, so they do not count
+// towards a clump's size (unless everyone is fresh): a wave walking out is not the fight.
+export function fightingPlayers(alive, fresh = () => false) {
   const group = alive.map((_, i) => i);
   const root = i => (group[i] === i ? i : (group[i] = root(group[i])));
   for (let i = 0; i < alive.length; i++)
     for (let j = i + 1; j < alive.length; j++)
       if (Math.hypot(alive[i].pos[0] - alive[j].pos[0], alive[i].pos[1] - alive[j].pos[1]) < CLUMP_LINK) group[root(i)] = root(j);
+  const counted = alive.every(fresh) ? () => true : p => !fresh(p);
   const sizes = new Map();
-  alive.forEach((_, i) => sizes.set(root(i), (sizes.get(root(i)) || 0) + 1));
+  alive.forEach((p, i) => sizes.set(root(i), (sizes.get(root(i)) || 0) + (counted(p) ? 1 : 0)));
   const biggest = Math.max(...sizes.values());
-  return alive.filter((_, i) => sizes.get(root(i)) === biggest || sizes.get(root(i)) >= 3);
+  return alive.filter((_, i) => sizes.get(root(i)) > 0 && (sizes.get(root(i)) === biggest || sizes.get(root(i)) >= 3));
+}
+
+// Whether a loner who was at `from` and is now at `to` has come `by` closer to the fight. Both are
+// measured against where the fight is now, so the fight coming to them does not count.
+export function closingIn(from, to, fight, by) {
+  const gap = q => Math.min(...fight.map(f => Math.hypot(q[0] - f.pos[0], q[1] - f.pos[1])));
+  return gap(to) < gap(from) - by;
 }
 
 export function followAction(players) {
@@ -458,17 +469,22 @@ export function followAction(players) {
   if (!full) return;
   const { w, h } = viewArea(), c = Math.cos(v.rot), sn = Math.sin(v.rot);
   const toUV = p => [p[0] * c - p[1] * sn, p[0] * sn + p[1] * c];
+  // Someone seen dead and now alive has respawned; those alive when first seen are not fresh.
+  for (const p of players) {
+    if (p.alive && wasAlive.get(p.id) === false) spawnedAt.set(p.id, now);
+    wasAlive.set(p.id, Boolean(p.alive));
+  }
+  const fresh = p => now - (spawnedAt.get(p.id) ?? -Infinity) < FRESH_MS;
   const alive = players.filter(p => p.alive && p.pos && (p.team === "red" || p.team === "blue"));
-  const fight = alive.length ? fightingPlayers(alive) : [];
+  const fight = alive.length ? fightingPlayers(alive, fresh) : [];
   const loners = alive.filter(p => !fight.includes(p));
   for (const id of straggling.keys()) if (!loners.some(p => p.id === id)) straggling.delete(id);
-  // Each loner's closest approach to the fight so far; coming closer starts their wait again,
-  // until they are framed (then they stay framed, so the camera does not pump).
-  const gap = p => Math.min(...fight.map(f => Math.hypot(p.pos[0] - f.pos[0], p.pos[1] - f.pos[1])));
+  // Each loner's wait starts again when they walk CLOSING closer to the fight, until they are
+  // framed (then they stay framed, so the camera does not pump).
   for (const p of loners) {
-    const s = straggling.get(p.id), d = gap(p);
-    if (!s) straggling.set(p.id, { since: now, near: d });
-    else if (d < s.near - CLOSING && now - s.since <= STRAGGLE_MS) Object.assign(s, { since: now, near: d });
+    const s = straggling.get(p.id);
+    if (!s) straggling.set(p.id, { since: now, from: p.pos });
+    else if (now - s.since <= STRAGGLE_MS && closingIn(s.from, p.pos, fight, CLOSING)) Object.assign(s, { since: now, from: p.pos });
   }
   const framed = [...fight, ...loners.filter(p => now - straggling.get(p.id).since > STRAGGLE_MS)];
   let wanted = { ...full };
