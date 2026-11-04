@@ -103,41 +103,45 @@ function draw() {
   ctx.lineJoin = "round";
   const tick = renderTick();
   const f = frameAt(tick);
-  if (f) {
-    // Frame once the map's spawn points are in (or known to be missing).
-    if (!state.framed && state.mapData) frameMap();
-    if (state.framed && state.autoZoom && state.follow == null) followAction(f.players);
-    state.lastPlayers = f.players;
-    // Dead players are reported where they died (no position if before we connected).
-    const target = state.follow != null && f.players.find(p => p.id === state.follow);
-    if (target && target.pos) {
-      state.view.cx += (target.pos[0] - state.view.cx) * 0.18;
-      state.view.cy += (target.pos[1] - state.view.cy) * 0.18;
-    }
-    renderScoreboard(f.snap, tick);
-    embedState(shownScore(f.snap) ?? null, f.players);
-  }
+  if (f) aim(f, tick);
   drawBackground(r);
-  if (f) {
-    const byId = new Map(f.players.map(p => [p.id, p]));
-    fireEvents(tick, byId);
-    drawSpawnRooms(f.snap);
-    if (layerOn("marks")) drawMarks();
-    // Under the points and buildings, which some maps put right on top of a pack.
-    if (layerOn("pickups")) drawPacks();
-    if (layerOn("caps")) drawCapAreas(f.snap);
-    drawObjectives(f.snap, tick);
-    if (SHOW_BUILDINGS) drawBuildings(f.snap);
-    if (layerOn("jumps")) drawJumpTrails(f.players);
-    // Above the players in the overlay, where a dot would otherwise cover them.
-    if (SHOW_PROJECTILES && !OVERLAY) drawProjectiles(f.projectiles);
-    drawEffects(byId);
-    if (SHOW_BEAMS) drawHealBeams(f.players, byId);
-    drawPlayers(f.players);
-    drawFlags(f.snap, f.players, tick);
-    if (SHOW_PROJECTILES && OVERLAY) drawProjectiles(f.projectiles);
-    updatePanel(f.players, f.snap);
+  if (f) drawFrame(f, tick);
+}
+// Before the background: frame the map, follow the action or a player, and show the score.
+function aim(f, tick) {
+  // Frame once the map's spawn points are in (or known to be missing).
+  if (!state.framed && state.mapData) frameMap();
+  if (state.framed && state.autoZoom && state.follow == null) followAction(f.players);
+  state.lastPlayers = f.players;
+  // Dead players are reported where they died (no position if before we connected).
+  const target = state.follow != null && f.players.find(p => p.id === state.follow);
+  if (target && target.pos) {
+    state.view.cx += (target.pos[0] - state.view.cx) * 0.18;
+    state.view.cy += (target.pos[1] - state.view.cy) * 0.18;
   }
+  renderScoreboard(f.snap, tick);
+  embedState(shownScore(f.snap) ?? null, f.players);
+}
+// Everything on the map, bottom up, over its background.
+function drawFrame(f, tick) {
+  const byId = new Map(f.players.map(p => [p.id, p]));
+  fireEvents(tick, byId);
+  drawSpawnRooms(f.snap);
+  if (layerOn("marks")) drawMarks();
+  // Under the points and buildings, which some maps put right on top of a pack.
+  if (layerOn("pickups")) drawPacks();
+  if (layerOn("caps")) drawCapAreas(f.snap);
+  drawObjectives(f.snap, tick);
+  if (SHOW_BUILDINGS) drawBuildings(f.snap);
+  if (layerOn("jumps")) drawJumpTrails(f.players);
+  // Above the players in the overlay, where a dot would otherwise cover them.
+  if (SHOW_PROJECTILES && !OVERLAY) drawProjectiles(f.projectiles);
+  drawEffects(byId);
+  if (SHOW_BEAMS) drawHealBeams(f.players, byId);
+  drawPlayers(f.players);
+  drawFlags(f.snap, f.players, tick);
+  if (SHOW_PROJECTILES && OVERLAY) drawProjectiles(f.projectiles);
+  updatePanel(f.players, f.snap);
 }
 
 // Browsers stop animation frames in an iframe scrolled out of view: playback, and with it the
