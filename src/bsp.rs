@@ -600,14 +600,61 @@ fn geometry_counted(data: &[u8]) -> Result<(Geometry, (usize, f64))> {
     let bounds = playable_bounds(&map.list);
     let (spawns, packs, cap_areas, track) = (spawns(&map), packs(&map.list), cap_areas(&map), track::track(&map));
 
+    // A displacement that cannot be read leaves its base face as it is.
+    let disps = displacement::displacements(data, &world).unwrap_or_default();
+    let Faces { floors, floor_pts, walls } = faces(&world, &map, bounds, &disps)?;
+    // Where players stand: spawn points and packs.
+    let stands: Vec<Position> = spawns.points.iter().map(|s| s.pos).chain(packs.iter().map(|p| p.pos)).collect();
+    // Only maps with points or pickups: on the others (MGE, jump maps) the spawns are not where
+    // the play is, so every floor is kept.
+    let reach = bounds.and_then(|b| {
+        // A map whose brushes cannot be read keeps every floor, as before.
+        reach::reach(data, &disps, &b, &reach_seeds(&stands, &cap_areas, &track)).unwrap_or_else(|e| {
+            eprintln!("stvtf-web: playable area left out: {e:#}");
+            None
+        })
+    });
+    let mut floors: Vec<Floor> = floors.into_iter().map(|f| f.1).collect();
+    let before_fill = (floors.len(), floors.iter().map(|f| outline_area(&f.p)).sum());
+    let reach = reach.filter(|r| fill(&mut floors, |f| r.keeps(&f.p, f.z), &stands, before_fill.1));
+    let floors = without_shallow_water(floors);
+    // Without points or pickups, the floors frame the map; the top keeps the PAD above the
+    // highest floor that the viewer's roof cut expects.
+    let bounds = bounds.or_else(|| {
+        let mut b = Bounds::around(&floor_pts, FLOOR_MARGIN);
+        b.hi[2] += PAD - FLOOR_MARGIN;
+        (!floor_pts.is_empty()).then_some(b)
+    });
+    let geometry = Geometry {
+        spawns,
+        packs,
+        cap_areas,
+        bounds: bounds.map(|b| [b.lo.map(f64::from), b.hi.map(f64::from)]),
+        floors,
+        walls,
+        track: track.into_iter().map(|[a, b]| [a[0], a[1], a[2], b[0], b[1], b[2]].map(round1)).collect(),
+        playable: reach.map(|r| r.mask()),
+    };
+    Ok((geometry, before_fill))
+}
+
+/// The world's faces sorted out: floors (with their height, from low to high), the floors'
+/// points when there are no playable bounds to frame the map, and walls.
+struct Faces {
+    floors: Vec<(f32, Floor)>,
+    floor_pts: Vec<Vec3>,
+    walls: Vec<Wall>,
+}
+
+/// The world model's faces inside `bounds`: those facing up are floors, upright ones walls, and a
+/// displacement's cells are each one or the other.
+fn faces(world: &World, map: &Entities, bounds: Option<Bounds>, disps: &[displacement::Displacement]) -> Result<Faces> {
     // Only the world model: brush entities (doors, triggers, func_brush) are separate models.
     let (first, count) = (index_at(&map.models, MODEL_FIRST_FACE)?, index_at(&map.models, MODEL_NUM_FACES)?);
     let mut floors: Vec<(f32, Floor)> = Vec::new();
     let mut floor_pts = Vec::new();
     let mut walls = Vec::new();
     let mut edges_left = world.surfedges.len() / SURFEDGE_SIZE;
-    // A displacement that cannot be read leaves its base face as it is.
-    let disps = displacement::displacements(data, &world).unwrap_or_default();
     for f in first..first + count {
         let Some(face) = world.face(f, &mut edges_left)? else { continue };
         if face.pts.len() < 3 {
@@ -646,44 +693,18 @@ fn geometry_counted(data: &[u8]) -> Result<(Geometry, (usize, f64))> {
         }
     }
     floors.sort_by(|a, b| a.0.total_cmp(&b.0));
-    // Where players stand: spawn points and packs.
-    let stands: Vec<Position> = spawns.points.iter().map(|s| s.pos).chain(packs.iter().map(|p| p.pos)).collect();
-    // Only maps with points or pickups: on the others (MGE, jump maps) the spawns are not where
-    // the play is, so every floor is kept.
-    let reach = bounds.and_then(|b| {
-        let mut seeds: Vec<Vec3> = stands.iter().map(|p| p.map(|v| v as f32)).collect();
-        seeds.extend(
-            cap_areas.iter().map(|a| [f64::midpoint(a.min[0], a.max[0]), f64::midpoint(a.min[1], a.max[1]), a.min[2]].map(|v| v as f32)),
-        );
-        seeds.extend(track.iter().flatten());
-        // A map whose brushes cannot be read keeps every floor, as before.
-        reach::reach(data, &disps, &b, &seeds).unwrap_or_else(|e| {
-            eprintln!("stvtf-web: playable area left out: {e:#}");
-            None
-        })
-    });
-    let mut floors: Vec<Floor> = floors.into_iter().map(|f| f.1).collect();
-    let before_fill = (floors.len(), floors.iter().map(|f| outline_area(&f.p)).sum());
-    let reach = reach.filter(|r| fill(&mut floors, |f| r.keeps(&f.p, f.z), &stands, before_fill.1));
-    let floors = without_shallow_water(floors);
-    // Without points or pickups, the floors frame the map; the top keeps the PAD above the
-    // highest floor that the viewer's roof cut expects.
-    let bounds = bounds.or_else(|| {
-        let mut b = Bounds::around(&floor_pts, FLOOR_MARGIN);
-        b.hi[2] += PAD - FLOOR_MARGIN;
-        (!floor_pts.is_empty()).then_some(b)
-    });
-    let geometry = Geometry {
-        spawns,
-        packs,
-        cap_areas,
-        bounds: bounds.map(|b| [b.lo.map(f64::from), b.hi.map(f64::from)]),
-        floors,
-        walls,
-        track: track.into_iter().map(|[a, b]| [a[0], a[1], a[2], b[0], b[1], b[2]].map(round1)).collect(),
-        playable: reach.map(|r| r.mask()),
-    };
-    Ok((geometry, before_fill))
+    Ok(Faces { floors, floor_pts, walls })
+}
+
+/// Where the flood fill of the playable area starts: where players stand, the middle of each
+/// capture area's floor and the cart track.
+fn reach_seeds(stands: &[Position], cap_areas: &[CapArea], track: &[[Vec3; 2]]) -> Vec<Vec3> {
+    let mut seeds: Vec<Vec3> = stands.iter().map(|p| p.map(|v| v as f32)).collect();
+    seeds.extend(
+        cap_areas.iter().map(|a| [f64::midpoint(a.min[0], a.max[0]), f64::midpoint(a.min[1], a.max[1]), a.min[2]].map(|v| v as f32)),
+    );
+    seeds.extend(track.iter().flatten());
+    seeds
 }
 
 /// How far above a floor a spawn point or pack still stands on it.
