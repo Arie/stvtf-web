@@ -48,20 +48,20 @@ const BUILDING = { sentry: "Sentry", dispenser: "Dispenser", teleporter: "Telepo
 const BANNER = { buff_banner: "Buff Banner", battalions_backup: "Battalion's Backup", concheror: "Concheror" };
 const PROJECTILE_WEAPON =
   /rocket|quake_rl|directhit|liberty|blackbox|airstrike|mangler|dumpster|pipe|bomb|loch|cannon|resistance|huntsman|arrow|crossbow|flare|detonator|scorch/;
-export const teamName = t => (t === "red" ? "RED" : t === "blue" ? "BLU" : "");
+export function teamName(t) {
+  if (t === "red") return "RED";
+  return t === "blue" ? "BLU" : "";
+}
 export const pointName = ev => (ev.name && !ev.name.startsWith("#") ? ev.name : "point " + (ev.point + 1));
 // A team's flag is its intelligence (Mann vs. Machine's bomb is the robots'); a neutral one is special delivery's Australium, player
 // destruction's pickups (each player carries their own) or a ball.
-export const flagName = team =>
-  state.map?.startsWith("mvm_")
-    ? "the bomb"
-    : team === "red" || team === "blue"
-      ? `the ${teamName(team)} intelligence`
-      : state.map?.startsWith("sd_")
-        ? "the Australium"
-        : state.map?.startsWith("pd_")
-          ? "pickups"
-          : "the ball";
+export function flagName(team) {
+  if (state.map?.startsWith("mvm_")) return "the bomb";
+  if (team === "red" || team === "blue") return `the ${teamName(team)} intelligence`;
+  if (state.map?.startsWith("sd_")) return "the Australium";
+  if (state.map?.startsWith("pd_")) return "pickups";
+  return "the ball";
+}
 const chip = (cls, text) => `<span class="chip ${cls}">${text}</span>`;
 
 export const CHAT_TYPES = new Set(["chat", "voice_command", "server_text"]);
@@ -137,233 +137,208 @@ export function killDetails(ev, p) {
   return killed.get(ev);
 }
 
+// Players who have since left are no longer known by id.
+/** @param {Who} p */
+const playerName = p => id => {
+  if (id == null) return "";
+  return p(id)
+    ? `<span class="who" data-id="${Number(id)}">${who(p(id))}</span>`
+    : '<span class="who"><span class="w">?</span></span>';
+};
+// "+" and the assister, when there was one.
+const assist = (ev, name) => (ev.assister != null ? "+" + name(ev.assister) : "");
+// The flag's rows, by what happened to it.
+/** @param {GameEvent} ev @param {Who} p */
+function flagRow(ev, p, name) {
+  const what = esc(flagName(ev.team));
+  if (ev.event === "captured")
+    return { cls: `big ${p(ev.player)?.team || "none"}`, html: `${name(ev.player)} <span>captured ${what}</span>` };
+  if (ev.event === "defended")
+    return {
+      html: `${name(ev.player)}<span class="w">stopped</span>${name(ev.carrier)}<span class="w">with ${what}</span>`,
+    };
+  // Player destruction: players pick up the dropped pickups all the time.
+  if (ev.event === "pickup" && state.map?.startsWith("pd_")) {
+    if (!layerOn("flow")) return;
+    return { cls: "minor", html: `${name(ev.player)} <span>collected ${what}</span>` };
+  }
+  if (ev.event === "pickup") return { cls: "minor", html: `${name(ev.player)} <span>picked up ${what}</span>` };
+  if (ev.event === "dropped") return { cls: "minor", html: `${name(ev.player)} <span>dropped ${what}</span>` };
+  if (ev.event === "returned")
+    return { cls: "minor", html: `<span>${what[0].toUpperCase() + what.slice(1)} went home</span>` };
+}
+// The feed row for each type of event: its classes and HTML, or nothing when it gets no row. Each
+// is given the event, who a player id is, and how to name them.
+/** @type {Record<string, (ev: GameEvent, p: Who, name: (id: number) => string) => { cls?: string; html: string } | undefined>} */
+const FEED_ROW = {
+  kill(ev, p, name) {
+    const a = ev.attacker != null && ev.attacker !== ev.victim ? p(ev.attacker) : null;
+    const k = killDetails(ev, p),
+      n = k.streak;
+    let cls = "";
+    if (n >= 2) cls += ` streak s${Math.min(n, 4)}`;
+    const tags = [
+      n >= 2 && chip(`s${Math.min(n, 4)}`, `${n}K`),
+      ev.dominated && chip("dom", "DOMINATING"),
+      ev.revenge && chip("rev", "REVENGE"),
+      k.airshot && chip("air", "AIRSHOT"),
+      ev.feign && chip("", "FEIGN"),
+    ]
+      .filter(Boolean)
+      .join("");
+    cls += ev.feign ? " feign" : "";
+    return {
+      cls,
+      html: `${a ? name(ev.attacker) : ""}${assist(ev, name)}${weaponIcon(ev, k.icon)}${name(ev.victim)}${tags}`,
+    };
+  },
+  uber(ev, p, name) {
+    const m = p(ev.medic);
+    return {
+      cls: `hot ${m?.team || ""}`,
+      html: `${name(ev.medic)}${chip("", "ÜBER")}<span class="w">${esc(MEDIGUN_NAME[ev.medigun] || "")}</span>${ev.target != null ? " → " + name(ev.target) : ""}`,
+    };
+  },
+  uber_ready: (ev, p, name) => ({
+    cls: "minor",
+    html: `${name(ev.medic)} <span>${esc(MEDIGUN_NAME[ev.medigun] || "Medi Gun")} ÜberCharge ready</span>`,
+  }),
+  medic_death(ev, p, name) {
+    if (!ev.drop) return;
+    return {
+      cls: `hot ${p(ev.attacker)?.team || ""}`,
+      html: `${name(ev.attacker)}${chip("drop", "DROP")}${name(ev.medic)}<span class="w">died with full über</span>`,
+    };
+  },
+  capture_blocked: (ev, p, name) => ({
+    html: `${name(ev.blocker)}<span class="w">defended ${esc(pointName(ev))}</span>`,
+  }),
+  building_destroyed: (ev, p, name) => ({
+    html: `${ev.attacker != null ? name(ev.attacker) : ""}<span class="w">destroyed</span>${name(ev.owner)}<span class="w">'s ${BUILDING[ev.object] || esc(ev.object)}</span>`,
+  }),
+  banner: (ev, p, name) => ({
+    cls: "minor",
+    html: `${name(ev.player)} <span>deployed the ${BANNER[ev.kind] || "banner"}</span>`,
+  }),
+  point_captured: ev => ({ cls: `big ${ev.team}`, html: `${teamName(ev.team)} captured ${esc(pointName(ev))}` }),
+  flag: flagRow,
+  vote_options(ev) {
+    if (!ev.options?.length) return;
+    voteOptions = ev.options;
+    if (!layerOn("flow")) return;
+    return { cls: "minor", html: `<span>Vote: ${ev.options.map(esc).join(" / ")}</span>` };
+  },
+  vote_cast(ev, p, name) {
+    if (!layerOn("flow")) return;
+    const o = voteOptions[ev.option] ?? ["Yes", "No"][ev.option];
+    if (o == null) return;
+    return { cls: "minor", html: `${name(ev.player)} <span>voted ${esc(o)}</span>` };
+  },
+  killed_capper(ev, p, name) {
+    if (!layerOn("flow")) return;
+    return { html: `${name(ev.killer)}${assist(ev, name)}<span class="w">killed capper</span>${name(ev.victim)}` };
+  },
+  medic_defended(ev, p, name) {
+    if (!layerOn("flow")) return;
+    return { html: `${name(ev.player)}<span class="w">defended medic</span>${name(ev.medic)}` };
+  },
+  tournament(ev, p, name) {
+    if (!layerOn("flow") || ev.ready == null) return;
+    return { cls: "minor", html: `${name(ev.player)} <span>is ${ev.ready ? "ready" : "not ready"}</span>` };
+  },
+  announcer(ev) {
+    if (!layerOn("flow") || !ANNOUNCER[ev.sound]) return;
+    return {
+      cls: `minor ${ev.team === "red" || ev.team === "blue" ? ev.team : ""}`,
+      html: `<span>${ANNOUNCER[ev.sound]}</span>`,
+    };
+  },
+  time_remaining(ev) {
+    if (!layerOn("flow") || !(ev.seconds > 0)) return;
+    return { cls: "minor", html: `<span>${mmss(ev.seconds)} remaining</span>` };
+  },
+  pass_score: (ev, p, name) => ({
+    cls: `big ${p(ev.scorer)?.team || "none"}`,
+    html: `${name(ev.scorer)}${assist(ev, name)} <span>scored${ev.points > 1 ? ` ${ev.points} points` : ""}</span>`,
+  }),
+  pass_stolen: (ev, p, name) => ({
+    html: `${name(ev.attacker)}<span class="w">stole the ball from</span>${name(ev.victim)}`,
+  }),
+  pass_blocked: (ev, p, name) => ({
+    cls: "minor",
+    html: `${name(ev.blocker)}<span class="w">blocked a pass from</span>${name(ev.owner)}`,
+  }),
+  ball_carrier_killed(ev, p, name) {
+    if (!layerOn("flow")) return;
+    return {
+      html: `${name(ev.attacker)}${assist(ev, name)}<span class="w">killed the ball carrier</span>${name(ev.victim)}`,
+    };
+  },
+  robot_killed: (ev, p, name) => ({
+    cls: "minor",
+    html:
+      ev.attacker != null
+        ? `${name(ev.attacker)} <span>destroyed a robot</span>`
+        : "<span>A robot was destroyed</span>",
+  }),
+  special_score: (ev, p, name) => ({ cls: p(ev.player)?.team || "", html: `${name(ev.player)} <span>scored</span>` }),
+  team_leader_killed: (ev, p, name) => ({
+    html: `${name(ev.killer)}<span class="w">killed team leader</span>${name(ev.victim)}`,
+  }),
+  rocket_open: ev => ({ cls: `big ${ev.team}`, html: `${teamName(ev.team)} opened the rocket` }),
+  point_locked(ev) {
+    if (!layerOn("flow")) return;
+    return { cls: "minor", html: `<span>${esc(pointName(ev))} ${ev.locked ? "locked" : "unlocked"}</span>` };
+  },
+  sapped: (ev, p, name) => ({
+    cls: "minor",
+    html: `${name(ev.player)}<span class="w">sapped</span>${name(ev.owner)}<span class="w">'s ${BUILDING[ev.object] || esc(ev.object)}</span>`,
+  }),
+  vote_started(ev, p, name) {
+    if (!layerOn("flow")) return;
+    return {
+      cls: "minor",
+      html: `${ev.caller != null ? name(ev.caller) + " " : ""}<span>called a vote: ${esc(voteIssue(ev))}</span>`,
+    };
+  },
+  vote_passed() {
+    if (!layerOn("flow")) return;
+    return { cls: "minor", html: "<span>Vote passed</span>" };
+  },
+  vote_failed() {
+    if (!layerOn("flow")) return;
+    return { cls: "minor", html: "<span>Vote failed</span>" };
+  },
+  round_start: () => ({ cls: "big none", html: "Round start" }),
+  round_win: ev => ({
+    cls: `big ${ev.team}`,
+    html: `${teamName(ev.team)} wins the round${state.lastScores ? ` · BLU ${state.lastScores.blue} – ${state.lastScores.red} RED` : ""}`,
+  }),
+  scores(ev) {
+    state.lastScores = ev;
+    if (ev.game_over) return { cls: "big none", html: `Match over · BLU ${ev.blue} – ${ev.red} RED` };
+  },
+  stalemate: () => ({ cls: "big none", html: "Stalemate" }),
+  overtime: () => ({ cls: "big none", html: "Overtime" }),
+  game_over: () => ({ cls: "big none", html: "Game over" }),
+  map: ev => ({ cls: "big none", html: `Map change → ${esc(ev.map)}` }),
+  player_leave: ev => ({ cls: "minor", html: `<span class="who">${esc(ev.name || "")}</span> <span>left</span>` }),
+  team_change(ev, p, name) {
+    if (ev.disconnect || (ev.team !== "red" && ev.team !== "blue") || ev.old_team === "red" || ev.old_team === "blue")
+      return;
+    return { cls: "minor", html: `${name(ev.player)} <span>joined ${teamName(ev.team)}</span>` };
+  },
+};
+
 // One row per event, newest on top, stamped with the round clock.
 /** @param {GameEvent} ev @param {Who} p */
 export function feedEvent(ev, p) {
-  // Players who have since left are no longer known by id.
-  const name = id =>
-    id == null
-      ? ""
-      : p(id)
-        ? `<span class="who" data-id="${Number(id)}">${who(p(id))}</span>`
-        : '<span class="who"><span class="w">?</span></span>';
-  let cls = "",
-    html = null;
-  switch (ev.type) {
-    case "kill": {
-      const a = ev.attacker != null && ev.attacker !== ev.victim ? p(ev.attacker) : null;
-      const k = killDetails(ev, p),
-        n = k.streak;
-      if (n >= 2) cls += ` streak s${Math.min(n, 4)}`;
-      const tags = [
-        n >= 2 && chip(`s${Math.min(n, 4)}`, `${n}K`),
-        ev.dominated && chip("dom", "DOMINATING"),
-        ev.revenge && chip("rev", "REVENGE"),
-        k.airshot && chip("air", "AIRSHOT"),
-        ev.feign && chip("", "FEIGN"),
-      ]
-        .filter(Boolean)
-        .join("");
-      cls += ev.feign ? " feign" : "";
-      html = `${a ? name(ev.attacker) : ""}${ev.assister != null ? "+" + name(ev.assister) : ""}${weaponIcon(ev, k.icon)}${name(ev.victim)}${tags}`;
-      break;
-    }
-    case "uber": {
-      const m = p(ev.medic);
-      cls = `hot ${m?.team || ""}`;
-      html = `${name(ev.medic)}${chip("", "ÜBER")}<span class="w">${esc(MEDIGUN_NAME[ev.medigun] || "")}</span>${ev.target != null ? " → " + name(ev.target) : ""}`;
-      break;
-    }
-    case "uber_ready":
-      cls = "minor";
-      html = `${name(ev.medic)} <span>${esc(MEDIGUN_NAME[ev.medigun] || "Medi Gun")} ÜberCharge ready</span>`;
-      break;
-    case "medic_death":
-      if (!ev.drop) return;
-      cls = `hot ${p(ev.attacker)?.team || ""}`;
-      html = `${name(ev.attacker)}${chip("drop", "DROP")}${name(ev.medic)}<span class="w">died with full über</span>`;
-      break;
-    case "capture_blocked":
-      html = `${name(ev.blocker)}<span class="w">defended ${esc(pointName(ev))}</span>`;
-      break;
-    case "building_destroyed":
-      html = `${ev.attacker != null ? name(ev.attacker) : ""}<span class="w">destroyed</span>${name(ev.owner)}<span class="w">'s ${BUILDING[ev.object] || esc(ev.object)}</span>`;
-      break;
-    case "banner":
-      cls = "minor";
-      html = `${name(ev.player)} <span>deployed the ${BANNER[ev.kind] || "banner"}</span>`;
-      break;
-    case "point_captured":
-      cls = `big ${ev.team}`;
-      html = `${teamName(ev.team)} captured ${esc(pointName(ev))}`;
-      break;
-    case "flag": {
-      const what = esc(flagName(ev.team));
-      if (ev.event === "captured") {
-        cls = `big ${p(ev.player)?.team || "none"}`;
-        html = `${name(ev.player)} <span>captured ${what}</span>`;
-      } else if (ev.event === "defended")
-        html = `${name(ev.player)}<span class="w">stopped</span>${name(ev.carrier)}<span class="w">with ${what}</span>`;
-      // Player destruction: players pick up the dropped pickups all the time.
-      else if (ev.event === "pickup" && state.map?.startsWith("pd_")) {
-        if (!layerOn("flow")) return;
-        cls = "minor";
-        html = `${name(ev.player)} <span>collected ${what}</span>`;
-      } else if (ev.event === "pickup") {
-        cls = "minor";
-        html = `${name(ev.player)} <span>picked up ${what}</span>`;
-      } else if (ev.event === "dropped") {
-        cls = "minor";
-        html = `${name(ev.player)} <span>dropped ${what}</span>`;
-      } else if (ev.event === "returned") {
-        cls = "minor";
-        html = `<span>${what[0].toUpperCase() + what.slice(1)} went home</span>`;
-      }
-      break;
-    }
-    case "vote_options":
-      if (!ev.options?.length) return;
-      voteOptions = ev.options;
-      if (!layerOn("flow")) return;
-      cls = "minor";
-      html = `<span>Vote: ${ev.options.map(esc).join(" / ")}</span>`;
-      break;
-    case "vote_cast": {
-      if (!layerOn("flow")) return;
-      const o = voteOptions[ev.option] ?? ["Yes", "No"][ev.option];
-      if (o == null) return;
-      cls = "minor";
-      html = `${name(ev.player)} <span>voted ${esc(o)}</span>`;
-      break;
-    }
-    case "killed_capper":
-      if (!layerOn("flow")) return;
-      html = `${name(ev.killer)}${ev.assister != null ? "+" + name(ev.assister) : ""}<span class="w">killed capper</span>${name(ev.victim)}`;
-      break;
-    case "medic_defended":
-      if (!layerOn("flow")) return;
-      html = `${name(ev.player)}<span class="w">defended medic</span>${name(ev.medic)}`;
-      break;
-    case "tournament":
-      if (!layerOn("flow") || ev.ready == null) return;
-      cls = "minor";
-      html = `${name(ev.player)} <span>is ${ev.ready ? "ready" : "not ready"}</span>`;
-      break;
-    case "announcer":
-      if (!layerOn("flow") || !ANNOUNCER[ev.sound]) return;
-      cls = `minor ${ev.team === "red" || ev.team === "blue" ? ev.team : ""}`;
-      html = `<span>${ANNOUNCER[ev.sound]}</span>`;
-      break;
-    case "time_remaining":
-      if (!layerOn("flow") || !(ev.seconds > 0)) return;
-      cls = "minor";
-      html = `<span>${mmss(ev.seconds)} remaining</span>`;
-      break;
-    case "pass_score": {
-      cls = `big ${p(ev.scorer)?.team || "none"}`;
-      html = `${name(ev.scorer)}${ev.assister != null ? "+" + name(ev.assister) : ""} <span>scored${ev.points > 1 ? ` ${ev.points} points` : ""}</span>`;
-      break;
-    }
-    case "pass_stolen":
-      html = `${name(ev.attacker)}<span class="w">stole the ball from</span>${name(ev.victim)}`;
-      break;
-    case "pass_blocked":
-      cls = "minor";
-      html = `${name(ev.blocker)}<span class="w">blocked a pass from</span>${name(ev.owner)}`;
-      break;
-    case "ball_carrier_killed":
-      if (!layerOn("flow")) return;
-      html = `${name(ev.attacker)}${ev.assister != null ? "+" + name(ev.assister) : ""}<span class="w">killed the ball carrier</span>${name(ev.victim)}`;
-      break;
-    case "robot_killed":
-      cls = "minor";
-      html =
-        ev.attacker != null
-          ? `${name(ev.attacker)} <span>destroyed a robot</span>`
-          : "<span>A robot was destroyed</span>";
-      break;
-    case "special_score":
-      cls = p(ev.player)?.team || "";
-      html = `${name(ev.player)} <span>scored</span>`;
-      break;
-    case "team_leader_killed":
-      html = `${name(ev.killer)}<span class="w">killed team leader</span>${name(ev.victim)}`;
-      break;
-    case "rocket_open":
-      cls = `big ${ev.team}`;
-      html = `${teamName(ev.team)} opened the rocket`;
-      break;
-    case "point_locked":
-      if (!layerOn("flow")) return;
-      cls = "minor";
-      html = `<span>${esc(pointName(ev))} ${ev.locked ? "locked" : "unlocked"}</span>`;
-      break;
-    case "sapped":
-      cls = "minor";
-      html = `${name(ev.player)}<span class="w">sapped</span>${name(ev.owner)}<span class="w">'s ${BUILDING[ev.object] || esc(ev.object)}</span>`;
-      break;
-    case "vote_started":
-      if (!layerOn("flow")) return;
-      cls = "minor";
-      html = `${ev.caller != null ? name(ev.caller) + " " : ""}<span>called a vote: ${esc(voteIssue(ev))}</span>`;
-      break;
-    case "vote_passed":
-      if (!layerOn("flow")) return;
-      cls = "minor";
-      html = "<span>Vote passed</span>";
-      break;
-    case "vote_failed":
-      if (!layerOn("flow")) return;
-      cls = "minor";
-      html = "<span>Vote failed</span>";
-      break;
-    case "round_start":
-      cls = "big none";
-      html = "Round start";
-      break;
-    case "round_win":
-      cls = `big ${ev.team}`;
-      html = `${teamName(ev.team)} wins the round${state.lastScores ? ` · BLU ${state.lastScores.blue} – ${state.lastScores.red} RED` : ""}`;
-      break;
-    case "scores":
-      state.lastScores = ev;
-      if (ev.game_over) {
-        cls = "big none";
-        html = `Match over · BLU ${ev.blue} – ${ev.red} RED`;
-      }
-      break;
-    case "stalemate":
-      cls = "big none";
-      html = "Stalemate";
-      break;
-    case "overtime":
-      cls = "big none";
-      html = "Overtime";
-      break;
-    case "game_over":
-      cls = "big none";
-      html = "Game over";
-      break;
-    case "map":
-      cls = "big none";
-      html = `Map change → ${esc(ev.map)}`;
-      break;
-    case "player_leave":
-      cls = "minor";
-      html = `<span class="who">${esc(ev.name || "")}</span> <span>left</span>`;
-      break;
-    case "team_change":
-      if (ev.disconnect || (ev.team !== "red" && ev.team !== "blue") || ev.old_team === "red" || ev.old_team === "blue")
-        return;
-      cls = "minor";
-      html = `${name(ev.player)} <span>joined ${teamName(ev.team)}</span>`;
-      break;
-  }
-  if (html == null) return;
+  const row = Object.hasOwn(FEED_ROW, ev.type) ? FEED_ROW[ev.type](ev, p, playerName(p)) : undefined;
+  if (row?.html == null) return;
   const d = document.createElement("div");
-  d.className = `ev ${cls}`;
+  d.className = `ev ${row.cls ?? ""}`;
   const stamp = ev.at != null ? mmss(ev.at) : state.clock;
-  d.innerHTML = `${stamp ? `<time>${stamp}</time>` : ""}${html}`;
+  d.innerHTML = `${stamp ? `<time>${stamp}</time>` : ""}${row.html}`;
   prepend($("feed"), d);
 }
 /** @param {GameEvent} ev @param {Who} p */

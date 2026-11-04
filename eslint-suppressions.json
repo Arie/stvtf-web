@@ -12,17 +12,6 @@
       "count": 1
     }
   },
-  "app/feed.js": {
-    "complexity": {
-      "count": 1
-    },
-    "max-lines-per-function": {
-      "count": 1
-    },
-    "no-nested-ternary": {
-      "count": 5
-    }
-  },
   "app/hud.js": {
     "complexity": {
       "count": 2
