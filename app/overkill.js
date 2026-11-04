@@ -105,7 +105,7 @@ function packSprite(k, s, taken) {
     g.scale(dpr, dpr);
     g.lineJoin = "round";
     g.lineWidth = 1.5;
-    drawPack(g, k, half, half, q, taken);
+    drawPack(packPen(g, taken), k, half, half, q);
     packSprites.set(key, (sp = { c, half }));
   }
   return sp;
@@ -121,37 +121,43 @@ export function drawPacks() {
     const taken = until !== undefined && now < until;
     if (until !== undefined && !taken) state.packsTaken.delete(i);
     const [x, y] = toScreen(k.pos[0], k.pos[1]);
-    const { c, half } = packSprite(k, px(k.size === "small" ? 22 : k.size === "medium" ? 30 : 40, 5), taken);
+    const { c, half } = packSprite(k, px(packSize(k.size), 5), taken);
     ctx.globalAlpha = taken ? 0.3 : 1;
     ctx.drawImage(c, x - half, y - half, half * 2, half * 2);
   });
   ctx.restore();
 }
-function drawPack(g, k, x, y, s, taken) {
-  const health = k.kind === "health",
-    ink = taken ? "#f2f0e6" : "#0b0c0e";
-  g.strokeStyle = ink;
-  const shape = (bx, by, bw, bh, r, fill) => {
-    g.beginPath();
-    g.roundRect(bx, by, bw, bh, r);
+// A pack's on-screen size in px at full zoom.
+function packSize(size) {
+  if (size === "small") return 22;
+  if (size === "medium") return 30;
+  return 40;
+}
+// What a pack is drawn with: the context, and shapes outlined in ink and filled only while it is available.
+function packPen(g, taken) {
+  const ink = taken ? "#f2f0e6" : "#0b0c0e";
+  const fill = color => {
     if (!taken) {
-      g.fillStyle = fill;
+      g.fillStyle = color;
       g.fill();
     }
+  };
+  // rect is [x, y, w, h], as roundRect takes them.
+  const shape = (rect, r, color) => {
+    g.beginPath();
+    g.roundRect(...rect, r);
+    fill(color);
     g.stroke();
   };
-  const disc = (cx, cy, r, fill, lw = 1.5) => {
+  const disc = (cx, cy, r, color, lw = 1.5) => {
     g.beginPath();
     g.arc(cx, cy, r, 0, Math.PI * 2);
-    if (!taken) {
-      g.fillStyle = fill;
-      g.fill();
-    }
+    fill(color);
     g.lineWidth = lw;
     g.stroke();
     g.lineWidth = 1.5;
   };
-  const cross = (cx, cy, a, t, fill) => {
+  const cross = (cx, cy, a, t, color) => {
     g.beginPath();
     g.moveTo(cx - t, cy - a);
     g.lineTo(cx + t, cy - a);
@@ -166,93 +172,99 @@ function drawPack(g, k, x, y, s, taken) {
     g.lineTo(cx - a, cy - t);
     g.lineTo(cx - t, cy - t);
     g.closePath();
-    if (!taken) {
-      g.fillStyle = fill;
-      g.fill();
-    }
+    fill(color);
     g.lineWidth = 1;
     g.stroke();
     g.lineWidth = 1.5;
   };
-  if (!health) {
-    // gray metal frame; medium and full add a tan panel with a dark bullet emblem
-    const h = s * 0.8,
-      ww = s * (k.size === "full" ? 1.05 : 0.9),
-      small = k.size === "small";
-    shape(x - ww, y - h, ww * 2, h * 2, s * 0.2, "#aeb3ba");
-    if (small) {
-      shape(x - ww * 0.7, y - h * 0.6, ww * 1.4, h * 1.2, s * 0.1, "#5c5f66");
-      disc(x, y, s * 0.17, "#2e2a24", 1);
-    } else {
-      const iw = ww * 0.76,
-        ih = h * 0.72;
-      shape(x - iw, y - ih, iw * 2, ih * 2, s * 0.1, "#c4a67c");
-      const r = Math.min(iw, ih) * 0.62;
+  return { g, taken, ink, fill, shape, disc, cross };
+}
+/** @param {ReturnType<typeof packPen>} pen */
+function drawPack(pen, k, x, y, s) {
+  pen.g.strokeStyle = pen.ink;
+  if (k.kind !== "health") drawAmmoPack(pen, k, x, y, s);
+  else if (k.size === "small") drawPillBottle(pen, x, y, s);
+  else if (k.size === "medium") drawMedkit(pen, x, y, s);
+  else drawHealthCase(pen, x, y, s);
+}
+// gray metal frame; medium and full add a tan panel with a dark bullet emblem
+function drawAmmoPack({ g, taken, ink, shape, disc }, k, x, y, s) {
+  const h = s * 0.8,
+    ww = s * (k.size === "full" ? 1.05 : 0.9),
+    small = k.size === "small";
+  shape([x - ww, y - h, ww * 2, h * 2], s * 0.2, "#aeb3ba");
+  if (small) {
+    shape([x - ww * 0.7, y - h * 0.6, ww * 1.4, h * 1.2], s * 0.1, "#5c5f66");
+    disc(x, y, s * 0.17, "#2e2a24", 1);
+    return;
+  }
+  const iw = ww * 0.76,
+    ih = h * 0.72;
+  shape([x - iw, y - ih, iw * 2, ih * 2], s * 0.1, "#c4a67c");
+  const r = Math.min(iw, ih) * 0.62;
+  g.beginPath();
+  g.arc(x, y, r, 0, Math.PI * 2);
+  g.lineWidth = Math.max(1.5, r * 0.28);
+  g.strokeStyle = taken ? ink : "#3b3226";
+  g.stroke();
+  g.lineWidth = 1.5;
+  g.strokeStyle = ink;
+  if (r > 6)
+    for (const dx of [-0.4, 0, 0.4]) {
       g.beginPath();
-      g.arc(x, y, r, 0, Math.PI * 2);
-      g.lineWidth = Math.max(1.5, r * 0.28);
+      g.moveTo(x + dx * r, y - r * 0.4);
+      g.lineTo(x + dx * r, y + r * 0.4);
+      g.lineWidth = Math.max(1.2, r * 0.2);
       g.strokeStyle = taken ? ink : "#3b3226";
       g.stroke();
       g.lineWidth = 1.5;
       g.strokeStyle = ink;
-      if (r > 6)
-        for (const dx of [-0.4, 0, 0.4]) {
-          g.beginPath();
-          g.moveTo(x + dx * r, y - r * 0.4);
-          g.lineTo(x + dx * r, y + r * 0.4);
-          g.lineWidth = Math.max(1.2, r * 0.2);
-          g.strokeStyle = taken ? ink : "#3b3226";
-          g.stroke();
-          g.lineWidth = 1.5;
-          g.strokeStyle = ink;
-        }
     }
-  } else if (k.size === "small") {
-    // pill bottle: white cap, teal body with a white label band and a red cross
-    const bw = s * 0.62,
-      ly = y + s * 0.275,
-      lh = s * 0.28;
-    shape(x - bw, y - s * 0.3, bw * 2, s * 1.15, s * 0.2, "#1f8a8f");
-    shape(x - bw, ly - lh, bw * 2, lh * 2, s * 0.06, "#ecebe4");
-    cross(x, ly, s * 0.22, s * 0.08, "#c0262e");
-    shape(x - bw * 0.85, y - s * 0.62, bw * 1.7, s * 0.36, s * 0.1, "#ecebe4");
-  } else if (k.size === "medium") {
-    const h = s * 0.85;
-    shape(x - h, y - h, h * 2, h * 2, s * 0.28, "#1f8a8f");
-    disc(x, y, h * 0.74, "#c0262e", 1);
-    cross(x, y, h * 0.52, h * 0.2, "#ecebe4");
-  } else {
-    // big case: teal box, light lid band, gray handle on top, red badge on the front
-    const ww = s * 1.15,
-      h = s * 0.75,
-      ly = y - h * 0.3;
+}
+// pill bottle: white cap, teal body with a white label band and a red cross
+function drawPillBottle({ shape, cross }, x, y, s) {
+  const bw = s * 0.62,
+    ly = y + s * 0.275,
+    lh = s * 0.28;
+  shape([x - bw, y - s * 0.3, bw * 2, s * 1.15], s * 0.2, "#1f8a8f");
+  shape([x - bw, ly - lh, bw * 2, lh * 2], s * 0.06, "#ecebe4");
+  cross(x, ly, s * 0.22, s * 0.08, "#c0262e");
+  shape([x - bw * 0.85, y - s * 0.62, bw * 1.7, s * 0.36], s * 0.1, "#ecebe4");
+}
+function drawMedkit({ shape, disc, cross }, x, y, s) {
+  const h = s * 0.85;
+  shape([x - h, y - h, h * 2, h * 2], s * 0.28, "#1f8a8f");
+  disc(x, y, h * 0.74, "#c0262e", 1);
+  cross(x, y, h * 0.52, h * 0.2, "#ecebe4");
+}
+// big case: teal box, light lid band, gray handle on top, red badge on the front
+function drawHealthCase({ g, taken, fill, shape, disc, cross }, x, y, s) {
+  const ww = s * 1.15,
+    h = s * 0.75,
+    ly = y - h * 0.3;
+  g.beginPath();
+  g.moveTo(x - ww * 0.3, y - h);
+  g.lineTo(x - ww * 0.3, y - h - s * 0.22);
+  g.lineTo(x + ww * 0.3, y - h - s * 0.22);
+  g.lineTo(x + ww * 0.3, y - h);
+  fill("#8f9089");
+  g.stroke();
+  shape([x - ww, y - h, ww * 2, h * 2], s * 0.2, "#1f8a8f");
+  if (!taken) {
     g.beginPath();
-    g.moveTo(x - ww * 0.3, y - h);
-    g.lineTo(x - ww * 0.3, y - h - s * 0.22);
-    g.lineTo(x + ww * 0.3, y - h - s * 0.22);
-    g.lineTo(x + ww * 0.3, y - h);
-    if (!taken) {
-      g.fillStyle = "#8f9089";
-      g.fill();
-    }
-    g.stroke();
-    shape(x - ww, y - h, ww * 2, h * 2, s * 0.2, "#1f8a8f");
-    if (!taken) {
-      g.beginPath();
-      g.roundRect(x - ww, y - h, ww * 2, ly - (y - h), [s * 0.2, s * 0.2, 0, 0]);
-      g.fillStyle = "#b7b7af";
-      g.fill();
-      g.beginPath();
-      g.roundRect(x - ww, y - h, ww * 2, h * 2, s * 0.2);
-      g.stroke();
-    }
+    g.roundRect(x - ww, y - h, ww * 2, ly - (y - h), [s * 0.2, s * 0.2, 0, 0]);
+    g.fillStyle = "#b7b7af";
+    g.fill();
     g.beginPath();
-    g.moveTo(x - ww, ly);
-    g.lineTo(x + ww, ly);
+    g.roundRect(x - ww, y - h, ww * 2, h * 2, s * 0.2);
     g.stroke();
-    disc(x, y + h * 0.42, h * 0.4, "#c0262e", 1);
-    cross(x, y + h * 0.42, h * 0.27, h * 0.1, "#ecebe4");
   }
+  g.beginPath();
+  g.moveTo(x - ww, ly);
+  g.lineTo(x + ww, ly);
+  g.stroke();
+  disc(x, y + h * 0.42, h * 0.4, "#c0262e", 1);
+  cross(x, y + h * 0.42, h * 0.27, h * 0.1, "#ecebe4");
 }
 
 // A decal this near a scorch this soon after it is the explosion's own.
@@ -266,6 +278,18 @@ const TELEPORT = 250,
   TRAIL_STEP = 8,
   TRAIL_POINTS = 400;
 
+// An open trail follows its jumper, or ends.
+function followTrail(t, p, now) {
+  const last = t.pts.at(-1),
+    step = last && p?.pos ? Math.hypot(p.pos[0] - last[0], p.pos[1] - last[1]) : 0;
+  // A step no jump makes in one frame is a teleport (a respawn at round reset): the trail ends there.
+  if (!p || !p.alive || now - t.t0 > JUMP_MAX_MS || step > TELEPORT) t.end = now;
+  else {
+    if (!last || step > TRAIL_STEP) t.pts.push([p.pos[0], p.pos[1], p.pos[2]]);
+    else last[2] = p.pos[2];
+    if (t.pts.length > TRAIL_POINTS) t.pts.shift();
+  }
+}
 // Blast-jump trails from the interpolated positions: dark team shade off the ground to a bright one at the peak.
 /** @param {Player[]} players */
 export function drawJumpTrails(players) {
@@ -276,18 +300,7 @@ export function drawJumpTrails(players) {
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
   for (const t of state.trails) {
-    if (!t.end) {
-      const p = byId.get(t.id);
-      const last = t.pts.at(-1),
-        step = last && p?.pos ? Math.hypot(p.pos[0] - last[0], p.pos[1] - last[1]) : 0;
-      // A step no jump makes in one frame is a teleport (a respawn at round reset): the trail ends there.
-      if (!p || !p.alive || now - t.t0 > JUMP_MAX_MS || step > TELEPORT) t.end = now;
-      else {
-        if (!last || step > TRAIL_STEP) t.pts.push([p.pos[0], p.pos[1], p.pos[2]]);
-        else last[2] = p.pos[2];
-        if (t.pts.length > TRAIL_POINTS) t.pts.shift();
-      }
-    }
+    if (!t.end) followTrail(t, byId.get(t.id), now);
     if (t.pts.length < 2) continue;
     const peak = Math.max(1, ...t.pts.map(q => q[2] - t.z0));
     ctx.globalAlpha = t.end ? 1 - (now - t.end) / TRAIL_FADE_MS : 1;

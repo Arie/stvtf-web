@@ -15,20 +15,6 @@
       "count": 1
     }
   },
-  "app/overkill.js": {
-    "complexity": {
-      "count": 1
-    },
-    "max-lines-per-function": {
-      "count": 1
-    },
-    "max-params": {
-      "count": 2
-    },
-    "no-nested-ternary": {
-      "count": 1
-    }
-  },
   "app/view.js": {
     "complexity": {
       "count": 2
