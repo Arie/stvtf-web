@@ -227,7 +227,7 @@ export function screenAngle(deg) {
 // text are slow enough to show every frame. `x` of a sprite is the left of its text.
 const TEXT_PAD = 3;
 const textSprites = new Map();
-export function textSprite(text, font, fill, outline) {
+function textSprite(text, font, fill, outline) {
   const dpr = window.devicePixelRatio || 1,
     key = `${text}\n${font}\n${fill}\n${outline}\n${dpr}`;
   let sp = textSprites.get(key);
