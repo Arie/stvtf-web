@@ -57,17 +57,17 @@ export function openStream() {
   s.onerror = () => setStatus("stream lost, retrying", false);
 }
 
+// How long ago, from seconds: in seconds, minutes and seconds, or hours and minutes.
+function ago(age) {
+  if (age < 60) return `${Math.floor(age)}s`;
+  if (age < 3600) return `${Math.floor(age / 60)}m ${Math.floor(age % 60)}s`;
+  return `${Math.floor(age / 3600)}h ${Math.floor((age / 60) % 60)}m`;
+}
 // When the stream goes quiet (the match ended, or the page was opened afterwards), say how long ago
 // the last data came in.
 setInterval(() => {
   const age = state.lastData == null ? 0 : (performance.now() - state.lastData) / 1000;
-  const t =
-    age < 60
-      ? `${Math.floor(age)}s`
-      : age < 3600
-        ? `${Math.floor(age / 60)}m ${Math.floor(age % 60)}s`
-        : `${Math.floor(age / 3600)}h ${Math.floor((age / 60) % 60)}m`;
-  $("age").textContent = age < 5 ? "" : `last data ${t} ago`;
+  $("age").textContent = age < 5 ? "" : `last data ${ago(age)} ago`;
   if (age >= 5 && $("status").textContent === "live") setStatus("no data", false);
 }, 1000);
 
@@ -87,13 +87,13 @@ function waiting(m) {
       countDown();
     }
   } else if (m.type === "status" && holdUntil == null) {
-    empty.textContent =
-      m.state === "full"
-        ? "SourceTV has just started: its first data comes tv_delay after that…"
-        : m.reason
-          ? `SourceTV ${m.state.replaceAll("_", " ")}: ${m.reason}`
-          : "connecting to SourceTV…";
+    empty.textContent = waitingFor(m);
   }
+}
+// What a status line says SourceTV is up to, while there is no data yet.
+function waitingFor(m) {
+  if (m.state === "full") return "SourceTV has just started: its first data comes tv_delay after that…";
+  return m.reason ? `SourceTV ${m.state.replaceAll("_", " ")}: ${m.reason}` : "connecting to SourceTV…";
 }
 function countDown() {
   const empty = $("empty");
