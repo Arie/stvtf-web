@@ -1,4 +1,3 @@
-import { noteCombat } from "./camera.js";
 import { msPerTick, state } from "./core.js";
 import { embedEvent } from "./embed.js";
 import { banner, teamName, pointName, flagName, chat, feedEvent } from "./feed.js";
@@ -199,7 +198,6 @@ export function fireEvents(tick, byId) {
   for (const ev of due) {
     const p = id => byId.get(id) || state.players.get(id);
     embedEvent(ev, byId);
-    noteCombat(ev, now);
     const on = Object.hasOwn(ON, ev.type) ? ON[ev.type] : feedLine;
     on(ev, p, now);
   }

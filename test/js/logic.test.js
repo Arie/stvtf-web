@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { behindLines, closingIn } from "../../app/camera.js";
 import {
   byClass,
   msPerTick,
@@ -60,32 +59,6 @@ test("an overview is used only if it covers the map's layout", () => {
   assert.equal(covering(100, 49), false);
   assert.equal(covering(300, 300, 200, 200), false, "nowhere near");
   assert.equal(sameLayout(overview, null), true, "no geometry yet");
-});
-
-test("behind enemy lines is past more than half of the other team", () => {
-  const at = (...ps) => ps.map(([x, y, team]) => ({ id: `${team}${x},${y}`, pos: [x, y], team }));
-  const behind = players => behindLines(players).map(p => p.id);
-  // Red holds the left, blue the right; one red scout has slipped round to blue's back line.
-  const flank = at(
-    [0, 0, "red"],
-    [200, 300, "red"],
-    [8000, 900, "red"],
-    [5000, 0, "blue"],
-    [5200, 400, "blue"],
-    [6000, -300, "blue"],
-  );
-  assert.deepEqual(behind(flank), ["red8000,900"]);
-  assert.deepEqual(behind(at([0, 0, "red"], [5000, 0, "blue"])), [], "two fronts facing each other");
-  assert.deepEqual(behind(at([0, 0, "red"], [100, 0, "red"])), [], "one team alone");
-});
-
-test("a loner closes in on the fight only by moving", () => {
-  const fight = [{ pos: [0, 0] }];
-  assert.equal(closingIn([5000, 0], [4000, 0], fight, 300), true, "walking up to the fight");
-  assert.equal(closingIn([5000, 0], [5000, 0], fight, 300), false, "standing still");
-  assert.equal(closingIn([5000, 0], [4800, 0], fight, 300), false, "not far enough");
-  // The fight coming to them is not them closing in.
-  assert.equal(closingIn([5000, 0], [5000, 0], [{ pos: [3000, 0] }], 300), false);
 });
 
 test("the map turns so blue's spawns are on the left and red's on the right", () => {
