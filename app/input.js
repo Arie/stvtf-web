@@ -1,7 +1,7 @@
 import { $, DELAY, OPT, OVERLAY, PAGE, PLAIN_BG, canvas, optOn, uiScale, applyScale, state } from "./core.js";
 import { env } from "./env.js";
 import { layerOn, setLayer, setOverkill, overkillOn } from "./layers.js";
-import { viewCy, frameMap, toScreen } from "./view.js";
+import { viewCentre, frameMap, toScreen, screenOffset } from "./view.js";
 
 // A resize (or hiding the events) only refits the whole-map framing; auto zoom glides to it.
 const refit = () => {
@@ -28,8 +28,9 @@ window.addEventListener("mousemove", e => {
     setFollow(null);
     setAutoZoom(false);
   }
-  state.view.cx = drag.cx - (e.clientX - drag.x) / state.view.scale;
-  state.view.cy = drag.cy + (e.clientY - drag.y) / state.view.scale;
+  const [dx, dy] = screenOffset(e.clientX - drag.x, e.clientY - drag.y, state.view.scale);
+  state.view.cx = drag.cx - dx;
+  state.view.cy = drag.cy - dy;
 });
 // h: player HUD and scores, s: just the scores, e: events and chat, g: overview or geometry,
 // o: the overlay or back.
@@ -200,15 +201,17 @@ canvas.addEventListener(
       v = state.view;
     const mx = e.clientX - r.left - r.width / 2,
       my = e.clientY - r.top - r.height / 2;
-    const wx = v.cx + mx / v.scale,
-      wy = v.cy - my / v.scale;
+    // The world point under the cursor stays under it.
+    const [ax, ay] = screenOffset(mx, my, v.scale),
+      wx = v.cx + ax,
+      wy = v.cy + ay;
     v.scale *= Math.exp(-e.deltaY * 0.0015);
-    v.cx = wx - mx / v.scale;
-    v.cy = wy + my / v.scale;
+    const [bx, by] = screenOffset(mx, my, v.scale);
+    v.cx = wx - bx;
+    v.cy = wy - by;
     // No further out than the whole map, framed as at the start.
     const full = state.full;
-    if (full && v.scale <= full.scale)
-      Object.assign(v, { scale: full.scale, cx: full.cx, cy: viewCy(full.cy, full.scale) });
+    if (full && v.scale <= full.scale) Object.assign(v, { scale: full.scale, ...viewCentre(full, full.scale) });
   },
   { passive: false },
 );

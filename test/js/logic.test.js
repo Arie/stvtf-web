@@ -14,7 +14,7 @@ import {
 } from "../../app/core.js";
 import { command, steamid64 } from "../../app/embed.js";
 import { layerOn } from "../../app/layers.js";
-import { demostfAlias, sameLayout } from "../../app/view.js";
+import { demostfAlias, sameLayout, screenOffset, toScreen } from "../../app/view.js";
 
 test("players sort by class, then name whatever its case, then id", () => {
   const rows = [
@@ -100,6 +100,21 @@ test("a loner closes in on the fight only by moving", () => {
   assert.equal(closingIn([5000, 0], [4800, 0], fight, 300), false, "not far enough");
   // The fight coming to them is not them closing in.
   assert.equal(closingIn([5000, 0], [5000, 0], [{ pos: [3000, 0] }], 300), false);
+});
+
+test("a screen offset is the same map offset whichever way the view is turned", () => {
+  const was = { ...state.view };
+  for (const rot of [0, Math.PI / 2, Math.PI, -Math.PI / 2, 0.3]) {
+    Object.assign(state.view, { cx: 100, cy: 50, scale: 0.5, rot });
+    const [centreX, centreY] = toScreen(100, 50);
+    const [dx, dy] = screenOffset(30, -20, 0.5);
+    const [x, y] = toScreen(100 + dx, 50 + dy);
+    assert.ok(
+      Math.abs(x - centreX - 30) < 1e-9 && Math.abs(y - centreY + 20) < 1e-9,
+      `rot ${rot}: ${x - centreX}, ${y - centreY}`,
+    );
+  }
+  Object.assign(state.view, was);
 });
 
 test("the tick clock jumps on a stall and otherwise eases", () => {

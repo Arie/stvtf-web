@@ -1,5 +1,5 @@
 import { OVERLAY, state } from "./core.js";
-import { viewArea, viewCy, playerRad } from "./view.js";
+import { viewArea, viewCentre, focusOf, playerRad } from "./view.js";
 /** @typedef {import("../types/stream").Player} Player */
 
 // Auto zoom frames the fight, wherever it is, so two fights apart all stay in view: everyone who
@@ -197,14 +197,15 @@ function glide(v, target, dt, escaping) {
   const cam = (state.cam ??= { vx: 0, vy: 0, vz: 0 }),
     t = springs(target, escaping),
     pan = t.pan;
-  const focusCy = v.cy - viewArea().top / 2 / v.scale;
-  let fy;
-  [v.cx, cam.vx] = smoothDamp(v.cx, target.cx, cam.vx, pan, dt);
-  [fy, cam.vy] = smoothDamp(focusCy, target.cy, cam.vy, pan, dt);
+  // The framing point glides, and the view is put back round it at the new zoom.
+  const focus = focusOf(v);
+  let fx, fy;
+  [fx, cam.vx] = smoothDamp(focus.cx, target.cx, cam.vx, pan, dt);
+  [fy, cam.vy] = smoothDamp(focus.cy, target.cy, cam.vy, pan, dt);
   let z = Math.log(v.scale);
   [z, cam.vz] = smoothDamp(z, Math.log(target.scale), cam.vz, target.scale < v.scale ? t.out : t.in, dt);
   v.scale = Math.exp(z);
-  v.cy = viewCy(fy, v.scale);
+  Object.assign(v, viewCentre({ cx: fx, cy: fy }, v.scale));
 }
 
 /** @param {Player[]} players */
@@ -228,7 +229,7 @@ export function followAction(players) {
     tighterSince = null;
   }
   // The view as it is now, centred where the framing is (the free area's centre).
-  const seen = { cx: v.cx, cy: v.cy - viewArea().top / 2 / v.scale, scale: v.scale };
+  const seen = { ...focusOf(v), scale: v.scale };
   glide(
     v,
     state.camTarget,

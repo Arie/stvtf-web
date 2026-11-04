@@ -127,9 +127,28 @@ export function viewArea() {
     top = shown("score") ? SCOREBOARD_HEIGHT * uiScale() : 0;
   return { w: r.width - 2 * side, h: r.height - top, top };
 }
-// Framings are kept as the world point at the centre of the free area; the view centre sits
-// below it by half the scoreboard (the main view is never rotated, the overlay has no top).
-export const viewCy = (focusCy, scale) => focusCy + viewArea().top / 2 / scale;
+// The world offset of a point `dx`, `dy` pixels right of and below the canvas centre, in a view
+// at `scale` turned by `rot`.
+export function screenOffset(dx, dy, scale, rot = state.view.rot) {
+  const a = dx / scale,
+    b = -dy / scale,
+    c = Math.cos(rot),
+    s = Math.sin(rot);
+  return [a * c + b * s, -a * s + b * c];
+}
+// Framings are kept as the world point at the centre of the free area: the canvas centre sits
+// half the scoreboard above it on screen (the overlay has no scoreboard).
+/** @param {{ cx: number, cy: number }} focus @param {number} scale @returns {{ cx: number, cy: number }} */
+export function viewCentre(focus, scale) {
+  const [dx, dy] = screenOffset(0, -viewArea().top / 2, scale);
+  return { cx: focus.cx + dx, cy: focus.cy + dy };
+}
+// The framing point of the view `v`: the world point at the centre of its free area.
+/** @param {{ cx: number, cy: number, scale: number }} v */
+export function focusOf(v) {
+  const [dx, dy] = screenOffset(0, viewArea().top / 2, v.scale);
+  return { cx: v.cx + dx, cy: v.cy + dy };
+}
 
 export function frameMap(keepView = false) {
   const pts = [];
@@ -164,7 +183,7 @@ export function frameMap(keepView = false) {
     best = fit(((Number(want) || 0) * Math.PI) / 180);
   }
   if (!keepView || best.rot !== v.rot)
-    Object.assign(v, { rot: best.rot, cx: best.cx, cy: viewCy(best.cy, best.scale), scale: best.scale });
+    Object.assign(v, { rot: best.rot, ...viewCentre(best, best.scale), scale: best.scale });
   state.full = { cx: best.cx, cy: best.cy, scale: best.scale };
   state.camTarget = null;
   state.fitted = state.framed = true;
