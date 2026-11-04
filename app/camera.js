@@ -4,20 +4,24 @@ import { viewArea, viewCentre, focusOf, playerRad } from "./view.js";
 
 // Auto zoom frames the fight, wherever it is, so two fights apart all stay in view: everyone who
 // fought in the last ENGAGE_MS (fired, hurt someone or was hurt), and anyone behind enemy lines,
-// such as a flanker before their first shot. When there is neither (setup, a reset), the biggest
-// clump of players is the fight.
-// Anyone else joins the framing only after STRAGGLE_MS without closing in on the fight by CLOSING
-// (a wave walking out of spawn is on the way and left out) and is then brought in slowly.
+// such as a flanker before their first shot. Before a round starts, and whenever nobody is
+// fighting, that is everyone alive.
+// Anyone within JOIN_RANGE of the fight is about to join it (defenders spawning by their last
+// point) and is framed too. Anyone further off joins the framing only after STRAGGLE_MS without
+// closing in on the fight by CLOSING (a wave walking up from a far spawn is on the way and left
+// out) and is then brought in slowly.
 // The camera holds its framing until someone in it reaches its margin, it tightens a lot, or
-// stays somewhat tighter for SETTLE_MS; it glides, and catches up quickly (ESCAPE_S) when
-// someone in the fight is leaving the view. Never wider than the full framing, never tighter
-// than MIN_SPAN units (less in the overlay). Markers have a minimum size in pixels, so the
-// framing keeps them clear of the edge with a margin of one and a half markers on screen
-// besides a small padding in map units.
+// stays somewhat tighter for SETTLE_MS; it glides, catches up quickly (ESCAPE_S) when someone in
+// the fight is leaving the view, and never zooms in so far that someone in the fight leaves it.
+// At a round start it takes in everyone in ROUND_START_S. Never wider than the full framing,
+// never tighter than MIN_SPAN units (less in the overlay). Markers have a minimum size in
+// pixels, so the framing keeps them clear of the edge with a margin of one and a half markers
+// on screen besides a small padding in map units.
 const MIN_SPAN = OVERLAY ? 1600 : 2600,
   ACTION_PAD = 150,
-  CLUMP_LINK = 1500,
   ENGAGE_MS = 4000,
+  JOIN_RANGE = 2000,
+  ROUND_START_S = 0.4,
   STRAGGLE_MS = 3000,
   CLOSING = 300,
   SETTLE_MS = 500,
@@ -28,22 +32,6 @@ const foughtAt = new Map(),
   projectilesSeen = new Set();
 let lastFrame = performance.now(),
   tighterSince = null;
-
-// Players linked within CLUMP_LINK of each other form a clump; keep the biggest one and any
-// other clump of three or more.
-/** @param {{ pos: number[] }[]} alive */
-export function fightingPlayers(alive) {
-  const group = alive.map((_, i) => i);
-  const root = i => (group[i] === i ? i : (group[i] = root(group[i])));
-  for (let i = 0; i < alive.length; i++)
-    for (let j = i + 1; j < alive.length; j++)
-      if (Math.hypot(alive[i].pos[0] - alive[j].pos[0], alive[i].pos[1] - alive[j].pos[1]) < CLUMP_LINK)
-        group[root(i)] = root(j);
-  const sizes = new Map();
-  alive.forEach((_, i) => sizes.set(root(i), (sizes.get(root(i)) || 0) + 1));
-  const biggest = Math.max(...sizes.values());
-  return alive.filter((_, i) => sizes.get(root(i)) === biggest || sizes.get(root(i)) >= 3);
-}
 
 // Who an event shows fighting: shooting, airblasting, hurting or being hurt (a sentry's builder too).
 const FIGHTERS = {
@@ -97,23 +85,34 @@ export function closingIn(from, to, fight, by) {
   return gap(to) < gap(from) - by;
 }
 
-// The fight: who fought in the last ENGAGE_MS or is behind enemy lines. A death ends it: whoever
-// respawns has not fought yet.
+// Whether the round is waiting to start, everyone in their spawn.
+const beforeRound = () => state.snaps.at(-1)?.round === "preround";
+
+// The fight: who fought in the last ENGAGE_MS or is behind enemy lines; everyone before the round
+// or while nobody is. A death ends it: whoever respawns has not fought yet.
 /** @param {Player[]} alive @param {number} now */
 function engaged(alive, now) {
   noteFired(now);
   for (const id of foughtAt.keys()) if (!alive.some(p => p.id === id)) foughtAt.delete(id);
+  if (beforeRound()) return alive;
   const behind = behindLines(alive);
   const fight = alive.filter(p => now - (foughtAt.get(p.id) ?? -Infinity) < ENGAGE_MS || behind.includes(p));
-  return fight.length || !alive.length ? fight : fightingPlayers(alive);
+  return fight.length ? fight : alive;
 }
 
-// Who to frame: the fight, and the loners who have been on their own for STRAGGLE_MS.
+// Whether `p` is within `range` of anyone in `fight`.
+function near(p, fight, range) {
+  return fight.some(f => Math.hypot(p.pos[0] - f.pos[0], p.pos[1] - f.pos[1]) < range);
+}
+
+// Who to frame: the fight, who is about to join it, and the loners further off who have been on
+// their own for STRAGGLE_MS.
 /** @param {Player[]} players @param {number} now */
 function framedPlayers(players, now) {
   const alive = players.filter(p => p.alive && p.pos && (p.team === "red" || p.team === "blue"));
   const fight = engaged(alive, now);
-  const loners = alive.filter(p => !fight.includes(p));
+  const joining = alive.filter(p => !fight.includes(p) && near(p, fight, JOIN_RANGE));
+  const loners = alive.filter(p => !fight.includes(p) && !joining.includes(p));
   for (const id of straggling.keys()) if (!loners.some(p => p.id === id)) straggling.delete(id);
   // Each loner's wait starts again when they walk CLOSING closer to the fight, until they are
   // framed (then they stay framed, so the camera does not pump).
@@ -123,7 +122,8 @@ function framedPlayers(players, now) {
     else if (now - s.since <= STRAGGLE_MS && closingIn(s.from, p.pos, fight, CLOSING))
       Object.assign(s, { since: now, from: p.pos });
   }
-  return { fight, framed: [...fight, ...loners.filter(p => now - straggling.get(p.id).since > STRAGGLE_MS)] };
+  const waited = loners.filter(p => now - straggling.get(p.id).since > STRAGGLE_MS);
+  return { fight, framed: [...fight, ...joining, ...waited] };
 }
 
 // The framing round the framed players, or the full one when there are none. Along the rotated
@@ -175,8 +175,9 @@ function holding(hold, wanted, { fight, framed }, at) {
   const fightInside = fight.every(inView);
   const settled = tighterSince != null && now - tighterSince > SETTLE_MS;
   const keep = framed.length > 0 && framed.every(inView) && !shifted && wanted.scale < hold.scale * 1.4 && !settled;
-  // Only a straggler is out of view: bring them in, but slowly.
-  wanted.slow = fightInside && !shifted;
+  // While the fight is all inside, a new framing is only for stragglers (a spawner who has been
+  // up a while, however far off): bring them in slowly.
+  wanted.slow = fightInside;
   return keep;
 }
 
@@ -185,15 +186,30 @@ function holding(hold, wanted, { fight, framed }, at) {
 // and someone in the fight leaving the view is caught up with in ESCAPE_S.
 // How long the springs take to settle (s): panning, zooming out and zooming in.
 const SPRINGS = {
+  roundStart: { pan: ROUND_START_S, out: ROUND_START_S, in: ROUND_START_S },
   escaping: { pan: ESCAPE_S, out: ESCAPE_S, in: 1.6 },
   slow: { pan: 3.5, out: 3.5, in: 1.6 },
   normal: { pan: 1.6, out: 1.4, in: 1.6 },
 };
 function springs(target, escaping) {
+  if (beforeRound()) return SPRINGS.roundStart;
   if (escaping) return SPRINGS.escaping;
   return target.slow ? SPRINGS.slow : SPRINGS.normal;
 }
-function glide(v, target, dt, escaping) {
+// How far in the view at `focus` can zoom with everyone in `fight` still inside its margin.
+function deepestZoom(fight, focus, at) {
+  const { w, h, toUV } = at,
+    m = 1.5 * playerRad(),
+    [fu, fv] = toUV([focus.cx, focus.cy]);
+  let most = Infinity;
+  for (const p of fight) {
+    const [pu, pv] = toUV(p.pos);
+    most = Math.min(most, (w / 2 - m) / Math.abs(pu - fu), (h / 2 - m) / Math.abs(pv - fv));
+  }
+  return most;
+}
+
+function glide(v, target, dt, { escaping, fight, at }) {
   const cam = (state.cam ??= { vx: 0, vy: 0, vz: 0 }),
     t = springs(target, escaping),
     pan = t.pan;
@@ -204,6 +220,12 @@ function glide(v, target, dt, escaping) {
   [fy, cam.vy] = smoothDamp(focus.cy, target.cy, cam.vy, pan, dt);
   let z = Math.log(v.scale);
   [z, cam.vz] = smoothDamp(z, Math.log(target.scale), cam.vz, target.scale < v.scale ? t.out : t.in, dt);
+  // Zooming in while still panning would cut off the far side of the fight: wait for the pan.
+  const limit = Math.max(v.scale, deepestZoom(fight, { cx: fx, cy: fy }, at));
+  if (Math.exp(z) > limit) {
+    z = Math.log(limit);
+    cam.vz = 0;
+  }
   v.scale = Math.exp(z);
   Object.assign(v, viewCentre({ cx: fx, cy: fy }, v.scale));
 }
@@ -230,12 +252,7 @@ export function followAction(players) {
   }
   // The view as it is now, centred where the framing is (the free area's centre).
   const seen = { ...focusOf(v), scale: v.scale };
-  glide(
-    v,
-    state.camTarget,
-    dt,
-    who.fight.some(p => !inside(p, seen, at)),
-  );
+  glide(v, state.camTarget, dt, { escaping: who.fight.some(p => !inside(p, seen, at)), fight: who.fight, at });
 }
 
 // Unity-style SmoothDamp: moves `x` toward `to` with velocity `vel`, settling in about `time` s.

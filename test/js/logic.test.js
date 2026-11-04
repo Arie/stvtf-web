@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { behindLines, closingIn, fightingPlayers } from "../../app/camera.js";
+import { behindLines, closingIn } from "../../app/camera.js";
 import {
   byClass,
   msPerTick,
@@ -60,20 +60,6 @@ test("an overview is used only if it covers the map's layout", () => {
   assert.equal(covering(100, 49), false);
   assert.equal(covering(300, 300, 200, 200), false, "nowhere near");
   assert.equal(sameLayout(overview, null), true, "no geometry yet");
-});
-
-test("the fight is the biggest group and any other of at least three", () => {
-  const at = (...xs) => xs.map(x => ({ pos: [x, 0] }));
-  const fighting = players => fightingPlayers(players).map(p => p.pos[0]);
-  // 1500 units links two players, and a chain of links is one group.
-  assert.deepEqual(fighting(at(0, 1000, 2000, 9000, 10000, 20000)), [0, 1000, 2000]);
-  assert.deepEqual(
-    fighting(at(0, 1000, 2000, 3000, 9000, 10000, 11000, 15000, 16000)),
-    [0, 1000, 2000, 3000, 9000, 10000, 11000],
-  );
-  assert.deepEqual(fighting(at(0, 5000)), [0, 5000], "alone, each is as big as any");
-  assert.deepEqual(fighting(at(0, 1499, 5000)), [0, 1499]);
-  assert.deepEqual(fighting(at(0, 1500, 5000)), [0, 1500, 5000], "just too far to link");
 });
 
 test("behind enemy lines is past more than half of the other team", () => {
