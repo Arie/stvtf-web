@@ -1,9 +1,4 @@
 {
-  "app/embed.js": {
-    "no-nested-ternary": {
-      "count": 1
-    }
-  },
   "app/events.js": {
     "complexity": {
       "count": 1

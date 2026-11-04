@@ -109,16 +109,15 @@ export function embedState(score, players) {
   });
 }
 
+// Whether a player is the one a command names: by Steam ID, 64-bit Steam ID, or id.
+function isPlayer(x, m) {
+  if (m.steamid != null) return x.steamid === m.steamid;
+  return m.steamid64 != null ? steamid64(x.steamid) === String(m.steamid64) : x.id === m.id;
+}
 // What the parent page asks for: `follow` a player, switch a `layer`.
 export function command(m) {
   if (m.type === "follow") {
-    const p = state.lastPlayers.find(x =>
-      m.steamid != null
-        ? x.steamid === m.steamid
-        : m.steamid64 != null
-          ? steamid64(x.steamid) === String(m.steamid64)
-          : x.id === m.id,
-    );
+    const p = state.lastPlayers.find(x => isPlayer(x, m));
     if (!p) setFollow(null);
     else if (p.id !== state.follow) setFollow(p.id);
   } else if (m.type === "layer" && layerOn(m.name) != null) setLayer(m.name, Boolean(m.on));
