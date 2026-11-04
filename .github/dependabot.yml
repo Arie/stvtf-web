@@ -9,3 +9,11 @@ updates:
     groups:
       actions:
         patterns: ["*"]
+  # The page's dev tools (ESLint, Prettier, TypeScript): pinned exactly, bumped together.
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      dev-tools:
+        patterns: ["*"]
