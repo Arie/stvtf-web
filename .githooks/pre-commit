@@ -1,5 +1,6 @@
 #!/bin/sh
-# Runs CI's quick checks before each commit: all but cargo test and cargo deny, which take minutes.
+# Runs CI's quick checks before each commit: all but cargo test (it builds the tests and wants the
+# maps in testdata/maps) and cargo deny (it fetches the advisory database).
 # Enable once per clone with: ln -s ../../.githooks/pre-commit .git/hooks/pre-commit
 set -e
 cargo fmt --check || { echo "pre-commit: run 'cargo fmt' to fix formatting"; exit 1; }
