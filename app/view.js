@@ -1,5 +1,6 @@
 import { $, OVERLAY, OPT, PLAIN_BG, overlayUnit, canvas, uiScale, ctx, state, canvasSize } from "./core.js";
 import { env, asset } from "./env.js";
+/** @typedef {import("../types/stream").Player} Player */
 
 // Map geometry: at least this many world units per pixel, and a canvas at most this wide;
 // bsp.rs pads the bounds' top this far above the highest point or pickup (its PAD), floors are
@@ -676,6 +677,7 @@ export function closingIn(from, to, fight, by) {
   return gap(to) < gap(from) - by;
 }
 
+/** @param {Player[]} players */
 export function followAction(players) {
   const now = performance.now(),
     dt = Math.min(0.1, (now - lastFrame) / 1000);

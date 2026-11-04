@@ -1,6 +1,7 @@
 import { TEAM, CLASS, icon, OVERLAY, optOn, overlayUnit, uiScale, ctx, state } from "./core.js";
 import { layerOn } from "./layers.js";
 import { toScreen, screenAngle, px, playerRad, drawText } from "./view.js";
+/** @typedef {import("../types/stream").Player} Player */
 
 // Rockets leave a trail of smoke puffs that shrink, darken and fade, and linger after the rocket.
 const PUFF_SPACING = 30,
@@ -196,6 +197,7 @@ export function drawProjectiles(list) {
 
 // Each charge looks different: über a candy-cane team ring with a dark edge and a soft pulse, kritz crackling, quick-fix
 // pulsing rings, vaccinator a shield with its resistance.
+/** @param {Player} p */
 function drawUberRing(p, x, y, rad, col) {
   const t = performance.now() / 1000;
   ctx.save();
@@ -291,6 +293,7 @@ function drawUberRing(p, x, y, rad, col) {
 // The medigun beam like TF2's: two strands twisting around a soft glow in the team colour, with
 // sparkles drifting from the medic to the patient; thicker and brighter while the charge is out.
 const BEAM_LIGHT = { red: "#ffc2b8", blue: "#c2e2ff" };
+/** @param {Player[]} players @param {Map<number, Player>} byId */
 export function drawHealBeams(players, byId) {
   const t = performance.now() / 1000;
   for (const m of players) {
@@ -447,6 +450,7 @@ const SHOW_FALLEN = optOn("deaths", OVERLAY),
 const SHOT_EFFECTS = new Set(["shot", "boom", "airblast"]),
   BUILDING_EFFECTS = new Set(["sentryshot", "upgrade", "repair"]);
 
+/** @param {Player[]} players */
 export function drawPlayers(players) {
   const alive = [];
   // The followed player is drawn last, so their dot and name are on top.
@@ -705,6 +709,7 @@ function drawStatus(conds, id, x, y, rad) {
 
 // A firing flamethrower: a flickering cone about as long as the flames reach. Crit flames take
 // the team's colour, and burn brighter while they hit someone.
+/** @param {Player} p */
 function drawFlames(p, x, y, rad, a) {
   const t = performance.now() / 1000,
     len = Math.max(350 * state.view.scale, rad * (OVERLAY ? 4 : 3)) * (0.92 + 0.08 * Math.sin(t * 23 + p.id));

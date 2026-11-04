@@ -3,6 +3,8 @@ import { env, asset } from "./env.js";
 import { KILLICONS, killDetails } from "./feed.js";
 import { setFollow } from "./input.js";
 import { layerOn, setLayer } from "./layers.js";
+/** @typedef {import("../types/stream").GameEvent} GameEvent */
+/** @typedef {import("../types/stream").Player} Player */
 
 // On another site, in an iframe or as <stv-map>: what happens goes to that page as the map shows it
 // (so after any delay), as postMessage or as the element's events, and the page can follow a
@@ -74,6 +76,7 @@ export function embedStatus(s) {
   post({ type: "status", state: s });
 }
 
+/** @param {GameEvent} ev @param {Map<number, Player>} byId */
 export function embedEvent(ev, byId) {
   if (!EMBEDDED || EFFECTS.has(ev.type)) return;
   const ids = [...PLAYER_FIELDS.map(f => ev[f]), ...(ev.cappers || [])].filter(id => id != null);

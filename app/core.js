@@ -38,6 +38,7 @@ export const byClass = (a, b) =>
 const INVISIBLE = /[\u061c\u180e\u200b\u200e\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]/g;
 const INVISIBLE_ESCAPED = /\\u(061c|180e|200[bef]|202[a-e]|206[0-46-9]|feff)/i;
 // A message from the stream, without them. Most have none, and skip the slower parse.
+/** @type {(data: string) => import("../types/stream").StreamMessage} */
 export const parseMessage = data =>
   data.search(INVISIBLE) >= 0 || INVISIBLE_ESCAPED.test(data)
     ? JSON.parse(data, (_, v) => (typeof v === "string" ? v.replace(INVISIBLE, "") : v))
@@ -103,6 +104,7 @@ new ResizeObserver(([e]) => {
 }).observe(canvas);
 export const canvasSize = () => size ?? (size = canvas.getBoundingClientRect());
 
+/** @type {import("../types/page").State} */
 export const state = {
   map: null,
   snaps: [],

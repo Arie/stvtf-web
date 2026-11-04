@@ -18,6 +18,10 @@ function lerpAngle(a, b, t) {
   const d = ((b - a + 540) % 360) - 180;
   return a + d * t;
 }
+/** @param {number[]} a @param {number[]} b @param {number} t @returns {import("../types/stream").Vec3} */
+function lerpPos(a, b, t) {
+  return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
+}
 function frameAt(tick) {
   const s = state.snaps;
   if (!s.length) return null;
@@ -36,7 +40,7 @@ function frameAt(tick) {
     if (!q || !q.alive || !p.alive) return t < 0.5 && q ? q : p;
     return {
       ...p,
-      pos: [0, 1, 2].map(k => q.pos[k] + (p.pos[k] - q.pos[k]) * t),
+      pos: lerpPos(q.pos, p.pos, t),
       yaw: lerpAngle(q.yaw, p.yaw, t),
       hp: t < 0.5 ? q.hp : p.hp,
     };
@@ -51,7 +55,7 @@ function frameAt(tick) {
       dy = p.pos[1] - q.pos[1];
     return {
       ...p,
-      pos: [0, 1, 2].map(k => q.pos[k] + (p.pos[k] - q.pos[k]) * t),
+      pos: lerpPos(q.pos, p.pos, t),
       heading: Math.hypot(dx, dy) > MIN_HEADING_STEP ? (Math.atan2(dy, dx) * 180) / Math.PI : null,
     };
   });

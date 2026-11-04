@@ -1,6 +1,7 @@
 import { ctx, state } from "./core.js";
 import { MARK_LIFE_MS, SCORCH_CAP, SCORCH_R } from "./events.js";
 import { toScreen, px } from "./view.js";
+/** @typedef {import("../types/stream").Player} Player */
 
 // Flat scorch craters: pre-rendered ragged sprites, four shapes each turned four ways, so a
 // crater is drawn scaled but never rotated (a rotated image is the slow path).
@@ -266,6 +267,7 @@ const TELEPORT = 250,
   TRAIL_POINTS = 400;
 
 // Blast-jump trails from the interpolated positions: dark team shade off the ground to a bright one at the peak.
+/** @param {Player[]} players */
 export function drawJumpTrails(players) {
   const now = performance.now(),
     byId = new Map(players.map(p => [p.id, p]));

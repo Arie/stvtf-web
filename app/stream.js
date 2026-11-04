@@ -19,6 +19,7 @@ import { setFollow } from "./input.js";
 import { detailNeeded } from "./layers.js";
 import { cartState } from "./objectives.js";
 import { loadMap } from "./view.js";
+/** @typedef {import("../types/stream").GameEvent} GameEvent */
 
 // Ticks going back this far are a new map or a server restart, not jitter.
 const TICK_RESET = 200;
@@ -104,6 +105,7 @@ function countDown() {
   setTimeout(countDown, 250);
 }
 
+/** @param {GameEvent} m Any line of the stream; its `type` tells which. */
 function handle(m) {
   // Feed events from before the page opened: straight into the feed and chat, no map effects.
   if (m.history) {
@@ -143,7 +145,7 @@ function handle(m) {
       state.lastData = performance.now();
       if ($("status").textContent !== "live") setStatus("live", true);
       observeTick(m.tick);
-      state.snaps.push(m);
+      state.snaps.push(/** @type {import("../types/stream").Snapshot} */ (m));
       if (state.snaps.length > SNAPS_KEPT) state.snaps.shift();
       for (const p of m.players) state.players.set(p.id, p);
       $("empty").style.display = "none";

@@ -1,6 +1,10 @@
 import { msPerTick, TEAM, OVERLAY, overlayUnit, uiScale, ctx, state } from "./core.js";
 import { toScreen, screenAngle, px, playerRad, drawText } from "./view.js";
 import { layerOn } from "./layers.js";
+/** @typedef {import("../types/stream").GameEvent} GameEvent */
+/** @typedef {import("../types/stream").Objective} Objective */
+/** @typedef {import("../types/stream").Player} Player */
+/** @typedef {import("../types/stream").Snapshot} Snapshot */
 
 // The payload cart: a mine cart in the pushing team's colour carrying TF2's big black bomb, facing
 // along the track. Heading comes from movement (kept while stopped); rolling back still faces forward.
@@ -12,6 +16,7 @@ const CART_MIN_MOVE = 6,
 // A capture area belongs to the point standing in it, or one at most this many units outside.
 const CAP_AREA_REACH = 256;
 // Where a moving objective (cart, ball, robot, tank) is between the snapshots around `tick`.
+/** @param {Objective} o @param {number} tick */
 function objPos(o, tick) {
   const s = state.snaps;
   const i = s.findIndex(x => x.tick > tick);
@@ -48,6 +53,7 @@ function drawBomb(x, y, R, lw) {
   ctx.fill();
   ctx.restore();
 }
+/** @param {Objective} o @param {number} tick */
 function drawCart(o, tick) {
   const [wx, wy] = objPos(o, tick);
   let cs = cartState.get(o.id);
@@ -136,6 +142,7 @@ function drawCart(o, tick) {
 }
 
 // Pass time goals: a ring in the colour of the team that scores there.
+/** @param {Objective} o */
 function drawGoal(o) {
   const [x, y] = toScreen(o.pos[0], o.pos[1]),
     r = OVERLAY ? overlayUnit() * 1.4 : px(90, 14);
@@ -159,6 +166,7 @@ function drawGoal(o) {
   ctx.restore();
 }
 // Robot destruction robots like buildings: the team colour drains from the top as health drops.
+/** @param {Objective} o @param {number} tick */
 function drawRobot(o, tick) {
   const [wx, wy] = objPos(o, tick);
   const [x, y] = toScreen(wx, wy),
@@ -185,6 +193,7 @@ function drawRobot(o, tick) {
   ctx.restore();
 }
 // A dropped robot destruction core: a small diamond in its team's colour.
+/** @param {Objective} o */
 function drawCore(o) {
   const [x, y] = toScreen(o.pos[0], o.pos[1]),
     s = OVERLAY ? overlayUnit() * 0.7 : px(24, 7);
@@ -203,6 +212,7 @@ function drawCore(o) {
   ctx.restore();
 }
 // A Mann vs. Machine revive marker: a cross in the dead player's team colour.
+/** @param {Objective} o */
 function drawRevive(o) {
   const [x, y] = toScreen(o.pos[0], o.pos[1]),
     s = OVERLAY ? overlayUnit() * 0.8 : px(30, 9);
@@ -219,6 +229,7 @@ function drawRevive(o) {
   ctx.restore();
 }
 // Mann vs. Machine money on the ground: a small green note.
+/** @param {Objective} o */
 function drawMoney(o) {
   const [x, y] = toScreen(o.pos[0], o.pos[1]),
     s = OVERLAY ? overlayUnit() * 0.45 : px(16, 5);
@@ -233,6 +244,7 @@ function drawMoney(o) {
   ctx.restore();
 }
 // A Mann vs. Machine tank: a big dark hull with its health above.
+/** @param {Objective} o @param {number} tick */
 function drawTank(o, tick) {
   const [wx, wy] = objPos(o, tick);
   const [x, y] = toScreen(wx, wy),
@@ -261,6 +273,7 @@ function drawTank(o, tick) {
   ctx.restore();
 }
 
+/** @param {Snapshot} snap @param {number} tick */
 export function drawObjectives(snap, tick) {
   for (const o of snap.objectives || []) {
     if (o.kind === "cart") {
@@ -346,6 +359,7 @@ export function drawObjectives(snap, tick) {
 // Capture areas: just an outline in the owner's colour; progress is shown on the point square.
 // An area belongs to the point standing in it: point numbers in the map file don't always match
 // the game's (multi-round maps number per round).
+/** @param {Snapshot} snap */
 export function drawCapAreas(snap) {
   const areas = state.geometry?.cap_areas;
   if (!areas?.length) return;
@@ -376,6 +390,7 @@ export function drawCapAreas(snap) {
 
 // The pass time ball: a ball in the colour of the team that has it (yellow while neutral),
 // riding on its carrier.
+/** @param {Objective} o @param {Player[]} players @param {number} tick */
 function drawBall(o, players, tick) {
   const carrier = o.carrier != null ? players.find(p => p.id === o.carrier && p.alive && p.pos) : null;
   const at = carrier ? carrier.pos : objPos(o, tick);
@@ -403,6 +418,7 @@ function drawBall(o, players, tick) {
 
 // A player destruction stack of pickups: a disc with how many points it holds, on its carrier
 // or where it was dropped (with the seconds until it goes).
+/** @param {Objective} o @param {Player} carrier @param {Snapshot} snap @param {number} tick */
 function drawPickups(o, carrier, snap, tick) {
   let [x, y] = toScreen(...(carrier ? carrier.pos : o.pos).slice(0, 2));
   const r = OVERLAY ? overlayUnit() * 0.6 : px(22, 8);
@@ -441,6 +457,7 @@ function drawPickups(o, carrier, snap, tick) {
 // The intelligence as a briefcase in its team's colour (a neutral flag, such as the bball ball,
 // in yellow; Mann vs. Machine's bomb as a bomb): at home, dropped with the seconds until it goes
 // home, or riding on its carrier.
+/** @param {Snapshot} snap @param {Player[]} players @param {number} tick */
 export function drawFlags(snap, players, tick) {
   for (const o of snap.objectives || []) {
     if (o.kind === "ball") {
@@ -492,6 +509,7 @@ export function drawFlags(snap, players, tick) {
 
 // S1-S3 / D1-D3 / T1-T3 like the engineer's HUD (MS for a mini-sentry); the sentry's aim
 // sticks out, a teleporter exit gets a ring, and buildings under construction are faint.
+/** @param {Snapshot} snap */
 export function drawBuildings(snap) {
   for (const b of snap.buildings || []) {
     const [x, y] = toScreen(b.pos[0], b.pos[1]),
@@ -578,11 +596,13 @@ const inRoom = (r, p) =>
   p[2] >= r.min[2] - SPAWN_SLACK &&
   p[2] <= r.max[2] + SPAWN_SLACK;
 const centre = r => [(r.min[0] + r.max[0]) / 2, (r.min[1] + r.max[1]) / 2];
+/** @param {GameEvent} ev */
 export function noteSpawn(ev) {
   const rooms = state.spawns?.rooms || [];
   const i = ev.pos ? rooms.findIndex(r => r.team === ev.team && inRoom(r, ev.pos)) : -1;
   if (i >= 0) state.spawnSeen[ev.team] = { room: i, at: performance.now() };
 }
+/** @param {Snapshot} snap */
 function activeRooms(snap) {
   const s = state.spawns;
   if (!s) return new Set();
@@ -615,6 +635,7 @@ function activeRooms(snap) {
   }
   return active;
 }
+/** @param {Snapshot} snap */
 export function drawSpawnRooms(snap) {
   const rooms = state.spawns?.rooms;
   if (!rooms?.length) return;

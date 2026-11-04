@@ -5,6 +5,7 @@ import { showTimeAdded } from "./hud.js";
 import { layerOn } from "./layers.js";
 import { noteSpawn } from "./objectives.js";
 import { addScorch, nearFreshScorch } from "./overkill.js";
+/** @typedef {import("../types/stream").Player} Player */
 
 // ---------- events become effects when playback reaches their tick
 // Playback can reach events late (a hidden tab holds the page back): effects are back-dated, so a late
@@ -41,6 +42,7 @@ const MAX_TRAILS = 80;
 let eventTick = 0;
 const lagMs = ev => Math.max(0, (eventTick - ev.tick) * msPerTick);
 const stale = (ev, ms) => lagMs(ev) > ms;
+/** @param {number} tick @param {Map<number, Player>} byId */
 export function fireEvents(tick, byId) {
   eventTick = tick;
   const due = [];

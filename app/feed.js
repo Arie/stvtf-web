@@ -2,6 +2,8 @@ import { msPerTick, TEAM, $, state } from "./core.js";
 import { asset } from "./env.js";
 import { MEDIGUN_NAME, mmss } from "./hud.js";
 import { layerOn } from "./layers.js";
+/** @typedef {import("../types/stream").GameEvent} GameEvent */
+/** @typedef {(id: number) => { id?: number; name: string; team: string } | null | undefined} Who A player by id, or who they were. */
 
 export function esc(s) {
   return String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
@@ -35,6 +37,7 @@ const killIcon = ev => {
     ].find(n => n && KILLICONS.has(n)) || null
   );
 };
+/** @param {GameEvent} ev */
 function weaponIcon(ev, icon) {
   const crit = ev.crit ? " crit" : "";
   return icon
@@ -111,6 +114,7 @@ const voteIssue = ev =>
 // Kills by one player within 10 s of each other count as a streak: 2K, 3K, …
 const STREAK_MS = 10000;
 const streaks = new Map();
+/** @param {GameEvent} ev */
 function streak(ev) {
   const s = streaks.get(ev.attacker),
     gap = s ? ev.tick - s.tick : -1;
@@ -120,6 +124,7 @@ function streak(ev) {
 }
 // A kill's icon, streak and airshot, worked out once for the feed and the embedding page.
 const killed = new WeakMap();
+/** @param {GameEvent} ev @param {Who} p */
 export function killDetails(ev, p) {
   if (!killed.has(ev)) {
     const by = ev.attacker != null && ev.attacker !== ev.victim && p(ev.attacker);
@@ -133,6 +138,7 @@ export function killDetails(ev, p) {
 }
 
 // One row per event, newest on top, stamped with the round clock.
+/** @param {GameEvent} ev @param {Who} p */
 export function feedEvent(ev, p) {
   // Players who have since left are no longer known by id.
   const name = id =>
@@ -360,6 +366,7 @@ export function feedEvent(ev, p) {
   d.innerHTML = `${stamp ? `<time>${stamp}</time>` : ""}${html}`;
   prepend($("feed"), d);
 }
+/** @param {GameEvent} ev @param {Who} p */
 export function chat(ev, p) {
   const d = document.createElement("div");
   const pl = ev.player != null ? p(ev.player) : null;

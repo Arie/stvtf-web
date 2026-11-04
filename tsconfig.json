@@ -12,5 +12,5 @@
     "skipLibCheck": true,
     "strict": false
   },
-  "include": ["app/**/*.js"]
+  "include": ["app/**/*.js", "types/**/*.d.ts"]
 }

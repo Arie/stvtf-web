@@ -2,6 +2,9 @@ import { msPerTick, TEAM, CLASS, byClass, ICONS, $, OVERLAY, OPT, state } from "
 import { asset } from "./env.js";
 import { layerOn } from "./layers.js";
 import { esc } from "./feed.js";
+/** @typedef {import("../types/stream").GameEvent} GameEvent */
+/** @typedef {import("../types/stream").Player} Player */
+/** @typedef {import("../types/stream").Snapshot} Snapshot */
 
 // The player panels redraw at most this often.
 const PANEL_MS = 250;
@@ -50,6 +53,7 @@ function setStyle(el, prop, value) {
 }
 
 let itemImages = null;
+/** @param {Player} p */
 function weaponImage(p) {
   if (!layerOn("loadout") || !p.alive || !p.weapon) return null;
   if (!itemImages) {
@@ -65,6 +69,7 @@ function weaponImage(p) {
   }
   return itemImages[p.weapon.item] || null;
 }
+/** @param {Player} p */
 function card(p) {
   const el = node(
     `p${p.id}`,
@@ -126,12 +131,14 @@ function card(p) {
   setClass(el.children[5], !p.alive && p.respawn > 0 ? "hp rs" : "hp");
   return el;
 }
+/** @param {Player} p */
 function chargeMeter(p) {
   const el = node(
     `c${p.id}`,
     `<div class="charge"><div class="bar"></div><i class="segs"></i><span></span><span style="opacity:.75"></span><span class="pct"></span></div>`,
   );
-  const g = p.medigun || { kind: "medigun" };
+  /** @type {import("../types/stream").Medigun} */
+  const g = p.medigun || { kind: "medigun", releasing: false, resist: null, target: null };
   const pct = Math.round(p.uber ?? 0);
   setClass(
     el,
@@ -162,6 +169,7 @@ function placeChildren(box, nodes) {
   if (!same) box.replaceChildren(...nodes);
 }
 
+/** @param {Player[]} players @param {Snapshot} snap */
 export function updatePanel(players, snap) {
   const now = performance.now();
   if (now - state.lastPanel < PANEL_MS) return;
@@ -176,6 +184,7 @@ export function updatePanel(players, snap) {
 
 // Time added to a round timer: "+M:SS" floating down under the scoreboard (on king of the hill,
 // under the team's side).
+/** @param {GameEvent} ev */
 export function showTimeAdded(ev) {
   const el = document.createElement("div");
   el.className = `added ${$("scoreboard").classList.contains("koth") && (ev.team === "red" || ev.team === "blue") ? ev.team : ""}`;
@@ -193,6 +202,7 @@ const BOARD_COLUMNS = [
   ["damage", "Damage"],
   ["healing", "Healing"],
 ];
+/** @param {Player[]} players @param {Snapshot} snap */
 export function renderBoard(players, snap) {
   const team = (t, label) => {
     const rows = players
@@ -241,6 +251,7 @@ function setText(id, text) {
 // CTF counts the round in captured intelligence, like TF2's CTF HUD, and pass time in goals;
 // maps with a neutral flag (bball, special delivery) keep the team score. Robot and player
 // destruction count points (other maps that reuse their logic count something else with it).
+/** @param {Snapshot} snap */
 export function shownScore(snap) {
   const objectives = snap.objectives || [];
   const ctf =
@@ -250,6 +261,7 @@ export function shownScore(snap) {
   return destruction ? snap.points : ctf ? snap.captures : snap.score;
 }
 
+/** @param {Snapshot} snap @param {number} tick */
 export function renderScoreboard(snap, tick) {
   $("scoreboard").hidden = OVERLAY && OPT.get("score") !== "1";
   const scores = shownScore(snap);
@@ -308,6 +320,7 @@ export function renderScoreboard(snap, tick) {
   const shown = main && !main.paused ? left(main) : !main ? mapLeft : null;
   $("timer-main").parentElement.classList.toggle("low", shown != null && shown <= LOW_SECONDS);
 }
+/** @param {Snapshot} snap */
 function renderPoints(snap) {
   const html = (snap.objectives || [])
     .filter(o => o.kind === "control_point")
