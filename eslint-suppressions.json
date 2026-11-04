@@ -63,20 +63,6 @@
       "count": 1
     }
   },
-  "app/players.js": {
-    "complexity": {
-      "count": 4
-    },
-    "max-lines": {
-      "count": 1
-    },
-    "max-lines-per-function": {
-      "count": 3
-    },
-    "no-nested-ternary": {
-      "count": 7
-    }
-  },
   "app/stream.js": {
     "no-nested-ternary": {
       "count": 2

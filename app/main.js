@@ -5,7 +5,9 @@ import { updatePanel, renderScoreboard, shownScore } from "./hud.js";
 import { layerOn, renderSettings } from "./layers.js";
 import { drawObjectives, drawCapAreas, drawFlags, drawBuildings, drawSpawnRooms } from "./objectives.js";
 import { drawMarks, drawPacks, drawJumpTrails } from "./overkill.js";
-import { drawProjectiles, drawHealBeams, drawPlayers, drawEffects } from "./players.js";
+import { drawHealBeams, drawPlayers } from "./players.js";
+import { drawProjectiles } from "./projectiles.js";
+import { drawEffects } from "./effects.js";
 import { openStream } from "./stream.js";
 import { frameMap, drawBackground, followAction } from "./view.js";
 
