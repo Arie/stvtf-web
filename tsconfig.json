@@ -10,7 +10,9 @@
     "lib": ["es2023", "dom", "dom.iterable"],
     "types": [],
     "skipLibCheck": true,
-    "strict": false
+    "strict": false,
+    "noUnusedLocals": true,
+    "noFallthroughCasesInSwitch": true
   },
   "include": ["app/**/*.js", "types/**/*.d.ts"]
 }
