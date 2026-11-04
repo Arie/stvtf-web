@@ -80,7 +80,8 @@ Given a server, it watches just that match at `http://127.0.0.1:8080/`. `--repla
 saved `stvtf connect` output at its recorded speed, which is handy when working on the page.
 
 The map zooms to where the players are fighting. Dragging or scrolling takes over
-the camera; the "Auto zoom" button hands it back.
+the camera; the "Auto zoom" button hands it back. It is turned so blue's spawns are on the
+left and red's on the right, as on the HUD (`rotate`, below, changes that).
 
 Stop it with Ctrl-C: the first one disconnects every match from SourceTV cleanly (otherwise the
 server holds the slot for 300 s), a second one exits at once. With `--replay` there is nothing
@@ -91,7 +92,7 @@ to disconnect, and it takes the second one.
 `/overlay` (or `/w/<id>/overlay`) is a minimap for streams, like the live radar in CS
 broadcasts: add it to OBS as a Browser source of any size (for example 480x480 or
 560x315). The page is transparent apart from the map itself; it has no controls and
-frames itself around the spawns and points of the map, upright like the main view, and
+frames itself around the spawns and points of the map, turned like the main view, and
 then glides in on the area where the living players are.
 
 It shows the map, players as team dots with class icon and view direction,
@@ -108,7 +109,7 @@ Besides the [display options](#display-options), it takes these, e.g.
 |---|---|
 | `panel=0..1` | opacity of a dark backdrop behind the whole panel (default 0, none) |
 | `zoom=map` | keep the whole map in view instead of zooming to where the players are |
-| `rotate=auto\|<degrees>` | map rotation (default 0, upright like the main view; `auto` turns a quarter when that fills the panel clearly better) |
+| `rotate=teams\|auto\|<degrees>` | map rotation, on the main view too: `teams` (the default) turns it a quarter or half so blue's spawns are left of red's, as on the HUD (upright when a team has none); `0` keeps it upright, north up; `auto` turns a quarter when that fills the panel clearly better |
 | `ui=<factor>` | scale all markers (default 1; marker size already follows the panel size) |
 | `dot=<px>` | fixed player dot radius instead |
 

@@ -14,7 +14,7 @@ import {
 } from "../../app/core.js";
 import { command, steamid64 } from "../../app/embed.js";
 import { layerOn } from "../../app/layers.js";
-import { demostfAlias, sameLayout, screenOffset, toScreen } from "../../app/view.js";
+import { demostfAlias, sameLayout, screenOffset, teamsTurn, toScreen } from "../../app/view.js";
 
 test("players sort by class, then name whatever its case, then id", () => {
   const rows = [
@@ -100,6 +100,32 @@ test("a loner closes in on the fight only by moving", () => {
   assert.equal(closingIn([5000, 0], [4800, 0], fight, 300), false, "not far enough");
   // The fight coming to them is not them closing in.
   assert.equal(closingIn([5000, 0], [5000, 0], [{ pos: [3000, 0] }], 300), false);
+});
+
+test("the map turns so blue's spawns are on the left and red's on the right", () => {
+  const spawns = (blue, red) => [
+    { pos: blue, team: "blue" },
+    { pos: [blue[0] + 100, blue[1]], team: "blue" },
+    { pos: red, team: "red" },
+  ];
+  const blueLeft = (pts, rot) => {
+    Object.assign(state.view, { cx: 0, cy: 0, scale: 1, rot });
+    const [bx] = toScreen(...pts[0].pos),
+      [rx] = toScreen(...pts[2].pos);
+    return bx < rx;
+  };
+  // Gullywash: blue in the east, red in the west. Granary: blue north, red south.
+  for (const [name, pts] of [
+    ["gullywash", spawns([3385, -1270], [-2170, 652])],
+    ["granary", spawns([-887, 3024], [-2186, -2968])],
+    ["already left to right", spawns([-3000, 0], [3000, 200])],
+  ]) {
+    const rot = teamsTurn(pts);
+    assert.equal(Math.round(rot / (Math.PI / 2)) * (Math.PI / 2), rot, `${name}: a quarter turn`);
+    assert.ok(blueLeft(pts, rot), `${name}: blue on the left at ${rot}`);
+  }
+  assert.equal(teamsTurn(spawns([-3000, 0], [3000, 0])), 0);
+  assert.equal(teamsTurn([{ pos: [0, 0], team: "red" }]), null, "one team only");
 });
 
 test("a screen offset is the same map offset whichever way the view is turned", () => {

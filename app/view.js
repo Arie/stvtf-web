@@ -117,8 +117,9 @@ function fitTo(min, max) {
 }
 
 // Frame what matters (spawns and points) rather than the whole image, which is mostly empty.
-// The main view stays upright and clear of the HUD columns and scoreboard. The overlay with
-// rotate=auto stays upright, or turns a quarter when that fills the panel clearly better.
+// Both views turn the map so blue's spawns are on the left and red's on the right, as on the HUD
+// (rotate=teams, the default; upright when a team has no spawns). rotate=auto stays upright, or
+// turns a quarter when that fills the panel clearly better; rotate=<degrees> turns it that far.
 // The part of the canvas the map has to itself: the main view keeps clear of the HUD columns
 // and the scoreboard; the overlay uses its whole panel. Framings are centred in it.
 export function viewArea() {
@@ -150,6 +151,21 @@ export function focusOf(v) {
   return { cx: v.cx + dx, cy: v.cy + dy };
 }
 
+// The quarter turn that puts the middle of blue's spawn points left of red's, or null without both.
+/** @param {{ pos: number[], team: string }[]} points */
+export function teamsTurn(points) {
+  const middle = team => {
+    const t = points.filter(p => p.team === team);
+    return t.length ? [0, 1].map(k => t.reduce((a, p) => a + p.pos[k], 0) / t.length) : null;
+  };
+  const blue = middle("blue"),
+    red = middle("red");
+  if (!blue || !red) return null;
+  const quarter = Math.PI / 2;
+  // A turn by `rot` shows the world direction -rot as the screen's +x.
+  return Math.round(-Math.atan2(red[1] - blue[1], red[0] - blue[0]) / quarter) * quarter || 0;
+}
+
 export function frameMap(keepView = false) {
   const pts = [];
   for (const p of state.spawns?.points || []) pts.push(p.pos);
@@ -173,9 +189,11 @@ export function frameMap(keepView = false) {
     const scale = Math.min(w / (u1 - u0), h / (v1 - v0)) * 0.96;
     return { rot, cx: uc * c + vc * sn, cy: -uc * sn + vc * c, scale };
   };
-  const want = OVERLAY ? (OPT.get("rotate") ?? "0") : "0";
+  const want = OPT.get("rotate") ?? "teams";
   let best;
-  if (want === "auto") {
+  if (want === "teams") {
+    best = fit(teamsTurn(state.spawns?.points || []) ?? 0);
+  } else if (want === "auto") {
     const upright = fit(0),
       turned = fit(Math.PI / 2);
     best = turned.scale > upright.scale * 1.1 ? turned : upright;
