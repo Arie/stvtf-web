@@ -6,5 +6,5 @@ cargo fmt --check || { echo "pre-commit: run 'cargo fmt' to fix formatting"; exi
 cargo clippy --all-targets --quiet -- -D warnings
 [ -d node_modules ] || { echo "pre-commit: run 'npm ci' once to install ESLint, Prettier and TypeScript"; exit 1; }
 npm run --silent format:check || { echo "pre-commit: run 'npm run format' to fix formatting"; exit 1; }
-npx --no-install eslint app test
+npm run --silent lint
 npm run --silent typecheck
