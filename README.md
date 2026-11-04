@@ -123,6 +123,7 @@ them; pressing a key or using the settings panel still applies and saves as usua
 | option | shows | main view | overlay |
 |---|---|---|---|
 | `names` | player names under the dots | on | off |
+| `facing` | the pointer on each dot towards where the player is looking | on | on |
 | `score` | the scoreboard | on | off |
 | `health` | the health ring around the dots (the HUD's cards keep theirs) | on | off |
 | `projectiles` | rockets, grenades, stickies and the like | on | off |

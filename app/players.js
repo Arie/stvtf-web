@@ -171,7 +171,8 @@ function iconSprite(cls, size) {
 
 // What the query string can turn off, or on where a view leaves it out.
 const SHOW_NAMES = optOn("names", !OVERLAY),
-  SHOW_HEALTH = optOn("health", !OVERLAY);
+  SHOW_HEALTH = optOn("health", !OVERLAY),
+  SHOW_FACING = optOn("facing");
 export const SHOW_SHOTS = optOn("shots", !OVERLAY),
   SHOW_BUILDINGS = optOn("buildings", !OVERLAY);
 // deaths: the X kept where a player fell (the overlay's); the main view's brief kill marks are in effects.js.
@@ -194,7 +195,7 @@ export function drawPlayers(players) {
     alive.push({ p, x, y, rad: playerRad(), col: TEAM[p.team], cloaked: p.conds?.includes("Stealthed") });
   }
   // In passes, so in a clump every class icon sits on top of the other players' discs.
-  for (const d of alive) drawPointer(d);
+  if (SHOW_FACING) for (const d of alive) drawPointer(d);
   for (const d of alive) drawDisc(d);
   // Flames over the dots, so they show in a fight, but under the class icons.
   if (SHOW_SHOTS) for (const { p, x, y, rad } of alive) if (p.flames) drawFlames(p, x, y, rad, screenAngle(p.yaw));
