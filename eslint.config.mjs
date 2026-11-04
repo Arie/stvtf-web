@@ -17,6 +17,20 @@ export default [
       "no-unneeded-ternary": "error",
       "no-useless-return": "error",
       "object-shorthand": "error",
+      "no-nested-ternary": "error",
+    },
+  },
+  // Limits on the size and shape of the page's code. What was over them when they came in is in
+  // eslint-suppressions.json: a file may not get more of it, and what is fixed is pruned with
+  // `npx eslint app test --prune-suppressions`.
+  {
+    files: ["app/**/*.js"],
+    rules: {
+      complexity: ["error", 20],
+      "max-depth": ["error", 4],
+      "max-params": ["error", 5],
+      "max-lines-per-function": ["error", { max: 100, skipBlankLines: true, skipComments: true }],
+      "max-lines": ["error", { max: 500, skipBlankLines: true, skipComments: true }],
     },
   },
 ];

@@ -1,0 +1,107 @@
+{
+  "app/embed.js": {
+    "no-nested-ternary": {
+      "count": 1
+    }
+  },
+  "app/events.js": {
+    "complexity": {
+      "count": 1
+    },
+    "max-lines-per-function": {
+      "count": 1
+    }
+  },
+  "app/feed.js": {
+    "complexity": {
+      "count": 1
+    },
+    "max-lines-per-function": {
+      "count": 1
+    },
+    "no-nested-ternary": {
+      "count": 5
+    }
+  },
+  "app/hud.js": {
+    "complexity": {
+      "count": 2
+    },
+    "no-nested-ternary": {
+      "count": 7
+    }
+  },
+  "app/input.js": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "app/main.js": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "app/objectives.js": {
+    "complexity": {
+      "count": 2
+    },
+    "max-lines": {
+      "count": 1
+    }
+  },
+  "app/overkill.js": {
+    "complexity": {
+      "count": 1
+    },
+    "max-lines-per-function": {
+      "count": 1
+    },
+    "max-params": {
+      "count": 2
+    },
+    "no-nested-ternary": {
+      "count": 1
+    }
+  },
+  "app/players.js": {
+    "complexity": {
+      "count": 4
+    },
+    "max-lines": {
+      "count": 1
+    },
+    "max-lines-per-function": {
+      "count": 3
+    },
+    "no-nested-ternary": {
+      "count": 7
+    }
+  },
+  "app/stream.js": {
+    "no-nested-ternary": {
+      "count": 2
+    }
+  },
+  "app/view.js": {
+    "complexity": {
+      "count": 2
+    },
+    "max-depth": {
+      "count": 1
+    },
+    "max-lines": {
+      "count": 1
+    },
+    "max-lines-per-function": {
+      "count": 1
+    },
+    "max-params": {
+      "count": 1
+    }
+  },
+  "test/js/setup.js": {
+    "no-nested-ternary": {
+      "count": 1
+    }
+  }
+}

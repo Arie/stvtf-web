@@ -369,6 +369,8 @@ cargo test
 cargo deny check                   # advisories, licences, sources (deny.toml; cargo install cargo-deny)
 npm ci && npm run format           # Prettier on the JavaScript (.prettierrc.json); format:check only checks
 npm run lint                       # ESLint on app/ and test/ (eslint.config.mjs)
+                                   # code over its size limits when they came in is in eslint-suppressions.json;
+                                   # after fixing some, npx eslint app test --prune-suppressions
 npm test                           # the page's modules in Node, with test/js/setup.js standing in for a browser
 ```
 
