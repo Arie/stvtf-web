@@ -55,6 +55,42 @@ env.keys.addEventListener("keyup", e => {
   if (e.key === "Tab") showBoard(false);
 });
 env.keys.addEventListener("blur", () => showBoard(false));
+// What each key does (Tab is held, so it is handled on its own).
+const KEYS = {
+  Escape() {
+    setFollow(null);
+    $("help").hidden = true;
+    $("settings").hidden = true;
+  },
+  "?": () => toggleExclusive("help"),
+  k() {
+    if (!OVERLAY) toggleExclusive("settings");
+  },
+  x() {
+    if (!OVERLAY) setOverkill(!overkillOn());
+  },
+  j() {
+    if (!OVERLAY) setLayer("jumps", !layerOn("jumps"));
+  },
+  l() {
+    if (!OVERLAY) setLayer("loadout", !layerOn("loadout"));
+  },
+  h: () => toggle("nohud"),
+  s: () => toggle("noscore"),
+  e: () => setSidebar(env.el.classList.contains("noside")),
+  g() {
+    if (!$("bgtoggle").hidden)
+      /** @type {HTMLButtonElement} */ (env.root.querySelector("#bgtoggle button:not(.on)")).click();
+  },
+  o() {
+    if (!env.component)
+      location.replace(
+        OVERLAY
+          ? PAGE.replace(/overlay\/?$/, "") + DELAY
+          : PAGE.replace(/(index\.html)?$/, "overlay") + (DELAY && "/" + DELAY),
+      );
+  },
+};
 env.keys.addEventListener("keydown", e => {
   if (
     e.ctrlKey ||
@@ -68,49 +104,7 @@ env.keys.addEventListener("keydown", e => {
     showBoard(true);
     return;
   }
-  switch (e.key) {
-    case "Escape":
-      setFollow(null);
-      $("help").hidden = true;
-      $("settings").hidden = true;
-      break;
-    case "?":
-      toggleExclusive("help");
-      break;
-    case "k":
-      if (!OVERLAY) toggleExclusive("settings");
-      break;
-    case "x":
-      if (!OVERLAY) setOverkill(!overkillOn());
-      break;
-    case "j":
-      if (!OVERLAY) setLayer("jumps", !layerOn("jumps"));
-      break;
-    case "l":
-      if (!OVERLAY) setLayer("loadout", !layerOn("loadout"));
-      break;
-    case "h":
-      toggle("nohud");
-      break;
-    case "s":
-      toggle("noscore");
-      break;
-    case "e":
-      setSidebar(env.el.classList.contains("noside"));
-      break;
-    case "g":
-      if (!$("bgtoggle").hidden)
-        /** @type {HTMLButtonElement} */ (env.root.querySelector("#bgtoggle button:not(.on)")).click();
-      break;
-    case "o":
-      if (!env.component)
-        location.replace(
-          OVERLAY
-            ? PAGE.replace(/overlay\/?$/, "") + DELAY
-            : PAGE.replace(/(index\.html)?$/, "overlay") + (DELAY && "/" + DELAY),
-        );
-      break;
-  }
+  if (Object.hasOwn(KEYS, e.key)) KEYS[e.key]();
 });
 for (const cls of ["nohud", "noscore"]) {
   try {

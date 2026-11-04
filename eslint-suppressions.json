@@ -15,11 +15,6 @@
       "count": 7
     }
   },
-  "app/input.js": {
-    "complexity": {
-      "count": 1
-    }
-  },
   "app/main.js": {
     "complexity": {
       "count": 1
