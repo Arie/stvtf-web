@@ -365,7 +365,11 @@ sets the directory (default `backpack`, `/usr/share/stvtf/backpack` in the Docke
 
 ```
 cargo test
+npm test
 ```
+
+`npm test` runs the page's modules in Node (`test/js/`), with `test/js/setup.js` standing in
+for the browser: the feed, the HUD, the camera's helpers, the options and the embedding messages.
 
 The BSP tests run against the maps in `testdata/maps/` (`cp_process_f12`, `cp_gullywash_f9`,
 `pl_upward_f12`, `pl_swiftwater_final1`, `mge_training_v8_beta4b`, `cp_sunshine`). Each test skips
