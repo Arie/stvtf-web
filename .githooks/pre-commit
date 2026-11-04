@@ -1,5 +1,5 @@
 #!/bin/sh
-# Runs the same checks as CI before each commit.
+# Runs CI's quick checks before each commit: all but cargo test and cargo deny, which take minutes.
 # Enable once per clone with: ln -s ../../.githooks/pre-commit .git/hooks/pre-commit
 set -e
 cargo fmt --check || { echo "pre-commit: run 'cargo fmt' to fix formatting"; exit 1; }
@@ -8,3 +8,4 @@ cargo clippy --all-targets --quiet -- -D warnings
 npm run --silent format:check || { echo "pre-commit: run 'npm run format' to fix formatting"; exit 1; }
 npm run --silent lint
 npm run --silent typecheck
+npm test --silent >/dev/null || { npm test; exit 1; }

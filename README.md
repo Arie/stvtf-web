@@ -397,8 +397,8 @@ npm test                           # the page's modules in Node, with test/js/se
 `testdata/lines.jsonl` is one
 line of each kind the feed and chat show: Rust checks it against stvtf, the page's tests read it.
 
-`ln -s ../../.githooks/pre-commit .git/hooks/pre-commit` once per clone runs fmt, clippy, Prettier, ESLint and
-tsc before each commit (not `core.hooksPath`, which would replace any global git hooks). `git config blame.ignoreRevsFile .git-blame-ignore-revs`
+`ln -s ../../.githooks/pre-commit .git/hooks/pre-commit` once per clone runs fmt, clippy, Prettier, ESLint,
+tsc and the page tests before each commit (not `core.hooksPath`, which would replace any global git hooks). `git config blame.ignoreRevsFile .git-blame-ignore-revs`
 keeps formatting-only commits out of `git blame` (GitHub skips them already).
 
 CI (`.github/workflows/ci.yml`) runs these on every push to `main` and every pull request,
