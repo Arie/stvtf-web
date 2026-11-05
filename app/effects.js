@@ -1,6 +1,9 @@
 import { TEAM, OVERLAY, optOn, overlayUnit, uiScale, ctx, state, teamColour } from "./core.js";
 import { toScreen, screenAngle, px, playerRad } from "./view.js";
 import { SHOW_SHOTS, SHOW_BUILDINGS } from "./players.js";
+/** @typedef {import("../types/stream").Player} Player */
+/** @typedef {import("../types/stream").GameEvent} GameEvent */
+/** @typedef {import("../types/page").Effect} Effect */
 
 // World units: a hitscan tracer's length, and a sentry's range (its shot when the target is unknown).
 const SHOT_TRACER = 900,
@@ -10,16 +13,19 @@ const SHOW_KILLS = optOn("deaths");
 const SHOT_EFFECTS = new Set(["shot", "boom", "airblast"]),
   BUILDING_EFFECTS = new Set(["sentryshot", "upgrade", "repair"]);
 
+/** @param {string | undefined} team */
 function tracerColor(team) {
   if (team === "red") return "#ffb3a8";
   if (team === "blue") return "#b3dcff";
   return "#ffe9a8";
 }
+/** @param {GameEvent} ev */
 function damageColor(ev) {
   if (ev.crit) return "#7dff6a";
   if (ev.minicrit) return "#ffd04a";
   return "#ff5a4a";
 }
+/** @param {string} kind */
 function hitColor(kind) {
   if (kind === "blood") return "#c4302b";
   if (kind === "sparks") return "#ffd36a";
@@ -27,6 +33,7 @@ function hitColor(kind) {
 }
 
 // Each kind of effect, drawn k of the way through its life (with the alpha already set from it).
+/** @param {Effect} e */
 function drawShot(e) {
   const [x, y] = toScreen(e.ev.origin[0], e.ev.origin[1]);
   const a = screenAngle(e.ev.yaw),
@@ -38,6 +45,7 @@ function drawShot(e) {
   ctx.lineWidth = 1.2;
   ctx.stroke();
 }
+/** @param {Effect} e @param {number} k @param {Map<number, Player>} byId */
 function drawSentryShot(e, k, byId) {
   const [x, y] = toScreen(e.from[0], e.from[1]);
   const t = byId.get(e.target);
@@ -58,6 +66,7 @@ function drawSentryShot(e, k, byId) {
   ctx.fillStyle = "#ffd36a";
   ctx.fill();
 }
+/** @param {Effect} e @param {number} k */
 function drawBoom(e, k) {
   const [x, y] = toScreen(e.ev.origin[0], e.ev.origin[1]);
   // A quick flash, smaller than the blast radius: the crater stays behind as the lasting mark.
@@ -75,6 +84,7 @@ function drawBoom(e, k) {
   ctx.lineWidth = 1.5;
   ctx.stroke();
 }
+/** @param {Effect} e @param {number} k @param {Map<number, Player>} byId */
 function drawDamage(e, k, byId) {
   if (OVERLAY) return;
   const pos = byId.get(e.ev.victim)?.pos || e.pos;
@@ -90,6 +100,7 @@ function drawDamage(e, k, byId) {
   ctx.strokeText("-" + e.ev.amount, x, ty);
   ctx.fillText("-" + e.ev.amount, x, ty);
 }
+/** @param {Effect} e */
 function drawKill(e) {
   if (OVERLAY || !SHOW_KILLS) return;
   const v = e.ev.victim_pos;
@@ -116,6 +127,7 @@ function drawKill(e) {
   ctx.lineTo(x - s, y + s);
   ctx.stroke();
 }
+/** @param {Effect} e @param {number} k */
 function drawSpawn(e, k) {
   if (!e.pos) return;
   const [x, y] = toScreen(e.pos[0], e.pos[1]);
@@ -125,12 +137,13 @@ function drawSpawn(e, k) {
   ctx.lineWidth = 2;
   ctx.stroke();
 }
+/** @param {Effect} e @param {number} k @param {Map<number, Player>} byId */
 function drawAirblast(e, k, byId) {
   // A puff of air widening out in front of the pyro.
   const pl = byId.get(e.id);
   if (!pl?.pos) return;
   const [x, y] = toScreen(pl.pos[0], pl.pos[1]),
-    a = screenAngle(pl.yaw);
+    a = screenAngle(pl.yaw ?? 0);
   const rad = playerRad(),
     r = Math.max((40 + 220 * k) * state.view.scale, rad * (1.4 + 2 * k));
   ctx.beginPath();
@@ -147,6 +160,7 @@ function drawAirblast(e, k, byId) {
   ctx.stroke();
   ctx.lineCap = "butt";
 }
+/** @param {Effect} e @param {number} k @param {Map<number, Player>} byId */
 function drawHeal(e, k, byId) {
   const pos = byId.get(e.id)?.pos || e.ev.pos;
   if (!pos) return;
@@ -163,6 +177,7 @@ function drawHeal(e, k, byId) {
   ctx.strokeText(txt, tx, ty);
   ctx.fillText(txt, tx, ty);
 }
+/** @param {Effect} e @param {number} k */
 function drawUpgrade(e, k) {
   // A building going up a level: a burst of sparks, like the engineer's wrench.
   const [x, y] = toScreen(e.pos[0], e.pos[1]),
@@ -180,6 +195,7 @@ function drawUpgrade(e, k) {
   }
   ctx.lineCap = "butt";
 }
+/** @param {Effect} e @param {number} k */
 function drawRepair(e, k) {
   const [x, y] = toScreen(e.pos[0], e.pos[1]);
   ctx.font = `bold ${Math.round(12 * uiScale())}px system-ui`;
@@ -193,6 +209,7 @@ function drawRepair(e, k) {
   ctx.strokeText(txt, x, ty);
   ctx.fillText(txt, x, ty);
 }
+/** @param {Effect} e @param {number} k */
 function drawHit(e, k) {
   const [x, y] = toScreen(e.ev.pos[0], e.ev.pos[1]);
   const seed = Math.abs(Math.round(e.ev.pos[0] * 7 + e.ev.pos[1] * 13)),
@@ -218,6 +235,7 @@ function drawHit(e, k) {
   }
   ctx.lineCap = "butt";
 }
+/** @param {Effect} e @param {number} k */
 function drawCapBreak(e, k) {
   const [x, y] = toScreen(e.pos[0], e.pos[1]),
     half = OVERLAY ? overlayUnit() * 1.2 : px(110, 11);
@@ -227,6 +245,7 @@ function drawCapBreak(e, k) {
   ctx.lineWidth = 3;
   ctx.stroke();
 }
+/** @param {Effect} e @param {number} k @param {Map<number, Player>} byId */
 function drawUberPop(e, k, byId) {
   const m = byId.get(e.id);
   if (!m?.pos) return;
@@ -253,6 +272,7 @@ const EFFECTS = new Map([
   ["uber", drawUberPop],
 ]);
 
+/** @param {Map<number, Player>} byId */
 export function drawEffects(byId) {
   const now = performance.now();
   state.effects = state.effects.filter(e => now - e.t0 < e.life);

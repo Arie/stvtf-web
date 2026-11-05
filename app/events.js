@@ -6,6 +6,8 @@ import { layerOn } from "./layers.js";
 import { addScorch, nearFreshScorch } from "./overkill.js";
 import { noteSpawn } from "./spawns.js";
 /** @typedef {import("../types/stream").Player} Player */
+/** @typedef {import("../types/stream").GameEvent} GameEvent */
+/** @typedef {(id: number) => Player | undefined} Lookup A player by id. */
 
 // ---------- events become effects when playback reaches their tick
 // Playback can reach events late (a hidden tab holds the page back): effects are back-dated, so a late
@@ -40,8 +42,11 @@ const LATE_MS = 1500,
 // Jump trails kept at once.
 const MAX_TRAILS = 80;
 let eventTick = 0;
+/** @param {GameEvent} ev */
 const lagMs = ev => Math.max(0, (eventTick - ev.tick) * msPerTick);
+/** @param {GameEvent} ev @param {number} ms */
 const stale = (ev, ms) => lagMs(ev) > ms;
+/** @param {GameEvent} ev @param {Lookup} p @param {number} now */
 function buildingWork(ev, p, now) {
   if (stale(ev, LATE_MS) || (ev.type === "building_repair" && !layerOn("heals"))) return;
   const b = state.snaps.at(-1)?.buildings?.find(x => x.id === ev.id);
@@ -55,6 +60,7 @@ function buildingWork(ev, p, now) {
     });
 }
 // A blast jump's start opens a trail (closing one still open); its end closes the open one.
+/** @param {GameEvent} ev @param {Lookup} p @param {number} now */
 function blastJump(ev, p, now) {
   if (!layerOn("jumps") || stale(ev, LATE_MS)) return;
   const open = state.trails.find(t => t.id === ev.player && !t.end);
@@ -66,16 +72,17 @@ function blastJump(ev, p, now) {
   } else if (open) open.end = now;
 }
 // A pickup takes the nearest pack of its kind in reach, which shows as taken until it respawns.
+/** @param {GameEvent} ev @param {Lookup} p @param {number} now */
 function pickup(ev, p, now) {
   if (!layerOn("pickups") || stale(ev, LATE_MS)) return;
-  const pl = p(ev.player),
+  const pos = p(ev.player)?.pos,
     packs = state.geometry?.packs;
-  if (!pl?.pos || !packs) return;
+  if (!pos || !packs) return;
   let best = -1,
     bd = PACK_REACH;
   packs.forEach((k, i) => {
     if (k.kind !== ev.item) return;
-    const d = Math.hypot(k.pos[0] - pl.pos[0], k.pos[1] - pl.pos[1], (k.pos[2] - pl.pos[2]) * 0.5);
+    const d = Math.hypot(k.pos[0] - pos[0], k.pos[1] - pos[1], (k.pos[2] - pos[2]) * 0.5);
     if (d < bd) {
       bd = d;
       best = i;
@@ -84,10 +91,13 @@ function pickup(ev, p, now) {
   if (best < 0) return;
   state.packsTaken.set(best, now + PACK_RESPAWN_MS);
 }
+/** @param {GameEvent} ev @param {Lookup} p */
 const chatLine = (ev, p) => chat(ev, p);
+/** @param {GameEvent} ev @param {Lookup} p */
 const feedLine = (ev, p) => feedEvent(ev, p);
 // What each event type does when playback reaches it, given the event, the player lookup and the time
 // now. Any other type only goes to the feed.
+/** @type {{ [type: string]: (ev: GameEvent, p: Lookup, now: number) => void }} */
 const ON = {
   shot(ev, p, now) {
     state.effects.push({ kind: "shot", ev, team: p(ev.player)?.team, t0: now - lagMs(ev), life: LIFE.shot });
@@ -192,11 +202,12 @@ const ON = {
 /** @param {number} tick @param {Map<number, Player>} byId */
 export function fireEvents(tick, byId) {
   eventTick = tick;
+  /** @type {GameEvent[]} */
   const due = [];
   state.events = state.events.filter(ev => (ev.tick <= tick ? (due.push(ev), false) : true));
   const now = performance.now();
   for (const ev of due) {
-    const p = id => byId.get(id) || state.players.get(id);
+    const p = /** @param {number} id */ id => byId.get(id) || state.players.get(id);
     embedEvent(ev, byId);
     const on = Object.hasOwn(ON, ev.type) ? ON[ev.type] : feedLine;
     on(ev, p, now);

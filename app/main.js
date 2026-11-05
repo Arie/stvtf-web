@@ -19,6 +19,7 @@ const SHOW_BUILDINGS = optOn("buildings", !OVERLAY),
   SHOW_BEAMS = optOn("beams");
 
 // ---------- interpolation
+/** @param {number} a @param {number} b @param {number} t */
 function lerpAngle(a, b, t) {
   const d = ((b - a + 540) % 360) - 180;
   return a + d * t;
@@ -27,6 +28,7 @@ function lerpAngle(a, b, t) {
 function lerpPos(a, b, t) {
   return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
 }
+/** @param {number} tick */
 function frameAt(tick) {
   const s = state.snaps;
   if (!s.length) return null;
@@ -46,7 +48,7 @@ function frameAt(tick) {
     return {
       ...p,
       pos: lerpPos(q.pos, p.pos, t),
-      yaw: lerpAngle(q.yaw, p.yaw, t),
+      yaw: lerpAngle(q.yaw ?? 0, p.yaw ?? 0, t),
       hp: t < 0.5 ? q.hp : p.hp,
     };
   });
@@ -66,6 +68,7 @@ function frameAt(tick) {
   });
   return { snap: t < 0.5 ? a : b, players, projectiles };
 }
+/** @typedef {NonNullable<ReturnType<typeof frameAt>>} Frame A snapshot with its players and projectiles moved to a tick. */
 
 // At most 60 fps: the data comes about 17 times a second, and a 120 or 240 Hz screen would otherwise
 // redraw the whole map 2 to 4 times as often for nothing.
@@ -78,6 +81,7 @@ const MIN_HEADING_STEP = 4;
 let lastDraw = -Infinity,
   lastRefresh = 0,
   refreshMs = FRAME_MS;
+/** @param {number} now */
 function frame(now) {
   const gap = now - lastRefresh;
   lastRefresh = now;
@@ -111,6 +115,7 @@ function draw() {
   if (f) drawFrame(f, tick);
 }
 // Before the background: frame the map, follow the action or a player, and show the score.
+/** @param {Frame} f @param {number} tick */
 function aim(f, tick) {
   // Frame once the map's spawn points are in (or known to be missing).
   if (!state.framed && state.mapData) frameMap();
@@ -126,6 +131,7 @@ function aim(f, tick) {
   embedState(shownScore(f.snap) ?? null, f.players);
 }
 // Everything on the map, bottom up, over its background.
+/** @param {Frame} f @param {number} tick */
 function drawFrame(f, tick) {
   const byId = new Map(f.players.map(p => [p.id, p]));
   fireEvents(tick, byId);

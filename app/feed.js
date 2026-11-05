@@ -4,27 +4,37 @@ import { MEDIGUN_NAME, mmss } from "./hud.js";
 import { layerOn } from "./layers.js";
 /** @typedef {import("../types/stream").GameEvent} GameEvent */
 /** @typedef {(id: number) => { id?: number; name: string; team: string } | null | undefined} Who A player by id, or who they were. */
+/** @typedef {{ icon: string | null; streak: number; airshot: boolean }} KillDetails */
+/** @typedef {{ x: number; y: number; w: number; h: number }} IconBox Where a kill icon is in the sprite. */
 
+/** @param {unknown} s */
 export function esc(s) {
-  return String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+  return String(s ?? "").replace(
+    /[&<>"]/g,
+    c => /** @type {{ [c: string]: string }} */ ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c],
+  );
 }
+/** @param {ReturnType<Who>} pl */
 function who(pl) {
   return pl ? `<span class="t-${esc(pl.team)}">${esc(pl.name)}</span>` : "world";
 }
 // Kill icons from tf2-icons, named like the weapons in server logs and kill events: where each is
 // in the sprite.
+/** @type {Map<string, IconBox>} */
 export const KILLICONS = new Map();
 export const killiconsLoaded = fetch(asset("killicons.css"))
   .then(r => r.text())
   .then(css => {
     for (const [, name, rule] of css.matchAll(/\.killicon-([A-Za-z0-9_]+)\s*\{([^}]*)\}/g)) {
-      const px = prop => [...(rule.match(new RegExp(`${prop}:([^;]*)`))?.[1] ?? "").matchAll(/-?\d+/g)].map(Number);
+      const px = /** @param {string} prop */ prop =>
+        [...(rule.match(new RegExp(`${prop}:([^;]*)`))?.[1] ?? "").matchAll(/-?\d+/g)].map(Number);
       const [w] = px("width"),
         [h] = px("height"),
         [x = 0, y = 0] = px("background-position");
       KILLICONS.set(name, { x: -x, y: -y, w, h });
     }
   });
+/** @param {GameEvent} ev */
 const killIcon = ev => {
   const w = ev.weapon || "";
   return (
@@ -37,24 +47,29 @@ const killIcon = ev => {
     ].find(n => n && KILLICONS.has(n)) || null
   );
 };
-/** @param {GameEvent} ev */
+/** @param {GameEvent} ev @param {string | null} icon */
 function weaponIcon(ev, icon) {
   const crit = ev.crit ? " crit" : "";
   return icon
     ? `<span class="killicon killicon-${icon}${crit}" title="${esc(ev.weapon)}"></span>`
     : `<span class="w">${esc(ev.weapon)}</span>`;
 }
+/** @type {{ [object: string]: string }} */
 const BUILDING = { sentry: "Sentry", dispenser: "Dispenser", teleporter: "Teleporter", sapper: "Sapper" };
+/** @type {{ [kind: string]: string }} */
 const BANNER = { buff_banner: "Buff Banner", battalions_backup: "Battalion's Backup", concheror: "Concheror" };
 const PROJECTILE_WEAPON =
   /rocket|quake_rl|directhit|liberty|blackbox|airstrike|mangler|dumpster|pipe|bomb|loch|cannon|resistance|huntsman|arrow|crossbow|flare|detonator|scorch/;
+/** @param {string | null | undefined} t */
 export function teamName(t) {
   if (t === "red") return "RED";
   return t === "blue" ? "BLU" : "";
 }
+/** @param {GameEvent} ev */
 export const pointName = ev => (ev.name && !ev.name.startsWith("#") ? ev.name : "point " + (ev.point + 1));
 // A team's flag is its intelligence (Mann vs. Machine's bomb is the robots'); a neutral one is special delivery's Australium, player
 // destruction's pickups (each player carries their own) or a ball.
+/** @param {string | null | undefined} team */
 export function flagName(team) {
   if (state.map?.startsWith("mvm_")) return "the bomb";
   if (team === "red" || team === "blue") return `the ${teamName(team)} intelligence`;
@@ -62,6 +77,7 @@ export function flagName(team) {
   if (state.map?.startsWith("pd_")) return "pickups";
   return "the ball";
 }
+/** @param {string} cls @param {string} text */
 const chip = (cls, text) => `<span class="chip ${cls}">${text}</span>`;
 
 export const CHAT_TYPES = new Set(["chat", "voice_command", "server_text"]);
@@ -79,6 +95,7 @@ const VOICE = [
   ],
   ["Help!", "Battle cry", "Cheers", "Jeers", "Positive", "Negative", "Nice shot", "Good job"],
 ];
+/** @type {{ [sound: string]: string }} */
 const ANNOUNCER = {
   "Announcer.RoundEnds5minutes": "5 minutes remain",
   "Announcer.RoundEnds2minutes": "2 minutes remain",
@@ -92,8 +109,10 @@ const ANNOUNCER = {
   "Announcer.RoundEnds2seconds": "2 seconds remain",
   "Announcer.RoundEnds1seconds": "1 second remains",
 };
+/** @type {string[]} */
 let voteOptions = [];
 // What a call vote is about, from its localisation token and argument.
+/** @type {{ [issue: string]: (d: string) => string }} */
 const VOTE_ISSUE = {
   "#TF_vote_nextlevel": d => `next map ${d}`,
   "#TF_vote_changelevel": d => `change the map to ${d}`,
@@ -106,23 +125,28 @@ const VOTE_ISSUE = {
   "#TF_vote_extendlevel": () => "extend the map",
   "#TF_vote_td_start_round": () => "start the round",
 };
+/** @param {GameEvent} ev */
 const voteIssue = ev =>
   (Object.hasOwn(VOTE_ISSUE, ev.issue)
     ? VOTE_ISSUE[ev.issue]
-    : d => [String(ev.issue ?? "").replace(/^#/, ""), d].filter(Boolean).join(" "))(ev.details || "");
+    : /** @param {string} d */ d => [String(ev.issue ?? "").replace(/^#/, ""), d].filter(Boolean).join(" "))(
+    ev.details || "",
+  );
 
 // Kills by one player within 10 s of each other count as a streak: 2K, 3K, …
 const STREAK_MS = 10000;
+/** @type {Map<number, { tick: number; n: number }>} */
 const streaks = new Map();
 /** @param {GameEvent} ev */
 function streak(ev) {
   const s = streaks.get(ev.attacker),
     gap = s ? ev.tick - s.tick : -1;
-  const n = gap >= 0 && gap * msPerTick <= STREAK_MS ? s.n + 1 : 1;
+  const n = s && gap >= 0 && gap * msPerTick <= STREAK_MS ? s.n + 1 : 1;
   streaks.set(ev.attacker, { tick: ev.tick, n });
   return n;
 }
 // A kill's icon, streak and airshot, worked out once for the feed and the embedding page.
+/** @type {WeakMap<GameEvent, KillDetails>} */
 const killed = new WeakMap();
 /** @param {GameEvent} ev @param {Who} p */
 export function killDetails(ev, p) {
@@ -134,11 +158,11 @@ export function killDetails(ev, p) {
       airshot: Boolean(ev.airborne && PROJECTILE_WEAPON.test(ev.weapon || "")),
     });
   }
-  return killed.get(ev);
+  return /** @type {KillDetails} */ (killed.get(ev));
 }
 
 // Players who have since left are no longer known by id.
-/** @param {Who} p */
+/** @param {Who} p @returns {(id: number | null | undefined) => string} */
 const playerName = p => id => {
   if (id == null) return "";
   return p(id)
@@ -146,9 +170,10 @@ const playerName = p => id => {
     : '<span class="who"><span class="w">?</span></span>';
 };
 // "+" and the assister, when there was one.
+/** @param {GameEvent} ev @param {(id: number) => string} name */
 const assist = (ev, name) => (ev.assister != null ? "+" + name(ev.assister) : "");
 // The flag's rows, by what happened to it.
-/** @param {GameEvent} ev @param {Who} p */
+/** @param {GameEvent} ev @param {Who} p @param {(id: number) => string} name */
 function flagRow(ev, p, name) {
   const what = esc(flagName(ev.team));
   if (ev.event === "captured")
@@ -367,9 +392,10 @@ export function chat(ev, p) {
 }
 // A chat line in the colours its sender gave it (TF2's colour codes, as plugins use them):
 // `team` is the sender's team colour, null the line's own colour.
+/** @param {GameEvent} ev @param {ReturnType<Who>} pl @param {RegExp} [drop] */
 function coloured(ev, pl, drop) {
   if (!ev.parts?.length) return esc(String(ev.text ?? "").replace(drop ?? /$^/, ""));
-  return ev.parts
+  return /** @type {{ c?: string | null; t: string }[]} */ (ev.parts)
     .map(({ c, t }, i) => {
       const text = esc(i === 0 && drop ? t.replace(drop, "") : t);
       if (c === "team") return pl ? `<span class="t-${esc(pl.team)}">${text}</span>` : text;
@@ -380,11 +406,14 @@ function coloured(ev, pl, drop) {
 // Rows kept in the feed and the chat, and how long a banner shows.
 const ROWS_KEPT = 60,
   BANNER_MS = 3500;
+/** @param {HTMLElement} box @param {Element} el */
 function prepend(box, el) {
   box.prepend(el);
-  while (box.children.length > ROWS_KEPT) box.lastChild.remove();
+  while (box.children.length > ROWS_KEPT) /** @type {ChildNode} */ (box.lastChild).remove();
 }
+/** @type {ReturnType<typeof setTimeout> | undefined} */
 let bannerTimer;
+/** @param {string} text @param {string | null | undefined} team */
 export function banner(text, team) {
   const b = $("banner");
   b.textContent = text;

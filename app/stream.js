@@ -20,6 +20,8 @@ import { detailNeeded } from "./layers.js";
 import { cartState } from "./objectives.js";
 import { loadMap } from "./view.js";
 /** @typedef {import("../types/stream").GameEvent} GameEvent */
+/** @typedef {import("../types/stream").StreamMessage} StreamMessage */
+/** @typedef {import("../types/stream").StatusLine} StatusLine */
 
 // Ticks going back this far are a new map or a server restart, not jitter.
 const TICK_RESET = 200;
@@ -31,6 +33,7 @@ const SNAPS_KEPT = 60;
 const EVENTS_URL = asset(PAGE.replace(/(overlay\/?|index\.html)?$/, "") + "events");
 // With a delay, everything from the stream is handled that much later, in the order it came
 // (timers with the same delay run in order): map changes and the feed so far as well as snapshots.
+/** @param {() => void} fn */
 const later = fn => (DELAY_MS ? setTimeout(fn, DELAY_MS) : fn());
 // Every (re)connect starts with the whole feed and chat so far: replace what is shown rather
 // than adding it twice (a deploy or a network blip reconnects).
@@ -60,6 +63,7 @@ export function openStream() {
 }
 
 // How long ago, from seconds: in seconds, minutes and seconds, or hours and minutes.
+/** @param {number} age */
 function ago(age) {
   if (age < 60) return `${Math.floor(age)}s`;
   if (age < 3600) return `${Math.floor(age / 60)}m ${Math.floor(age % 60)}s`;
@@ -80,6 +84,7 @@ setInterval(() => {
 // delayed overlay is not an empty panel until then.
 /** @type {number | null} */
 let holdUntil = null;
+/** @param {StreamMessage} m */
 function waiting(m) {
   const empty = $("empty");
   if (empty.style.display === "none") return;
@@ -90,10 +95,11 @@ function waiting(m) {
       countDown();
     }
   } else if (m.type === "status" && holdUntil == null) {
-    empty.textContent = waitingFor(m);
+    empty.textContent = waitingFor(/** @type {StatusLine} */ (m));
   }
 }
 // What a status line says SourceTV is up to, while there is no data yet.
+/** @param {StatusLine} m */
 function waitingFor(m) {
   if (m.state === "full") return "SourceTV has just started: its first data comes tv_delay after that…";
   return m.reason ? `SourceTV ${m.state.replaceAll("_", " ")}: ${m.reason}` : "connecting to SourceTV…";
@@ -112,7 +118,7 @@ function countDown() {
 function handle(m) {
   // Feed events from before the page opened: straight into the feed and chat, no map effects.
   if (m.history) {
-    const p = id => state.players.get(id) || m.names?.[id];
+    const p = /** @param {number} id */ id => state.players.get(id) || m.names?.[id];
     if (CHAT_TYPES.has(m.type)) chat(m, p);
     else killiconsLoaded.finally(() => feedEvent(m, p));
     return;
