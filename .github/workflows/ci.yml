@@ -68,7 +68,7 @@ jobs:
         with:
           path: stvtf-web
           persist-credentials: false
-      - uses: jdx/mise-action@fc42bcc7ddbf51124c30f95a877a0c5168a3bfde # v5.2.1
+      - uses: jdx/mise-action@f5be966e4a917d54244728e6a5fdcd1d93a35e6c # v5.2.6
         with:
           working_directory: stvtf-web
       - run: script/test -v -t shellcheck,actionlint,zizmor,hadolint
@@ -139,7 +139,7 @@ jobs:
           ssh-key: ${{ secrets.STVMAP_DEPLOY_KEY }}
           persist-credentials: false
       - run: rustup toolchain install
-      - uses: taiki-e/install-action@86f7a0ffb25f40114606501a311ebcfaf882ea32 # v2.88.0
+      - uses: taiki-e/install-action@682ce6c3c696a4cd5168a05f98e51aa02b877941 # v2.89.1
         with:
           tool: cargo-deny
       - run: script/test -v -t cargo-deny
