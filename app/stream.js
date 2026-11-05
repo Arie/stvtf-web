@@ -124,50 +124,60 @@ function handle(m) {
     return;
   }
   switch (m.type) {
-    case "server": {
-      const sameMap = m.map === state.map;
-      if (!sameMap) {
-        if (state.map) feedEvent({ type: "map", map: m.map, tick: state.lastTick }, () => null);
-        loadMap(m.map);
-        embedMap(m.map);
-      }
-      setTickInterval(m.tick_interval);
-      // The same map again (a reconnect, a signon restart) keeps who you are following.
-      resetMatch(sameMap);
+    case "server":
+      onServer(/** @type {import("../types/stream").ServerLine} */ (/** @type {unknown} */ (m)));
       break;
-    }
     case "status":
-      embedStatus(m.state);
-      if (m.state === "map_change") resetMatch();
-      {
-        const line = /** @type {import("../types/stream").StatusLine} */ (/** @type {unknown} */ (m));
-        const [text, why] = statusText($("status").textContent ?? "", line);
-        // A drop while waiting keeps the reason of the last one in the tooltip.
-        setStatus(text, text === "live", why || ($("status").textContent === text ? $("status").title : ""));
-      }
+      onStatus(/** @type {import("../types/stream").StatusLine} */ (/** @type {unknown} */ (m)));
       break;
     case "data_age":
       state.lastData = performance.now() - m.ms;
       break;
-    case "snapshot": {
-      const snap = /** @type {import("../types/stream").Snapshot} */ (m);
-      if (snap.tick < state.lastTick - TICK_RESET) resetMatch();
-      state.lastTick = snap.tick;
-      state.lastData = performance.now();
-      if ($("status").textContent !== "live") setStatus("live", true);
-      observeTick(snap.tick);
-      state.snaps.push(snap);
-      if (state.snaps.length > SNAPS_KEPT) state.snaps.shift();
-      for (const p of snap.players) state.players.set(p.id, p);
-      $("empty").style.display = "none";
-      $("empty").classList.remove("holding");
+    case "snapshot":
+      onSnapshot(/** @type {import("../types/stream").Snapshot} */ (m));
       break;
-    }
     case "world":
       break;
     default:
       state.events.push(m);
   }
+}
+
+// The server line starts every (re)connect, and follows a map change.
+/** @param {import("../types/stream").ServerLine} m */
+function onServer(m) {
+  const sameMap = m.map === state.map;
+  if (!sameMap) {
+    if (state.map) feedEvent({ type: "map", map: m.map, tick: state.lastTick }, () => null);
+    loadMap(m.map);
+    embedMap(m.map);
+  }
+  setTickInterval(m.tick_interval);
+  // The same map again (a reconnect, a signon restart) keeps who you are following.
+  resetMatch(sameMap);
+}
+
+/** @param {import("../types/stream").StatusLine} m */
+function onStatus(m) {
+  embedStatus(m.state);
+  if (m.state === "map_change") resetMatch();
+  const [text, why] = statusText($("status").textContent ?? "", m);
+  // A drop while waiting keeps the reason of the last one in the tooltip.
+  setStatus(text, text === "live", why || ($("status").textContent === text ? $("status").title : ""));
+}
+
+/** @param {import("../types/stream").Snapshot} snap */
+function onSnapshot(snap) {
+  if (snap.tick < state.lastTick - TICK_RESET) resetMatch();
+  state.lastTick = snap.tick;
+  state.lastData = performance.now();
+  if ($("status").textContent !== "live") setStatus("live", true);
+  observeTick(snap.tick);
+  state.snaps.push(snap);
+  if (state.snaps.length > SNAPS_KEPT) state.snaps.shift();
+  for (const p of snap.players) state.players.set(p.id, p);
+  $("empty").style.display = "none";
+  $("empty").classList.remove("holding");
 }
 
 // A map change (or a signon restart) starts from nothing: drop everything from the old map.
