@@ -1,10 +1,11 @@
 //! Displacements (terrain): the grid of points each one bends its base face into, which is
 //! where the ground really is.
 
-use super::{
-    FACE_SIZE, LUMP_DISP_VERTS, LUMP_DISPINFO, LUMP_MODELS, MODEL_FIRST_FACE, MODEL_NUM_FACES, SURFEDGE_SIZE, Vec3, World, f32_at, i32_at,
-    index_at, lump, vec3_at,
+use super::format::{
+    FACE_SIZE, LUMP_DISP_VERTS, LUMP_DISPINFO, LUMP_MODELS, MODEL_FIRST_FACE, MODEL_NUM_FACES, SURFEDGE_SIZE, f32_at, i32_at, index_at,
+    lump, vec3_at,
 };
+use super::{Vec3, World};
 use anyhow::{Result, anyhow, bail};
 
 /// `ddispinfo_t`: its size and the fields read, and `dDispVert`: its size and its direction and distance.
@@ -155,8 +156,9 @@ fn read(info: &[u8], verts: &[u8], disp: usize, face: &super::Face, base: [Vec3;
 mod tests {
     use super::*;
     use crate::bsp::contains_point as contains;
+    use crate::bsp::format::{LUMP_LENGTH, lump_entry};
+    use crate::bsp::geometry;
     use crate::bsp::tests::{swiftwater, swiftwater_built};
-    use crate::bsp::{LUMP_LENGTH, geometry, lump_entry};
     use std::collections::HashMap;
 
     /// The share of boundary grid points that other displacements share (same x, y to the unit)

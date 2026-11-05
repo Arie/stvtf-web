@@ -10,10 +10,11 @@ use base64::engine::general_purpose::STANDARD;
 use serde::Serialize;
 
 use super::displacement::Displacement;
-use super::{
-    Bounds, FLOOR_MIN_NORMAL_Z, LUMP_BRUSHES, LUMP_BRUSHSIDES, LUMP_LEAFBRUSHES, LUMP_LEAFS, LUMP_MODELS, LUMP_NODES, LUMP_PLANES,
-    PLANE_DIST, PLANE_SIZE, Vec3, crosses, f32_at, i32_at, index_at, lump, u16_at, vec3_at,
+use super::format::{
+    LUMP_BRUSHES, LUMP_BRUSHSIDES, LUMP_LEAFBRUSHES, LUMP_LEAFS, LUMP_MODELS, LUMP_NODES, LUMP_PLANES, PLANE_DIST, PLANE_SIZE, f32_at,
+    i32_at, index_at, lump, u16_at, vec3_at,
 };
+use super::{Bounds, FLOOR_MIN_NORMAL_Z, Vec3, crosses};
 
 /// Where the BSP's version is, and the only one whose leaf layout is read here.
 const BSP_VERSION: usize = 4;
@@ -678,8 +679,9 @@ fn within(pts: &[[f64; 2]], q: [f64; 2]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::bsp::format::{LUMP_LENGTH, lump_entry};
     use crate::bsp::tests::{map, process, process_built, swiftwater_built};
-    use crate::bsp::{Bounds, LUMP_LENGTH, contains_point as contains, geometry, lump_entry};
+    use crate::bsp::{Bounds, contains_point as contains, geometry};
 
     #[test]
     fn process_keeps_the_playable_floors_only() {

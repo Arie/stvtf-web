@@ -4,83 +4,25 @@
 //! the 3D skybox out of the picture.
 
 use anyhow::{Result, anyhow, bail};
+use format::{
+    EDGE_SIZE, FACE_DISPINFO, FACE_FIRST_EDGE, FACE_NUM_EDGES, FACE_SIDE, FACE_SIZE, FACE_TEXINFO, LUMP_EDGES, LUMP_ENTITIES, LUMP_FACES,
+    LUMP_MODELS, LUMP_PLANES, LUMP_SURFEDGES, LUMP_TEXDATA, LUMP_TEXDATA_STRING_DATA, LUMP_TEXDATA_STRING_TABLE, LUMP_TEXINFO,
+    LUMP_VERTEXES, MODEL_FIRST_FACE, MODEL_MAXS, MODEL_MINS, MODEL_NUM_FACES, MODEL_SIZE, PLANE_DIST, PLANE_SIZE, SKIP_FLAGS,
+    STRING_TABLE_ENTRY, SURFEDGE_SIZE, TEXDATA_NAME, TEXDATA_SIZE, TEXINFO_FLAGS, TEXINFO_SIZE, TEXINFO_TEXDATA, U16_SIZE, VERTEX_SIZE,
+    bytes, f32_at, i16_at, i32_at, index_at, lump, u16_at, vec3_at,
+};
 use material::Kind;
 use serde::Serialize;
 use stvtf::output::{PickupItem, PickupSize, Team, round1};
 
 mod displacement;
+mod format;
 mod material;
 mod reach;
 mod track;
 
-const LUMP_ENTITIES: usize = 0;
-const LUMP_PLANES: usize = 1;
-const LUMP_TEXDATA: usize = 2;
-const LUMP_VERTEXES: usize = 3;
-const LUMP_NODES: usize = 5;
-const LUMP_TEXINFO: usize = 6;
-const LUMP_FACES: usize = 7;
-const LUMP_LEAFS: usize = 10;
-const LUMP_EDGES: usize = 12;
-const LUMP_SURFEDGES: usize = 13;
-const LUMP_MODELS: usize = 14;
-const LUMP_LEAFBRUSHES: usize = 17;
-const LUMP_BRUSHES: usize = 18;
-const LUMP_BRUSHSIDES: usize = 19;
-const LUMP_DISPINFO: usize = 26;
-const LUMP_DISP_VERTS: usize = 33;
-const LUMP_TEXDATA_STRING_DATA: usize = 43;
-const LUMP_TEXDATA_STRING_TABLE: usize = 44;
-
-/// `SURF_*` texture flags of faces that are not drawn as part of the world.
-const SURF_SKY2D: i32 = 0x2;
-const SURF_SKY: i32 = 0x4;
-const SURF_TRIGGER: i32 = 0x40;
-const SURF_NODRAW: i32 = 0x80;
-const SURF_HINT: i32 = 0x100;
-const SURF_SKIP: i32 = 0x200;
-const SKIP_FLAGS: i32 = SURF_SKY2D | SURF_SKY | SURF_TRIGGER | SURF_NODRAW | SURF_HINT | SURF_SKIP;
 /// Room around the points, packs and spawns that frame the playable area.
 const PAD: f32 = 1536.0;
-// The lumps read here are under 2 MB on real maps; a crafted one could otherwise claim 512 MB
-// unpacked for each, from a few KB of LZMA.
-const MAX_LUMP: usize = 16 << 20;
-/// The lump directory follows the `VBSP` id and version: offset, length, version and id per lump.
-const LUMP_DIRECTORY: usize = 8;
-const LUMP_ENTRY: usize = 16;
-const LUMP_OFFSET: usize = 0;
-const LUMP_LENGTH: usize = 4;
-/// Valve's LZMA lump header: `LZMA`, actual size (u32), packed size (u32), 5 property bytes.
-const LZMA_MAGIC: &[u8] = b"LZMA";
-const LZMA_ACTUAL_SIZE: usize = 4;
-const LZMA_PROPERTIES: usize = 12;
-const LZMA_HEADER: usize = 17;
-/// The sizes of the fields read.
-const F32_SIZE: usize = 4;
-const U16_SIZE: usize = 2;
-/// Record sizes and field offsets of the lumps read (`dplane_t`, `dface_t`, …).
-const PLANE_SIZE: usize = 20;
-const VERTEX_SIZE: usize = 12;
-const EDGE_SIZE: usize = 4;
-const SURFEDGE_SIZE: usize = 4;
-const TEXINFO_SIZE: usize = 72;
-const TEXINFO_FLAGS: usize = 64;
-const TEXINFO_TEXDATA: usize = 68;
-const TEXDATA_SIZE: usize = 32;
-const TEXDATA_NAME: usize = 12;
-const STRING_TABLE_ENTRY: usize = 4;
-const FACE_SIZE: usize = 56;
-const FACE_SIDE: usize = 2;
-const FACE_FIRST_EDGE: usize = 4;
-const FACE_NUM_EDGES: usize = 8;
-const FACE_TEXINFO: usize = 10;
-const FACE_DISPINFO: usize = 12;
-const PLANE_DIST: usize = 12;
-const MODEL_SIZE: usize = 48;
-const MODEL_MINS: usize = 0;
-const MODEL_MAXS: usize = 12;
-const MODEL_FIRST_FACE: usize = 40;
-const MODEL_NUM_FACES: usize = 44;
 /// A face is a floor when its normal points up at least this much (within about 45°), a wall
 /// when it is within this of horizontal (within about 17° of upright).
 const FLOOR_MIN_NORMAL_Z: f32 = 0.7;
@@ -220,62 +162,6 @@ impl Bounds {
     fn rounded(&self) -> (Position, Position) {
         (self.lo.map(round1), self.hi.map(round1))
     }
-}
-
-// Maps come from fastdl and can be broken, so every read is checked: a panic would take down
-// the request and poison the lock around map loading.
-fn bytes<const N: usize>(b: &[u8], o: usize) -> Result<[u8; N]> {
-    o.checked_add(N).and_then(|end| b.get(o..end)).and_then(|s| s.try_into().ok()).ok_or_else(|| anyhow!("BSP truncated at {o}"))
-}
-fn u16_at(b: &[u8], o: usize) -> Result<u16> {
-    Ok(u16::from_le_bytes(bytes(b, o)?))
-}
-fn i16_at(b: &[u8], o: usize) -> Result<i16> {
-    Ok(i16::from_le_bytes(bytes(b, o)?))
-}
-fn i32_at(b: &[u8], o: usize) -> Result<i32> {
-    Ok(i32::from_le_bytes(bytes(b, o)?))
-}
-fn f32_at(b: &[u8], o: usize) -> Result<f32> {
-    Ok(f32::from_le_bytes(bytes(b, o)?))
-}
-/// Three floats in a row: a point or a direction.
-fn vec3_at(b: &[u8], o: usize) -> Result<Vec3> {
-    Ok([f32_at(b, o)?, f32_at(b, o + F32_SIZE)?, f32_at(b, o + 2 * F32_SIZE)?])
-}
-/// An offset, count or index stored as an i32; negative ones are an error.
-fn index_at(b: &[u8], o: usize) -> Result<usize> {
-    let v = i32_at(b, o)?;
-    usize::try_from(v).map_err(|_| anyhow!("negative index {v} at {o}"))
-}
-
-/// Where lump `index`'s entry is in the lump directory.
-fn lump_entry(index: usize) -> usize {
-    LUMP_DIRECTORY + LUMP_ENTRY * index
-}
-
-fn lump(data: &[u8], index: usize) -> Result<Vec<u8>> {
-    let h = lump_entry(index);
-    let (ofs, len) = (index_at(data, h + LUMP_OFFSET)?, index_at(data, h + LUMP_LENGTH)?);
-    let Some(raw) = data.get(ofs..ofs + len) else { bail!("lump {index} out of range") };
-    if len > MAX_LUMP {
-        bail!("lump {index}: {len} bytes");
-    }
-    if !raw.starts_with(LZMA_MAGIC) {
-        return Ok(raw.to_vec());
-    }
-    let actual = u32::from_le_bytes(bytes(raw, LZMA_ACTUAL_SIZE)?) as usize;
-    if actual > MAX_LUMP {
-        bail!("lump {index}: {actual} bytes unpacked");
-    }
-    let props: [u8; 5] = bytes(raw, LZMA_PROPERTIES)?;
-    let mut alone = props.to_vec();
-    alone.extend_from_slice(&(actual as u64).to_le_bytes());
-    alone.extend_from_slice(&raw[LZMA_HEADER..]);
-    let mut out = Vec::with_capacity(actual);
-    lzma_rs::lzma_decompress(&mut &alone[..], &mut out).map_err(|e| anyhow!("lump {index}: {e:?}"))?;
-    out.truncate(actual);
-    Ok(out)
 }
 
 /// One entity of the entity lump: its keys and values.
@@ -823,6 +709,10 @@ pub(super) fn contains_point(p: &[f64], x: f64, y: f64) -> bool {
 
 #[cfg(test)]
 pub(crate) mod tests {
+    use super::format::{
+        LUMP_BRUSHES, LUMP_BRUSHSIDES, LUMP_DISP_VERTS, LUMP_DISPINFO, LUMP_LEAFBRUSHES, LUMP_LEAFS, LUMP_LENGTH, LUMP_NODES, LUMP_OFFSET,
+        LZMA_HEADER, LZMA_MAGIC, MAX_LUMP, lump_entry,
+    };
     use super::*;
     use std::sync::OnceLock;
 
