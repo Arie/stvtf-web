@@ -339,7 +339,7 @@ export function drawBackground(r) {
   const [cx, cy] = toScreen((lo[0] + hi[0]) / 2, (lo[1] + hi[1]) / 2);
   const w = (hi[0] - lo[0]) * state.view.scale,
     h = (hi[1] - lo[1]) * state.view.scale;
-  const [pw, ph] = pic instanceof HTMLImageElement ? [pic.naturalWidth, pic.naturalHeight] : [pic.width, pic.height];
+  const [pw, ph] = "naturalWidth" in pic ? [pic.naturalWidth, pic.naturalHeight] : [pic.width, pic.height];
   const t = `translate(${cx}px, ${cy}px) rotate(${-state.view.rot}rad) scale(${w / pw}, ${h / ph}) translate(-50%, -50%)`;
   if (t !== bgTransform) {
     pic.style.transform = t;
