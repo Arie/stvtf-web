@@ -20,7 +20,8 @@ export type Geometry = {
 
 /** demos.tf's overview image and the map box it covers. */
 export type Overview = {
-  img: CanvasImageSource;
+  /** The image, or a canvas made from it. */
+  img: HTMLImageElement | HTMLCanvasElement;
   b: { boundary_min: { x: number; y: number }; boundary_max: { x: number; y: number } };
 };
 

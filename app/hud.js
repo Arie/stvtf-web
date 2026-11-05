@@ -52,6 +52,7 @@ function setStyle(el, prop, value) {
   if (el.style[prop] !== value) el.style[prop] = value;
 }
 
+/** @type {{ [item: string]: string } | null} */
 let itemImages = null;
 /** @param {Player} p */
 function weaponImage(p) {

@@ -1,6 +1,7 @@
 import { $, OVERLAY, OPT, overlayUnit, canvas, uiScale, ctx, context2d, state, canvasSize } from "./core.js";
 import { env, asset } from "./env.js";
 import { renderGeometry } from "./geometry.js";
+/** @typedef {import("../types/page").Overview} Overview */
 
 // The HUD's player columns (shown on screens wider than this) and the scoreboard, in CSS pixels.
 const HUD_MIN_WIDTH = 800,
@@ -15,17 +16,13 @@ const BOUNDS_FIXES = {
   pl_upward: { boundary_min: { x: -2761, y: -4412 }, boundary_max: { x: 2961, y: 2112 } },
   koth_ashville_rc1: { boundary_min: { x: -1491, y: -3903 }, boundary_max: { x: 1433, y: 3907 } },
 };
+/** @type {Promise<{ [map: string]: Overview["b"] }> | null} */
 let boundaries = null;
-async function demostfBoundaries() {
-  if (!boundaries) {
-    try {
-      boundaries = { ...(await (await fetch(asset("overview/boundaries.json"))).json()), ...BOUNDS_FIXES };
-    } catch {
-      boundaries = {};
-    }
-  }
-  return boundaries;
-}
+const demostfBoundaries = () =>
+  (boundaries ??= fetch(asset("overview/boundaries.json"))
+    .then(r => r.json())
+    .then(j => ({ ...j, ...BOUNDS_FIXES }))
+    .catch(() => ({})));
 // demos.tf's own lookup: exact name, then names with version suffixes trimmed.
 export function demostfAlias(map, known) {
   const trim = m => {
@@ -314,10 +311,12 @@ const bgBox = $("bg");
 const BG_OPACITY = (v => (Number.isFinite(v) ? String(Math.max(0, Math.min(1, v))) : null))(
   Number(OPT.get("bgopacity") || NaN),
 );
+/** @type {HTMLImageElement | HTMLCanvasElement | null} */
 let bgShown = null,
   bgTransform = "";
 export function drawBackground(r) {
   ctx.clearRect(0, 0, r.width, r.height);
+  /** @type {HTMLImageElement | HTMLCanvasElement | null} */
   let pic = null,
     lo,
     hi;
@@ -340,8 +339,7 @@ export function drawBackground(r) {
   const [cx, cy] = toScreen((lo[0] + hi[0]) / 2, (lo[1] + hi[1]) / 2);
   const w = (hi[0] - lo[0]) * state.view.scale,
     h = (hi[1] - lo[1]) * state.view.scale;
-  const pw = pic.naturalWidth || pic.width,
-    ph = pic.naturalHeight || pic.height;
+  const [pw, ph] = pic instanceof HTMLImageElement ? [pic.naturalWidth, pic.naturalHeight] : [pic.width, pic.height];
   const t = `translate(${cx}px, ${cy}px) rotate(${-state.view.rot}rad) scale(${w / pw}, ${h / ph}) translate(-50%, -50%)`;
   if (t !== bgTransform) {
     pic.style.transform = t;

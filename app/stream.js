@@ -35,6 +35,7 @@ const later = fn => (DELAY_MS ? setTimeout(fn, DELAY_MS) : fn());
 // Every (re)connect starts with the whole feed and chat so far: replace what is shown rather
 // than adding it twice (a deploy or a network blip reconnects).
 let opened = false;
+/** @type {EventSource | null} */
 let es = null;
 export function openStream() {
   es?.close();
@@ -76,6 +77,7 @@ setInterval(() => {
 // under way sends its latest snapshot straight away, so then it is only the stream delay, if any.
 // A delay counts down to when that snapshot shows; it is all the overlay says while it waits, so a
 // delayed overlay is not an empty panel until then.
+/** @type {number | null} */
 let holdUntil = null;
 function waiting(m) {
   const empty = $("empty");

@@ -1,5 +1,6 @@
 import { $, DELAY, OPT, OVERLAY, PAGE, PLAIN_BG, canvas, optOn, uiScale, applyScale, state } from "./core.js";
 import { env } from "./env.js";
+/** @typedef {import("../types/stream").Player} Player */
 import { layerOn, setLayer, setOverkill, overkillOn } from "./layers.js";
 import { viewCentre, frameMap, toScreen, screenOffset } from "./view.js";
 
@@ -11,6 +12,7 @@ const refit = () => {
 addEventListener("resize", refit);
 // An element on another site changes size without the window.
 if (env.component) new ResizeObserver(refit).observe(env.el);
+/** @type {{ x: number; y: number; cx: number; cy: number; moved: boolean } | null} */
 let drag = null;
 canvas.addEventListener(
   "mousedown",
@@ -134,6 +136,7 @@ export function setFollow(id) {
 }
 function followAt(cx, cy) {
   const r = canvas.getBoundingClientRect();
+  /** @type {Player | null} */
   let best = null,
     bestD = 18 * uiScale();
   for (const p of state.lastPlayers) {

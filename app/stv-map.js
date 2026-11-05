@@ -39,6 +39,7 @@ const OPTIONS = [
   "loadout",
   "effects",
 ];
+/** @type {HTMLElement | null} */
 let mounted = null;
 
 // Chrome ignores @font-face inside a shadow root, so the HUD's font goes on the page.
@@ -78,6 +79,7 @@ const loaded = link =>
   });
 
 class StvMap extends HTMLElement {
+  /** @type {((m: { type: string; [k: string]: unknown }) => void) | null} */
   #command = null;
 
   async connectedCallback() {
@@ -94,7 +96,9 @@ class StvMap extends HTMLElement {
       addFonts();
       const page = await matchPage(this.getAttribute("src") || "");
       const html = await (await fetch(cors(new URL(page, BASE)))).text();
-      const app = document.importNode(new DOMParser().parseFromString(html, "text/html").getElementById("app"), true);
+      const found = new DOMParser().parseFromString(html, "text/html").getElementById("app");
+      if (!found) throw new Error(`${page} is not a match page`);
+      const app = document.importNode(found, true);
       const links = [new URL("style.css", import.meta.url), cors(new URL("killicons.css", BASE))].map(href => {
         const link = document.createElement("link");
         link.rel = "stylesheet";
@@ -106,7 +110,9 @@ class StvMap extends HTMLElement {
 
       const overlay = this.getAttribute("view") === "overlay",
         delay = this.getAttribute("delay") || "";
-      const search = new URLSearchParams(OPTIONS.filter(o => this.hasAttribute(o)).map(o => [o, this.getAttribute(o)]));
+      const search = new URLSearchParams(
+        OPTIONS.filter(o => this.hasAttribute(o)).map(o => [o, this.getAttribute(o) ?? ""]),
+      );
       if (!this.hasAttribute("tabindex")) this.tabIndex = 0;
       configure({
         root: shadow,
