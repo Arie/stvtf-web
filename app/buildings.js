@@ -1,5 +1,5 @@
 import { OVERLAY, overlayUnit, uiScale, ctx, state, teamColour } from "./core.js";
-import { toScreen, screenAngle, px } from "./view.js";
+import { toScreen, screenAngle, px, label } from "./view.js";
 /** @typedef {import("../types/stream").Snapshot} Snapshot */
 /** @typedef {import("../types/stream").Building} Building */
 
@@ -34,7 +34,7 @@ export function drawBuildings(snap) {
   for (const b of snap.buildings || []) {
     const [x, y] = toScreen(b.pos[0], b.pos[1]),
       s = OVERLAY ? overlayUnit() * 1.9 : px(44, 18);
-    const label = b.kind === "sentry" && b.mini ? "MS" : (b.kind[0] || "?").toUpperCase() + (b.level || 1);
+    const tag = b.kind === "sentry" && b.mini ? "MS" : (b.kind[0] || "?").toUpperCase() + (b.level || 1);
     ctx.save();
     if (b.building) ctx.globalAlpha = 0.55;
     if (b.kind === "sentry") drawSentryAim(b, x, y, s);
@@ -64,11 +64,7 @@ export function drawBuildings(snap) {
       ctx.lineWidth = 2;
       ctx.stroke();
     }
-    ctx.fillStyle = "#fff";
-    ctx.font = `800 ${Math.round(Math.max(9, s * 0.5))}px system-ui`;
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillText(label, x, y + 0.5);
+    label(tag, x, y, Math.max(9, s * 0.5));
     if (b.sapped) {
       ctx.fillStyle = "#fff";
       ctx.font = `800 ${Math.round(9 * uiScale())}px system-ui`;

@@ -1,5 +1,5 @@
 import { msPerTick, TEAM, OVERLAY, overlayUnit, uiScale, ctx, state, optOn, teamColour, INK, NEUTRAL } from "./core.js";
-import { toScreen, screenAngle, px, playerRad } from "./view.js";
+import { toScreen, screenAngle, px, playerRad, label } from "./view.js";
 import { layerOn } from "./layers.js";
 /** @typedef {import("../types/stream").Objective} Objective */
 /** @typedef {import("../types/stream").PlacedObjective} PlacedObjective */
@@ -192,11 +192,7 @@ function drawRobot(o, tick) {
   ctx.lineWidth = 1.5;
   ctx.strokeStyle = "#000";
   ctx.stroke();
-  ctx.fillStyle = "#fff";
-  ctx.font = `800 ${Math.round(Math.max(9, s * 0.5))}px system-ui`;
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.fillText("R", x, y + 0.5);
+  label("R", x, y, Math.max(9, s * 0.5));
   ctx.restore();
 }
 // A dropped robot destruction core: a small diamond in its team's colour.
@@ -272,11 +268,7 @@ function drawTank(o, tick) {
   ctx.fillRect(x - bw / 2, by, bw, bh);
   ctx.fillStyle = TEAM.blue;
   ctx.fillRect(x - bw / 2, by, bw * Math.max(0, Math.min(1, o.health)), bh);
-  ctx.fillStyle = "#fff";
-  ctx.font = `800 ${Math.round(Math.max(10, W * 0.4))}px system-ui`;
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.fillText("TANK", x, y + 0.5);
+  label("TANK", x, y, Math.max(10, W * 0.4));
   ctx.restore();
 }
 
@@ -466,11 +458,7 @@ function drawPickups(o, carrier, snap, tick) {
   ctx.lineWidth = Math.max(1.5, r * 0.18);
   ctx.strokeStyle = "#000";
   ctx.stroke();
-  ctx.fillStyle = INK;
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.font = `800 ${Math.round(Math.max(9, r * 1.2))}px system-ui`;
-  ctx.fillText(String(o.points), x, y + 0.5);
+  label(String(o.points), x, y, Math.max(9, r * 1.2), { colour: INK });
   if (o.status === "dropped" && o.returns_in != null) {
     const left = Math.max(0, Math.ceil(o.returns_in - (Math.max(0, tick - snap.tick) * msPerTick) / 1000));
     ctx.font = `700 ${Math.round(Math.max(10 * uiScale(), r * 0.9))}px "HUD Condensed", system-ui`;

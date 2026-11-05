@@ -270,6 +270,16 @@ function textSprite(text, font, fill, outline) {
   }
   return sp;
 }
+// A short label (a class, a building's letter, a count) centred on a marker at x, y, in `size`
+// pixels; half a pixel low, which looks centred.
+/** @param {string} text @param {number} x @param {number} y @param {number} size */
+export function label(text, x, y, size, { colour = "#fff", weight = "800" } = {}) {
+  ctx.fillStyle = colour;
+  ctx.font = `${weight} ${Math.round(size)}px system-ui`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(text, x, y + 0.5);
+}
 // Draws a text sprite in `look`'s font, fill and outline (or none), with the top of its text at
 // y, centred on x or starting at x.
 /**

@@ -1,6 +1,6 @@
 import { TEAM, CLASS, icon, OVERLAY, optOn, uiScale, ctx, context2d, state, teamColour, INK } from "./core.js";
 import { layerOn } from "./layers.js";
-import { toScreen, screenAngle, playerRad, drawText } from "./view.js";
+import { toScreen, screenAngle, playerRad, drawText, label } from "./view.js";
 import { drawUberRing, drawStatusInside, drawStatus } from "./status.js";
 /** @typedef {import("../types/stream").Player} Player */
 /** @typedef {import("../types/stream").LivePlayer} LivePlayer */
@@ -315,11 +315,7 @@ function drawIcon({ p, x, y, rad, cloaked }) {
   if (img) {
     ctx.drawImage(img, x - s / 2, y - s / 2, s, s);
   } else {
-    ctx.fillStyle = "#fff";
-    ctx.font = `bold ${Math.round(Math.max(9, rad * 0.9))}px system-ui`;
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillText(CLASS[p.class] || "?", x, y + 0.5);
+    label(CLASS[p.class] || "?", x, y, Math.max(9, rad * 0.9), { weight: "bold" });
   }
   if (SHOW_BUILDINGS && p.carrying) drawCarried(p, x, y, rad);
   if (p.id === state.follow) {
@@ -345,11 +341,7 @@ function drawCarried(p, x, y, rad) {
   ctx.lineWidth = 1.5;
   ctx.strokeStyle = "#000";
   ctx.stroke();
-  ctx.fillStyle = "#fff";
-  ctx.font = `800 ${Math.round(bs * 0.62)}px system-ui`;
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.fillText(p.carrying[0].toUpperCase(), bx, by + 0.5);
+  label(p.carrying[0].toUpperCase(), bx, by, bs * 0.62);
 }
 
 /** @param {Dot} d */
