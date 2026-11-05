@@ -51,12 +51,11 @@ function drawShot(e) {
 function drawSentryShot(e, k, byId) {
   const [x, y] = toScreen(e.from[0], e.from[1]);
   const t = byId.get(e.target);
-  let [tx, ty] = [0, 0];
-  if (t?.pos) [tx, ty] = toScreen(t.pos[0], t.pos[1]);
-  else {
-    const a = screenAngle(e.aim || 0);
-    [tx, ty] = [x + Math.cos(a) * SENTRY_RANGE * state.view.scale, y + Math.sin(a) * SENTRY_RANGE * state.view.scale];
-  }
+  // At the target, or (when it is not known) as far as a sentry reaches along its aim.
+  const a = screenAngle(e.aim || 0);
+  const [tx, ty] = t?.pos
+    ? toScreen(t.pos[0], t.pos[1])
+    : [x + Math.cos(a) * SENTRY_RANGE * state.view.scale, y + Math.sin(a) * SENTRY_RANGE * state.view.scale];
   ctx.beginPath();
   ctx.moveTo(x, y);
   ctx.lineTo(tx, ty);
