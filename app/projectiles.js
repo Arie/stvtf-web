@@ -1,4 +1,4 @@
-import { TEAM, OVERLAY, overlayUnit, ctx } from "./core.js";
+import { OVERLAY, overlayUnit, ctx, teamColour } from "./core.js";
 import { toScreen, screenAngle, px } from "./view.js";
 
 // Rockets leave a trail of smoke puffs that shrink, darken and fade, and linger after the rocket.
@@ -171,7 +171,7 @@ export function drawProjectiles(list) {
   drawSmoke(list, size);
   for (const p of list || []) {
     const [x, y] = toScreen(p.pos[0], p.pos[1]);
-    const col = TEAM[p.team] || "#ccc";
+    const col = teamColour(p.team, "#ccc");
     // Rockets and arrows face their flight (the networked yaw is exact); grenades tumble.
     const deg = p.kind === "Rocket" || p.kind.endsWith("Arrow") ? p.yaw : (p.heading ?? p.yaw ?? 0);
     const a = screenAngle(deg);

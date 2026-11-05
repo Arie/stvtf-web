@@ -1,4 +1,4 @@
-import { TEAM, OVERLAY, uiScale, ctx, state } from "./core.js";
+import { OVERLAY, uiScale, ctx, state, teamColour } from "./core.js";
 import { toScreen, drawText } from "./view.js";
 /** @typedef {import("../types/stream").GameEvent} GameEvent */
 /** @typedef {import("../types/stream").Snapshot} Snapshot */
@@ -75,7 +75,7 @@ export function drawSpawnRooms(snap) {
       [r.max[0], r.max[1]],
       [r.min[0], r.max[1]],
     ].map(([x, y]) => toScreen(x, y));
-    const col = TEAM[r.team] || "#999";
+    const col = teamColour(r.team, "#999");
     ctx.save();
     ctx.beginPath();
     corners.forEach(([x, y], k) => (k ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));

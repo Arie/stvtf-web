@@ -134,7 +134,8 @@ function handle(m) {
       embedStatus(m.state);
       if (m.state === "map_change") resetMatch();
       {
-        const [text, why] = statusText($("status").textContent, m);
+        const line = /** @type {import("../types/stream").StatusLine} */ (/** @type {unknown} */ (m));
+        const [text, why] = statusText($("status").textContent ?? "", line);
         // A drop while waiting keeps the reason of the last one in the tooltip.
         setStatus(text, text === "live", why || ($("status").textContent === text ? $("status").title : ""));
       }

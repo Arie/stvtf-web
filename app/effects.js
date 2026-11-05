@@ -1,4 +1,4 @@
-import { TEAM, OVERLAY, optOn, overlayUnit, uiScale, ctx, state } from "./core.js";
+import { TEAM, OVERLAY, optOn, overlayUnit, uiScale, ctx, state, teamColour } from "./core.js";
 import { toScreen, screenAngle, px, playerRad } from "./view.js";
 import { SHOW_SHOTS, SHOW_BUILDINGS } from "./players.js";
 
@@ -107,7 +107,7 @@ function drawKill(e) {
     ctx.stroke();
     ctx.setLineDash([]);
   }
-  ctx.strokeStyle = TEAM[e.team] || "#fff";
+  ctx.strokeStyle = teamColour(e.team, "#fff");
   ctx.lineWidth = 3;
   ctx.beginPath();
   ctx.moveTo(x - s, y - s);
@@ -121,7 +121,7 @@ function drawSpawn(e, k) {
   const [x, y] = toScreen(e.pos[0], e.pos[1]);
   ctx.beginPath();
   ctx.arc(x, y, playerRad() + k * 18, 0, Math.PI * 2);
-  ctx.strokeStyle = TEAM[e.team] || "#fff";
+  ctx.strokeStyle = teamColour(e.team, "#fff");
   ctx.lineWidth = 2;
   ctx.stroke();
 }

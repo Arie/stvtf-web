@@ -1,4 +1,4 @@
-import { TEAM, OVERLAY, overlayUnit, uiScale, ctx, state } from "./core.js";
+import { OVERLAY, overlayUnit, uiScale, ctx, state, teamColour } from "./core.js";
 import { toScreen, screenAngle, px } from "./view.js";
 /** @typedef {import("../types/stream").Snapshot} Snapshot */
 
@@ -11,7 +11,7 @@ function drawSentryAim(b, x, y, s) {
     ctx.moveTo(x, y);
     ctx.lineTo(tx, ty);
     ctx.setLineDash([6, 5]);
-    ctx.strokeStyle = (TEAM[b.team] || "#fff") + "aa";
+    ctx.strokeStyle = teamColour(b.team, "#fff") + "aa";
     ctx.lineWidth = 1.5;
     ctx.stroke();
     ctx.setLineDash([]);
@@ -49,7 +49,7 @@ export function drawBuildings(snap) {
     ctx.fill();
     ctx.save();
     ctx.clip();
-    ctx.fillStyle = TEAM[b.team] || TEAM.none;
+    ctx.fillStyle = teamColour(b.team);
     ctx.fillRect(x - s / 2, y + s / 2 - s * hpf, s, s * hpf);
     ctx.restore();
     ctx.lineWidth = b.sapped ? 2.5 : 1.5;
@@ -58,7 +58,7 @@ export function drawBuildings(snap) {
     if (b.kind === "teleporter" && b.entrance === false) {
       ctx.beginPath();
       ctx.arc(x, y, s * 0.72, 0, Math.PI * 2);
-      ctx.strokeStyle = TEAM[b.team] || "#fff";
+      ctx.strokeStyle = teamColour(b.team, "#fff");
       ctx.lineWidth = 2;
       ctx.stroke();
     }

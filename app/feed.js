@@ -1,4 +1,4 @@
-import { msPerTick, TEAM, $, state } from "./core.js";
+import { msPerTick, $, state, teamColour } from "./core.js";
 import { asset } from "./env.js";
 import { MEDIGUN_NAME, mmss } from "./hud.js";
 import { layerOn } from "./layers.js";
@@ -388,7 +388,7 @@ let bannerTimer;
 export function banner(text, team) {
   const b = $("banner");
   b.textContent = text;
-  b.style.color = TEAM[team] || "#fff";
+  b.style.color = teamColour(team, "#fff");
   b.style.opacity = "1";
   clearTimeout(bannerTimer);
   bannerTimer = setTimeout(() => (b.style.opacity = "0"), BANNER_MS);

@@ -31,6 +31,7 @@ export function configure(o) {
 }
 // On another site every file is read cross-origin: a copy cached before the server sent CORS
 // headers (Cloudflare's, the browser's) would fail it, so these addresses are its own.
+/** @param {string | URL} path */
 export const asset = path => {
   const url = new URL(path, env.base);
   if (env.component) url.searchParams.set("cors", "1");

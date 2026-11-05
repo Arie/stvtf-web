@@ -1,4 +1,4 @@
-import { msPerTick, TEAM, OVERLAY, overlayUnit, uiScale, ctx, state, optOn } from "./core.js";
+import { msPerTick, TEAM, OVERLAY, overlayUnit, uiScale, ctx, state, optOn, teamColour } from "./core.js";
 import { toScreen, screenAngle, px, playerRad } from "./view.js";
 import { layerOn } from "./layers.js";
 /** @typedef {import("../types/stream").Objective} Objective */
@@ -78,7 +78,7 @@ function drawCart(o, tick) {
   const L = OVERLAY ? u * 2.4 : px(72, 18),
     W = L * 0.64,
     lw = Math.max(1.5, L * 0.07);
-  const team = TEAM[o.team] || TEAM.none,
+  const team = teamColour(o.team),
     dark = "#0b0c0e";
   ctx.save();
   ctx.translate(x, y);
@@ -149,7 +149,7 @@ function drawCart(o, tick) {
 function drawGoal(o) {
   const [x, y] = toScreen(o.pos[0], o.pos[1]),
     r = OVERLAY ? overlayUnit() * 1.4 : px(90, 14);
-  const col = TEAM[o.team] || TEAM.none;
+  const col = teamColour(o.team);
   ctx.save();
   ctx.beginPath();
   ctx.arc(x, y, r, 0, Math.PI * 2);
@@ -182,7 +182,7 @@ function drawRobot(o, tick) {
   ctx.fill();
   ctx.save();
   ctx.clip();
-  ctx.fillStyle = TEAM[o.team] || TEAM.none;
+  ctx.fillStyle = teamColour(o.team);
   ctx.fillRect(x - s / 2, y + s / 2 - s * hpf, s, s * hpf);
   ctx.restore();
   ctx.lineWidth = 1.5;
@@ -207,7 +207,7 @@ function drawCore(o) {
   ctx.lineTo(x, y + s);
   ctx.lineTo(x - s, y);
   ctx.closePath();
-  ctx.fillStyle = TEAM[o.team] || TEAM.none;
+  ctx.fillStyle = teamColour(o.team);
   ctx.fill();
   ctx.lineWidth = 1.5;
   ctx.strokeStyle = "#000";
@@ -224,7 +224,7 @@ function drawRevive(o) {
   ctx.beginPath();
   ctx.rect(x - s / 3, y - s, (s * 2) / 3, s * 2);
   ctx.rect(x - s, y - s / 3, s * 2, (s * 2) / 3);
-  ctx.fillStyle = TEAM[team] || TEAM.none;
+  ctx.fillStyle = teamColour(team);
   ctx.fill();
   ctx.lineWidth = 1.5;
   ctx.strokeStyle = "#000";
@@ -333,7 +333,7 @@ function drawPoint(o, snap, tick) {
   ctx.save();
   ctx.beginPath();
   ctx.roundRect(x0, y0, side, side, corner);
-  ctx.fillStyle = (TEAM[o.owner] || TEAM.none) + (OVERLAY ? "e6" : "99");
+  ctx.fillStyle = teamColour(o.owner) + (OVERLAY ? "e6" : "99");
   ctx.fill();
   if (capping) {
     ctx.save();
@@ -348,7 +348,7 @@ function drawPoint(o, snap, tick) {
   }
   // Outlined in the colour of the team holding it, grey while nobody does.
   ctx.lineWidth = OVERLAY ? Math.max(2, u * 0.18) : 2;
-  ctx.strokeStyle = TEAM[o.owner] || "#b8bcc2";
+  ctx.strokeStyle = teamColour(o.owner, "#b8bcc2");
   ctx.stroke();
   if (SHOW_NUMBERS) drawPointNumber(o, capping, x, y, half);
   ctx.restore();
@@ -397,7 +397,7 @@ export function drawCapAreas(snap) {
       (i ? ctx.lineTo : ctx.moveTo).call(ctx, sx, sy);
     });
     ctx.closePath();
-    ctx.strokeStyle = (TEAM[cp.owner] || TEAM.none) + "99";
+    ctx.strokeStyle = teamColour(cp.owner) + "99";
     ctx.lineWidth = OVERLAY ? 1.5 : 2;
     ctx.stroke();
     ctx.restore();

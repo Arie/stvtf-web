@@ -1,4 +1,4 @@
-import { TEAM, CLASS, icon, OVERLAY, optOn, uiScale, ctx, context2d, state } from "./core.js";
+import { TEAM, CLASS, icon, OVERLAY, optOn, uiScale, ctx, context2d, state, teamColour } from "./core.js";
 import { layerOn } from "./layers.js";
 import { toScreen, screenAngle, playerRad, drawText } from "./view.js";
 import { drawUberRing, drawStatusInside, drawStatus } from "./status.js";
@@ -57,7 +57,7 @@ function beamCurve(m, pt) {
 /** @param {Player} m */
 function drawHealBeam(m, beam, hot, t) {
   const { x0, y0, x1, y1, cx, cy, len } = beam;
-  const col = TEAM[m.team] || "#fff",
+  const col = teamColour(m.team, "#fff"),
     light = BEAM_LIGHT[m.team] || "#fff";
   const amp = (hot ? 6 : 4) * uiScale(),
     wave = 70 * uiScale(),
@@ -328,7 +328,7 @@ function drawCarried(p, x, y, rad) {
     by = y - rad * 0.95;
   ctx.beginPath();
   ctx.roundRect(bx - bs / 2, by - bs / 2, bs, bs, 2);
-  ctx.fillStyle = TEAM[p.team] || TEAM.none;
+  ctx.fillStyle = teamColour(p.team);
   ctx.fill();
   ctx.lineWidth = 1.5;
   ctx.strokeStyle = "#000";

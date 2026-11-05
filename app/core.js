@@ -1,6 +1,8 @@
 import { env, asset } from "./env.js";
+/** @typedef {import("../types/stream").Player} Player */
 // Milliseconds per server tick, from the server line (15 on a 66-tick server, which TF2 runs).
 export let msPerTick = 15;
+/** @param {number} seconds */
 export function setTickInterval(seconds) {
   if (seconds > 0) msPerTick = seconds * 1000;
 }
@@ -9,7 +11,12 @@ export function setTickInterval(seconds) {
 const JITTER_MS = 105;
 // The tick clock jumps instead of easing when it is off by this much (a stall, a seek).
 const CLOCK_JUMP_TICKS = 40;
+/** @type {{ [team: string]: string }} */
 export const TEAM = { red: "#d0453f", blue: "#4f8fc0", none: "#9a9a9a", spectator: "#9a9a9a" };
+// A team's colour, or `or` for none (or an unknown one).
+/** @param {string | number | null | undefined} team */
+export const teamColour = (team, or = TEAM.none) => (team != null && TEAM[team]) || or;
+/** @type {{ [cls: string]: string }} */
 export const CLASS = {
   scout: "Sc",
   soldier: "So",
@@ -24,10 +31,12 @@ export const CLASS = {
 };
 // logs.tf order, as on serveme; same-class players by name so rows don't swap between snapshots.
 const CLASS_ORDER = ["scout", "soldier", "pyro", "demoman", "heavy", "engineer", "medic", "sniper", "spy", "unknown"];
+/** @param {string} c */
 const classRank = c => {
   const i = CLASS_ORDER.indexOf(c);
   return i < 0 ? CLASS_ORDER.length : i;
 };
+/** @param {Player} a @param {Player} b */
 export const byClass = (a, b) =>
   classRank(a.class) - classRank(b.class) ||
   a.name.localeCompare(b.name, undefined, { sensitivity: "base" }) ||
@@ -44,6 +53,7 @@ export const parseMessage = data =>
     ? JSON.parse(data, (_, v) => (typeof v === "string" ? v.replace(INVISIBLE, "") : v))
     : JSON.parse(data);
 
+/** @type {{ [cls: string]: HTMLImageElement }} */
 export const ICONS = {};
 // Loaded with CORS (every response allows it), so the players layer can read their pixels.
 for (const c of CLASS_ORDER) {
@@ -53,6 +63,7 @@ for (const c of CLASS_ORDER) {
     ICONS[c].src = asset(`icons/${c}.svg`);
   }
 }
+/** @param {string} c */
 export const icon = c => (ICONS[c]?.complete && ICONS[c].naturalWidth ? ICONS[c] : null);
 
 // Seconds after the last / (/w/<id>/5, /w/<id>/overlay/5) hold the match back by that much, to line
@@ -67,6 +78,7 @@ export const PAGE = env.path.replace(DELAY_PART, "/");
 export const OVERLAY = /\/overlay\/?$/.test(PAGE);
 export const OPT = new URLSearchParams(env.search);
 // A display toggle in the query string, on either view: 1 on, 0 off, anything else the default.
+/** @param {string} name */
 export const optOn = (name, def = true) => {
   const v = OPT.get(name);
   return v === "1" || (v !== "0" && def);
@@ -148,8 +160,10 @@ function nowTick() {
   return state.tickOffset == null ? 0 : performance.now() / msPerTick + state.tickOffset;
 }
 // Ticks between snapshots, smoothed: stvtf's rate cap and the STV's tv_snapshotrate set it.
+/** @type {number | null} */
 let lastSnapTick = null,
   snapGap = 4;
+/** @param {number} tick */
 export function observeTick(tick) {
   if (state.tickOffset == null) lastSnapTick = null;
   const gap = lastSnapTick == null ? 0 : tick - lastSnapTick;
@@ -163,6 +177,7 @@ export function renderTick() {
   return nowTick() - snapGap - JITTER_MS / msPerTick;
 }
 
+/** @param {string} text @param {boolean} ok */
 export function setStatus(text, ok, why = "") {
   const s = $("status");
   s.textContent = text;
@@ -175,6 +190,7 @@ export function setStatus(text, ok, why = "") {
 // changing map can let SourceTV in and drop it several times first: all of that keeps one word
 // until the match is live, instead of flicking through the steps. Returns [text, why]; the
 // reason a connection failed is the why, for the tooltip.
+/** @param {string} shown @param {import("../types/stream").StatusLine} m */
 export function statusText(shown, m) {
   const why = m.reason || "";
   switch (m.state) {
