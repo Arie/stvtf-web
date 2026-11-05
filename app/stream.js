@@ -17,7 +17,7 @@ import { killiconsLoaded, CHAT_TYPES, chat, feedEvent } from "./feed.js";
 import { hudNodes } from "./hud.js";
 import { setFollow } from "./input.js";
 import { detailNeeded } from "./layers.js";
-import { cartState } from "./objectives.js";
+import { cartState } from "./payload.js";
 import { loadMap } from "./view.js";
 /** @typedef {import("../types/stream").GameEvent} GameEvent */
 /** @typedef {import("../types/stream").StreamMessage} StreamMessage */

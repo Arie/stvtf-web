@@ -1,5 +1,6 @@
 import { env, asset } from "./env.js";
 /** @typedef {import("../types/stream").Player} Player */
+/** @typedef {import("../types/stream").PlacedObjective} PlacedObjective */
 // Milliseconds per server tick, from the server line (15 on a 66-tick server, which TF2 runs).
 export let msPerTick = 15;
 /** @param {number} seconds */
@@ -218,3 +219,16 @@ export function statusText(shown, m) {
   }
 }
 const WAITING = new Set(["connecting", "reconnecting", "map changing", "waiting for SourceTV"]);
+
+// Where a moving objective (cart, ball, robot, tank) is between the snapshots around `tick`.
+/** @param {PlacedObjective} o @param {number} tick */
+export function objPos(o, tick) {
+  const s = state.snaps;
+  const i = s.findIndex(x => x.tick > tick);
+  if (i < 1) return o.pos;
+  const a = s[i - 1].objectives?.find(q => q.kind === o.kind && q.id === o.id);
+  const b = s[i].objectives?.find(q => q.kind === o.kind && q.id === o.id);
+  if (!a?.pos || !b?.pos) return o.pos;
+  const t = (tick - s[i - 1].tick) / (s[i].tick - s[i - 1].tick);
+  return [a.pos[0] + (b.pos[0] - a.pos[0]) * t, a.pos[1] + (b.pos[1] - a.pos[1]) * t];
+}

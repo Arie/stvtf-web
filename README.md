@@ -354,8 +354,10 @@ sets the directory (default `backpack`, `/usr/share/stvtf/backpack` in the Docke
     shared state, options and tick clock; `env.js` where the page runs (its own, or `<stv-map>`).
   - `view.js` loads the map and frames it (rotation, the screen transform, the background),
     `geometry.js` draws the map geometry, and `camera.js` is the auto zoom.
-  - `players.js`, `status.js`, `projectiles.js`, `effects.js`, `buildings.js`, `objectives.js`,
-    `spawns.js` and `overkill.js` draw what is on the map; `events.js` turns events into effects.
+  - `players.js`, `status.js`, `projectiles.js`, `effects.js`, `buildings.js`, `spawns.js` and
+    `overkill.js` draw what is on the map; `events.js` turns events into effects.
+  - `objectives.js` hands each objective to `points.js` (control points), `payload.js` (the cart),
+    `modes.js` (the other game modes'), and `flags.js` (flags, the ball: what players carry).
   - `hud.js` (player cards and scoreboard), `feed.js` (events and chat), `input.js` (keys,
     mouse, follow) and `layers.js` (the overkill settings) are the rest of the page.
   - `embed.js` and `stv-map.js` talk to a page embedding the map.
