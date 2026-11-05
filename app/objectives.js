@@ -418,20 +418,25 @@ function liveCarrier(players, id) {
   const p = id == null ? null : players.find(q => q.id === id);
   return p?.alive ? p : null;
 }
+// Where a carried objective sits on its carrier: up and right of their dot, by this much of it.
+const ON_CARRIER = 0.9;
+// Where an objective shows on screen: on its carrier, or at `pos` when nobody carries it.
+/** @param {LivePlayer | null} carrier @param {number[]} pos @returns {[number, number]} */
+function shownAt(carrier, pos) {
+  const at = carrier ? carrier.pos : pos;
+  const [x, y] = toScreen(at[0], at[1]);
+  if (!carrier) return [x, y];
+  const r = playerRad();
+  return [x + r * ON_CARRIER, y - r * ON_CARRIER];
+}
 
 // The pass time ball: a ball in the colour of the team that has it (yellow while neutral),
 // riding on its carrier.
 /** @param {PlacedObjective} o @param {Player[]} players @param {number} tick */
 function drawBall(o, players, tick) {
   const carrier = liveCarrier(players, o.carrier);
-  const at = carrier ? carrier.pos : objPos(o, tick);
-  let [x, y] = toScreen(at[0], at[1]);
+  const [x, y] = shownAt(carrier, objPos(o, tick));
   const r = OVERLAY ? overlayUnit() * 0.55 : px(18, 7);
-  if (carrier) {
-    const pr = playerRad();
-    x += pr * 0.9;
-    y -= pr * 0.9;
-  }
   ctx.save();
   ctx.beginPath();
   ctx.arc(x, y, r, 0, Math.PI * 2);
@@ -451,13 +456,8 @@ function drawBall(o, players, tick) {
 // or where it was dropped (with the seconds until it goes).
 /** @param {PlacedObjective} o @param {LivePlayer | null} carrier @param {Snapshot} snap @param {number} tick */
 function drawPickups(o, carrier, snap, tick) {
-  let [x, y] = toScreen(.../** @type {[number, number]} */ ((carrier ? carrier.pos : o.pos).slice(0, 2)));
+  const [x, y] = shownAt(carrier, o.pos);
   const r = OVERLAY ? overlayUnit() * 0.6 : px(22, 8);
-  if (carrier) {
-    const pr = playerRad();
-    x += pr * 0.9;
-    y -= pr * 0.9;
-  }
   ctx.save();
   ctx.beginPath();
   ctx.arc(x, y, r, 0, Math.PI * 2);
@@ -501,14 +501,8 @@ export function drawFlags(snap, players, tick) {
       drawPickups(o, carrier, snap, tick);
       continue;
     }
-    const pos = carrier ? carrier.pos : o.pos;
-    let [x, y] = toScreen(pos[0], pos[1]);
+    const [x, y] = shownAt(carrier, o.pos);
     const s = OVERLAY ? overlayUnit() * 1.3 : px(48, 17);
-    if (carrier) {
-      const r = playerRad();
-      x += r * 0.9;
-      y -= r * 0.9;
-    }
     ctx.save();
     if (state.map?.startsWith("mvm_")) drawBomb(x, y, s * 0.45, Math.max(1.5, s * 0.1));
     else {
