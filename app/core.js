@@ -96,7 +96,14 @@ applyScale();
 
 export const $ = id => env.root.getElementById(id);
 export const canvas = /** @type {HTMLCanvasElement} */ ($("c"));
-export const ctx = canvas.getContext("2d");
+// A canvas's 2D context. Only null if the canvas already has another kind, which none here has.
+/** @param {HTMLCanvasElement} c @param {CanvasRenderingContext2DSettings} [opts] */
+export function context2d(c, opts) {
+  const g = c.getContext("2d", opts);
+  if (!g) throw new Error("no 2D canvas context");
+  return g;
+}
+export const ctx = context2d(canvas);
 // The canvas size, kept up to date by an observer: asking the layout for it forces a reflow.
 let size = null;
 new ResizeObserver(([e]) => {

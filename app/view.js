@@ -1,4 +1,4 @@
-import { $, OVERLAY, OPT, overlayUnit, canvas, uiScale, ctx, state, canvasSize } from "./core.js";
+import { $, OVERLAY, OPT, overlayUnit, canvas, uiScale, ctx, context2d, state, canvasSize } from "./core.js";
 import { env, asset } from "./env.js";
 import { renderGeometry } from "./geometry.js";
 
@@ -234,7 +234,7 @@ function textSprite(text, font, fill, outline) {
   if (!sp) {
     if (textSprites.size > 128) textSprites.clear();
     const c = document.createElement("canvas"),
-      g = c.getContext("2d");
+      g = context2d(c);
     g.font = font;
     const m = g.measureText(text),
       size = parseFloat(font.match(/(\d+(?:\.\d+)?)px/)?.[1] || 12);
@@ -276,7 +276,7 @@ function withoutBlack(img) {
   const c = document.createElement("canvas");
   c.width = img.naturalWidth;
   c.height = img.naturalHeight;
-  const g = c.getContext("2d");
+  const g = context2d(c);
   g.drawImage(img, 0, 0);
   try {
     const d = g.getImageData(0, 0, c.width, c.height),
@@ -299,7 +299,7 @@ function flattened(img) {
   const c = document.createElement("canvas");
   c.width = img.naturalWidth;
   c.height = img.naturalHeight;
-  const g = c.getContext("2d");
+  const g = context2d(c);
   g.fillStyle = "#101214";
   g.fillRect(0, 0, c.width, c.height);
   g.globalAlpha = 0.85;

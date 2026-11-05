@@ -1,4 +1,4 @@
-import { ctx, state } from "./core.js";
+import { ctx, context2d, state } from "./core.js";
 import { MARK_LIFE_MS, SCORCH_CAP, SCORCH_R } from "./events.js";
 import { toScreen, px } from "./view.js";
 /** @typedef {import("../types/stream").Player} Player */
@@ -15,7 +15,7 @@ const scorchSprites = (() => {
       turn = (Math.floor(k / N) * Math.PI) / 2 + v;
     const cv = document.createElement("canvas");
     cv.width = cv.height = S;
-    const g = cv.getContext("2d"),
+    const g = context2d(cv),
       K = 24,
       rad = [];
     for (let i = 0; i < K; i++)
@@ -101,7 +101,7 @@ function packSprite(k, s, taken) {
     const half = Math.ceil(q * 1.3 + 3),
       c = document.createElement("canvas");
     c.width = c.height = Math.ceil(half * 2 * dpr);
-    const g = c.getContext("2d");
+    const g = context2d(c);
     g.scale(dpr, dpr);
     g.lineJoin = "round";
     g.lineWidth = 1.5;

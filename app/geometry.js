@@ -1,4 +1,4 @@
-import { PLAIN_BG } from "./core.js";
+import { PLAIN_BG, context2d } from "./core.js";
 
 // Map geometry: at least this many world units per pixel, and a canvas at most this wide;
 // bsp.rs pads the bounds' top this far above the highest point or pickup (its PAD), floors are
@@ -55,7 +55,7 @@ function kindTile(k) {
   if (!size) return (kindTiles[k] = null);
   const t = document.createElement("canvas");
   [t.width, t.height] = size;
-  const c = t.getContext("2d"),
+  const c = context2d(t),
     light = a => `rgba(255,255,255,${a})`,
     dark = a => `rgba(0,0,0,${a})`;
   if (k === "grass") {
@@ -131,7 +131,7 @@ function canvasLike(shape, draw) {
   const o = document.createElement("canvas");
   o.width = shape.width;
   o.height = shape.height;
-  draw(o.getContext("2d"));
+  draw(context2d(o));
   return o;
 }
 // Draws a shape at each of 16 points round a circle: with source-over that spreads it outwards.
@@ -246,7 +246,7 @@ function playableMask(pa) {
   const mc = document.createElement("canvas");
   mc.width = pa.w;
   mc.height = pa.h;
-  const mctx = mc.getContext("2d"),
+  const mctx = context2d(mc),
     img = mctx.createImageData(pa.w, pa.h);
   for (let cy = 0; cy < pa.h; cy++)
     for (let cx = 0; cx < pa.w; cx++) {
@@ -344,7 +344,7 @@ export function renderGeometry(g) {
   const oc = document.createElement("canvas");
   oc.width = w;
   oc.height = h;
-  const c = oc.getContext("2d");
+  const c = context2d(oc);
   // Roofs hide what is under them; keep floors up to a little above the highest pickup/point
   // level, which the bounds' top is GEOMETRY_PAD above.
   const cut = hi[2] - GEOMETRY_PAD + ROOF_ABOVE;

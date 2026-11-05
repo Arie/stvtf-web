@@ -1,4 +1,4 @@
-import { TEAM, CLASS, icon, OVERLAY, optOn, uiScale, ctx, state } from "./core.js";
+import { TEAM, CLASS, icon, OVERLAY, optOn, uiScale, ctx, context2d, state } from "./core.js";
 import { layerOn } from "./layers.js";
 import { toScreen, screenAngle, playerRad, drawText } from "./view.js";
 import { drawUberRing, drawStatusInside, drawStatus } from "./status.js";
@@ -125,7 +125,7 @@ function iconBox(cls, img) {
   try {
     const c = document.createElement("canvas");
     c.width = c.height = n;
-    const g = c.getContext("2d", { willReadFrequently: true });
+    const g = context2d(c, { willReadFrequently: true });
     g.drawImage(img, 0, 0, n, n);
     const a = g.getImageData(0, 0, n, n).data;
     let x0 = n,
@@ -163,7 +163,7 @@ function iconSprite(cls, size) {
     const b = iconBox(cls, img);
     c = document.createElement("canvas");
     c.width = c.height = n;
-    c.getContext("2d").drawImage(img, b.x, b.y, b.side, b.side, 0, 0, n, n);
+    context2d(c).drawImage(img, b.x, b.y, b.side, b.side, 0, 0, n, n);
     iconSprites.set(key, c);
   }
   return c;
