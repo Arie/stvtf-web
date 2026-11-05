@@ -2,6 +2,10 @@ import { ctx, context2d, state } from "./core.js";
 import { MARK_LIFE_MS, SCORCH_CAP, SCORCH_R } from "./events.js";
 import { toScreen, px } from "./view.js";
 /** @typedef {import("../types/stream").Player} Player */
+/** @typedef {import("../types/stream").Vec3} Vec3 */
+/** @typedef {import("../types/page").Trail} Trail */
+/** @typedef {NonNullable<import("../types/page").Geometry["packs"]>[number]} Pack */
+/** @typedef {ReturnType<typeof packPen>} Pen */
 
 // Flat scorch craters: pre-rendered ragged sprites, four shapes each turned four ways, so a
 // crater is drawn scaled but never rotated (a rotated image is the slow path).
@@ -41,6 +45,7 @@ const scorchSprites = (() => {
   }
   return out;
 })();
+/** @param {Vec3} pos @param {number} t0 */
 export function addScorch(pos, t0) {
   const h = Math.abs(Math.imul((Math.round(pos[0]) * 73856093) ^ (Math.round(pos[1]) * 19349663), 2654435761)) >>> 0;
   state.scorches.push({ pos, t0, v: h % scorchSprites.length });
@@ -50,6 +55,7 @@ export function addScorch(pos, t0) {
   );
 }
 // The explosion's own blast decal would put a dot on its crater.
+/** @param {Vec3} pos @param {number} now */
 export function nearFreshScorch(pos, now) {
   for (let i = state.scorches.length - 1; i >= 0; i--) {
     const s = state.scorches[i];
@@ -58,6 +64,7 @@ export function nearFreshScorch(pos, now) {
   }
   return false;
 }
+/** @param {number} now */
 function drawScorches(now) {
   while (state.scorches.length && now - state.scorches[0].t0 >= MARK_LIFE_MS) state.scorches.shift();
   const d = SCORCH_R * 2 * state.view.scale;
@@ -90,7 +97,9 @@ export function drawMarks() {
 
 // Every pack, solid when available and a faint outline while taken. Each look is drawn once per
 // size into a sprite: a pack is a dozen paths, and the map has dozens of packs.
+/** @type {Map<string, { c: HTMLCanvasElement; half: number }>} */
 const packSprites = new Map();
+/** @param {Pack} k @param {number} s @param {boolean} taken */
 function packSprite(k, s, taken) {
   const dpr = window.devicePixelRatio || 1,
     q = Math.round(s * 2) / 2,
@@ -128,14 +137,17 @@ export function drawPacks() {
   ctx.restore();
 }
 // A pack's on-screen size in px at full zoom.
+/** @param {string} size */
 function packSize(size) {
   if (size === "small") return 22;
   if (size === "medium") return 30;
   return 40;
 }
 // What a pack is drawn with: the context, and shapes outlined in ink and filled only while it is available.
+/** @param {CanvasRenderingContext2D} g @param {boolean} taken */
 function packPen(g, taken) {
   const ink = taken ? "#f2f0e6" : "#0b0c0e";
+  /** @param {string} color */
   const fill = color => {
     if (!taken) {
       g.fillStyle = color;
@@ -143,12 +155,14 @@ function packPen(g, taken) {
     }
   };
   // rect is [x, y, w, h], as roundRect takes them.
+  /** @param {[number, number, number, number]} rect @param {number} r @param {string} color */
   const shape = (rect, r, color) => {
     g.beginPath();
     g.roundRect(...rect, r);
     fill(color);
     g.stroke();
   };
+  /** @param {number} cx @param {number} cy @param {number} r @param {string} color */
   const disc = (cx, cy, r, color, lw = 1.5) => {
     g.beginPath();
     g.arc(cx, cy, r, 0, Math.PI * 2);
@@ -157,6 +171,7 @@ function packPen(g, taken) {
     g.stroke();
     g.lineWidth = 1.5;
   };
+  /** @param {number} cx @param {number} cy @param {number} a @param {number} t @param {string} color */
   const cross = (cx, cy, a, t, color) => {
     g.beginPath();
     g.moveTo(cx - t, cy - a);
@@ -179,7 +194,7 @@ function packPen(g, taken) {
   };
   return { g, taken, ink, fill, shape, disc, cross };
 }
-/** @param {ReturnType<typeof packPen>} pen */
+/** @param {Pen} pen @param {Pack} k @param {number} x @param {number} y @param {number} s */
 function drawPack(pen, k, x, y, s) {
   pen.g.strokeStyle = pen.ink;
   if (k.kind !== "health") drawAmmoPack(pen, k, x, y, s);
@@ -188,6 +203,7 @@ function drawPack(pen, k, x, y, s) {
   else drawHealthCase(pen, x, y, s);
 }
 // gray metal frame; medium and full add a tan panel with a dark bullet emblem
+/** @param {Pen} pen @param {Pack} k @param {number} x @param {number} y @param {number} s */
 function drawAmmoPack({ g, taken, ink, shape, disc }, k, x, y, s) {
   const h = s * 0.8,
     ww = s * (k.size === "full" ? 1.05 : 0.9),
@@ -222,6 +238,7 @@ function drawAmmoPack({ g, taken, ink, shape, disc }, k, x, y, s) {
     }
 }
 // pill bottle: white cap, teal body with a white label band and a red cross
+/** @param {Pen} pen @param {number} x @param {number} y @param {number} s */
 function drawPillBottle({ shape, cross }, x, y, s) {
   const bw = s * 0.62,
     ly = y + s * 0.275,
@@ -231,6 +248,7 @@ function drawPillBottle({ shape, cross }, x, y, s) {
   cross(x, ly, s * 0.22, s * 0.08, "#c0262e");
   shape([x - bw * 0.85, y - s * 0.62, bw * 1.7, s * 0.36], s * 0.1, "#ecebe4");
 }
+/** @param {Pen} pen @param {number} x @param {number} y @param {number} s */
 function drawMedkit({ shape, disc, cross }, x, y, s) {
   const h = s * 0.85;
   shape([x - h, y - h, h * 2, h * 2], s * 0.28, "#1f8a8f");
@@ -238,6 +256,7 @@ function drawMedkit({ shape, disc, cross }, x, y, s) {
   cross(x, y, h * 0.52, h * 0.2, "#ecebe4");
 }
 // big case: teal box, light lid band, gray handle on top, red badge on the front
+/** @param {Pen} pen @param {number} x @param {number} y @param {number} s */
 function drawHealthCase({ g, taken, fill, shape, disc, cross }, x, y, s) {
   const ww = s * 1.15,
     h = s * 0.75,
@@ -279,6 +298,7 @@ const TELEPORT = 250,
   TRAIL_POINTS = 400;
 
 // An open trail follows its jumper, or ends.
+/** @param {Trail} t @param {Player | undefined} p @param {number} now */
 function followTrail(t, p, now) {
   const last = t.pts.at(-1),
     step = last && p?.pos ? Math.hypot(p.pos[0] - last[0], p.pos[1] - last[1]) : 0;
@@ -306,6 +326,7 @@ export function drawJumpTrails(players) {
     ctx.globalAlpha = t.end ? 1 - (now - t.end) / TRAIL_FADE_MS : 1;
     ctx.lineWidth = Math.max(2, px(14, 2));
     const hue = t.team === "red" ? 4 : 212,
+      /** @type {[number, number, number, number, string][]} */
       segs = [];
     for (let i = 1; i < t.pts.length; i++) {
       const a = t.pts[i - 1],
@@ -317,13 +338,14 @@ export function drawJumpTrails(players) {
     }
     // One stroke for the outline and one per shade, not two per segment.
     const w = ctx.lineWidth,
+      /** @type {Map<string, number[][]>} */
       byShade = new Map();
     ctx.beginPath();
     for (const [ax, ay, bx, by, c] of segs) {
       ctx.moveTo(ax, ay);
       ctx.lineTo(bx, by);
       if (!byShade.has(c)) byShade.set(c, []);
-      byShade.get(c).push([ax, ay, bx, by]);
+      /** @type {number[][]} */ (byShade.get(c)).push([ax, ay, bx, by]);
     }
     ctx.lineWidth = w + 2;
     ctx.strokeStyle = "rgba(0,0,0,0.55)";

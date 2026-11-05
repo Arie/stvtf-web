@@ -3,7 +3,7 @@ import { TEAM, OVERLAY, uiScale, ctx } from "./core.js";
 
 // Each charge looks different: über a candy-cane team ring with a dark edge and a soft pulse, kritz crackling, quick-fix
 // pulsing rings, vaccinator a shield with its resistance.
-/** @param {Player} p */
+/** @param {Player} p @param {number} x @param {number} y @param {number} rad @param {string} col */
 export function drawUberRing(p, x, y, rad, col) {
   if (!p.ubered) return;
   const t = performance.now() / 1000;
@@ -104,6 +104,7 @@ const LIQUIDS = [
   ["MadMilk", "#dfe3e6"],
   ["Bleeding", "#5c0610"],
 ];
+/** @param {string[]} conds @param {number} id @param {number} x @param {number} y @param {number} rad */
 export function drawStatusInside(conds, id, x, y, rad) {
   const liquids = LIQUIDS.filter(([c]) => conds.includes(c)),
     burning = conds.includes("Burning");
@@ -141,6 +142,7 @@ export function drawStatusInside(conds, id, x, y, rad) {
       const cx = x + (j - 1) * rad * 0.55,
         h = rad * (0.95 + 0.3 * Math.sin(t * 14 + j * 2.1 + id)),
         sway = Math.sin(t * 9 + j + id) * rad * 0.12;
+      /** @param {number} k @param {string} fill */
       const tongue = (k, fill) => {
         ctx.beginPath();
         ctx.moveTo(cx - rad * 0.38 * k, y + rad);
@@ -157,11 +159,12 @@ export function drawStatusInside(conds, id, x, y, rad) {
 }
 
 // Marked for death sits above the dot and stun stars orbit it. Nothing moves the dot or covers its icon and ring.
+/** @param {string[]} conds @param {number} id @param {number} x @param {number} y @param {number} rad */
 export function drawStatus(conds, id, x, y, rad) {
   const t = performance.now() / 1000,
     r = Math.max(3, rad * 0.4),
     lw = Math.max(1, r * 0.2);
-  const has = n => conds.includes(n);
+  const has = /** @param {string} n */ n => conds.includes(n);
   ctx.save();
   ctx.lineWidth = lw;
   ctx.strokeStyle = "#000";

@@ -7,7 +7,7 @@ import { configure } from "./env.js";
 
 const BASE = new URL("../../", import.meta.url);
 // See asset() in env.js.
-const cors = url => {
+const cors = /** @param {URL} url */ url => {
   url.searchParams.set("cors", "1");
   return url;
 };
@@ -60,6 +60,7 @@ function addFonts() {
 }
 
 // The match's page path: a start link is asked where it leads, a match page is used as it is.
+/** @param {string} src */
 async function matchPage(src) {
   const url = new URL(src, BASE);
   if (url.pathname.endsWith("/start")) {
@@ -73,7 +74,7 @@ async function matchPage(src) {
   return page;
 }
 
-const loaded = link =>
+const loaded = /** @param {HTMLLinkElement} link */ link =>
   new Promise(resolve => {
     link.onload = link.onerror = resolve;
   });
@@ -102,7 +103,7 @@ class StvMap extends HTMLElement {
       const links = [new URL("style.css", import.meta.url), cors(new URL("killicons.css", BASE))].map(href => {
         const link = document.createElement("link");
         link.rel = "stylesheet";
-        link.href = href;
+        link.href = href.href;
         return link;
       });
       shadow.append(...links, app);
@@ -140,6 +141,7 @@ class StvMap extends HTMLElement {
   follow(player = {}) {
     this.#command?.({ type: "follow", ...player });
   }
+  /** @param {string} name @param {boolean} on */
   setLayer(name, on) {
     this.#command?.({ type: "layer", name, on });
   }

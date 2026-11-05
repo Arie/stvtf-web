@@ -1,12 +1,19 @@
 import { OVERLAY, overlayUnit, ctx, teamColour } from "./core.js";
 import { toScreen, screenAngle, px } from "./view.js";
+/** @typedef {import("../types/stream").Projectile} Projectile */
+/** @typedef {import("../types/stream").Vec3} Vec3 */
+/** A projectile as drawn: between snapshots it carries the heading it moved in (main.js). */
+/** @typedef {Projectile & { heading?: number | null }} MovedProjectile */
 
 // Rockets leave a trail of smoke puffs that shrink, darken and fade, and linger after the rocket.
 const PUFF_SPACING = 30,
   PUFF_LIFE = 800,
   PUFF_CAP = 500;
+/** @type {{ pos: [number, number]; t0: number }[]} */
 const puffs = [],
+  /** @type {Map<number, Vec3>} */
   lastPuff = new Map();
+/** @param {MovedProjectile[]} list @param {(units: number, min: number) => number} size */
 function drawSmoke(list, size) {
   const now = performance.now(),
     seen = new Set();
@@ -37,9 +44,11 @@ function drawSmoke(list, size) {
 
 // The overlay sizes projectiles from its panel like the players, a little larger than their
 // usual minimum, so they read at minimap scale.
+/** @param {number} units @param {number} min */
 const size = (units, min) => (OVERLAY ? (min * overlayUnit()) / 9 : px(units, min));
 
 // Each kind's shape, drawn around the origin (the projectile) with its team colour and screen angle.
+/** @param {MovedProjectile} p @param {string} col @param {number} a */
 function drawRocket(p, col, a) {
   ctx.rotate(a);
   const l = size(26, 12),
@@ -58,6 +67,7 @@ function drawRocket(p, col, a) {
   ctx.fill();
   ctx.stroke();
 }
+/** @param {MovedProjectile} p @param {string} col */
 function drawPipe(p, col) {
   const r = size(9, 4.5);
   ctx.beginPath();
@@ -70,6 +80,7 @@ function drawPipe(p, col) {
   ctx.fillStyle = "#0008";
   ctx.fill();
 }
+/** @param {MovedProjectile} p @param {string} col */
 function drawSticky(p, col) {
   const r = size(10, 6);
   ctx.beginPath();
@@ -87,6 +98,7 @@ function drawSticky(p, col) {
   ctx.fillStyle = "#fff";
   ctx.fill();
 }
+/** @param {MovedProjectile} p @param {string} col @param {number} a */
 function drawArrow(p, col, a) {
   ctx.rotate(a);
   const l = size(34, 18);
@@ -124,6 +136,7 @@ function drawFireball() {
   ctx.shadowBlur = 12;
   ctx.fill();
 }
+/** @param {MovedProjectile} p @param {string} col */
 function drawEnergy(p, col) {
   ctx.beginPath();
   ctx.arc(0, 0, size(12, 4.5), 0, Math.PI * 2);
@@ -134,7 +147,9 @@ function drawEnergy(p, col) {
   ctx.stroke();
 }
 // Thrown jars, and the cleaver in grey.
+/** @type {{ [kind: string]: string }} */
 const JAR_FILL = { Jarate: "#ffe14a", MadMilk: "#f4f4f4", GasPasser: "#ff9a3c" };
+/** @param {MovedProjectile} p */
 function drawJar(p) {
   const r = size(9, 4);
   ctx.rotate(Math.PI / 4);
@@ -142,6 +157,7 @@ function drawJar(p) {
   ctx.fillRect(-r, -r, r * 2, r * 2);
   ctx.strokeRect(-r, -r, r * 2, r * 2);
 }
+/** @param {MovedProjectile} p @param {string} col */
 function drawOther(p, col) {
   ctx.beginPath();
   ctx.arc(0, 0, size(8, 3), 0, Math.PI * 2);
@@ -167,6 +183,7 @@ const PROJECTILES = new Map([
   ["Cleaver", drawJar],
 ]);
 
+/** @param {MovedProjectile[]} list */
 export function drawProjectiles(list) {
   drawSmoke(list, size);
   for (const p of list || []) {

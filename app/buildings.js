@@ -1,8 +1,10 @@
 import { OVERLAY, overlayUnit, uiScale, ctx, state, teamColour } from "./core.js";
 import { toScreen, screenAngle, px } from "./view.js";
 /** @typedef {import("../types/stream").Snapshot} Snapshot */
+/** @typedef {import("../types/stream").Building} Building */
 
 // A sentry's dashed line to the player it is shooting, and its aim sticking out.
+/** @param {Building} b @param {number} x @param {number} y @param {number} s */
 function drawSentryAim(b, x, y, s) {
   const target = b.attacking && b.target != null ? state.lastPlayers.find(p => p.id === b.target) : null;
   if (target?.alive) {

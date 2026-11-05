@@ -6,11 +6,14 @@ import { layerOn } from "./layers.js";
 /** @typedef {import("../types/stream").Player} Player */
 /** @typedef {import("../types/stream").LivePlayer} LivePlayer */
 /** @typedef {import("../types/stream").Snapshot} Snapshot */
+/** @typedef {import("../types/stream").Vec3} Vec3 */
+/** @typedef {NonNullable<import("../types/page").Geometry["cap_areas"]>[number]} CapArea */
 // numbers=0 leaves the number (and the cap rate) off the control points.
 const SHOW_NUMBERS = optOn("numbers");
 
 // The payload cart: a mine cart in the pushing team's colour carrying TF2's big black bomb, facing
 // along the track. Heading comes from movement (kept while stopped); rolling back still faces forward.
+/** @type {Map<number | undefined, { x: number; y: number; h: number | null }>} */
 export const cartState = new Map();
 // The cart turns to face where it went once it moved this many units; a longer move at once is a
 // round reset, not travel.
@@ -31,6 +34,7 @@ function objPos(o, tick) {
   return [a.pos[0] + (b.pos[0] - a.pos[0]) * t, a.pos[1] + (b.pos[1] - a.pos[1]) * t];
 }
 // TF2's big black bomb with a lit fuse, of radius R: on the payload cart, and Mann vs. Machine's.
+/** @param {number} x @param {number} y @param {number} R @param {number} lw */
 function drawBomb(x, y, R, lw) {
   ctx.save();
   ctx.fillStyle = "#15171a";
@@ -355,6 +359,7 @@ function drawPoint(o, snap, tick) {
 }
 
 // The point's number, or while it is capped the cap rate (×2 for two cappers, as TF2's HUD shows it).
+/** @param {Objective} o @param {boolean} capping @param {number} x @param {number} y @param {number} half */
 function drawPointNumber(o, capping, x, y, half) {
   const u = OVERLAY ? overlayUnit() : 0;
   ctx.fillStyle = "#fff";
@@ -362,7 +367,7 @@ function drawPointNumber(o, capping, x, y, half) {
   ctx.textBaseline = "middle";
   ctx.font = `800 ${Math.round(OVERLAY ? u * 1.3 : Math.max(12 * uiScale(), half * 0.9))}px system-ui`;
   const n = layerOn("points") && capping && o.on_point ? o.on_point[o.capping_team] : 0;
-  const text = n > 0 ? `\u00d7${n}` : String(o.index + 1);
+  const text = n > 0 ? `\u00d7${n}` : String(/** @type {number} */ (o.index) + 1);
   ctx.lineWidth = 3;
   ctx.strokeStyle = "#0b0c0e";
   ctx.strokeText(text, x, y + 1);
@@ -376,7 +381,10 @@ function drawPointNumber(o, capping, x, y, half) {
 export function drawCapAreas(snap) {
   const areas = state.geometry?.cap_areas;
   if (!areas?.length) return;
-  const cps = (snap.objectives || []).filter(o => o.kind === "control_point" && o.pos != null);
+  const cps = (snap.objectives || []).filter(
+    /** @param {Objective} o @returns {o is PlacedObjective} */ o => o.kind === "control_point" && o.pos != null,
+  );
+  /** @param {CapArea} a @param {Vec3} p */
   const near = (a, p) =>
     Math.hypot(Math.max(a.min[0] - p[0], 0, p[0] - a.max[0]), Math.max(a.min[1] - p[1], 0, p[1] - a.max[1]));
   for (const a of areas) {
@@ -443,7 +451,7 @@ function drawBall(o, players, tick) {
 // or where it was dropped (with the seconds until it goes).
 /** @param {PlacedObjective} o @param {LivePlayer | null} carrier @param {Snapshot} snap @param {number} tick */
 function drawPickups(o, carrier, snap, tick) {
-  let [x, y] = toScreen(...(carrier ? carrier.pos : o.pos).slice(0, 2));
+  let [x, y] = toScreen(.../** @type {[number, number]} */ ((carrier ? carrier.pos : o.pos).slice(0, 2)));
   const r = OVERLAY ? overlayUnit() * 0.6 : px(22, 8);
   if (carrier) {
     const pr = playerRad();

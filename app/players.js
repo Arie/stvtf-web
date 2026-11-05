@@ -5,9 +5,12 @@ import { drawUberRing, drawStatusInside, drawStatus } from "./status.js";
 /** @typedef {import("../types/stream").Player} Player */
 /** @typedef {import("../types/stream").LivePlayer} LivePlayer */
 /** @typedef {{ p: Player, x: number, y: number, rad: number, col: string, cloaked: boolean }} Dot */
+/** @typedef {NonNullable<ReturnType<typeof beamCurve>>} Beam */
+/** @typedef {{ x: number, y: number, side: number }} IconBox The square an icon's art fills, in image pixels. */
 
 // The medigun beam like TF2's: two strands twisting around a soft glow in the team colour, with
 // sparkles drifting from the medic to the patient; thicker and brighter while the charge is out.
+/** @type {{ [team: string]: string }} */
 const BEAM_LIGHT = { red: "#ffc2b8", blue: "#c2e2ff" };
 /** @param {Player[]} players @param {Map<number, Player>} byId */
 export function drawHealBeams(players, byId) {
@@ -30,7 +33,7 @@ function beamCurve(m, pt) {
     [x1, y1] = toScreen(pt.pos[0], pt.pos[1]);
   const len = Math.hypot(x1 - x0, y1 - y0);
   if (len < 2) return null;
-  const a = screenAngle(m.yaw),
+  const a = screenAngle(m.yaw ?? 0),
     ux = (x1 - x0) / len,
     uy = (y1 - y0) / len;
   let cx = x0 + Math.cos(a) * len * 0.5,
@@ -41,10 +44,12 @@ function beamCurve(m, pt) {
     cx += -uy * k;
     cy += ux * k;
   }
+  /** @param {number} f @returns {[number, number]} */
   const at = f => [
     (1 - f) * (1 - f) * x0 + 2 * f * (1 - f) * cx + f * f * x1,
     (1 - f) * (1 - f) * y0 + 2 * f * (1 - f) * cy + f * f * y1,
   ];
+  /** @param {number} f @returns {[number, number]} */
   const normal = f => {
     const tx = 2 * (1 - f) * (cx - x0) + 2 * f * (x1 - cx),
       ty = 2 * (1 - f) * (cy - y0) + 2 * f * (y1 - cy),
@@ -54,7 +59,7 @@ function beamCurve(m, pt) {
   return { x0, y0, x1, y1, cx, cy, len, at, normal };
 }
 
-/** @param {Player} m */
+/** @param {Player} m @param {Beam} beam @param {boolean} hot @param {number} t */
 function drawHealBeam(m, beam, hot, t) {
   const { x0, y0, x1, y1, cx, cy, len } = beam;
   const col = teamColour(m.team, "#fff"),
@@ -95,6 +100,7 @@ function drawHealBeam(m, beam, hot, t) {
   ctx.restore();
 }
 
+/** @param {Beam} beam @param {number} amp @param {boolean} hot @param {number} t */
 function drawBeamSparks(beam, amp, hot, t) {
   ctx.fillStyle = "#fff";
   const sparks = Math.max(2, Math.round(beam.len / 45));
@@ -114,8 +120,11 @@ function drawBeamSparks(beam, amp, hot, t) {
 // Their art sits in a padded box (some fill only half of it), so each is cropped to a square
 // around what it draws: the art itself fills the size asked for.
 const ICON_SIZE = 1.55,
+  /** @type {Map<string, HTMLCanvasElement>} */
   iconSprites = new Map(),
+  /** @type {Map<string, IconBox>} */
   iconBoxes = new Map();
+/** @param {string} cls @param {HTMLImageElement} img */
 function iconBox(cls, img) {
   let box = iconBoxes.get(cls);
   if (box) return box;
@@ -153,6 +162,7 @@ function iconBox(cls, img) {
   iconBoxes.set(cls, box);
   return box;
 }
+/** @param {string} cls @param {number} size */
 function iconSprite(cls, size) {
   const img = icon(cls);
   if (!img) return null;
@@ -199,7 +209,7 @@ export function drawPlayers(players) {
   if (SHOW_FACING) for (const d of alive) drawPointer(d);
   for (const d of alive) drawDisc(d);
   // Flames over the dots, so they show in a fight, but under the class icons.
-  if (SHOW_SHOTS) for (const { p, x, y, rad } of alive) if (p.flames) drawFlames(p, x, y, rad, screenAngle(p.yaw));
+  if (SHOW_SHOTS) for (const { p, x, y, rad } of alive) if (p.flames) drawFlames(p, x, y, rad, screenAngle(p.yaw ?? 0));
   for (const d of alive) drawIcon(d);
   if (layerOn("effects")) for (const d of alive) drawStatusOver(d);
   if (SHOW_NAMES) for (const d of alive) drawName(d);
@@ -233,11 +243,11 @@ function drawPointer({ p, x, y, rad, col, cloaked }) {
   ctx.globalAlpha = cloaked ? 0.35 : 1;
   // A pointer on the disc where they look; how wide they see is up to their client. demos.tf's
   // dart (0.8 of the disc's radius long, 0.6 of that to each side, notched base) from the health ring.
-  const a = screenAngle(p.yaw),
+  const a = screenAngle(p.yaw ?? 0),
     base = rad + 3,
     len = rad * 0.8,
     half = len * 0.6;
-  /** @returns {[number, number]} */
+  /** @param {number} f @param {number} l @returns {[number, number]} */
   const at = (f, l) => [x + Math.cos(a) * f - Math.sin(a) * l, y + Math.sin(a) * f + Math.cos(a) * l];
   ctx.beginPath();
   for (const [f, l] of [
@@ -272,15 +282,17 @@ function drawDisc({ p, x, y, rad, col, cloaked }) {
   if (SHOW_HEALTH) drawHealth(p, x, y, rad);
 }
 
+/** @param {number} frac */
 function healthColor(frac) {
   if (frac > 0.5) return "#9fd27f";
   if (frac > 0.25) return "#e0c040";
   return "#e05a40";
 }
-/** @param {Player} p */
+/** @param {Player} p @param {number} x @param {number} y @param {number} rad */
 function drawHealth(p, x, y, rad) {
   const max = p.max_hp || 1,
     frac = Math.max(0, Math.min(1, p.hp / max));
+  /** @param {number} from @param {number} to @param {string} color */
   const ring = (from, to, color) => {
     ctx.beginPath();
     ctx.arc(x, y, rad + 2.5, -Math.PI / 2 + Math.PI * 2 * from, -Math.PI / 2 + Math.PI * 2 * to);
@@ -320,7 +332,7 @@ function drawIcon({ p, x, y, rad, cloaked }) {
 }
 
 // The building an engineer carries, as a small badge like the ones on the map.
-/** @param {Player} p */
+/** @param {Player} p @param {number} x @param {number} y @param {number} rad */
 function drawCarried(p, x, y, rad) {
   if (!p.carrying) return;
   const bs = Math.max(12, rad),
@@ -360,13 +372,14 @@ function drawName({ p, x, y, rad, cloaked }) {
   );
 }
 
+/** @param {Player} p */
 function flameColor(p) {
-  if (!p.flames.crit) return "255,150,40";
+  if (!p.flames?.crit) return "255,150,40";
   return p.team === "red" ? "255,90,60" : "90,160,255";
 }
 // A firing flamethrower: a flickering cone about as long as the flames reach. Crit flames take
 // the team's colour, and burn brighter while they hit someone.
-/** @param {Player} p */
+/** @param {Player} p @param {number} x @param {number} y @param {number} rad @param {number} a */
 function drawFlames(p, x, y, rad, a) {
   if (!p.flames) return;
   const t = performance.now() / 1000,

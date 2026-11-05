@@ -5,6 +5,9 @@ import { esc } from "./feed.js";
 /** @typedef {import("../types/stream").GameEvent} GameEvent */
 /** @typedef {import("../types/stream").Player} Player */
 /** @typedef {import("../types/stream").Snapshot} Snapshot */
+/** @typedef {import("../types/stream").PlayerScore} PlayerScore */
+/** @typedef {import("../types/stream").TeamScore} TeamScore */
+/** @typedef {import("../types/stream").Timer} Timer */
 
 // The player panels redraw at most this often.
 const PANEL_MS = 250;
@@ -14,6 +17,7 @@ const FULL_CHARGE = 100;
 const LOW_SECONDS = 30;
 
 // ---------- HUD and header, refreshed a few times per second
+/** @type {{ [charge: string]: string }} */
 const UBER_LABEL = {
   uber: "ÜBER",
   kritz: "KRITZ",
@@ -22,6 +26,7 @@ const UBER_LABEL = {
   vaccinator_blast: "VACC · BLAST",
   vaccinator_fire: "VACC · FIRE",
 };
+/** @type {{ [kind: string]: string }} */
 export const MEDIGUN_NAME = {
   medigun: "Medi Gun",
   kritzkrieg: "Kritzkrieg",
@@ -31,23 +36,28 @@ export const MEDIGUN_NAME = {
 
 // Cards and meters are kept and updated in place: rebuilding them would restart their
 // animations (the über stripes) several times a second.
+/** @type {Map<string, HTMLElement>} */
 export const hudNodes = new Map();
+/** @param {string} key @param {string} html */
 function node(key, html) {
   let el = hudNodes.get(key);
   if (!el) {
     const t = document.createElement("template");
     t.innerHTML = html.trim();
-    el = t.content.firstElementChild;
+    el = /** @type {HTMLElement} */ (t.content.firstElementChild);
     hudNodes.set(key, el);
   }
   return el;
 }
+/** @param {Element} el @param {string} html */
 function setHTML(el, html) {
   if (el.innerHTML !== html) el.innerHTML = html;
 }
+/** @param {Element} el @param {string} cls */
 function setClass(el, cls) {
   if (el.className !== cls) el.className = cls;
 }
+/** @param {HTMLElement} el @param {"clipPath"} prop @param {string} value */
 function setStyle(el, prop, value) {
   if (el.style[prop] !== value) el.style[prop] = value;
 }
@@ -130,18 +140,26 @@ function card(p) {
     `<div class="card"><div class="fill"></div><div class="oh"></div><span class="ci"></span><div class="nm"><b></b><small><span></span><img class="wp" alt="" hidden></small></div><span class="fx"></span><div class="hp"></div></div>`,
   );
   const f = p.alive ? Math.max(0, Math.min(1, p.hp / (p.max_hp || 1))) : 0;
-  if (el.dataset.id !== String(p.id)) el.dataset.id = p.id;
+  if (el.dataset.id !== String(p.id)) el.dataset.id = String(p.id);
   setClass(el, cardClass(p, f));
-  setStyle(el.children[0], "clipPath", `inset(0px ${(100 - f * 100).toFixed(1)}% 0px 0px)`);
+  setStyle(
+    /** @type {HTMLElement} */ (el.children[0]),
+    "clipPath",
+    `inset(0px ${(100 - f * 100).toFixed(1)}% 0px 0px)`,
+  );
   const oc = overheal(p);
-  setStyle(el.children[1], "clipPath", `inset(0px ${(100 - oc * 100).toFixed(1)}% 0px 0px)`);
+  setStyle(
+    /** @type {HTMLElement} */ (el.children[1]),
+    "clipPath",
+    `inset(0px ${(100 - oc * 100).toFixed(1)}% 0px 0px)`,
+  );
   setHTML(
     el.children[2],
     ICONS[p.class] ? `<img src="${asset(`icons/${p.class}.svg`)}" alt="${p.class}">` : CLASS[p.class] || "?",
   );
-  setText2(el.querySelector(".nm b"), p.name);
+  setText2(/** @type {Element} */ (el.querySelector(".nm b")), p.name);
   const sub = p.ping != null ? `${p.ping} ms` : "";
-  const [subEl, wp] = el.querySelector(".nm small").children;
+  const [subEl, wp] = /** @type {Element} */ (el.querySelector(".nm small")).children;
   setHTML(el.children[4], conditionIcons(p));
   setHTML(subEl, `${p.ubered ? `<span class="tag">${UBER_LABEL[p.ubered] || "ÜBER"}</span>` : ""}${sub}`);
   showWeapon(/** @type {HTMLImageElement} */ (wp), weaponImage(p));
@@ -170,7 +188,7 @@ function chargeMeter(p) {
       .filter(Boolean)
       .join(" "),
   );
-  setStyle(el.children[0], "clipPath", `inset(0px ${100 - pct}% 0px 0px)`);
+  setStyle(/** @type {HTMLElement} */ (el.children[0]), "clipPath", `inset(0px ${100 - pct}% 0px 0px)`);
   // The Vaccinator charges in four 25% pips; the others in one bar.
   setHTML(
     el.children[1],
@@ -184,9 +202,11 @@ function chargeMeter(p) {
   setText2(el.children[4], `${pct}%`);
   return el;
 }
+/** @param {Element} el @param {string} text */
 function setText2(el, text) {
   if (el.textContent !== text) el.textContent = text;
 }
+/** @param {Element} box @param {Element[]} nodes */
 function placeChildren(box, nodes) {
   // Only touch the DOM order when it changed: moving a node restarts its animations too.
   const same = box.children.length === nodes.length && nodes.every((n, i) => box.children[i] === n);
@@ -218,6 +238,7 @@ export function showTimeAdded(ev) {
 }
 
 // The scoreboard while Tab is held: each team by points, like TF2's.
+/** @type {[keyof PlayerScore, string][]} */
 const BOARD_COLUMNS = [
   ["points", "Points"],
   ["kills", "K"],
@@ -228,19 +249,20 @@ const BOARD_COLUMNS = [
 ];
 /** @param {Player[]} players @param {Snapshot} snap */
 export function renderBoard(players, snap) {
+  /** @param {"red" | "blue"} t @param {string} label */
   const team = (t, label) => {
     const rows = players
       .filter(p => p.team === t)
       .sort((a, b) => (b.score?.points ?? 0) - (a.score?.points ?? 0) || (b.score?.kills ?? 0) - (a.score?.kills ?? 0));
     const body = rows
       .map(p => {
-        const s = p.score || {},
+        const s = /** @type {Partial<PlayerScore>} */ (p.score || {}),
           status = respawnIn(p) ? ` <small>${respawnIn(p)}s</small>` : "";
         const icon = ICONS[p.class] ? `<img src="${asset(`icons/${p.class}.svg`)}" alt="">` : "";
         return `<tr class="${p.alive ? "" : "dead"}"><td class="bc">${icon}</td><td class="bn">${esc(p.name)}${status}</td>${BOARD_COLUMNS.map(([k]) => `<td>${s[k] ?? ""}</td>`).join("")}<td>${p.ping ?? ""}</td></tr>`;
       })
       .join("");
-    const score = (snap.score || {})[t] ?? 0;
+    const score = /** @type {Partial<TeamScore>} */ (snap.score || {})[t] ?? 0;
     return (
       `<div class="bteam ${t}"><div class="bhead"><b>${label}</b><span>${score}</span><i>${rows.length} players</i></div>` +
       `<table><thead><tr><th></th><th class="bn">Name</th>${BOARD_COLUMNS.map(([, h]) => `<th>${h}</th>`).join("")}<th>Ping</th></tr></thead><tbody>${body}</tbody></table></div>`
@@ -250,6 +272,7 @@ export function renderBoard(players, snap) {
 }
 
 // ---------- TF2-style scoreboard: team scores, round timer, control points
+/** @type {{ [round: string]: string }} */
 const ROUND_LABEL = {
   pregame: "WARMUP",
   preround: "GET READY",
@@ -261,13 +284,16 @@ const ROUND_LABEL = {
   restart: "",
   running: "",
 };
+/** @param {number} secs */
 function clock(secs) {
   const s = Math.max(0, Math.ceil(secs));
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 }
+/** @param {number} secs */
 export function mmss(secs) {
   return `${Math.floor(secs / 60)}:${String(Math.floor(secs % 60)).padStart(2, "0")}`;
 }
+/** @param {string} id @param {string} text */
 function setText(id, text) {
   const el = $(id);
   if (el.textContent !== text) el.textContent = text;
@@ -287,6 +313,7 @@ export function shownScore(snap) {
 }
 // King of the hill: each team's timer, side by side in the middle like TF2's HUD; the one
 // ticking (the team holding the point) bright, the other dimmed.
+/** @param {(team: string) => Timer} byTeam @param {(t: Timer) => number} left */
 function kothTimers(byTeam, left) {
   const running = ["blue", "red"].some(t => !byTeam(t).paused);
   return ["blue", "red"]
@@ -297,6 +324,7 @@ function kothTimers(byTeam, left) {
     })
     .join("");
 }
+/** @param {Timer | null} main @param {number | null} mapLeft @param {(t: Timer) => number} left */
 function mainTimerText(main, mapLeft, left) {
   if (main) return clock(left(main));
   if (mapLeft != null) return clock(mapLeft);
@@ -304,9 +332,13 @@ function mainTimerText(main, mapLeft, left) {
 }
 // Under the round timer, the map time; else in Mann vs. Machine the robots left in the wave, where
 // the map time would go.
-/** @param {Snapshot} snap */
+/** @param {Snapshot} snap @param {Timer | false | null | undefined} underRound @param {number | null} mapLeft */
 function mapTimerText(snap, underRound, mapLeft) {
-  const robots = snap.mvm ? (snap.mvm.classes || []).filter(c => !c.support).reduce((n, c) => n + c.count, 0) : 0;
+  const robots = snap.mvm
+    ? /** @type {{ support?: boolean; count: number }[]} */ (snap.mvm.classes || [])
+        .filter(c => !c.support)
+        .reduce((n, c) => n + c.count, 0)
+    : 0;
   if (underRound && mapLeft != null) return `MAP ${clock(mapLeft)}`;
   if (robots > 0) return `${robots} ROBOT${robots === 1 ? "" : "S"}`;
   return "";
@@ -317,7 +349,7 @@ function timeIntoRound(snap, tick) {
   if (snap.round_time == null) return null;
   return snap.round_time + (snap.round === "running" ? (Math.max(0, tick - snap.tick) * msPerTick) / 1000 : 0);
 }
-/** @param {Snapshot} snap */
+/** @param {Snapshot} snap @param {Timer | null} main */
 function roundLabel(snap, main) {
   if (main?.setup) return "SETUP";
   // Mann vs. Machine: the wave, like its HUD.
@@ -325,6 +357,7 @@ function roundLabel(snap, main) {
   return ROUND_LABEL[snap.round] ?? "";
 }
 // The time the low-time warning watches: a running round timer, or the map time when there is none.
+/** @param {Timer | null} main @param {number | null} mapLeft @param {(t: Timer) => number} left */
 function watchedTimeLeft(main, mapLeft, left) {
   if (main && !main.paused) return left(main);
   if (!main) return mapLeft;
@@ -342,20 +375,22 @@ function renderScores(snap) {
 export function renderScoreboard(snap, tick) {
   renderScores(snap);
   const timers = snap.timers || [];
-  const left = t => (t.paused ? t.remaining : t.remaining - (Math.max(0, tick - snap.tick) * msPerTick) / 1000);
+  const left = /** @param {Timer} t */ t =>
+    t.paused ? t.remaining : t.remaining - (Math.max(0, tick - snap.tick) * msPerTick) / 1000;
   const main = timers.find(t => t.team === "none") || (timers.length === 1 ? timers[0] : null);
-  const byTeam = team => timers.find(t => t.team === team && t !== main);
+  const byTeam = /** @param {string} team */ team => timers.find(t => t.team === team && t !== main);
   // Like TF2's HUD: the round timer when one is active, else the map's mp_timelimit; with
   // both, the map time goes underneath.
   const mapLeft = snap.time_left == null ? null : snap.time_left - (Math.max(0, tick - snap.tick) * msPerTick) / 1000;
   const koth = !main && byTeam("blue") && byTeam("red");
-  if (koth) setHTML($("timer-main"), kothTimers(byTeam, left));
+  if (koth) setHTML($("timer-main"), kothTimers(/** @type {(team: string) => Timer} */ (byTeam), left));
   else setText("timer-main", mainTimerText(main, mapLeft, left));
   $("scoreboard").classList.toggle("koth", Boolean(koth));
   setText("timer-map", mapTimerText(snap, main || koth, mapLeft));
   const into = timeIntoRound(snap, tick);
   state.clock = into == null ? "" : mmss(into);
-  const side = team => (!koth && byTeam(team) ? clock(left(byTeam(team))) : "");
+  const side = /** @param {string} team */ team =>
+    !koth && byTeam(team) ? clock(left(/** @type {Timer} */ (byTeam(team)))) : "";
   setText("timer-blue", side("blue"));
   setText("timer-red", side("red"));
   const label = roundLabel(snap, main);

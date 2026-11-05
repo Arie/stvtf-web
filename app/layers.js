@@ -15,6 +15,7 @@ const LAYERS = {
   loadout: { label: "Weapon in hand", key: "l", def: true, detail: false },
   effects: { label: "Status effects", key: "", def: true, detail: false },
 };
+/** @type {{ [name: string]: boolean }} */
 const layerState = {};
 for (const [name, l] of Object.entries(LAYERS)) {
   layerState[name] = OVERLAY ? name === "caps" : l.def;
@@ -25,8 +26,9 @@ for (const [name, l] of Object.entries(LAYERS)) {
   // The address beats the saved choice for this visit, without changing it.
   layerState[name] = optOn(name, layerState[name]);
 }
-export const layerOn = name => layerState[name];
+export const layerOn = /** @param {string} name */ name => layerState[name];
 export const detailNeeded = () => Object.entries(LAYERS).some(([n, l]) => l.detail && layerState[n]);
+/** @param {string} name @param {boolean} on */
 export function setLayer(name, on) {
   const had = detailNeeded();
   layerState[name] = on;
@@ -36,6 +38,7 @@ export function setLayer(name, on) {
   renderSettings();
   if (had !== detailNeeded()) openStream();
 }
+/** @param {boolean} on */
 export function setOverkill(on) {
   const had = detailNeeded();
   for (const name of Object.keys(LAYERS)) {
@@ -51,6 +54,7 @@ export const overkillOn = () => Object.keys(LAYERS).every(layerOn);
 export function renderSettings() {
   const box = $("settings");
   if (!box) return;
+  /** @param {string} id @param {string} label @param {string} key @param {boolean} on @param {string} cls */
   const row = (id, label, key, on, cls) =>
     `<label class="${cls}"><input type="checkbox" data-layer="${id}"${on ? " checked" : ""}>${label}${key ? `<kbd>${key}</kbd>` : ""}</label>`;
   box.innerHTML =
