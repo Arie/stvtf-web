@@ -256,4 +256,6 @@ const summary = [
   .filter(Boolean)
   .join(", ");
 console.log(`\n${summary} in ${secs(performance.now() - t0)}`);
+const fixable = opt.fix ? [] : failed.filter(r => TASKS[r.name].fix).map(r => r.name);
+if (fixable.length) console.log(`script/test --fix -t ${fixable.join(",")} fixes what it can.`);
 process.exit(failed.length ? 1 : 0);
