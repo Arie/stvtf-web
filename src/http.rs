@@ -776,6 +776,10 @@ mod tests {
             let entry = name == "main.js" || name == "stv-map.js";
             assert!(ctype != JS || entry || imported.contains(&format!("from \"./{name}\"")), "nothing imports {name}");
         }
+        // And everything imported is served: a module missing from APP would 404 in the browser.
+        for import in imported.split("from \"./").skip(1).map(|r| r.split('"').next().unwrap()) {
+            assert!(APP.iter().any(|(name, ..)| *name == import), "{import} is imported but not in APP");
+        }
         // The stylesheet's own links are relative to where it is served.
         let css = std::str::from_utf8(APP[0].2).unwrap();
         for link in css.split("url(\"").skip(1).map(|r| r.split('"').next().unwrap()).filter(|l| !l.starts_with("data:")) {
