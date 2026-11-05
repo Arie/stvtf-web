@@ -59,82 +59,104 @@ const kindTiles = {};
 /** @param {string} k */
 function kindTile(k) {
   if (k in kindTiles) return kindTiles[k];
+  const tile = Object.hasOwn(TILES, k) ? TILES[k] : null;
+  if (!tile) return (kindTiles[k] = null);
   let seed = 7;
   const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
-  const size = /** @type {{ [kind: string]: [number, number] }} */ ({
-    grass: [16, 16],
-    dirt: [48, 48],
-    metal: [8, 8],
-    wood: [32, 10],
-    tile: [12, 12],
-    water: [24, 12],
-  })[k];
-  if (!size) return (kindTiles[k] = null);
   const t = document.createElement("canvas");
-  [t.width, t.height] = size;
-  const c = context2d(t),
-    light = /** @param {number} a */ a => `rgba(255,255,255,${a})`,
-    dark = /** @param {number} a */ a => `rgba(0,0,0,${a})`;
-  if (k === "grass") {
-    for (let i = 0; i < 40; i++) {
-      c.fillStyle = rnd() < 0.5 ? light(0.1) : dark(0.12);
-      c.fillRect(Math.floor(rnd() * 16), Math.floor(rnd() * 16), 1, 1);
-    }
-  } else if (k === "dirt") {
-    for (let i = 0; i < 14; i++) {
-      const x = rnd() * 48,
-        y = rnd() * 48,
-        r = 4 + rnd() * 8,
-        tint = rnd() < 0.5 ? "255,255,255" : "0,0,0";
-      // Drawn at every wrap so blotches cross the tile's edges without a seam.
-      for (const [dx, dy] of [
-        [0, 0],
-        [-48, 0],
-        [0, -48],
-        [-48, -48],
-        [48, 0],
-        [0, 48],
-        [48, 48],
-        [-48, 48],
-        [48, -48],
-      ]) {
-        const gr = c.createRadialGradient(x + dx, y + dy, 0, x + dx, y + dy, r);
-        gr.addColorStop(0, `rgba(${tint},0.09)`);
-        gr.addColorStop(1, `rgba(${tint},0)`);
-        c.fillStyle = gr;
-        c.fillRect(x + dx - r, y + dy - r, 2 * r, 2 * r);
-      }
-    }
-  } else if (k === "metal") {
-    c.strokeStyle = light(0.09);
-    c.lineWidth = 1;
-    c.beginPath();
-    c.moveTo(-1, 9);
-    c.lineTo(9, -1);
-    c.moveTo(-1, 1);
-    c.lineTo(1, -1);
-    c.moveTo(7, 9);
-    c.lineTo(9, 7);
-    c.stroke();
-  } else if (k === "wood") {
-    c.fillStyle = dark(0.18);
-    c.fillRect(0, 9, 32, 1);
-    c.fillRect(Math.floor(rnd() * 32), 0, 1, 9);
-    c.fillStyle = light(0.05);
-    c.fillRect(0, 0, 32, 1);
-  } else if (k === "tile") {
-    c.fillStyle = dark(0.14);
-    c.fillRect(0, 11, 12, 1);
-    c.fillRect(11, 0, 1, 11);
-  } else if (k === "water") {
-    c.strokeStyle = light(0.12);
-    c.lineWidth = 1;
-    c.beginPath();
-    for (let x = 0; x <= 24; x++) (x ? c.lineTo : c.moveTo).call(c, x, 6 + 2 * Math.sin((x / 24) * 2 * Math.PI));
-    c.stroke();
-  }
+  [t.width, t.height] = tile.size;
+  tile.paint(context2d(t), rnd);
   return (kindTiles[k] = t);
 }
+/** @param {number} a */
+const light = a => `rgba(255,255,255,${a})`;
+/** @param {number} a */
+const dark = a => `rgba(0,0,0,${a})`;
+// Each kind's tile: its size and how its marks are painted, given seeded noise.
+/** @type {{ [kind: string]: { size: [number, number]; paint: (c: CanvasRenderingContext2D, rnd: () => number) => void } }} */
+const TILES = {
+  grass: {
+    size: [16, 16],
+    paint(c, rnd) {
+      for (let i = 0; i < 40; i++) {
+        c.fillStyle = rnd() < 0.5 ? light(0.1) : dark(0.12);
+        c.fillRect(Math.floor(rnd() * 16), Math.floor(rnd() * 16), 1, 1);
+      }
+    },
+  },
+  dirt: {
+    size: [48, 48],
+    paint(c, rnd) {
+      for (let i = 0; i < 14; i++) {
+        const x = rnd() * 48,
+          y = rnd() * 48,
+          r = 4 + rnd() * 8,
+          tint = rnd() < 0.5 ? "255,255,255" : "0,0,0";
+        // Drawn at every wrap so blotches cross the tile's edges without a seam.
+        for (const [dx, dy] of [
+          [0, 0],
+          [-48, 0],
+          [0, -48],
+          [-48, -48],
+          [48, 0],
+          [0, 48],
+          [48, 48],
+          [-48, 48],
+          [48, -48],
+        ]) {
+          const gr = c.createRadialGradient(x + dx, y + dy, 0, x + dx, y + dy, r);
+          gr.addColorStop(0, `rgba(${tint},0.09)`);
+          gr.addColorStop(1, `rgba(${tint},0)`);
+          c.fillStyle = gr;
+          c.fillRect(x + dx - r, y + dy - r, 2 * r, 2 * r);
+        }
+      }
+    },
+  },
+  metal: {
+    size: [8, 8],
+    paint(c) {
+      c.strokeStyle = light(0.09);
+      c.lineWidth = 1;
+      c.beginPath();
+      c.moveTo(-1, 9);
+      c.lineTo(9, -1);
+      c.moveTo(-1, 1);
+      c.lineTo(1, -1);
+      c.moveTo(7, 9);
+      c.lineTo(9, 7);
+      c.stroke();
+    },
+  },
+  wood: {
+    size: [32, 10],
+    paint(c, rnd) {
+      c.fillStyle = dark(0.18);
+      c.fillRect(0, 9, 32, 1);
+      c.fillRect(Math.floor(rnd() * 32), 0, 1, 9);
+      c.fillStyle = light(0.05);
+      c.fillRect(0, 0, 32, 1);
+    },
+  },
+  tile: {
+    size: [12, 12],
+    paint(c) {
+      c.fillStyle = dark(0.14);
+      c.fillRect(0, 11, 12, 1);
+      c.fillRect(11, 0, 1, 11);
+    },
+  },
+  water: {
+    size: [24, 12],
+    paint(c) {
+      c.strokeStyle = light(0.12);
+      c.lineWidth = 1;
+      c.beginPath();
+      for (let x = 0; x <= 24; x++) (x ? c.lineTo : c.moveTo).call(c, x, 6 + 2 * Math.sin((x / 24) * 2 * Math.PI));
+      c.stroke();
+    },
+  },
+};
 
 // A hex colour scaled by s, as rgb().
 /** @param {string} hex @param {number} s */
