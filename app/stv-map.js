@@ -80,7 +80,7 @@ const loaded = /** @param {HTMLLinkElement} link */ link =>
   });
 
 class StvMap extends HTMLElement {
-  /** @type {((m: { type: string; [k: string]: unknown }) => void) | null} */
+  /** @type {((m: import("./embed.js").EmbedCommand) => void) | null} */
   #command = null;
 
   async connectedCallback() {
@@ -132,12 +132,13 @@ class StvMap extends HTMLElement {
       if (mounted === this && !this.#command) mounted = null;
       const failed = document.createElement("div");
       failed.className = "failed";
-      failed.textContent = `stv.tf: ${e.message}`;
+      failed.textContent = `stv.tf: ${e instanceof Error ? e.message : e}`;
       shadow.append(failed);
     }
   }
 
   // A player by `steamid64`, `steamid` or `id`; none stops following.
+  /** @param {{ steamid64?: string | number; steamid?: string; id?: number }} player */
   follow(player = {}) {
     this.#command?.({ type: "follow", ...player });
   }
