@@ -50,7 +50,10 @@ function activeRooms(snap) {
     const rooms = s.rooms
       .map((r, i) => ({ r, i, n: s.points.filter(p => p.team === team && inRoom(r, p.pos)).length }))
       .filter(x => x.r.team === team);
-    const main = rooms.reduce((a, b) => (b.n > (a?.n ?? -1) ? b : a), null);
+    const main = rooms.reduce(
+      (a, b) => (b.n > (a?.n ?? -1) ? b : a),
+      /** @type {(typeof rooms)[number] | null} */ (null),
+    );
     if (!main) continue;
     const enabled = rooms.filter(x => !x.r.disabled && live.some(p => p.team === team && inRoom(x.r, p.pos)));
     const far = x => Math.hypot(centre(x.r)[0] - centre(main.r)[0], centre(x.r)[1] - centre(main.r)[1]);

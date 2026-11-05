@@ -190,7 +190,7 @@ try {
 if (OPT.get("side") === "0") env.el.classList.add("noside");
 for (const b of /** @type {NodeListOf<HTMLButtonElement>} */ (env.root.querySelectorAll("#bgtoggle button"))) {
   b.addEventListener("click", () => {
-    state.bg = b.dataset.bg;
+    state.bg = b.dataset.bg ?? state.bg;
     for (const o of env.root.querySelectorAll("#bgtoggle button")) o.classList.toggle("on", o === b);
   });
   if (b.dataset.bg === (PLAIN_BG ? "geometry" : OPT.get("bg"))) b.click();

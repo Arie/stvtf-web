@@ -5,6 +5,7 @@ import { TEAM, OVERLAY, uiScale, ctx } from "./core.js";
 // pulsing rings, vaccinator a shield with its resistance.
 /** @param {Player} p */
 export function drawUberRing(p, x, y, rad, col) {
+  if (!p.ubered) return;
   const t = performance.now() / 1000;
   ctx.save();
   if (p.ubered === "uber") {

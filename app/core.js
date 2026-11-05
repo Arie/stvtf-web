@@ -72,7 +72,7 @@ export const optOn = (name, def = true) => {
   return v === "1" || (v !== "0" && def);
 };
 // bg=flat or bg=outline: the map geometry drawn plainly, in place of its usual look.
-export const PLAIN_BG = ["flat", "outline"].includes(OPT.get("bg")) ? OPT.get("bg") : null;
+export const PLAIN_BG = (bg => (bg === "flat" || bg === "outline" ? bg : null))(OPT.get("bg"));
 if (OVERLAY) {
   env.el.classList.add("overlay");
   if (OPT.has("panel")) env.el.style.setProperty("--overlay-opacity", OPT.get("panel"));

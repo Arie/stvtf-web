@@ -4,9 +4,8 @@ import { toScreen, screenAngle, px } from "./view.js";
 
 // A sentry's dashed line to the player it is shooting, and its aim sticking out.
 function drawSentryAim(b, x, y, s) {
-  const target =
-    b.attacking && b.target != null ? state.lastPlayers.find(p => p.id === b.target && p.alive && p.pos) : null;
-  if (target) {
+  const target = b.attacking && b.target != null ? state.lastPlayers.find(p => p.id === b.target) : null;
+  if (target?.alive) {
     const [tx, ty] = toScreen(target.pos[0], target.pos[1]);
     ctx.beginPath();
     ctx.moveTo(x, y);

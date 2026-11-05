@@ -3,6 +3,7 @@ import { layerOn } from "./layers.js";
 import { toScreen, screenAngle, playerRad, drawText } from "./view.js";
 import { drawUberRing, drawStatusInside, drawStatus } from "./status.js";
 /** @typedef {import("../types/stream").Player} Player */
+/** @typedef {import("../types/stream").LivePlayer} LivePlayer */
 /** @typedef {{ p: Player, x: number, y: number, rad: number, col: string, cloaked: boolean }} Dot */
 
 // The medigun beam like TF2's: two strands twisting around a soft glow in the team colour, with
@@ -23,7 +24,7 @@ export function drawHealBeams(players, byId) {
 
 // A quadratic curve leaving the medigun along the medic's aim, as TF2's beam does; aimed
 // straight at the patient it still bends a little. Null when they are on top of each other.
-/** @param {Player} m @param {Player} pt */
+/** @param {LivePlayer} m @param {LivePlayer} pt */
 function beamCurve(m, pt) {
   const [x0, y0] = toScreen(m.pos[0], m.pos[1]),
     [x1, y1] = toScreen(pt.pos[0], pt.pos[1]);
@@ -188,7 +189,7 @@ export function drawPlayers(players) {
     if (p.team !== "red" && p.team !== "blue") continue;
     if (!p.alive) {
       // The overlay keeps an X where each dead player fell until they respawn, like a CS radar.
-      if (SHOW_FALLEN && p.pos) drawFallen(p);
+      if (SHOW_FALLEN) drawFallen(p);
       continue;
     }
     const [x, y] = toScreen(p.pos[0], p.pos[1]);
@@ -207,6 +208,7 @@ export function drawPlayers(players) {
 
 /** @param {Player} p */
 function drawFallen(p) {
+  if (!p.pos) return;
   const [x, y] = toScreen(p.pos[0], p.pos[1]),
     s = playerRad() * 0.6;
   ctx.save();
@@ -320,6 +322,7 @@ function drawIcon({ p, x, y, rad, cloaked }) {
 // The building an engineer carries, as a small badge like the ones on the map.
 /** @param {Player} p */
 function drawCarried(p, x, y, rad) {
+  if (!p.carrying) return;
   const bs = Math.max(12, rad),
     bx = x - rad * 0.95,
     by = y - rad * 0.95;
@@ -365,6 +368,7 @@ function flameColor(p) {
 // the team's colour, and burn brighter while they hit someone.
 /** @param {Player} p */
 function drawFlames(p, x, y, rad, a) {
+  if (!p.flames) return;
   const t = performance.now() / 1000,
     len = Math.max(350 * state.view.scale, rad * (OVERLAY ? 4 : 3)) * (0.92 + 0.08 * Math.sin(t * 23 + p.id));
   const hot = flameColor(p);

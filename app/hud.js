@@ -114,10 +114,13 @@ function showWeapon(wp, w) {
   }
   wp.hidden = !w;
 }
+// Whole seconds until a dead player respawns, or 0 while it is not known.
+/** @param {Player} p */
+const respawnIn = p => (p.alive ? 0 : Math.max(0, Math.ceil(p.respawn ?? 0)));
 /** @param {Player} p */
 function hpText(p) {
   if (p.alive) return String(p.hp);
-  if (p.respawn > 0) return `${Math.ceil(p.respawn)}s`;
+  if (respawnIn(p)) return `${respawnIn(p)}s`;
   return "DEAD";
 }
 /** @param {Player} p */
@@ -143,7 +146,7 @@ function card(p) {
   setHTML(subEl, `${p.ubered ? `<span class="tag">${UBER_LABEL[p.ubered] || "ÜBER"}</span>` : ""}${sub}`);
   showWeapon(/** @type {HTMLImageElement} */ (wp), weaponImage(p));
   setText2(el.children[5], hpText(p));
-  setClass(el.children[5], !p.alive && p.respawn > 0 ? "hp rs" : "hp");
+  setClass(el.children[5], respawnIn(p) ? "hp rs" : "hp");
   return el;
 }
 /** @param {import("../types/stream").Medigun} g @param {number} pct */
@@ -232,7 +235,7 @@ export function renderBoard(players, snap) {
     const body = rows
       .map(p => {
         const s = p.score || {},
-          status = !p.alive && p.respawn > 0 ? ` <small>${Math.ceil(p.respawn)}s</small>` : "";
+          status = respawnIn(p) ? ` <small>${respawnIn(p)}s</small>` : "";
         const icon = ICONS[p.class] ? `<img src="${asset(`icons/${p.class}.svg`)}" alt="">` : "";
         return `<tr class="${p.alive ? "" : "dead"}"><td class="bc">${icon}</td><td class="bn">${esc(p.name)}${status}</td>${BOARD_COLUMNS.map(([k]) => `<td>${s[k] ?? ""}</td>`).join("")}<td>${p.ping ?? ""}</td></tr>`;
       })
@@ -359,7 +362,7 @@ export function renderScoreboard(snap, tick) {
   // A paused round timer is not a paused game (KotH, no match started): it just stands still.
   setText("round-label", label || (main && !main.paused && left(main) <= 0 ? "OVERTIME" : ""));
   const shown = watchedTimeLeft(main, mapLeft, left);
-  $("timer-main").parentElement.classList.toggle("low", shown != null && shown <= LOW_SECONDS);
+  $("timer-main").parentElement?.classList.toggle("low", shown != null && shown <= LOW_SECONDS);
 }
 /** @param {Snapshot} snap */
 function renderPoints(snap) {

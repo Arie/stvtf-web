@@ -100,7 +100,7 @@ function waitingFor(m) {
 }
 function countDown() {
   const empty = $("empty");
-  if (empty.style.display === "none") return;
+  if (empty.style.display === "none" || holdUntil == null) return;
   const left = Math.max(1, Math.ceil((holdUntil - performance.now()) / 1000));
   empty.textContent = OVERLAY
     ? `starting in ${left}s…`

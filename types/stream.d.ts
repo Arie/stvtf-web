@@ -26,6 +26,8 @@ export type PlayerScore = {
 /** A player: where they are while alive, or where they died (null if before the tool connected). */
 export type Player = PlayerFields & ({ alive: true; pos: Vec3 } | { alive: false; pos: Vec3 | null });
 
+export type LivePlayer = Player & { alive: true };
+
 type PlayerFields = {
   id: number;
   ent: number;
