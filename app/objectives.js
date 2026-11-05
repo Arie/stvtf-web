@@ -63,6 +63,31 @@ function drawBomb(x, y, R, lw) {
 /** @param {PlacedObjective} o @param {number} tick */
 function drawCart(o, tick) {
   const [wx, wy] = objPos(o, tick);
+  const a = screenAngle(cartHeading(o, wx, wy));
+  const [x, y] = toScreen(wx, wy);
+  const u = OVERLAY ? overlayUnit() : 0;
+  const L = OVERLAY ? u * 2.4 : px(72, 18),
+    size = { L, W: L * 0.64, lw: Math.max(1.5, L * 0.07) };
+  const team = teamColour(o.team);
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(a);
+  ctx.lineWidth = size.lw;
+  ctx.lineJoin = "round";
+  if (o.speed) drawCartArrow(o.speed, size, team);
+  drawCartBody(size, team);
+  ctx.restore();
+  ctx.save();
+  drawBomb(x, y, size.W * 0.36, size.lw);
+  if (o.cappers > 0) drawCappers(o.cappers, [x, y], a, size, u);
+  ctx.restore();
+}
+/** @typedef {{ L: number; W: number; lw: number }} CartSize the cart's length, width and line width */
+
+// The cart's heading in degrees: the way it last moved (rolling back still faces forward), kept
+// while it stands still.
+/** @param {PlacedObjective} o @param {number} wx @param {number} wy */
+function cartHeading(o, wx, wy) {
   let cs = cartState.get(o.id);
   if (!cs) cartState.set(o.id, (cs = { x: wx, y: wy, h: null }));
   const dx = wx - cs.x,
@@ -77,36 +102,33 @@ function drawCart(o, tick) {
     cs.x = wx;
     cs.y = wy;
   }
-  const [x, y] = toScreen(wx, wy);
-  const u = OVERLAY ? overlayUnit() : 0;
-  const L = OVERLAY ? u * 2.4 : px(72, 18),
-    W = L * 0.64,
-    lw = Math.max(1.5, L * 0.07);
-  const team = teamColour(o.team),
-    dark = INK;
-  ctx.save();
-  ctx.translate(x, y);
-  ctx.rotate(screenAngle(cs.h ?? 0));
+  return cs.h ?? 0;
+}
+
+// An arrowhead ahead of the cart while it moves (behind it, in orange, while it rolls back).
+/** @param {number} speed @param {CartSize} size @param {string} team */
+function drawCartArrow(speed, { L, lw }, team) {
+  const fwd = speed > 0,
+    k = fwd ? 1 : -1,
+    ax = k * (L / 2 + L * 0.12),
+    ah = L * 0.22;
+  ctx.beginPath();
+  ctx.moveTo(ax, -ah);
+  ctx.lineTo(ax + k * ah, 0);
+  ctx.lineTo(ax, ah);
+  ctx.lineWidth = lw * 1.4;
+  ctx.lineCap = "round";
+  ctx.strokeStyle = fwd ? team : "#ff8a5c";
+  ctx.globalAlpha = 0.85;
+  ctx.stroke();
+  ctx.globalAlpha = 1;
   ctx.lineWidth = lw;
-  ctx.lineJoin = "round";
-  if (o.speed) {
-    const fwd = o.speed > 0,
-      k = fwd ? 1 : -1,
-      ax = k * (L / 2 + L * 0.12),
-      ah = L * 0.22;
-    ctx.beginPath();
-    ctx.moveTo(ax, -ah);
-    ctx.lineTo(ax + k * ah, 0);
-    ctx.lineTo(ax, ah);
-    ctx.lineWidth = lw * 1.4;
-    ctx.lineCap = "round";
-    ctx.strokeStyle = fwd ? team : "#ff8a5c";
-    ctx.globalAlpha = 0.85;
-    ctx.stroke();
-    ctx.globalAlpha = 1;
-    ctx.lineWidth = lw;
-  }
-  ctx.fillStyle = dark;
+}
+
+// Four wheels and the body, along the x axis.
+/** @param {CartSize} size @param {string} team */
+function drawCartBody({ L, W, lw }, team) {
+  ctx.fillStyle = INK;
   for (const sx of [-1, 1])
     for (const sy of [-1, 1]) {
       ctx.beginPath();
@@ -117,35 +139,35 @@ function drawCart(o, tick) {
   ctx.roundRect(-L / 2, -W / 2, L, W, W * 0.22);
   ctx.fillStyle = team;
   ctx.fill();
-  ctx.strokeStyle = dark;
+  ctx.strokeStyle = INK;
   ctx.stroke();
-  ctx.restore();
-  ctx.save();
-  drawBomb(x, y, W * 0.36, lw);
-  if (o.cappers > 0) {
-    // A pill centred under the cart's lowest edge in screen space, touching it.
-    const t = `×${o.cappers}`,
-      th = screenAngle(cs.h ?? 0),
-      fs = Math.round(OVERLAY ? u * 1.1 : Math.max(12 * uiScale(), L * 0.42));
-    // The wheels stick out past the body, so clear them too.
-    const low = (Math.abs(Math.sin(th)) * L) / 2 + Math.abs(Math.cos(th)) * W * 0.66 + lw / 2;
-    ctx.font = `800 ${fs}px system-ui`;
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    const pw = ctx.measureText(t).width + fs * 0.7,
-      ph = fs * 1.2,
-      py = y + low - lw / 2;
-    ctx.beginPath();
-    ctx.roundRect(x - pw / 2, py, pw, ph, ph / 2);
-    ctx.fillStyle = dark;
-    ctx.fill();
-    ctx.strokeStyle = "#fff";
-    ctx.lineWidth = Math.max(1, lw * 0.6);
-    ctx.stroke();
-    ctx.fillStyle = "#fff";
-    ctx.fillText(t, x, py + ph / 2 + 0.5);
-  }
-  ctx.restore();
+}
+
+// How many push the cart: a pill centred under its lowest edge on screen, touching it.
+/**
+ * @param {number} cappers @param {[number, number]} at @param {number} th the cart's screen angle
+ * @param {CartSize} size @param {number} u
+ */
+function drawCappers(cappers, [x, y], th, { L, W, lw }, u) {
+  const t = `×${cappers}`,
+    fs = Math.round(OVERLAY ? u * 1.1 : Math.max(12 * uiScale(), L * 0.42));
+  // The wheels stick out past the body, so clear them too.
+  const low = (Math.abs(Math.sin(th)) * L) / 2 + Math.abs(Math.cos(th)) * W * 0.66 + lw / 2;
+  ctx.font = `800 ${fs}px system-ui`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  const pw = ctx.measureText(t).width + fs * 0.7,
+    ph = fs * 1.2,
+    py = y + low - lw / 2;
+  ctx.beginPath();
+  ctx.roundRect(x - pw / 2, py, pw, ph, ph / 2);
+  ctx.fillStyle = INK;
+  ctx.fill();
+  ctx.strokeStyle = "#fff";
+  ctx.lineWidth = Math.max(1, lw * 0.6);
+  ctx.stroke();
+  ctx.fillStyle = "#fff";
+  ctx.fillText(t, x, py + ph / 2 + 0.5);
 }
 
 // Pass time goals: a ring in the colour of the team that scores there.
