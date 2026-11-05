@@ -4,11 +4,12 @@ FROM rust:1-trixie AS build
 WORKDIR /src
 COPY stvtf ./stvtf
 COPY stvtf-web ./stvtf-web
+WORKDIR /src/stvtf-web
 # The crates and target directory are cache mounts, so a deploy recompiles only what changed;
 # the binary is copied out because the cache is not part of the image.
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/src/stvtf-web/target \
-    cd stvtf-web && cargo build --release --locked && cp target/release/stvtf-web /usr/local/bin/
+    cargo build --release --locked && cp target/release/stvtf-web /usr/local/bin/
 
 FROM debian:trixie-slim
 RUN useradd --system --home /data stvtf && mkdir -p /data && chown stvtf /data

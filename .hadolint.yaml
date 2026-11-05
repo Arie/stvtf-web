@@ -1,0 +1,2 @@
+# Infos (such as DL3066, a user by name: the image creates it) don't fail the check.
+failure-threshold: warning
