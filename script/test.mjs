@@ -9,12 +9,13 @@ import { parseArgs } from "node:util";
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const CI = process.env.CI === "true";
 const NPM = { file: "node_modules", hint: "npm ci" };
+const GULLYWASH = { file: "testdata/maps/cp_gullywash_f9.bsp", hint: "see Tests in the README" };
 
 /**
  * Each check: its section, the command, the one that fixes what it finds (if there is one) and
  * what it needs besides the command's own program.
  * @typedef {{ section: string; cmd: string; fix?: string; env?: { [k: string]: string };
- *   needs?: { file: string; hint: string } }} Task
+ *   needs?: { file: string; hint: string }[] }} Task
  * @type {{ [name: string]: Task }}
  */
 const TASKS = {
@@ -22,16 +23,22 @@ const TASKS = {
   clippy: { section: "checks", cmd: "cargo clippy --all-targets --locked --quiet -- -D warnings" },
   rustdoc: { section: "checks", cmd: "cargo doc --no-deps --locked --quiet", env: { RUSTDOCFLAGS: "-D warnings" } },
   // ESLint's fixes come before Prettier's, which has the last word on layout.
-  eslint: { section: "checks", cmd: "npm run --silent lint", fix: "npm run --silent lint -- --fix", needs: NPM },
-  prettier: { section: "checks", cmd: "npm run --silent format:check", fix: "npm run --silent format", needs: NPM },
-  tsc: { section: "checks", cmd: "npm run --silent typecheck", needs: NPM },
+  eslint: { section: "checks", cmd: "npm run --silent lint", fix: "npm run --silent lint -- --fix", needs: [NPM] },
+  prettier: { section: "checks", cmd: "npm run --silent format:check", fix: "npm run --silent format", needs: [NPM] },
+  tsc: { section: "checks", cmd: "npm run --silent typecheck", needs: [NPM] },
   shellcheck: { section: "checks", cmd: "shellcheck bin/build bin/deploy .githooks/pre-commit script/test" },
   actionlint: { section: "checks", cmd: "actionlint" },
   zizmor: { section: "checks", cmd: "zizmor --offline --quiet .github/workflows" },
   hadolint: { section: "checks", cmd: "hadolint Dockerfile" },
-  "page-tests": { section: "tests", cmd: "npm test --silent", needs: NPM },
+  "page-tests": { section: "tests", cmd: "npm test --silent", needs: [NPM] },
   // Without the maps in testdata/maps (see .github/workflows/ci.yml) the BSP tests skip them.
   "cargo-test": { section: "tests", cmd: "cargo test --locked --quiet" },
+  // Headless Chromium watching a recording; `npx playwright-core install --only-shell chromium` once.
+  browser: {
+    section: "tests",
+    cmd: "cargo build --locked --quiet && npm run --silent test:browser",
+    needs: [NPM, GULLYWASH],
+  },
   // Fetches the advisory database.
   "cargo-deny": { section: "audit", cmd: "cargo deny --locked check" },
 };
@@ -118,8 +125,8 @@ const chosen = Object.keys(TASKS).filter(
 // Why a check cannot run here (its program or node_modules is missing), or null.
 /** @param {string} name @param {string} cmd */
 function missing(name, cmd) {
-  const needs = TASKS[name].needs;
-  if (needs && !existsSync(path.join(ROOT, needs.file))) return `no ${needs.file} (${needs.hint})`;
+  const need = TASKS[name].needs?.find(n => !existsSync(path.join(ROOT, n.file)));
+  if (need) return `no ${need.file} (${need.hint})`;
   const program = cmd.split(" ")[0];
   const found = spawnSync("sh", ["-c", `command -v ${program} && ${program} --version`], { cwd: ROOT });
   return found.status === 0 ? null : `${program} is not installed (mise install)`;

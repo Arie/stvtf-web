@@ -7,12 +7,14 @@
     "format": "prettier --write \"app/**/*.js\" \"test/**/*.js\" \"script/**/*.mjs\" \"types/**/*.ts\" eslint.config.mjs",
     "format:check": "prettier --check \"app/**/*.js\" \"test/**/*.js\" \"script/**/*.mjs\" \"types/**/*.ts\" eslint.config.mjs",
     "typecheck": "tsc -p .",
-    "test": "node --import ./test/js/setup.js --test \"test/js/*.test.js\""
+    "test": "node --import ./test/js/setup.js --test \"test/js/*.test.js\"",
+    "test:browser": "node --test \"test/browser/*.test.js\""
   },
   "devDependencies": {
     "@eslint/js": "9.39.1",
     "eslint": "9.39.1",
     "globals": "16.5.0",
+    "playwright-core": "1.64.1",
     "prettier": "3.9.10",
     "typescript": "7.0.2"
   }

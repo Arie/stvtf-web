@@ -370,10 +370,14 @@ sets the directory (default `backpack`, `/usr/share/stvtf/backpack` in the Docke
 ```
 cargo test
 npm test
+npm run test:browser               # after cargo build and `npx playwright-core install --only-shell chromium`
 ```
 
 `npm test` runs the page's modules in Node (`test/js/`), with `test/js/setup.js` standing in
 for the browser: the feed, the HUD, the camera's helpers, the options and the embedding messages.
+`npm run test:browser` (`test/browser/`) watches 25 s of a recorded match (`match.jsonl.gz`, players
+renamed) in headless Chromium: the page, the overlay, an iframe and `<stv-map>`, each without an error.
+It runs offline on `testdata/maps/cp_gullywash_f9.bsp`.
 
 The BSP tests run against the maps in `testdata/maps/` (`cp_process_f12`, `cp_gullywash_f9`,
 `pl_upward_f12`, `pl_swiftwater_final1`, `mge_training_v8_beta4b`, `cp_sunshine`). Each test skips
@@ -400,14 +404,14 @@ The checks: rustfmt (rustfmt.toml), clippy (`[lints]` in Cargo.toml), rustdoc, E
 code over its size limits when they came in is in eslint-suppressions.json, pruned with
 `npx eslint app test --prune-suppressions`), Prettier (.prettierrc.json), tsc (tsconfig.json, strict, against
 `types/`: the stream's lines and the page's state as .d.ts), shellcheck, actionlint, zizmor (the workflows'
-security), hadolint (the Dockerfile), the page tests, `cargo test` and cargo-deny (advisories, licences and
+security), hadolint (the Dockerfile), the page tests, `cargo test`, the browser test and cargo-deny (advisories, licences and
 sources: deny.toml; `cargo install cargo-deny`). A check whose program is missing is skipped locally, and fails in CI.
 
 `testdata/lines.jsonl` is one
 line of each kind the feed and chat show: Rust checks it against stvtf, the page's tests read it.
 
 `ln -s ../../.githooks/pre-commit .git/hooks/pre-commit` once per clone runs `script/test` before each commit, in
-parallel and without `cargo test` and cargo-deny (not `core.hooksPath`, which would replace any global git hooks). `git config blame.ignoreRevsFile .git-blame-ignore-revs`
+parallel and without `cargo test`, the browser test and cargo-deny (not `core.hooksPath`, which would replace any global git hooks). `git config blame.ignoreRevsFile .git-blame-ignore-revs`
 keeps formatting-only commits out of `git blame` (GitHub skips them already).
 
 CI (`.github/workflows/ci.yml`) runs them, through `script/test`, on every push to `main` and every pull request,

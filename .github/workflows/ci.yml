@@ -124,6 +124,41 @@ jobs:
           done
       - run: script/test -v -t cargo-test
 
+  browser:
+    name: browser test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: stvtf-web
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: Arie/stvtf
+          path: stvtf
+          ssh-key: ${{ secrets.STVMAP_DEPLOY_KEY }}
+          persist-credentials: false
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: stvtf-web
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: stvtf-web/package-lock.json
+      - run: npm ci --ignore-scripts
+      - run: npx playwright-core install --with-deps --only-shell chromium
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: stvtf-web/testdata/maps
+          key: browser-maps-v1
+      - name: Download the test's map
+        run: |
+          mkdir -p testdata/maps
+          [ -f testdata/maps/cp_gullywash_f9.bsp ] || curl -fsSL -o testdata/maps/cp_gullywash_f9.bsp https://fastdl.serveme.tf/maps/cp_gullywash_f9.bsp
+      - run: script/test -v -t browser
+
   deny:
     name: cargo-deny
     runs-on: ubuntu-latest
