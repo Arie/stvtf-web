@@ -1,0 +1,7 @@
+# The linters script/test runs besides cargo's and npm's: `mise install` fetches these versions,
+# and CI installs them from here too.
+[tools]
+actionlint = "1.7.12"
+hadolint = "2.15.1"
+shellcheck = "0.11.0"
+zizmor = "1.31.1"
