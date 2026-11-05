@@ -46,18 +46,19 @@ let eventTick = 0;
 const lagMs = ev => Math.max(0, (eventTick - ev.tick) * msPerTick);
 /** @param {GameEvent} ev @param {number} ms */
 const stale = (ev, ms) => lagMs(ev) > ms;
+// An effect of `kind` that began when `ev` happened, for as long as LIFE gives it (or `life` ms).
+/**
+ * @param {keyof typeof LIFE} kind @param {GameEvent} ev @param {number} now @param {object} fields
+ * @param {number} [life]
+ */
+function addEffect(kind, ev, now, fields, life = LIFE[kind]) {
+  state.effects.push({ kind, ...fields, t0: now - lagMs(ev), life });
+}
 /** @param {GameEvent} ev @param {Lookup} p @param {number} now */
 function buildingWork(ev, p, now) {
   if (stale(ev, LATE_MS) || (ev.type === "building_repair" && !layerOn("heals"))) return;
   const b = state.snaps.at(-1)?.buildings?.find(x => x.id === ev.id);
-  if (b)
-    state.effects.push({
-      kind: ev.type === "building_upgrade" ? "upgrade" : "repair",
-      pos: b.pos,
-      ev,
-      t0: now - lagMs(ev),
-      life: LIFE[ev.type === "building_upgrade" ? "upgrade" : "repair"],
-    });
+  if (b) addEffect(ev.type === "building_upgrade" ? "upgrade" : "repair", ev, now, { pos: b.pos, ev });
 }
 // A blast jump's start opens a trail (closing one still open); its end closes the open one.
 /** @param {GameEvent} ev @param {Lookup} p @param {number} now */
@@ -100,45 +101,36 @@ const feedLine = (ev, p) => feedEvent(ev, p);
 /** @type {{ [type: string]: (ev: GameEvent, p: Lookup, now: number) => void }} */
 const ON = {
   shot(ev, p, now) {
-    state.effects.push({ kind: "shot", ev, team: p(ev.player)?.team, t0: now - lagMs(ev), life: LIFE.shot });
+    addEffect("shot", ev, now, { ev, team: p(ev.player)?.team });
   },
   explosion(ev, p, now) {
-    state.effects.push({ kind: "boom", ev, t0: now - lagMs(ev), life: LIFE.boom });
+    addEffect("boom", ev, now, { ev });
     if (layerOn("marks") && !stale(ev, MARK_LIFE_MS) && ev.origin) addScorch(ev.origin, now - lagMs(ev));
   },
   airblast(ev, p, now) {
-    state.effects.push({ kind: "airblast", id: ev.player, t0: now - lagMs(ev), life: LIFE.airblast });
+    addEffect("airblast", ev, now, { id: ev.player });
   },
   sentry_shot(ev, p, now) {
     const snap = state.snaps.at(-1);
     const sentry = snap?.buildings.find(b => b.id === ev.sentry);
     if (sentry)
-      state.effects.push({
-        kind: "sentryshot",
-        from: sentry.pos,
-        aim: sentry.aim,
-        team: sentry.team,
-        target: ev.target,
-        t0: now - lagMs(ev),
-        life: LIFE.sentryshot,
-      });
+      addEffect("sentryshot", ev, now, { from: sentry.pos, aim: sentry.aim, team: sentry.team, target: ev.target });
   },
   damage(ev, p, now) {
     const v = p(ev.victim);
-    if (v?.pos) state.effects.push({ kind: "dmg", pos: v.pos, ev, t0: now - lagMs(ev), life: LIFE.dmg });
+    if (v?.pos) addEffect("dmg", ev, now, { pos: v.pos, ev });
   },
   kill(ev, p, now) {
-    if (!ev.feign)
-      state.effects.push({ kind: "kill", ev, team: p(ev.victim)?.team, t0: now - lagMs(ev), life: LIFE.kill });
+    if (!ev.feign) addEffect("kill", ev, now, { ev, team: p(ev.victim)?.team });
     feedEvent(ev, p);
   },
   spawn(ev, p, now) {
-    state.effects.push({ kind: "spawn", pos: ev.pos, team: ev.team, t0: now - lagMs(ev), life: LIFE.spawn });
+    addEffect("spawn", ev, now, { pos: ev.pos, team: ev.team });
     noteSpawn(ev);
   },
   uber(ev, p, now) {
     const m = p(ev.medic);
-    if (m) state.effects.push({ kind: "uber", id: ev.medic, team: m.team, t0: now - lagMs(ev), life: LIFE.uber });
+    if (m) addEffect("uber", ev, now, { id: ev.medic, team: m.team });
     feedEvent(ev, p);
   },
   time_added(ev) {
@@ -148,16 +140,11 @@ const ON = {
   building_repair: buildingWork,
   heal(ev, p, now) {
     if (layerOn("heals") && !stale(ev, LATE_MS) && p(ev.patient)?.pos)
-      state.effects.push({ kind: "heal", id: ev.patient, ev, t0: now - lagMs(ev), life: LIFE.heal });
+      addEffect("heal", ev, now, { id: ev.patient, ev });
   },
   impact(ev, p, now) {
     if (layerOn("hits") && !stale(ev, LATE_IMPACT_MS) && ev.pos)
-      state.effects.push({
-        kind: "hit",
-        ev,
-        t0: now - lagMs(ev),
-        life: ev.kind === "blood" ? LIFE.blood : LIFE.hit,
-      });
+      addEffect("hit", ev, now, { ev }, ev.kind === "blood" ? LIFE.blood : LIFE.hit);
   },
   mark(ev, p, now) {
     if (layerOn("marks") && !stale(ev, MARK_LIFE_MS) && ev.pos && !nearFreshScorch(ev.pos, now)) {
@@ -171,7 +158,7 @@ const ON = {
     feedEvent(ev, p);
     if (!layerOn("points") || stale(ev, LATE_MS)) return;
     const o = state.snaps.at(-1)?.objectives?.find(x => x.kind === "control_point" && x.index === ev.point);
-    if (o) state.effects.push({ kind: "capbreak", pos: o.pos, t0: now - lagMs(ev), life: LIFE.capbreak });
+    if (o) addEffect("capbreak", ev, now, { pos: o.pos });
   },
   point_captured(ev, p) {
     banner(`${teamName(ev.team)} captured ${pointName(ev)}`, ev.team);
