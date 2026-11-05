@@ -1,4 +1,4 @@
-import { msPerTick, TEAM, OVERLAY, overlayUnit, uiScale, ctx, state, optOn, teamColour } from "./core.js";
+import { msPerTick, TEAM, OVERLAY, overlayUnit, uiScale, ctx, state, optOn, teamColour, INK, NEUTRAL } from "./core.js";
 import { toScreen, screenAngle, px, playerRad } from "./view.js";
 import { layerOn } from "./layers.js";
 /** @typedef {import("../types/stream").Objective} Objective */
@@ -38,7 +38,7 @@ function objPos(o, tick) {
 function drawBomb(x, y, R, lw) {
   ctx.save();
   ctx.fillStyle = "#15171a";
-  ctx.strokeStyle = "#0b0c0e";
+  ctx.strokeStyle = INK;
   ctx.lineWidth = lw;
   ctx.beginPath();
   ctx.arc(x, y, R, 0, Math.PI * 2);
@@ -83,7 +83,7 @@ function drawCart(o, tick) {
     W = L * 0.64,
     lw = Math.max(1.5, L * 0.07);
   const team = teamColour(o.team),
-    dark = "#0b0c0e";
+    dark = INK;
   ctx.save();
   ctx.translate(x, y);
   ctx.rotate(screenAngle(cs.h ?? 0));
@@ -167,7 +167,7 @@ function drawGoal(o) {
   ctx.textBaseline = "middle";
   ctx.font = `800 ${Math.round(Math.max(9 * uiScale(), r * 0.55))}px system-ui`;
   ctx.lineWidth = 3;
-  ctx.strokeStyle = "#0b0c0e";
+  ctx.strokeStyle = INK;
   ctx.strokeText("GOAL", x, y + 0.5);
   ctx.fillText("GOAL", x, y + 0.5);
   ctx.restore();
@@ -246,7 +246,7 @@ function drawMoney(o) {
   ctx.fillStyle = "#57b35a";
   ctx.fill();
   ctx.lineWidth = 1;
-  ctx.strokeStyle = "#0b0c0e";
+  ctx.strokeStyle = INK;
   ctx.stroke();
   ctx.restore();
 }
@@ -263,12 +263,12 @@ function drawTank(o, tick) {
   ctx.fillStyle = "#3b4a35";
   ctx.fill();
   ctx.lineWidth = 2;
-  ctx.strokeStyle = "#0b0c0e";
+  ctx.strokeStyle = INK;
   ctx.stroke();
   const bw = L,
     bh = Math.max(4, W * 0.16),
     by = y - W / 2 - bh - 3;
-  ctx.fillStyle = "#0b0c0e";
+  ctx.fillStyle = INK;
   ctx.fillRect(x - bw / 2, by, bw, bh);
   ctx.fillStyle = TEAM.blue;
   ctx.fillRect(x - bw / 2, by, bw * Math.max(0, Math.min(1, o.health)), bh);
@@ -347,7 +347,7 @@ function drawPoint(o, snap, tick) {
     ctx.restore();
   }
   if (o.locked) {
-    ctx.fillStyle = "#0b0c0e99";
+    ctx.fillStyle = INK + "99";
     ctx.fill();
   }
   // Outlined in the colour of the team holding it, grey while nobody does.
@@ -369,7 +369,7 @@ function drawPointNumber(o, capping, x, y, half) {
   const n = layerOn("points") && capping && o.on_point ? o.on_point[o.capping_team] : 0;
   const text = n > 0 ? `\u00d7${n}` : String(/** @type {number} */ (o.index) + 1);
   ctx.lineWidth = 3;
-  ctx.strokeStyle = "#0b0c0e";
+  ctx.strokeStyle = INK;
   ctx.strokeText(text, x, y + 1);
   ctx.fillText(text, x, y + 1);
 }
@@ -435,7 +435,7 @@ function drawBall(o, players, tick) {
   ctx.save();
   ctx.beginPath();
   ctx.arc(x, y, r, 0, Math.PI * 2);
-  ctx.fillStyle = o.team === "red" || o.team === "blue" ? TEAM[o.team] : "#f2c94c";
+  ctx.fillStyle = o.team === "red" || o.team === "blue" ? TEAM[o.team] : NEUTRAL;
   ctx.fill();
   ctx.lineWidth = Math.max(1.5, r * 0.22);
   ctx.strokeStyle = "#000";
@@ -466,7 +466,7 @@ function drawPickups(o, carrier, snap, tick) {
   ctx.lineWidth = Math.max(1.5, r * 0.18);
   ctx.strokeStyle = "#000";
   ctx.stroke();
-  ctx.fillStyle = "#0b0c0e";
+  ctx.fillStyle = INK;
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   ctx.font = `800 ${Math.round(Math.max(9, r * 1.2))}px system-ui`;
@@ -519,7 +519,7 @@ export function drawFlags(snap, players, tick) {
       ctx.stroke();
       ctx.beginPath();
       ctx.roundRect(x - s * 0.6, y - s * 0.35, s * 1.2, s * 0.8, s * 0.14);
-      ctx.fillStyle = o.team === "red" || o.team === "blue" ? TEAM[o.team] : "#f2c94c";
+      ctx.fillStyle = o.team === "red" || o.team === "blue" ? TEAM[o.team] : NEUTRAL;
       ctx.fill();
       ctx.stroke();
     }

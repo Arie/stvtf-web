@@ -1,4 +1,4 @@
-import { TEAM, CLASS, icon, OVERLAY, optOn, uiScale, ctx, context2d, state, teamColour } from "./core.js";
+import { TEAM, CLASS, icon, OVERLAY, optOn, uiScale, ctx, context2d, state, teamColour, INK } from "./core.js";
 import { layerOn } from "./layers.js";
 import { toScreen, screenAngle, playerRad, drawText } from "./view.js";
 import { drawUberRing, drawStatusInside, drawStatus } from "./status.js";
@@ -365,7 +365,7 @@ function drawName({ p, x, y, rad, cloaked }) {
   const size = OVERLAY ? Math.round(Math.max(11, rad * 0.95)) : Math.round(12 * uiScale());
   drawText(
     [...p.name].slice(0, OVERLAY ? 12 : 18).join(""),
-    { font: `700 ${size}px system-ui`, fill: "#e8e8e8", outline: "#0b0c0e" },
+    { font: `700 ${size}px system-ui`, fill: "#e8e8e8", outline: INK },
     x,
     y + rad + 4,
     true,

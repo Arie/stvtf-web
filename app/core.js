@@ -11,6 +11,9 @@ export function setTickInterval(seconds) {
 const JITTER_MS = 105;
 // The tick clock jumps instead of easing when it is off by this much (a stall, a seek).
 const CLOCK_JUMP_TICKS = 40;
+// The near-black of outlines and lettering on the map, and the yellow of a neutral flag or ball.
+export const INK = "#0b0c0e",
+  NEUTRAL = "#f2c94c";
 /** @type {{ [team: string]: string }} */
 export const TEAM = { red: "#d0453f", blue: "#4f8fc0", none: "#9a9a9a", spectator: "#9a9a9a" };
 // A team's colour, or `or` for none (or an unknown one).

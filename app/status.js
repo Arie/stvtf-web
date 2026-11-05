@@ -1,4 +1,4 @@
-import { TEAM, OVERLAY, uiScale, ctx } from "./core.js";
+import { TEAM, OVERLAY, uiScale, ctx, INK } from "./core.js";
 /** @typedef {import("../types/stream").Player} Player */
 
 // Each charge looks different: über a candy-cane team ring with a dark edge and a soft pulse, kritz crackling, quick-fix
@@ -28,7 +28,7 @@ export function drawUberRing(p, x, y, rad, col) {
     ctx.arc(x, y, r0, 0, Math.PI * 2);
     ctx.shadowColor = base;
     ctx.shadowBlur = 10 + 8 * pulse;
-    ctx.strokeStyle = "#0b0c0e";
+    ctx.strokeStyle = INK;
     ctx.lineWidth = lw + 3;
     ctx.stroke();
     ctx.shadowBlur = 0;

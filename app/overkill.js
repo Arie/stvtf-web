@@ -1,4 +1,4 @@
-import { ctx, context2d, state } from "./core.js";
+import { ctx, context2d, state, INK } from "./core.js";
 import { MARK_LIFE_MS, SCORCH_CAP, SCORCH_R } from "./events.js";
 import { toScreen, px } from "./view.js";
 /** @typedef {import("../types/stream").Player} Player */
@@ -146,7 +146,7 @@ function packSize(size) {
 // What a pack is drawn with: the context, and shapes outlined in ink and filled only while it is available.
 /** @param {CanvasRenderingContext2D} g @param {boolean} taken */
 function packPen(g, taken) {
-  const ink = taken ? "#f2f0e6" : "#0b0c0e";
+  const ink = taken ? "#f2f0e6" : INK;
   /** @param {string} color */
   const fill = color => {
     if (!taken) {

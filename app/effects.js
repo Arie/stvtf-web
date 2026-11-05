@@ -10,6 +10,8 @@ const SHOT_TRACER = 900,
   SENTRY_RANGE = 1100;
 // deaths: the main view's brief kill marks (the overlay keeps an X where a player fell instead).
 const SHOW_KILLS = optOn("deaths");
+// Health and repairs float up in this green.
+const HEAL_GREEN = "#6fe08a";
 const SHOT_EFFECTS = new Set(["shot", "boom", "airblast"]),
   BUILDING_EFFECTS = new Set(["sentryshot", "upgrade", "repair"]);
 
@@ -168,7 +170,7 @@ function drawHeal(e, k, byId) {
   ctx.font = `bold ${Math.round(12 * uiScale())}px system-ui`;
   ctx.textAlign = "center";
   ctx.textBaseline = "bottom";
-  ctx.fillStyle = "#6fe08a";
+  ctx.fillStyle = HEAL_GREEN;
   ctx.strokeStyle = "#000";
   ctx.lineWidth = 3;
   const ty = y - playerRad() - 4 - k * 22,
@@ -201,7 +203,7 @@ function drawRepair(e, k) {
   ctx.font = `bold ${Math.round(12 * uiScale())}px system-ui`;
   ctx.textAlign = "center";
   ctx.textBaseline = "bottom";
-  ctx.fillStyle = "#6fe08a";
+  ctx.fillStyle = HEAL_GREEN;
   ctx.strokeStyle = "#000";
   ctx.lineWidth = 3;
   const ty = y - px(30, 12) - 4 - k * 22,

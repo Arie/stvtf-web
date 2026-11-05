@@ -1,4 +1,4 @@
-import { PLAIN_BG, context2d } from "./core.js";
+import { PLAIN_BG, context2d, INK } from "./core.js";
 /** @typedef {import("../types/page").Geometry} Geometry */
 /** @typedef {NonNullable<Geometry["floors"]>[number]} Floor */
 /** @typedef {NonNullable<Geometry["walls"]>[number]} Wall */
@@ -256,7 +256,7 @@ function drawFloors({ c, X, Y, cut }, floors) {
 // Walls only where a floor was drawn: the rest are scenery's, out over the background.
 /** @param {Drawing} at @param {Wall[]} walls */
 function drawWalls({ c, X, Y, cut }, walls) {
-  c.strokeStyle = "#0b0c0e";
+  c.strokeStyle = INK;
   c.lineWidth = 1.2;
   c.globalCompositeOperation = "source-atop";
   c.beginPath();
