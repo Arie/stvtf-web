@@ -360,6 +360,7 @@ sets the directory (default `backpack`, `/usr/share/stvtf/backpack` in the Docke
     mouse, follow) and `layers.js` (the overkill settings) are the rest of the page.
   - `embed.js` and `stv-map.js` talk to a page embedding the map.
 - `types/`: the stream's lines and the page's state as TypeScript declarations, for `tsc` only.
+- `script/test` runs every check (see Development); `bin/build` and `bin/deploy` build and deploy the image.
 
 ## Tests
 
@@ -385,27 +386,28 @@ they fail.
 Before pushing, run what CI runs:
 
 ```
-cargo fmt                          # format (settings in rustfmt.toml)
-cargo clippy --all-targets         # lints (configured under [lints] in Cargo.toml)
-cargo test
-cargo deny check                   # advisories, licences, sources (deny.toml; cargo install cargo-deny)
-npm ci && npm run format           # Prettier on the JavaScript (.prettierrc.json); format:check only checks
-npm run lint                       # ESLint on app/ and test/ (eslint.config.mjs)
-                                   # code over its size limits when they came in is in eslint-suppressions.json;
-                                   # after fixing some, npx eslint app test --prune-suppressions
-npm run typecheck                  # tsc type checks app/ (tsconfig.json, strict) against types/:
-                                   # the stream's lines (stvtf's output) and the page's state, as .d.ts
-npm test                           # the page's modules in Node, with test/js/setup.js standing in for a browser
+npm ci && mise install             # once: ESLint, Prettier, tsc; shellcheck, actionlint, zizmor, hadolint (mise.toml)
+script/test                        # every check, one after another; -p runs them at the same time
+script/test --fix                  # cargo fmt, ESLint's fixes and Prettier, then the rest
+script/test -s checks              # a section (checks, tests, audit); -t clippy,tsc picks checks, --skip leaves some out
+script/test --list                 # each check and its command
 ```
+
+The checks: rustfmt (rustfmt.toml), clippy (`[lints]` in Cargo.toml), rustdoc, ESLint (eslint.config.mjs;
+code over its size limits when they came in is in eslint-suppressions.json, pruned with
+`npx eslint app test --prune-suppressions`), Prettier (.prettierrc.json), tsc (tsconfig.json, strict, against
+`types/`: the stream's lines and the page's state as .d.ts), shellcheck, actionlint, zizmor (the workflows'
+security), hadolint (the Dockerfile), the page tests, `cargo test` and cargo-deny (advisories, licences and
+sources: deny.toml; `cargo install cargo-deny`). A check whose program is missing is skipped locally, and fails in CI.
 
 `testdata/lines.jsonl` is one
 line of each kind the feed and chat show: Rust checks it against stvtf, the page's tests read it.
 
-`ln -s ../../.githooks/pre-commit .git/hooks/pre-commit` once per clone runs fmt, clippy, Prettier, ESLint,
-tsc and the page tests before each commit (not `core.hooksPath`, which would replace any global git hooks). `git config blame.ignoreRevsFile .git-blame-ignore-revs`
+`ln -s ../../.githooks/pre-commit .git/hooks/pre-commit` once per clone runs `script/test` before each commit, in
+parallel and without `cargo test` and cargo-deny (not `core.hooksPath`, which would replace any global git hooks). `git config blame.ignoreRevsFile .git-blame-ignore-revs`
 keeps formatting-only commits out of `git blame` (GitHub skips them already).
 
-CI (`.github/workflows/ci.yml`) runs these on every push to `main` and every pull request,
+CI (`.github/workflows/ci.yml`) runs them, through `script/test`, on every push to `main` and every pull request,
 and weekly for new advisories. Warnings fail CI. It checks out `Arie/stvtf` next to this
 repository for the `../stvtf` path dependency, using the deploy key in the
 `STVMAP_DEPLOY_KEY` secret.
