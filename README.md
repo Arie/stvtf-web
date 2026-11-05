@@ -393,7 +393,7 @@ npm ci && npm run format           # Prettier on the JavaScript (.prettierrc.jso
 npm run lint                       # ESLint on app/ and test/ (eslint.config.mjs)
                                    # code over its size limits when they came in is in eslint-suppressions.json;
                                    # after fixing some, npx eslint app test --prune-suppressions
-npm run typecheck                  # tsc type checks app/ (tsconfig.json: null checks, not yet strict) against types/:
+npm run typecheck                  # tsc type checks app/ (tsconfig.json: null checks, no implicit any) against types/:
                                    # the stream's lines (stvtf's output) and the page's state, as .d.ts
 npm test                           # the page's modules in Node, with test/js/setup.js standing in for a browser
 ```
