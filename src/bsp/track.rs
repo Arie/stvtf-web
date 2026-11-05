@@ -2,7 +2,8 @@
 
 use std::collections::{HashMap, HashSet};
 
-use super::{Entities, Entity, Vec3};
+use super::Vec3;
+use super::entities::{Entities, Entity};
 
 /// The track's segments (start and end of each), once each: from every watcher's `start_node`
 /// along `target` and `altpath`, every node visited once, so loops and branches end. Without a
