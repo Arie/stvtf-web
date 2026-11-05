@@ -2,6 +2,8 @@ import { $, OVERLAY, OPT, overlayUnit, canvas, uiScale, ctx, context2d, state, c
 import { env, asset } from "./env.js";
 import { renderGeometry } from "./geometry.js";
 /** @typedef {import("../types/page").Overview} Overview */
+/** @typedef {import("../types/page").Geometry} Geometry */
+/** @typedef {{ x: number, y: number }} Point */
 
 // The HUD's player columns (shown on screens wider than this) and the scoreboard, in CSS pixels.
 const HUD_MIN_WIDTH = 800,
@@ -24,7 +26,9 @@ const demostfBoundaries = () =>
     .then(j => ({ ...j, ...BOUNDS_FIXES }))
     .catch(() => ({})));
 // demos.tf's own lookup: exact name, then names with version suffixes trimmed.
+/** @param {string} map @param {{ [map: string]: Overview["b"] }} known */
 export function demostfAlias(map, known) {
+  /** @param {string} m */
   const trim = m => {
     while (m.lastIndexOf("_") > m.indexOf("_")) m = m.slice(0, m.lastIndexOf("_"));
     return m;
@@ -41,6 +45,7 @@ export function demostfAlias(map, known) {
 // Whether an overview of another version of the map covers this version's own bounds (at least
 // half of it does). Versions can move the whole map: koth_clearcut's overview is nowhere near
 // koth_clearcut_b18, while the overviews that line up cover all or nearly all of it.
+/** @param {Overview["b"]} b @param {Geometry | null} g */
 export function sameLayout(b, g) {
   if (!g?.bounds) return true;
   const [[x0, y0], [x1, y1]] = g.bounds,
@@ -51,6 +56,7 @@ export function sameLayout(b, g) {
   return w > 0 && h > 0 && w * h >= 0.5 * (hi.x - lo.x) * (hi.y - lo.y);
 }
 
+/** @param {string} map */
 export async function loadMap(map) {
   state.map = map;
   state.geometry = null;
@@ -92,9 +98,11 @@ export async function loadMap(map) {
 
 // ---------- view
 // Whether the main view shows the player HUD or the scoreboard (h and s hide them).
+/** @param {string} what */
 const shown = what =>
   !OVERLAY && !env.el.classList.contains("nohud") && !(what === "score" && env.el.classList.contains("noscore"));
 
+/** @param {Point} min @param {Point} max */
 function fitTo(min, max) {
   const r = canvas.getBoundingClientRect(),
     v = state.view;
@@ -127,6 +135,7 @@ export function viewArea() {
 }
 // The world offset of a point `dx`, `dy` pixels right of and below the canvas centre, in a view
 // at `scale` turned by `rot`.
+/** @param {number} dx @param {number} dy @param {number} scale @param {number} [rot] @returns {[number, number]} */
 export function screenOffset(dx, dy, scale, rot = state.view.rot) {
   const a = dx / scale,
     b = -dy / scale,
@@ -151,6 +160,7 @@ export function focusOf(v) {
 // The quarter turn that puts the middle of blue's spawn points left of red's, or null without both.
 /** @param {{ pos: number[], team: string }[]} points */
 export function teamsTurn(points) {
+  /** @param {string} team */
   const middle = team => {
     const t = points.filter(p => p.team === team);
     return t.length ? [0, 1].map(k => t.reduce((a, p) => a + p.pos[k], 0) / t.length) : null;
@@ -164,6 +174,7 @@ export function teamsTurn(points) {
 }
 
 export function frameMap(keepView = false) {
+  /** @type {number[][]} */
   const pts = [];
   for (const p of state.spawns?.points || []) pts.push(p.pos);
   for (const o of state.snaps.at(-1)?.objectives || []) if (o.pos) pts.push(o.pos);
@@ -172,6 +183,7 @@ export function frameMap(keepView = false) {
     pad = FRAME_PAD,
     { w, h } = viewArea();
   // Centre and scale for a rotation, measuring the points along the rotated axes.
+  /** @param {number} rot */
   const fit = rot => {
     const c = Math.cos(rot),
       sn = Math.sin(rot);
@@ -205,6 +217,7 @@ export function frameMap(keepView = false) {
   return true;
 }
 // The view can be rotated (the overlay turns a map so its long axis fits the panel).
+/** @param {number} x @param {number} y @returns {[number, number]} */
 export function toScreen(x, y) {
   const r = canvasSize(),
     v = state.view;
@@ -215,6 +228,7 @@ export function toScreen(x, y) {
   return [(dx * c - dy * s) * v.scale + r.width / 2, -(dx * s + dy * c) * v.scale + r.height / 2];
 }
 // A world yaw (degrees, counter-clockwise from +x) as a canvas angle.
+/** @param {number} deg */
 export function screenAngle(deg) {
   return -((deg * Math.PI) / 180 + state.view.rot);
 }
@@ -223,7 +237,9 @@ export function screenAngle(deg) {
 // Text drawn once per string, font and colour, then copied: setting a canvas font and drawing
 // text are slow enough to show every frame. `x` of a sprite is the left of its text.
 const TEXT_PAD = 3;
+/** @type {Map<string, { c: HTMLCanvasElement, w: number, h: number }>} */
 const textSprites = new Map();
+/** @param {string} text @param {string} font @param {string} fill @param {string | null} outline */
 function textSprite(text, font, fill, outline) {
   const dpr = window.devicePixelRatio || 1,
     key = `${text}\n${font}\n${fill}\n${outline}\n${dpr}`;
@@ -234,7 +250,7 @@ function textSprite(text, font, fill, outline) {
       g = context2d(c);
     g.font = font;
     const m = g.measureText(text),
-      size = parseFloat(font.match(/(\d+(?:\.\d+)?)px/)?.[1] || 12);
+      size = parseFloat(font.match(/(\d+(?:\.\d+)?)px/)?.[1] || "12");
     const w = Math.ceil(m.width) + TEXT_PAD * 2,
       h = Math.ceil(size * 1.3) + TEXT_PAD * 2;
     c.width = Math.ceil(w * dpr);
@@ -256,12 +272,16 @@ function textSprite(text, font, fill, outline) {
 }
 // Draws a text sprite in `look`'s font, fill and outline (or none), with the top of its text at
 // y, centred on x or starting at x.
-/** @param {string} text @param {{ font: string, fill: string, outline: string | null }} look */
+/**
+ * @param {string} text @param {{ font: string, fill: string, outline: string | null }} look
+ * @param {number} x @param {number} y @param {boolean} centre
+ */
 export function drawText(text, look, x, y, centre) {
   const { c, w, h } = textSprite(text, look.font, look.fill, look.outline);
   ctx.drawImage(c, centre ? x - w / 2 : x - TEXT_PAD, y - TEXT_PAD, w, h);
 }
 
+/** @param {number} units @param {number} min */
 export function px(units, min) {
   return Math.max(min * uiScale(), units * state.view.scale);
 }
@@ -269,6 +289,7 @@ export const playerRad = () => (OVERLAY ? overlayUnit() : px(30, 11));
 
 // The overview images have an opaque black surround; on a rotated, transparent overlay that
 // would show as a tilted black box, so make the near-black pixels transparent.
+/** @param {HTMLImageElement} img */
 function withoutBlack(img) {
   const c = document.createElement("canvas");
   c.width = img.naturalWidth;
@@ -292,6 +313,7 @@ function withoutBlack(img) {
 
 // The overview at 85% over the page background, drawn once: a plain copy each frame is much
 // cheaper than blending an image element.
+/** @param {HTMLImageElement} img */
 function flattened(img) {
   const c = document.createElement("canvas");
   c.width = img.naturalWidth;
@@ -314,12 +336,13 @@ const BG_OPACITY = (v => (Number.isFinite(v) ? String(Math.max(0, Math.min(1, v)
 /** @type {HTMLImageElement | HTMLCanvasElement | null} */
 let bgShown = null,
   bgTransform = "";
+/** @param {{ width: number, height: number }} r */
 export function drawBackground(r) {
   ctx.clearRect(0, 0, r.width, r.height);
   /** @type {HTMLImageElement | HTMLCanvasElement | null} */
-  let pic = null,
-    lo,
-    hi;
+  let pic = null;
+  /** @type {number[] | undefined} */
+  let lo, hi;
   // The overview also stands in once it is clear this map has no geometry.
   if (state.overview && (state.bg === "overview" || (state.mapData && !state.geoCanvas))) {
     const { img, b } = state.overview;
@@ -335,7 +358,7 @@ export function drawBackground(r) {
     bgShown = pic;
     bgTransform = "";
   }
-  if (!pic) return;
+  if (!pic || !lo || !hi) return;
   const [cx, cy] = toScreen((lo[0] + hi[0]) / 2, (lo[1] + hi[1]) / 2);
   const w = (hi[0] - lo[0]) * state.view.scale,
     h = (hi[1] - lo[1]) * state.view.scale;

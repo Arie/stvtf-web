@@ -1,4 +1,11 @@
 import { PLAIN_BG, context2d } from "./core.js";
+/** @typedef {import("../types/page").Geometry} Geometry */
+/** @typedef {NonNullable<Geometry["floors"]>[number]} Floor */
+/** @typedef {NonNullable<Geometry["walls"]>[number]} Wall */
+/** @typedef {NonNullable<Geometry["playable"]>} Playable */
+// What the drawing steps share: the context, its size, world to canvas x and y, units per pixel
+// and the height above which floors are left out.
+/** @typedef {{ c: CanvasRenderingContext2D, w: number, h: number, X: (x: number) => number, Y: (y: number) => number, res: number, cut: number }} Drawing */
 
 // Map geometry: at least this many world units per pixel, and a canvas at most this wide;
 // bsp.rs pads the bounds' top this far above the highest point or pickup (its PAD), floors are
@@ -22,6 +29,7 @@ const KIND_COLOURS = {
   snow: "#c7d1d8",
   other: "#6c6c6c",
 };
+/** @typedef {Exclude<keyof typeof KIND_COLOURS, "__proto__">} Kind */
 // Water shows the floor under it; raised floors cast a short soft shadow (canvas pixels).
 const WATER_ALPHA = 0.45,
   SHADOW_COLOUR = "rgba(0,0,0,0.45)",
@@ -46,18 +54,27 @@ const TIE_STEP = 7,
 
 // A small tile of subtle marks per kind, made once with seeded noise so a map looks the same
 // on every load; kinds without one are plain.
+/** @type {{ [kind: string]: HTMLCanvasElement | null }} */
 const kindTiles = {};
+/** @param {string} k */
 function kindTile(k) {
   if (k in kindTiles) return kindTiles[k];
   let seed = 7;
   const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
-  const size = { grass: [16, 16], dirt: [48, 48], metal: [8, 8], wood: [32, 10], tile: [12, 12], water: [24, 12] }[k];
+  const size = /** @type {{ [kind: string]: [number, number] }} */ ({
+    grass: [16, 16],
+    dirt: [48, 48],
+    metal: [8, 8],
+    wood: [32, 10],
+    tile: [12, 12],
+    water: [24, 12],
+  })[k];
   if (!size) return (kindTiles[k] = null);
   const t = document.createElement("canvas");
   [t.width, t.height] = size;
   const c = context2d(t),
-    light = a => `rgba(255,255,255,${a})`,
-    dark = a => `rgba(0,0,0,${a})`;
+    light = /** @param {number} a */ a => `rgba(255,255,255,${a})`,
+    dark = /** @param {number} a */ a => `rgba(0,0,0,${a})`;
   if (k === "grass") {
     for (let i = 0; i < 40; i++) {
       c.fillStyle = rnd() < 0.5 ? light(0.1) : dark(0.12);
@@ -120,13 +137,15 @@ function kindTile(k) {
 }
 
 // A hex colour scaled by s, as rgb().
+/** @param {string} hex @param {number} s */
 function scaled(hex, s) {
   const n = parseInt(hex.slice(1), 16),
-    ch = sh => Math.min(255, Math.round(((n >> sh) & 255) * s));
+    ch = /** @param {number} sh */ sh => Math.min(255, Math.round(((n >> sh) & 255) * s));
   return `rgb(${ch(16)} ${ch(8)} ${ch(0)})`;
 }
 
 // A canvas the size of `shape`, holding what draw(context) puts on it.
+/** @param {{ width: number, height: number }} shape @param {(c: CanvasRenderingContext2D) => void} draw */
 function canvasLike(shape, draw) {
   const o = document.createElement("canvas");
   o.width = shape.width;
@@ -135,13 +154,16 @@ function canvasLike(shape, draw) {
   return o;
 }
 // Draws a shape at each of 16 points round a circle: with source-over that spreads it outwards.
+/** @param {CanvasRenderingContext2D} c @param {HTMLCanvasElement} shape @param {number} r */
 function around(c, shape, r) {
   for (let i = 0; i < 16; i++) c.drawImage(shape, Math.cos((i / 8) * Math.PI) * r, Math.sin((i / 8) * Math.PI) * r);
 }
 // The shape with its cracks and narrow gaps filled: spread outwards, then eaten back as far. In
 // passes, because one ring of copies of a thin sliver is a comb rather than a solid disc.
+/** @param {HTMLCanvasElement} shape */
 function withoutGaps(shape) {
   const r = Math.max(2, Math.max(shape.width, shape.height) * GAP_CLOSE);
+  /** @param {HTMLCanvasElement} start @param {GlobalCompositeOperation} mode */
   const passes = (start, mode) =>
     [0.5, 0.25, 0.25].reduce(
       (from, k) =>
@@ -154,6 +176,7 @@ function withoutGaps(shape) {
     );
   return passes(passes(shape, "source-over"), "destination-in");
 }
+/** @param {HTMLCanvasElement} shape @param {string} colour */
 const tinted = (shape, colour) =>
   canvasLike(shape, c => {
     c.drawImage(shape, 0, 0);
@@ -162,8 +185,10 @@ const tinted = (shape, colour) =>
     c.fillRect(0, 0, shape.width, shape.height);
   });
 // A line round a shape: the shape spread outwards in the line's colours, the shape cut out.
+/** @param {HTMLCanvasElement} shape */
 function outlineOf(shape) {
   const side = Math.max(shape.width, shape.height);
+  /** @param {string} colour @param {number} width */
   const ring = (colour, width) => canvasLike(shape, c => around(c, tinted(shape, colour), Math.max(1, side * width)));
   return canvasLike(shape, c => {
     c.drawImage(ring(OUTLINE_EDGE, OUTLINE_EDGE_WIDTH), 0, 0);
@@ -174,6 +199,7 @@ function outlineOf(shape) {
 }
 
 // The floors' height range, leaving out the lowest and highest few.
+/** @param {Floor[]} floors */
 function heightRange(floors) {
   const zs = floors.map(f => f.z);
   const zlo = zs.length ? zs[Math.floor(zs.length * 0.02)] : 0,
@@ -182,13 +208,16 @@ function heightRange(floors) {
 }
 
 // A floor's colour at height share t: a flat shade with bg=flat, else its kind's colour, darker low down.
+/** @param {Kind} k @param {number} t */
 function floorColour(k, t) {
   if (PLAIN_BG) return FLAT_SHADES[Math.min(FLAT_SHADES.length - 1, Math.floor(t * FLAT_SHADES.length))];
   return scaled(KIND_COLOURS[k], 0.7 + 0.4 * t);
 }
 
+/** @param {Drawing} at @param {Floor[]} floors */
 function drawFloors({ c, X, Y, cut }, floors) {
   const [zlo, zhi] = heightRange(floors);
+  /** @type {{ [kind: string]: CanvasPattern | null }} */
   const patterns = {};
   c.lineWidth = 1;
   if (!PLAIN_BG) {
@@ -198,7 +227,7 @@ function drawFloors({ c, X, Y, cut }, floors) {
   for (const f of floors) {
     if (f.z > cut) continue;
     const t = Math.max(0, Math.min(1, (f.z - zlo) / (zhi - zlo || 1)));
-    const k = f.k in KIND_COLOURS ? f.k : "other",
+    const k = /** @type {Kind} */ (f.k && f.k in KIND_COLOURS ? f.k : "other"),
       water = k === "water";
     c.fillStyle = c.strokeStyle = floorColour(k, t);
     c.beginPath();
@@ -212,7 +241,8 @@ function drawFloors({ c, X, Y, cut }, floors) {
     // The floor's own colour round its edge, so neighbouring polygons leave no hairline seams.
     c.stroke();
     if (PLAIN_BG) continue;
-    if (!(k in patterns)) patterns[k] = kindTile(k) && c.createPattern(kindTile(k), "repeat");
+    if (!(k in patterns))
+      patterns[k] = kindTile(k) && c.createPattern(/** @type {HTMLCanvasElement} */ (kindTile(k)), "repeat");
     if (patterns[k]) {
       c.fillStyle = patterns[k];
       c.fill();
@@ -224,6 +254,7 @@ function drawFloors({ c, X, Y, cut }, floors) {
 }
 
 // Walls only where a floor was drawn: the rest are scenery's, out over the background.
+/** @param {Drawing} at @param {Wall[]} walls */
 function drawWalls({ c, X, Y, cut }, walls) {
   c.strokeStyle = "#0b0c0e";
   c.lineWidth = 1.2;
@@ -241,6 +272,7 @@ function drawWalls({ c, X, Y, cut }, walls) {
 
 // The playable area's bits as a canvas, white where playable. Rows run from the lowest y up, so
 // they are flipped into the canvas.
+/** @param {Playable} pa */
 function playableMask(pa) {
   const bytes = Uint8Array.from(atob(pa.bits), ch => ch.charCodeAt(0));
   const mc = document.createElement("canvas");
@@ -260,6 +292,7 @@ function playableMask(pa) {
 
 // Keeps only the playable area. The mask is optional: one too big for a canvas (a crafted, very
 // long map) leaves every floor drawn rather than losing the whole map.
+/** @param {Drawing} at @param {Playable | undefined} pa */
 function clipToPlayable({ c, X, Y, res }, pa) {
   if (pa?.bits)
     try {
@@ -282,6 +315,7 @@ function clipToPlayable({ c, X, Y, res }, pa) {
 }
 
 // bg=flat and bg=outline: the floors with their gaps filled in, under the floors or as a line round them.
+/** @param {Drawing} at @param {HTMLCanvasElement} oc @param {Geometry["bounds"][0]} lo @param {Geometry["bounds"][1]} hi */
 function plainBackground({ c, w, h }, oc, lo, hi) {
   // On a smaller copy: filling the gaps takes many full-canvas draws, and none of it is fine detail.
   const shrink = Math.min(1, PLAIN_SIDE / Math.max(w, h));
@@ -297,6 +331,8 @@ function plainBackground({ c, w, h }, oc, lo, hi) {
 }
 
 // The payload track: ties, then the rails over them.
+// Each segment is its two ends, x y z and x y z.
+/** @param {Drawing} at @param {Geometry["track"]} segments */
 function drawTrack({ c, X, Y }, segments) {
   const track = (segments || []).map(([x1, y1, , x2, y2]) => [X(x1), Y(y1), X(x2), Y(y2)]);
   c.strokeStyle = TIE_COLOUR;
@@ -335,6 +371,8 @@ function drawTrack({ c, X, Y }, segments) {
 }
 
 // The map's geometry drawn from above onto a canvas, with the world box it covers.
+// The server always sends the floors and walls.
+/** @param {Geometry & Required<Pick<Geometry, "floors" | "walls">>} g */
 export function renderGeometry(g) {
   const [lo, hi] = g.bounds;
   // World units per pixel; huge maps (MGE) get coarser so the canvas stays within browser limits.
@@ -348,8 +386,8 @@ export function renderGeometry(g) {
   // Roofs hide what is under them; keep floors up to a little above the highest pickup/point
   // level, which the bounds' top is GEOMETRY_PAD above.
   const cut = hi[2] - GEOMETRY_PAD + ROOF_ABOVE;
-  const X = x => (x - lo[0]) / res,
-    Y = y => (hi[1] - y) / res;
+  const X = /** @param {number} x */ x => (x - lo[0]) / res,
+    Y = /** @param {number} y */ y => (hi[1] - y) / res;
   const at = { c, w, h, X, Y, res, cut };
   drawFloors(at, g.floors);
   drawWalls(at, g.walls);

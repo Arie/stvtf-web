@@ -2,6 +2,9 @@ import { OVERLAY, uiScale, ctx, state, teamColour } from "./core.js";
 import { toScreen, drawText } from "./view.js";
 /** @typedef {import("../types/stream").GameEvent} GameEvent */
 /** @typedef {import("../types/stream").Snapshot} Snapshot */
+/** @typedef {import("../types/stream").Team} Team */
+/** @typedef {import("../types/stream").Vec3} Vec3 */
+/** @typedef {import("../types/page").SpawnRoom} SpawnRoom */
 
 // Spawn rooms: which are in use.
 // A spawn point tied to a control point is enabled for its team while that team owns the
@@ -12,6 +15,7 @@ let ownersKey = "",
   ownersChanged = 0;
 // Spawn points stand up to SPAWN_SLACK above or below their room's box (as in bsp.rs).
 const SPAWN_SLACK = 64;
+/** @param {SpawnRoom} r @param {Vec3} p */
 const inRoom = (r, p) =>
   p[0] >= r.min[0] &&
   p[0] <= r.max[0] &&
@@ -19,6 +23,7 @@ const inRoom = (r, p) =>
   p[1] <= r.max[1] &&
   p[2] >= r.min[2] - SPAWN_SLACK &&
   p[2] <= r.max[2] + SPAWN_SLACK;
+/** @param {SpawnRoom} r */
 const centre = r => [(r.min[0] + r.max[0]) / 2, (r.min[1] + r.max[1]) / 2];
 /** @param {GameEvent} ev */
 export function noteSpawn(ev) {
@@ -26,12 +31,15 @@ export function noteSpawn(ev) {
   const i = ev.pos ? rooms.findIndex(r => r.team === ev.team && inRoom(r, ev.pos)) : -1;
   if (i >= 0) state.spawnSeen[ev.team] = { room: i, at: performance.now() };
 }
-/** @param {Snapshot} snap */
+/** @param {Snapshot} snap @returns {Set<number>} */
 function activeRooms(snap) {
   const s = state.spawns;
   if (!s) return new Set();
+  // Each control point's owner, by its index.
+  /** @type {{ [index: number]: Team | number | undefined }} */
   const owner = {};
-  for (const o of snap.objectives || []) if (o.kind === "control_point") owner[o.index] = o.owner;
+  for (const o of snap.objectives || [])
+    if (o.kind === "control_point") owner[/** @type {number} */ (o.index)] = o.owner;
   const key = JSON.stringify(owner);
   if (key !== ownersKey) {
     ownersKey = key;
@@ -40,6 +48,7 @@ function activeRooms(snap) {
   const live = s.points.filter(
     p => !p.disabled && (p.point == null || owner[p.point] === undefined || owner[p.point] === p.team),
   );
+  /** @type {Set<number>} */
   const active = new Set();
   for (const team of ["red", "blue"]) {
     const seen = state.spawnSeen[team];
@@ -56,8 +65,12 @@ function activeRooms(snap) {
     );
     if (!main) continue;
     const enabled = rooms.filter(x => !x.r.disabled && live.some(p => p.team === team && inRoom(x.r, p.pos)));
+    /** @param {(typeof rooms)[number]} x */
     const far = x => Math.hypot(centre(x.r)[0] - centre(main.r)[0], centre(x.r)[1] - centre(main.r)[1]);
-    const pick = enabled.reduce((a, b) => (!a || far(b) > far(a) ? b : a), null);
+    const pick = enabled.reduce(
+      (a, b) => (!a || far(b) > far(a) ? b : a),
+      /** @type {(typeof rooms)[number] | null} */ (null),
+    );
     if (pick) active.add(pick.i);
   }
   return active;

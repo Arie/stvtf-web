@@ -1,6 +1,13 @@
 import { OVERLAY, state } from "./core.js";
 import { viewArea, viewCentre, focusOf, playerRad } from "./view.js";
 /** @typedef {import("../types/stream").Player} Player */
+/** @typedef {import("../types/stream").LivePlayer} LivePlayer */
+/** @typedef {import("../types/page").Framing} Framing */
+/** @typedef {import("../types/page").View} View */
+// A frame's shared measures: when it is, the free area's size, the view's rotation (cos and sin)
+// and a world point along the rotated axes.
+/** @typedef {{ now: number, w: number, h: number, c: number, sn: number, toUV: (p: number[]) => [number, number] }} At */
+/** @typedef {{ settled: LivePlayer[], framed: LivePlayer[] }} Framed */
 
 // Auto zoom frames every living player, wherever they are: more of them on screen is better.
 // It catches up quickly (ESCAPE_S) when one of them is leaving the view, except who spawned in
@@ -21,10 +28,13 @@ const MIN_SPAN = OVERLAY ? 1600 : 2600,
   ESCAPE_S = 0.5,
   AIM_S = 0.3;
 // When each player last came alive (a respawn).
+/** @type {Map<number, number>} */
 const spawnedAt = new Map(),
+  /** @type {Map<number, boolean>} */
   wasAlive = new Map();
-let lastFrame = performance.now(),
-  tighterSince = null;
+let lastFrame = performance.now();
+/** @type {number | null} */
+let tighterSince = null;
 
 // Whether the round is waiting to start, everyone in their spawn.
 const beforeRound = () => state.snaps.at(-1)?.round === "preround";
@@ -40,15 +50,18 @@ function noteRespawns(players, now) {
 
 // Who to frame: everyone alive; `settled` are those who have been alive a while (or everyone,
 // before the round), whom the camera hurries to keep in view.
-/** @param {Player[]} players @param {number} now */
+/** @param {Player[]} players @param {number} now @returns {Framed} */
 function framedPlayers(players, now) {
-  const alive = players.filter(p => p.alive && p.pos && (p.team === "red" || p.team === "blue"));
+  const alive = players.filter(
+    /** @returns {p is LivePlayer} */ p => p.alive && p.pos && (p.team === "red" || p.team === "blue"),
+  );
   const settled = beforeRound() ? alive : alive.filter(p => !(now - (spawnedAt.get(p.id) ?? -Infinity) < FRESH_MS));
   return { settled, framed: alive };
 }
 
 // The framing round the framed players, or the full one when there are none. Along the rotated
 // axes, like the framing, so the box matches the panel.
+/** @param {LivePlayer[]} framed @param {Framing} full @param {At} at @returns {Framing} */
 function wantedFraming(framed, full, at) {
   if (!framed.length) return { ...full };
   const { w, h, c, sn, toUV } = at;
@@ -57,6 +70,7 @@ function wantedFraming(framed, full, at) {
     u1 = Math.max(...uv.map(p => p[0])) + ACTION_PAD;
   let v0 = Math.min(...uv.map(p => p[1])) - ACTION_PAD,
     v1 = Math.max(...uv.map(p => p[1])) + ACTION_PAD;
+  /** @param {number} a @param {number} b */
   const grow = (a, b) => {
     const m = (a + b) / 2,
       half = Math.max((b - a) / 2, MIN_SPAN / 2);
@@ -72,6 +86,7 @@ function wantedFraming(framed, full, at) {
 }
 
 // Whether `p` is inside the framing `f` (seen as on the panel), clear of its margin.
+/** @param {LivePlayer} p @param {Framing} f @param {At} at */
 function inside(p, f, at) {
   const { w, h, toUV } = at,
     m = 1.5 * playerRad();
@@ -83,6 +98,7 @@ function inside(p, f, at) {
 // Whether to hold the current framing `hold` while it still works: everyone framed is inside
 // it, the action has not shifted by a quarter view and there is no big zoom-in to gain,
 // nor a smaller one that has lasted.
+/** @param {Framing} hold @param {Framing} wanted @param {Framed} who @param {At} at */
 function holding(hold, wanted, { settled, framed }, at) {
   const { now, w, h, toUV } = at;
   if (wanted.scale <= hold.scale * 1.25) tighterSince = null;
@@ -90,7 +106,7 @@ function holding(hold, wanted, { settled, framed }, at) {
   const [hu, hv] = toUV([hold.cx, hold.cy]),
     halfW = w / 2 / hold.scale,
     halfH = h / 2 / hold.scale;
-  const inView = p => inside(p, hold, at);
+  const inView = /** @param {LivePlayer} p */ p => inside(p, hold, at);
   const [wu, wv] = toUV([wanted.cx, wanted.cy]);
   const shifted = Math.abs(wu - hu) > halfW * 0.5 || Math.abs(wv - hv) > halfH * 0.5;
   const settledInside = settled.every(inView);
@@ -111,12 +127,14 @@ const SPRINGS = {
   slow: { pan: 3.5, out: 3.5, in: 1.6 },
   normal: { pan: 1.6, out: 1.4, in: 1.6 },
 };
+/** @param {Framing} target @param {boolean} escaping */
 function springs(target, escaping) {
   if (beforeRound()) return SPRINGS.roundStart;
   if (escaping) return SPRINGS.escaping;
   return target.slow ? SPRINGS.slow : SPRINGS.normal;
 }
 // How far in the view at `focus` can zoom with everyone in `keep` still inside its margin.
+/** @param {LivePlayer[]} keep @param {{ cx: number, cy: number }} focus @param {At} at */
 function deepestZoom(keep, focus, at) {
   const { w, h, toUV } = at,
     m = 1.5 * playerRad(),
@@ -129,6 +147,10 @@ function deepestZoom(keep, focus, at) {
   return most;
 }
 
+/**
+ * @param {View} v @param {Framing} target @param {number} dt
+ * @param {{ escaping: boolean, keep: LivePlayer[], at: At }} how
+ */
 function glide(v, target, dt, { escaping, keep, at }) {
   const cam = (state.cam ??= { vx: 0, vy: 0, vz: 0 }),
     t = springs(target, escaping),
@@ -167,6 +189,7 @@ export function followAction(players) {
   const { w, h } = viewArea(),
     c = Math.cos(v.rot),
     sn = Math.sin(v.rot);
+  /** @param {number[]} p @returns {[number, number]} */
   const toUV = p => [p[0] * c - p[1] * sn, p[0] * sn + p[1] * c];
   const at = { now, w, h, c, sn, toUV };
   noteRespawns(players, now);
@@ -179,10 +202,16 @@ export function followAction(players) {
   }
   // The view as it is now, centred where the framing is (the free area's centre).
   const seen = { ...focusOf(v), scale: v.scale };
-  glide(v, state.camTarget, dt, { escaping: who.settled.some(p => !inside(p, seen, at)), keep: who.settled, at });
+  // state.camTarget is set: kept above, or just replaced.
+  glide(v, /** @type {Framing} */ (state.camTarget), dt, {
+    escaping: who.settled.some(p => !inside(p, seen, at)),
+    keep: who.settled,
+    at,
+  });
 }
 
 // Unity-style SmoothDamp: moves `x` toward `to` with velocity `vel`, settling in about `time` s.
+/** @param {number} x @param {number} to @param {number} vel @param {number} time @param {number} dt @returns {[number, number]} */
 function smoothDamp(x, to, vel, time, dt) {
   const w = 2 / time,
     e = w * dt,

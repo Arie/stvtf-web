@@ -36,6 +36,7 @@ window.addEventListener("mousemove", e => {
 });
 // h: player HUD and scores, s: just the scores, e: events and chat, g: overview or geometry,
 // o: the overlay or back.
+/** @param {string} cls */
 function toggle(cls) {
   const on = env.el.classList.toggle(cls);
   try {
@@ -43,12 +44,14 @@ function toggle(cls) {
   } catch {}
   dispatchEvent(new Event("resize"));
 }
+/** @param {string} id */
 function toggleExclusive(id) {
   const other = $(id === "help" ? "settings" : "help");
   other.hidden = true;
   $(id).hidden = !$(id).hidden;
 }
 // Hold Tab for the scoreboard, as in TF2.
+/** @param {boolean} on */
 function showBoard(on) {
   if (OVERLAY || $("board").hidden === !on) return;
   $("board").hidden = !on;
@@ -107,7 +110,7 @@ env.keys.addEventListener("keydown", e => {
     showBoard(true);
     return;
   }
-  if (Object.hasOwn(KEYS, e.key)) KEYS[e.key]();
+  if (Object.hasOwn(KEYS, e.key)) KEYS[/** @type {keyof typeof KEYS} */ (e.key)]();
 });
 for (const cls of ["nohud", "noscore"]) {
   try {
@@ -118,6 +121,7 @@ for (const cls of ["nohud", "noscore"]) {
 // scoreboard is off unless asked for (renderScoreboard).
 if (!OVERLAY) env.el.classList.toggle("noscore", !optOn("score", !env.el.classList.contains("noscore")));
 
+/** @param {boolean} on */
 function setAutoZoom(on) {
   if (OVERLAY || state.autoZoom === on) return;
   state.autoZoom = on;
@@ -127,6 +131,7 @@ function setAutoZoom(on) {
 }
 
 // Click a dot on the map or a card in the HUD to keep that player centred.
+/** @param {number | null} id */
 export function setFollow(id) {
   state.follow = id != null && id !== state.follow ? id : null;
   const p = state.lastPlayers.find(x => x.id === state.follow);
@@ -134,6 +139,7 @@ export function setFollow(id) {
   if (p) $("follow-name").textContent = p.name;
   state.lastPanel = 0;
 }
+/** @param {number} cx @param {number} cy */
 function followAt(cx, cy) {
   const r = canvas.getBoundingClientRect();
   /** @type {Player | null} */
@@ -173,6 +179,7 @@ $("feed").addEventListener("click", e => {
   if (!OVERLAY && Number.isFinite(id) && id !== state.follow) setFollow(id);
 });
 
+/** @param {boolean} show */
 function setSidebar(show) {
   env.el.classList.toggle("noside", !show);
   $("sidetoggle").textContent = show ? "›" : "‹";
