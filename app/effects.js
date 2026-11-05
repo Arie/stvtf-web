@@ -86,21 +86,29 @@ function drawBoom(e, k) {
   ctx.lineWidth = 1.5;
   ctx.stroke();
 }
+// How far (in pixels) a floating number rises over its life.
+const FLOAT_RISE = 22;
+// A number floating up from screen height `from` (the top of what it comes off), k of the way
+// through its life: damage, heals and repairs.
+/** @param {string} text @param {[number, number]} at x and from @param {number} k @param {string} colour */
+function floatNumber(text, [x, from], k, colour, size = 12) {
+  ctx.font = `bold ${Math.round(size * uiScale())}px system-ui`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "bottom";
+  ctx.fillStyle = colour;
+  ctx.strokeStyle = "#000";
+  ctx.lineWidth = 3;
+  const ty = from - 4 - k * FLOAT_RISE;
+  ctx.strokeText(text, x, ty);
+  ctx.fillText(text, x, ty);
+}
 /** @param {Effect} e @param {number} k @param {Map<number, Player>} byId */
 function drawDamage(e, k, byId) {
   if (OVERLAY) return;
   const pos = byId.get(e.ev.victim)?.pos || e.pos;
   if (!pos) return;
   const [x, y] = toScreen(pos[0], pos[1]);
-  ctx.font = `bold ${Math.round((e.ev.crit ? 15 : 12) * uiScale())}px system-ui`;
-  ctx.textAlign = "center";
-  ctx.textBaseline = "bottom";
-  ctx.fillStyle = damageColor(e.ev);
-  ctx.strokeStyle = "#000";
-  ctx.lineWidth = 3;
-  const ty = y - playerRad() - 4 - k * 22;
-  ctx.strokeText("-" + e.ev.amount, x, ty);
-  ctx.fillText("-" + e.ev.amount, x, ty);
+  floatNumber("-" + e.ev.amount, [x, y - playerRad()], k, damageColor(e.ev), e.ev.crit ? 15 : 12);
 }
 /** @param {Effect} e */
 function drawKill(e) {
@@ -167,17 +175,8 @@ function drawHeal(e, k, byId) {
   const pos = byId.get(e.id)?.pos || e.ev.pos;
   if (!pos) return;
   const [x, y] = toScreen(pos[0], pos[1]);
-  ctx.font = `bold ${Math.round(12 * uiScale())}px system-ui`;
-  ctx.textAlign = "center";
-  ctx.textBaseline = "bottom";
-  ctx.fillStyle = HEAL_GREEN;
-  ctx.strokeStyle = "#000";
-  ctx.lineWidth = 3;
-  const ty = y - playerRad() - 4 - k * 22,
-    tx = x + playerRad() * 0.9,
-    txt = "+" + e.ev.amount;
-  ctx.strokeText(txt, tx, ty);
-  ctx.fillText(txt, tx, ty);
+  // To the right of the patient, clear of the damage they take.
+  floatNumber("+" + e.ev.amount, [x + playerRad() * 0.9, y - playerRad()], k, HEAL_GREEN);
 }
 /** @param {Effect} e @param {number} k */
 function drawUpgrade(e, k) {
@@ -200,16 +199,7 @@ function drawUpgrade(e, k) {
 /** @param {Effect} e @param {number} k */
 function drawRepair(e, k) {
   const [x, y] = toScreen(e.pos[0], e.pos[1]);
-  ctx.font = `bold ${Math.round(12 * uiScale())}px system-ui`;
-  ctx.textAlign = "center";
-  ctx.textBaseline = "bottom";
-  ctx.fillStyle = HEAL_GREEN;
-  ctx.strokeStyle = "#000";
-  ctx.lineWidth = 3;
-  const ty = y - px(30, 12) - 4 - k * 22,
-    txt = "+" + e.ev.amount;
-  ctx.strokeText(txt, x, ty);
-  ctx.fillText(txt, x, ty);
+  floatNumber("+" + e.ev.amount, [x, y - px(30, 12)], k, HEAL_GREEN);
 }
 /** @param {Effect} e @param {number} k */
 function drawHit(e, k) {
