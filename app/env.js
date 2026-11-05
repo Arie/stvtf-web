@@ -1,10 +1,16 @@
 // Where the viewer runs: its own page (these defaults), or a <stv-map> element on another site,
 // which configures this before the rest of the viewer loads.
+/**
+ * @type {{
+ *   root: Document | ShadowRoot; el: HTMLElement; keys: GlobalEventHandlers; base: string; path: string;
+ *   search: string; storage: boolean; emit: ((m: { type: string }) => void) | null; component: boolean;
+ * }}
+ */
 export const env = {
   // Where $() finds the viewer's elements.
   root: document,
   // The viewer's outermost element: its flags (overlay, noside, …) and CSS variables go on it.
-  el: document.getElementById("app"),
+  el: /** @type {HTMLElement} */ (document.getElementById("app")),
   // Where keyboard shortcuts listen.
   keys: window,
   // The stv.tf server its files and data come from.
@@ -19,6 +25,7 @@ export const env = {
   component: false,
 };
 
+/** @param {Partial<typeof env>} o */
 export function configure(o) {
   Object.assign(env, o);
 }

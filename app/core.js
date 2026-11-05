@@ -94,7 +94,9 @@ export function applyScale() {
 }
 applyScale();
 
-export const $ = id => env.root.getElementById(id);
+// The viewer's elements are all in its page (or the component's template), so they are there.
+/** @param {string} id */
+export const $ = id => /** @type {HTMLElement} */ (env.root.getElementById(id));
 export const canvas = /** @type {HTMLCanvasElement} */ ($("c"));
 // A canvas's 2D context. Only null if the canvas already has another kind, which none here has.
 /** @param {HTMLCanvasElement} c @param {CanvasRenderingContext2DSettings} [opts] */
@@ -105,6 +107,7 @@ export function context2d(c, opts) {
 }
 export const ctx = context2d(canvas);
 // The canvas size, kept up to date by an observer: asking the layout for it forces a reflow.
+/** @type {{ width: number; height: number } | null} */
 let size = null;
 new ResizeObserver(([e]) => {
   size = { width: e.contentRect.width, height: e.contentRect.height };
