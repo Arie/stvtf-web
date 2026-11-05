@@ -3,99 +3,128 @@ import { TEAM, OVERLAY, uiScale, ctx, INK } from "./core.js";
 
 // Each charge looks different: über a candy-cane team ring with a dark edge and a soft pulse, kritz crackling, quick-fix
 // pulsing rings, vaccinator a shield with its resistance.
+/** @typedef {{ x: number; y: number; rad: number; col: string; t: number }} Ring */
 /** @param {Player} p @param {number} x @param {number} y @param {number} rad @param {string} col */
 export function drawUberRing(p, x, y, rad, col) {
   if (!p.ubered) return;
-  const t = performance.now() / 1000;
+  const ring = { x, y, rad, col, t: performance.now() / 1000 };
   ctx.save();
-  if (p.ubered === "uber") {
-    const base = TEAM[p.team],
-      pulse = 0.5 + 0.5 * Math.sin(t * 5);
-    const tint =
-      "#" +
-      [1, 3, 5]
-        .map(i =>
-          Math.round(parseInt(base.substr(i, 2), 16) * 0.5 + 128)
-            .toString(16)
-            .padStart(2, "0"),
-        )
-        .join("");
-    const lw = OVERLAY ? Math.max(3, rad * 0.3) : 5,
-      r0 = rad + 3 + lw / 2,
-      ri = r0 - lw / 2,
-      ro = r0 + lw / 2;
-    ctx.beginPath();
-    ctx.arc(x, y, r0, 0, Math.PI * 2);
-    ctx.shadowColor = base;
-    ctx.shadowBlur = 10 + 8 * pulse;
-    ctx.strokeStyle = INK;
-    ctx.lineWidth = lw + 3;
-    ctx.stroke();
-    ctx.shadowBlur = 0;
-    ctx.strokeStyle = base;
-    ctx.lineWidth = lw;
-    ctx.stroke();
-    // Candy cane like the HUD card: tint stripes slanted by their outer edge, turning three stripe pairs a second.
-    const n = 12,
-      step = (Math.PI * 2) / n,
-      slant = step * 0.8,
-      rot = t * step * 3;
-    ctx.fillStyle = tint;
-    ctx.beginPath();
-    for (let i = 0; i < n; i++) {
-      const a = rot + i * step,
-        w = step / 2;
-      ctx.moveTo(x + Math.cos(a) * ri, y + Math.sin(a) * ri);
-      ctx.lineTo(x + Math.cos(a + w) * ri, y + Math.sin(a + w) * ri);
-      ctx.lineTo(x + Math.cos(a + w + slant) * ro, y + Math.sin(a + w + slant) * ro);
-      ctx.lineTo(x + Math.cos(a + slant) * ro, y + Math.sin(a + slant) * ro);
-      ctx.closePath();
-    }
-    ctx.fill();
-    ctx.beginPath();
-    ctx.arc(x, y, ri, 0, Math.PI * 2);
-    ctx.strokeStyle = "rgba(11,12,14,0.7)";
-    ctx.lineWidth = 1;
-    ctx.stroke();
-  } else if (p.ubered === "kritz") {
-    ctx.beginPath();
-    for (let i = 0; i <= 24; i++) {
-      const a = (i / 24) * Math.PI * 2 + t * 3,
-        r = rad + 6 + (i % 2 ? 4 : -1) + Math.sin(t * 20 + i) * 1.5;
-      (i ? ctx.lineTo : ctx.moveTo).call(ctx, x + Math.cos(a) * r, y + Math.sin(a) * r);
-    }
-    ctx.strokeStyle = "#fff";
-    ctx.shadowColor = col;
-    ctx.shadowBlur = 10;
-    ctx.lineWidth = 2;
-    ctx.stroke();
-  } else if (p.ubered === "quickfix") {
-    for (let i = 0; i < 2; i++) {
-      const k = (t * 1.2 + i / 2) % 1;
-      ctx.beginPath();
-      ctx.arc(x, y, rad + 4 + k * 16, 0, Math.PI * 2);
-      ctx.strokeStyle = col;
-      ctx.globalAlpha = 1 - k;
-      ctx.lineWidth = 3;
-      ctx.stroke();
-    }
-  } else {
-    ctx.beginPath();
-    ctx.arc(x, y, rad + 7, -Math.PI * 0.8, -Math.PI * 0.2);
-    ctx.strokeStyle = "#fff";
-    ctx.lineWidth = 4;
-    ctx.shadowColor = col;
-    ctx.shadowBlur = 12;
-    ctx.stroke();
-    ctx.shadowBlur = 0;
-    ctx.font = `bold ${Math.round(10 * uiScale())}px system-ui`;
-    ctx.textAlign = "center";
-    ctx.textBaseline = "bottom";
-    ctx.fillStyle = "#fff";
-    ctx.fillText(p.ubered.split("_")[1].toUpperCase(), x, y - rad - 9);
-  }
+  (CHARGES.get(p.ubered) ?? vaccinatorRing)(p, ring);
   ctx.restore();
 }
+
+// A team colour halfway to white, for the über ring's stripes.
+/** @param {string} hex */
+const tinted = hex =>
+  "#" +
+  [1, 3, 5]
+    .map(i =>
+      Math.round(parseInt(hex.substr(i, 2), 16) * 0.5 + 128)
+        .toString(16)
+        .padStart(2, "0"),
+    )
+    .join("");
+
+/** @param {Player} p @param {Ring} ring */
+function uberRing(p, { x, y, rad, t }) {
+  const base = TEAM[p.team],
+    pulse = 0.5 + 0.5 * Math.sin(t * 5);
+  const lw = OVERLAY ? Math.max(3, rad * 0.3) : 5,
+    r0 = rad + 3 + lw / 2,
+    ri = r0 - lw / 2,
+    ro = r0 + lw / 2;
+  ctx.beginPath();
+  ctx.arc(x, y, r0, 0, Math.PI * 2);
+  ctx.shadowColor = base;
+  ctx.shadowBlur = 10 + 8 * pulse;
+  ctx.strokeStyle = INK;
+  ctx.lineWidth = lw + 3;
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+  ctx.strokeStyle = base;
+  ctx.lineWidth = lw;
+  ctx.stroke();
+  candyStripes(x, y, [ri, ro], t, tinted(base));
+  ctx.beginPath();
+  ctx.arc(x, y, ri, 0, Math.PI * 2);
+  ctx.strokeStyle = "rgba(11,12,14,0.7)";
+  ctx.lineWidth = 1;
+  ctx.stroke();
+}
+
+// Candy cane like the HUD card: tint stripes between radii ri and ro, slanted by their outer edge,
+// turning three stripe pairs a second.
+/** @param {number} x @param {number} y @param {[number, number]} radii @param {number} t @param {string} tint */
+function candyStripes(x, y, [ri, ro], t, tint) {
+  const n = 12,
+    step = (Math.PI * 2) / n,
+    slant = step * 0.8,
+    rot = t * step * 3;
+  ctx.fillStyle = tint;
+  ctx.beginPath();
+  for (let i = 0; i < n; i++) {
+    const a = rot + i * step,
+      w = step / 2;
+    ctx.moveTo(x + Math.cos(a) * ri, y + Math.sin(a) * ri);
+    ctx.lineTo(x + Math.cos(a + w) * ri, y + Math.sin(a + w) * ri);
+    ctx.lineTo(x + Math.cos(a + w + slant) * ro, y + Math.sin(a + w + slant) * ro);
+    ctx.lineTo(x + Math.cos(a + slant) * ro, y + Math.sin(a + slant) * ro);
+    ctx.closePath();
+  }
+  ctx.fill();
+}
+
+/** @param {Player} p @param {Ring} ring */
+function kritzRing(p, { x, y, rad, col, t }) {
+  ctx.beginPath();
+  for (let i = 0; i <= 24; i++) {
+    const a = (i / 24) * Math.PI * 2 + t * 3,
+      r = rad + 6 + (i % 2 ? 4 : -1) + Math.sin(t * 20 + i) * 1.5;
+    (i ? ctx.lineTo : ctx.moveTo).call(ctx, x + Math.cos(a) * r, y + Math.sin(a) * r);
+  }
+  ctx.strokeStyle = "#fff";
+  ctx.shadowColor = col;
+  ctx.shadowBlur = 10;
+  ctx.lineWidth = 2;
+  ctx.stroke();
+}
+
+/** @param {Player} p @param {Ring} ring */
+function quickfixRing(p, { x, y, rad, col, t }) {
+  for (let i = 0; i < 2; i++) {
+    const k = (t * 1.2 + i / 2) % 1;
+    ctx.beginPath();
+    ctx.arc(x, y, rad + 4 + k * 16, 0, Math.PI * 2);
+    ctx.strokeStyle = col;
+    ctx.globalAlpha = 1 - k;
+    ctx.lineWidth = 3;
+    ctx.stroke();
+  }
+}
+
+// The vaccinator's charges (vaccinator_bullet, _blast, _fire): a shield arc with the resistance.
+/** @param {Player} p @param {Ring} ring */
+function vaccinatorRing(p, { x, y, rad, col }) {
+  ctx.beginPath();
+  ctx.arc(x, y, rad + 7, -Math.PI * 0.8, -Math.PI * 0.2);
+  ctx.strokeStyle = "#fff";
+  ctx.lineWidth = 4;
+  ctx.shadowColor = col;
+  ctx.shadowBlur = 12;
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+  ctx.font = `bold ${Math.round(10 * uiScale())}px system-ui`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "bottom";
+  ctx.fillStyle = "#fff";
+  ctx.fillText((p.ubered ?? "").split("_")[1].toUpperCase(), x, y - rad - 9);
+}
+
+const CHARGES = new Map([
+  ["uber", uberRing],
+  ["kritz", kritzRing],
+  ["quickfix", quickfixRing],
+]);
 
 // Jarate, Mad Milk and bleeding fill the bottom of the dot like a liquid (side by side when there
 // are several) and burning licks up from it, under the class icon.
