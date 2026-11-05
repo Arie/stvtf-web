@@ -3,9 +3,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "lint": "eslint app test",
-    "format": "prettier --write \"app/**/*.js\" \"test/**/*.js\" \"types/**/*.ts\" eslint.config.mjs",
-    "format:check": "prettier --check \"app/**/*.js\" \"test/**/*.js\" \"types/**/*.ts\" eslint.config.mjs",
+    "lint": "eslint app test script",
+    "format": "prettier --write \"app/**/*.js\" \"test/**/*.js\" \"script/**/*.mjs\" \"types/**/*.ts\" eslint.config.mjs",
+    "format:check": "prettier --check \"app/**/*.js\" \"test/**/*.js\" \"script/**/*.mjs\" \"types/**/*.ts\" eslint.config.mjs",
     "typecheck": "tsc -p .",
     "test": "node --import ./test/js/setup.js --test \"test/js/*.test.js\""
   },

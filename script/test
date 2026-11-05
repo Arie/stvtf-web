@@ -1,0 +1,3 @@
+#!/bin/sh
+# Runs every check CI runs: script/test --help. The runner is script/test.mjs.
+exec node "$(dirname "$0")/test.mjs" "$@"

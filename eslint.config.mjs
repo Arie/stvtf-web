@@ -4,7 +4,7 @@ import globals from "globals";
 export default [
   js.configs.recommended,
   {
-    files: ["app/**/*.js", "test/**/*.js"],
+    files: ["app/**/*.js", "test/**/*.js", "script/**/*.mjs"],
     languageOptions: { ecmaVersion: "latest", sourceType: "module", globals: { ...globals.browser, ...globals.node } },
     rules: {
       "no-unused-vars": ["error", { args: "none", caughtErrors: "none" }],
