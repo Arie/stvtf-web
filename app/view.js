@@ -270,6 +270,15 @@ function textSprite(text, font, fill, outline) {
   }
   return sp;
 }
+// An ✕ of half-size s at x, y, as a path to stroke.
+/** @param {number} x @param {number} y @param {number} s */
+export function crossPath(x, y, s) {
+  ctx.beginPath();
+  ctx.moveTo(x - s, y - s);
+  ctx.lineTo(x + s, y + s);
+  ctx.moveTo(x + s, y - s);
+  ctx.lineTo(x - s, y + s);
+}
 // A short label (a class, a building's letter, a count) centred on a marker at x, y, in `size`
 // pixels; half a pixel low, which looks centred.
 /** @param {string} text @param {number} x @param {number} y @param {number} size */

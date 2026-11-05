@@ -1,5 +1,5 @@
 import { TEAM, OVERLAY, optOn, overlayUnit, uiScale, ctx, state, teamColour } from "./core.js";
-import { toScreen, screenAngle, px, playerRad } from "./view.js";
+import { toScreen, screenAngle, px, playerRad, crossPath } from "./view.js";
 import { SHOW_SHOTS, SHOW_BUILDINGS } from "./players.js";
 /** @typedef {import("../types/stream").Player} Player */
 /** @typedef {import("../types/stream").GameEvent} GameEvent */
@@ -130,11 +130,7 @@ function drawKill(e) {
   }
   ctx.strokeStyle = teamColour(e.team, "#fff");
   ctx.lineWidth = 3;
-  ctx.beginPath();
-  ctx.moveTo(x - s, y - s);
-  ctx.lineTo(x + s, y + s);
-  ctx.moveTo(x + s, y - s);
-  ctx.lineTo(x - s, y + s);
+  crossPath(x, y, s);
   ctx.stroke();
 }
 /** @param {Effect} e @param {number} k */

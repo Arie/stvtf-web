@@ -1,6 +1,6 @@
 import { TEAM, CLASS, icon, OVERLAY, optOn, uiScale, ctx, context2d, state, teamColour, INK } from "./core.js";
 import { layerOn } from "./layers.js";
-import { toScreen, screenAngle, playerRad, drawText, label } from "./view.js";
+import { toScreen, screenAngle, playerRad, drawText, label, crossPath } from "./view.js";
 import { drawUberRing, drawStatusInside, drawStatus } from "./status.js";
 /** @typedef {import("../types/stream").Player} Player */
 /** @typedef {import("../types/stream").LivePlayer} LivePlayer */
@@ -226,11 +226,7 @@ function drawFallen(p) {
   ctx.lineCap = "round";
   ctx.strokeStyle = "#000";
   ctx.lineWidth = 5;
-  ctx.beginPath();
-  ctx.moveTo(x - s, y - s);
-  ctx.lineTo(x + s, y + s);
-  ctx.moveTo(x + s, y - s);
-  ctx.lineTo(x - s, y + s);
+  crossPath(x, y, s);
   ctx.stroke();
   ctx.strokeStyle = TEAM[p.team];
   ctx.lineWidth = 2.5;
