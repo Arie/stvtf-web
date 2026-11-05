@@ -23,7 +23,10 @@ export type PlayerScore = {
   streak: number;
 };
 
-export type Player = {
+/** A player: where they are while alive, or where they died (null if before the tool connected). */
+export type Player = PlayerFields & ({ alive: true; pos: Vec3 } | { alive: false; pos: Vec3 | null });
+
+type PlayerFields = {
   id: number;
   ent: number;
   name: string;
@@ -31,11 +34,8 @@ export type Player = {
   team: Team;
   /** Lower-case class name, or "unknown". */
   class: string;
-  alive: boolean;
   hp: number;
   max_hp: number;
-  /** Where they are, or where they died (null if before the tool connected). */
-  pos: Vec3 | null;
   yaw: number | null;
   pitch: number | null;
   /** Charge percentage. */
@@ -132,8 +132,7 @@ export type StatusLine = { type: "status"; state: string; reason?: string; [fiel
  */
 export type GameEvent = {
   type: string;
-  /** Absent on the few the page makes itself, such as a map change in the feed. */
-  tick?: number;
+  tick: number;
   history?: boolean;
   names?: { [id: number]: { name: string; team: Team } };
   [field: string]: any;

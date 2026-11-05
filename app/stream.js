@@ -45,7 +45,8 @@ export function openStream() {
   s.onmessage = e => {
     const m = parseMessage(e.data);
     waiting(m);
-    later(() => handle(m));
+    // handle() reads every kind of line by its `type`, as loosely as an event.
+    later(() => handle(/** @type {GameEvent} */ (m)));
   };
   s.onopen = () =>
     later(() => {
@@ -120,7 +121,7 @@ function handle(m) {
     case "server": {
       const sameMap = m.map === state.map;
       if (!sameMap) {
-        if (state.map) feedEvent({ type: "map", map: m.map }, () => null);
+        if (state.map) feedEvent({ type: "map", map: m.map, tick: state.lastTick }, () => null);
         loadMap(m.map);
         embedMap(m.map);
       }
@@ -141,18 +142,20 @@ function handle(m) {
     case "data_age":
       state.lastData = performance.now() - m.ms;
       break;
-    case "snapshot":
-      if (m.tick < state.lastTick - TICK_RESET) resetMatch();
-      state.lastTick = m.tick;
+    case "snapshot": {
+      const snap = /** @type {import("../types/stream").Snapshot} */ (m);
+      if (snap.tick < state.lastTick - TICK_RESET) resetMatch();
+      state.lastTick = snap.tick;
       state.lastData = performance.now();
       if ($("status").textContent !== "live") setStatus("live", true);
-      observeTick(m.tick);
-      state.snaps.push(/** @type {import("../types/stream").Snapshot} */ (m));
+      observeTick(snap.tick);
+      state.snaps.push(snap);
       if (state.snaps.length > SNAPS_KEPT) state.snaps.shift();
-      for (const p of m.players) state.players.set(p.id, p);
+      for (const p of snap.players) state.players.set(p.id, p);
       $("empty").style.display = "none";
       $("empty").classList.remove("holding");
       break;
+    }
     case "world":
       break;
     default:
