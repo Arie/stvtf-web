@@ -242,7 +242,8 @@ clearInterval(ticker);
 draw();
 
 const failed = runs.filter(r => r.status === "failed");
-for (const r of failed) {
+// With --verbose the output has already been shown.
+for (const r of opt.verbose ? [] : failed) {
   const rule = "─".repeat(Math.min(80, process.stdout.columns || 80));
   console.log(`\n${rule}\n${red("✗")} ${r.name}: ${r.cmd}\n${rule}\n${r.output.trimEnd()}`);
 }

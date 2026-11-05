@@ -22,6 +22,7 @@ env:
   RUSTFLAGS: -D warnings
   RUSTDOCFLAGS: -D warnings
 
+# Each job runs its checks through script/test, which runs them all locally.
 # Cargo.toml depends on stvtf as `../stvtf`, so both repositories are checked out
 # side by side: $GITHUB_WORKSPACE/stvtf-web and $GITHUB_WORKSPACE/stvtf. Neither checkout
 # keeps its credentials: the build runs every dependency's build script, which could read them.
@@ -40,7 +41,7 @@ jobs:
           path: stvtf-web
           persist-credentials: false
       - run: rustup toolchain install
-      - run: cargo fmt --check
+      - run: script/test -v -t rustfmt
 
   eslint:
     name: eslint and page tests
@@ -56,10 +57,21 @@ jobs:
           cache: npm
           cache-dependency-path: stvtf-web/package-lock.json
       - run: npm ci --ignore-scripts
-      - run: npm run format:check
-      - run: npm run lint
-      - run: npm run typecheck
-      - run: npm test
+      - run: script/test -v -t eslint,prettier,tsc,page-tests
+
+  # The linters mise.toml pins: shell scripts, workflows and the Dockerfile.
+  lint:
+    name: shellcheck, actionlint, zizmor and hadolint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: stvtf-web
+          persist-credentials: false
+      - uses: jdx/mise-action@fc42bcc7ddbf51124c30f95a877a0c5168a3bfde # v5.2.1
+        with:
+          working_directory: stvtf-web
+      - run: script/test -v -t shellcheck,actionlint,zizmor,hadolint
 
   clippy:
     name: clippy
@@ -79,8 +91,7 @@ jobs:
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: stvtf-web
-      - run: cargo clippy --all-targets --locked
-      - run: cargo doc --no-deps --locked
+      - run: script/test -v -t clippy,rustdoc
 
   test:
     name: test
@@ -111,7 +122,7 @@ jobs:
           for map in cp_process_f12 cp_gullywash_f9 pl_upward_f12 pl_swiftwater_final1 mge_training_v8_beta4b cp_sunshine; do
             [ -f "testdata/maps/$map.bsp" ] || curl -fsSL -o "testdata/maps/$map.bsp" "https://fastdl.serveme.tf/maps/$map.bsp"
           done
-      - run: cargo test --locked
+      - run: script/test -v -t cargo-test
 
   deny:
     name: cargo-deny
@@ -131,4 +142,4 @@ jobs:
       - uses: taiki-e/install-action@86f7a0ffb25f40114606501a311ebcfaf882ea32 # v2.88.0
         with:
           tool: cargo-deny
-      - run: cargo deny --locked check
+      - run: script/test -v -t cargo-deny
