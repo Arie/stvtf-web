@@ -84,10 +84,19 @@ export type Building = {
   attacking?: boolean;
 };
 
-/** Control points, carts, flags and the game modes' own objectives; `kind` tells them apart. */
-export type Objective = {
-  kind: string;
-  pos?: Vec3;
+/**
+ * Control points, carts, flags and the game modes' own objectives; `kind` tells them apart.
+ * Only a control point can be without a position.
+ */
+export type Objective = ObjectiveFields &
+  (
+    | { kind: "control_point"; pos: Vec3 | null }
+    | { kind: "cart" | "flag" | "ball" | "goal" | "robot" | "core" | "revive" | "money" | "tank"; pos: Vec3 }
+  );
+/** An objective that has a position. */
+export type PlacedObjective = Objective & { pos: Vec3 };
+
+type ObjectiveFields = {
   id?: number;
   index?: number;
   team?: Team;

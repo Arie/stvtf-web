@@ -2,7 +2,9 @@ import { msPerTick, TEAM, OVERLAY, overlayUnit, uiScale, ctx, state, optOn } fro
 import { toScreen, screenAngle, px, playerRad } from "./view.js";
 import { layerOn } from "./layers.js";
 /** @typedef {import("../types/stream").Objective} Objective */
+/** @typedef {import("../types/stream").PlacedObjective} PlacedObjective */
 /** @typedef {import("../types/stream").Player} Player */
+/** @typedef {import("../types/stream").LivePlayer} LivePlayer */
 /** @typedef {import("../types/stream").Snapshot} Snapshot */
 // numbers=0 leaves the number (and the cap rate) off the control points.
 const SHOW_NUMBERS = optOn("numbers");
@@ -17,14 +19,14 @@ const CART_MIN_MOVE = 6,
 // A capture area belongs to the point standing in it, or one at most this many units outside.
 const CAP_AREA_REACH = 256;
 // Where a moving objective (cart, ball, robot, tank) is between the snapshots around `tick`.
-/** @param {Objective} o @param {number} tick */
+/** @param {PlacedObjective} o @param {number} tick */
 function objPos(o, tick) {
   const s = state.snaps;
   const i = s.findIndex(x => x.tick > tick);
   if (i < 1) return o.pos;
   const a = s[i - 1].objectives?.find(q => q.kind === o.kind && q.id === o.id);
   const b = s[i].objectives?.find(q => q.kind === o.kind && q.id === o.id);
-  if (!a || !b) return o.pos;
+  if (!a?.pos || !b?.pos) return o.pos;
   const t = (tick - s[i - 1].tick) / (s[i].tick - s[i - 1].tick);
   return [a.pos[0] + (b.pos[0] - a.pos[0]) * t, a.pos[1] + (b.pos[1] - a.pos[1]) * t];
 }
@@ -54,7 +56,7 @@ function drawBomb(x, y, R, lw) {
   ctx.fill();
   ctx.restore();
 }
-/** @param {Objective} o @param {number} tick */
+/** @param {PlacedObjective} o @param {number} tick */
 function drawCart(o, tick) {
   const [wx, wy] = objPos(o, tick);
   let cs = cartState.get(o.id);
@@ -143,7 +145,7 @@ function drawCart(o, tick) {
 }
 
 // Pass time goals: a ring in the colour of the team that scores there.
-/** @param {Objective} o */
+/** @param {PlacedObjective} o */
 function drawGoal(o) {
   const [x, y] = toScreen(o.pos[0], o.pos[1]),
     r = OVERLAY ? overlayUnit() * 1.4 : px(90, 14);
@@ -167,7 +169,7 @@ function drawGoal(o) {
   ctx.restore();
 }
 // Robot destruction robots like buildings: the team colour drains from the top as health drops.
-/** @param {Objective} o @param {number} tick */
+/** @param {PlacedObjective} o @param {number} tick */
 function drawRobot(o, tick) {
   const [wx, wy] = objPos(o, tick);
   const [x, y] = toScreen(wx, wy),
@@ -194,7 +196,7 @@ function drawRobot(o, tick) {
   ctx.restore();
 }
 // A dropped robot destruction core: a small diamond in its team's colour.
-/** @param {Objective} o */
+/** @param {PlacedObjective} o */
 function drawCore(o) {
   const [x, y] = toScreen(o.pos[0], o.pos[1]),
     s = OVERLAY ? overlayUnit() * 0.7 : px(24, 7);
@@ -213,7 +215,7 @@ function drawCore(o) {
   ctx.restore();
 }
 // A Mann vs. Machine revive marker: a cross in the dead player's team colour.
-/** @param {Objective} o */
+/** @param {PlacedObjective} o */
 function drawRevive(o) {
   const [x, y] = toScreen(o.pos[0], o.pos[1]),
     s = OVERLAY ? overlayUnit() * 0.8 : px(30, 9);
@@ -230,7 +232,7 @@ function drawRevive(o) {
   ctx.restore();
 }
 // Mann vs. Machine money on the ground: a small green note.
-/** @param {Objective} o */
+/** @param {PlacedObjective} o */
 function drawMoney(o) {
   const [x, y] = toScreen(o.pos[0], o.pos[1]),
     s = OVERLAY ? overlayUnit() * 0.45 : px(16, 5);
@@ -245,7 +247,7 @@ function drawMoney(o) {
   ctx.restore();
 }
 // A Mann vs. Machine tank: a big dark hull with its health above.
-/** @param {Objective} o @param {number} tick */
+/** @param {PlacedObjective} o @param {number} tick */
 function drawTank(o, tick) {
   const [wx, wy] = objPos(o, tick);
   const [x, y] = toScreen(wx, wy),
@@ -314,6 +316,7 @@ export function drawObjectives(snap, tick) {
 // left to right in the capping team's colour while a capture is under way.
 /** @param {Objective} o @param {Snapshot} snap @param {number} tick */
 function drawPoint(o, snap, tick) {
+  if (!o.pos) return;
   const [x, y] = toScreen(o.pos[0], o.pos[1]);
   const u = OVERLAY ? overlayUnit() : 0;
   const half = OVERLAY ? u * 1.2 : px(110, 11);
@@ -373,11 +376,14 @@ function drawPointNumber(o, capping, x, y, half) {
 export function drawCapAreas(snap) {
   const areas = state.geometry?.cap_areas;
   if (!areas?.length) return;
-  const cps = (snap.objectives || []).filter(o => o.kind === "control_point" && o.pos);
+  const cps = (snap.objectives || []).filter(o => o.kind === "control_point" && o.pos != null);
   const near = (a, p) =>
     Math.hypot(Math.max(a.min[0] - p[0], 0, p[0] - a.max[0]), Math.max(a.min[1] - p[1], 0, p[1] - a.max[1]));
   for (const a of areas) {
-    const cp = cps.reduce((b, o) => (!b || near(a, o.pos) < near(a, b.pos) ? o : b), null);
+    const cp = cps.reduce(
+      (b, o) => (!b || near(a, o.pos) < near(a, b.pos) ? o : b),
+      /** @type {(typeof cps)[number] | null} */ (null),
+    );
     if (!cp || near(a, cp.pos) > CAP_AREA_REACH) continue;
     ctx.save();
     ctx.beginPath();
@@ -398,11 +404,18 @@ export function drawCapAreas(snap) {
   }
 }
 
+// Who carries an objective, while they are alive.
+/** @param {Player[]} players @param {number | null | undefined} id @returns {LivePlayer | null} */
+function liveCarrier(players, id) {
+  const p = id == null ? null : players.find(q => q.id === id);
+  return p?.alive ? p : null;
+}
+
 // The pass time ball: a ball in the colour of the team that has it (yellow while neutral),
 // riding on its carrier.
-/** @param {Objective} o @param {Player[]} players @param {number} tick */
+/** @param {PlacedObjective} o @param {Player[]} players @param {number} tick */
 function drawBall(o, players, tick) {
-  const carrier = o.carrier != null ? players.find(p => p.id === o.carrier && p.alive && p.pos) : null;
+  const carrier = liveCarrier(players, o.carrier);
   const at = carrier ? carrier.pos : objPos(o, tick);
   let [x, y] = toScreen(at[0], at[1]);
   const r = OVERLAY ? overlayUnit() * 0.55 : px(18, 7);
@@ -428,7 +441,7 @@ function drawBall(o, players, tick) {
 
 // A player destruction stack of pickups: a disc with how many points it holds, on its carrier
 // or where it was dropped (with the seconds until it goes).
-/** @param {Objective} o @param {Player} carrier @param {Snapshot} snap @param {number} tick */
+/** @param {PlacedObjective} o @param {LivePlayer | null} carrier @param {Snapshot} snap @param {number} tick */
 function drawPickups(o, carrier, snap, tick) {
   let [x, y] = toScreen(...(carrier ? carrier.pos : o.pos).slice(0, 2));
   const r = OVERLAY ? overlayUnit() * 0.6 : px(22, 8);
@@ -475,7 +488,7 @@ export function drawFlags(snap, players, tick) {
       continue;
     }
     if (o.kind !== "flag") continue;
-    const carrier = o.status === "carried" ? players.find(p => p.id === o.carrier && p.alive && p.pos) : null;
+    const carrier = o.status === "carried" ? liveCarrier(players, o.carrier) : null;
     if (o.points != null && o.team !== "red" && o.team !== "blue") {
       drawPickups(o, carrier, snap, tick);
       continue;
