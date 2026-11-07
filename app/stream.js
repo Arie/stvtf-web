@@ -40,6 +40,8 @@ const later = fn => (DELAY_MS ? setTimeout(fn, DELAY_MS) : fn());
 // Every (re)connect starts with the whole feed and chat so far: replace what is shown rather
 // than adding it twice (a deploy or a network blip reconnects).
 let opened = false;
+// How long the page waits to open its stream again once the browser gave up on it, in ms.
+const RETRY_MS = 3000;
 // What else the page tells the stream it opens (in a room, the viewer's name).
 export const streamParams = new URLSearchParams();
 /** @type {EventSource | null} */
@@ -68,7 +70,12 @@ export function openStream(from) {
       }
       opened = true;
     });
-  s.onerror = () => setStatus("stream lost, retrying", false);
+  // The browser retries a lost connection, but gives up on an error response (a restart or a
+  // deploy in between): then the page tries again.
+  s.onerror = () => {
+    setStatus("stream lost, retrying", false);
+    if (s.readyState === EventSource.CLOSED) setTimeout(() => es === s && openStream(), RETRY_MS);
+  };
 }
 
 // How long ago, from seconds: in seconds, minutes and seconds, or hours and minutes.
