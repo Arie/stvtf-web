@@ -83,6 +83,8 @@ export type State = {
   locked: boolean;
   /** When the viewer last moved the camera by hand (dragged or scrolled), in performance.now() ms. */
   handMoved: number;
+  /** How much of the map a room's admin shows round the player everyone follows, if they say. */
+  followZoom: { w: number; h: number } | null;
   /** A room's admin's camera as it came, when this view replays it: the map area they saw, and when it came. */
   mirror: { at: number; cx: number; cy: number; w: number; h: number; rot: number }[] | null;
   lastPlayers: Player[];

@@ -176,7 +176,8 @@ An admin also sets how everyone sees the map: free (each their own camera), auto
 too), or the admin's view, moved by hand: auto zoom and following stop, and everyone sees the
 same part of the map as on that admin's screen, fitted to theirs and moving smoothly. Any admin
 dragging or scrolling moves it, the latest to move it leading. An admin clicking a player has
-everyone follow that player, until they stop following, which goes back to the view before.
+everyone follow that player, at that admin's zoom (which they still scroll), until they stop
+following, which goes back to the view before.
 Viewers cannot move the camera unless it is free; admins always can. A room's overlay follows
 the view too, and is not listed. People are known by the `stvtf_guest` cookie, which only the server sees: pages know
 each other by number.
@@ -207,7 +208,7 @@ dropped.
 | `POST /r/<id>/name` | `{"name"}`: the caller's name in the room |
 | `POST /r/<id>/ink` | an admin's `{"ink": "#rrggbb"}`: their pen colour |
 | `POST /r/<id>/admin` | an admin's `{"person": <number>, "admin": true\|false}` |
-| `POST /r/<id>/view` | an admin's `{"mode": "free"\|"auto"}`, `{"mode": "follow", "player": <id>}` or `{"mode": "admin", "cx", "cy", "w", "h", "rot"}` (the map area they see), with `"page"` (the sending tab's name). `"take": true` chooses the view; without it, it is a camera move, which counts only while the view is of its kind. Either way that page leads from then on |
+| `POST /r/<id>/view` | an admin's `{"mode": "free"\|"auto"}`, `{"mode": "follow", "player": <id>, "w", "h"}` (`w`, `h`: the map area round them) or `{"mode": "admin", "cx", "cy", "w", "h", "rot"}` (the map area they see), with `"page"` (the sending tab's name). `"take": true` chooses the view; without it, it is a camera move, which counts only while the view is of its kind. Either way that page leads from then on |
 | `POST /r/<id>/control` | an admin's `{"paused", "speed", "seek"}` (any of them; `seek` in milliseconds) |
 | `POST /r/<id>/draw` | an admin's `{"stroke": <id>, "points": [[x, y, ms], …]}`, up to 256 map points, each with when it was drawn (milliseconds into the stroke); a stroke's next points continue it, and pages draw it at that pace, 40 ms behind |
 

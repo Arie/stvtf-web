@@ -324,6 +324,7 @@ function act(fx) {
   if (fx.locked !== undefined) state.locked = fx.locked;
   if (state.locked) $("autozoom").hidden = true;
   if (fx.mirror === false) state.mirror = null;
+  if (fx.zoom !== undefined) state.followZoom = fx.zoom;
   if (fx.follow !== undefined && state.follow !== fx.follow) setFollow(fx.follow);
   if (fx.auto !== undefined) setAutoZoom(fx.auto);
 }

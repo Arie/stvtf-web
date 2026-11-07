@@ -45,20 +45,23 @@ test("an admin's view is by hand, for the admin who chose it too", () => {
   assert.equal(fx.auto, false);
   assert.equal(fx.mirror, false, "the leader does not replay their own camera");
   const viewer = new RoomView("v").hear(line("admin", camera()), { ...still(), follow: 3 });
-  assert.deepEqual(viewer, { locked: true, mirror: true, auto: false, follow: null });
+  assert.deepEqual(viewer, { locked: true, mirror: true, zoom: null, auto: false, follow: null });
 });
 
 test("a view is applied once, not on every camera move that comes in", () => {
   const viewer = new RoomView("v");
   assert.equal(viewer.hear(line("admin", camera()), still()).auto, false);
   const again = viewer.hear(line("admin", { ...camera(), cx: 50 }), still());
-  assert.deepEqual(again, { locked: true, mirror: true }, "only replays the camera");
+  assert.deepEqual(again, { locked: true, mirror: true, zoom: null }, "only replays the camera");
 });
 
 test("an admin clicking a player has everyone follow them, and stopping goes back", () => {
   const a = admin("a");
   a.hear(line("admin", camera()), still());
-  assert.deepEqual(a.tick({ ...still(), follow: 7 }, camera), { view: { mode: "follow", player: 7 }, take: true });
+  assert.deepEqual(a.tick({ ...still(), follow: 7 }, camera), {
+    view: { mode: "follow", player: 7, w: 300, h: 200 },
+    take: true,
+  });
   assert.equal(a.tick({ ...still(), follow: 7 }, camera), null, "once");
   // A camera move from before the follow came in does not cancel it.
   a.hear(line("admin", { ...camera(), cx: 9 }), { ...still(), follow: 7 });
@@ -184,4 +187,29 @@ test("one request at a time: what comes meanwhile waits, folded, and goes next",
   await new Promise(r => setTimeout(r, 0));
   send([4]);
   assert.deepEqual(sent, [[1], [2, 3], [4]], "straight away when nothing is on its way");
+});
+
+test("a followed player is followed at the zoom of the admin, who still scrolls it", () => {
+  const a = admin("a");
+  a.hear(line("free"), still());
+  a.tick({ ...still(), follow: 7 }, camera);
+  a.hear(line("follow", { player: 7, w: 300, h: 200 }), { ...still(), follow: 7 });
+  const zoomed = () => ({ ...camera(), w: 150, h: 100 });
+  assert.deepEqual(a.tick({ ...still(), follow: 7, handMoved: 20_000, now: 20_000 }, zoomed), {
+    view: { mode: "follow", player: 7, w: 150, h: 100 },
+    take: false,
+  });
+  const viewer = new RoomView("v");
+  assert.deepEqual(viewer.hear(line("follow", { player: 7, w: 300, h: 200 }), still()).zoom, { w: 300, h: 200 });
+  assert.deepEqual(
+    viewer.hear(line("follow", { player: 7, w: 150, h: 100 }), { ...still(), follow: 7 }).zoom,
+    { w: 150, h: 100 },
+    "every time",
+  );
+  assert.equal(viewer.hear(line("auto"), still()).zoom, null);
+  assert.equal(
+    a.hear(line("follow", { player: 7, w: 150, h: 100 }), { ...still(), follow: 7 }).zoom,
+    null,
+    "the leader zooms their own",
+  );
 });

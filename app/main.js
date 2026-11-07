@@ -16,7 +16,7 @@ import { initRoom } from "./room.js";
 import { drawSpawnRooms } from "./spawns.js";
 import { openStream } from "./stream.js";
 import { drawStrokes } from "./telestrator.js";
-import { frameMap, drawBackground } from "./view.js";
+import { frameMap, drawBackground, viewArea } from "./view.js";
 
 const SHOW_BUILDINGS = optOn("buildings", !OVERLAY),
   SHOW_PROJECTILES = optOn("projectiles", !OVERLAY),
@@ -132,6 +132,12 @@ function aim(f, tick) {
   if (target && target.pos) {
     state.view.cx += (target.pos[0] - state.view.cx) * 0.18;
     state.view.cy += (target.pos[1] - state.view.cy) * 0.18;
+    // A room's admin's zoom round them, fitted to this view.
+    if (state.followZoom) {
+      const { w, h } = viewArea(),
+        z = Math.log(state.view.scale);
+      state.view.scale = Math.exp(z + (Math.log(Math.min(w / state.followZoom.w, h / state.followZoom.h)) - z) * 0.18);
+    }
   }
   renderScoreboard(f.snap, tick);
   embedState(shownScore(f.snap) ?? null, f.players);

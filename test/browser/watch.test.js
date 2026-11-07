@@ -69,12 +69,21 @@ async function open() {
   /** @type {string[]} */
   const errors = [];
   page.on("pageerror", e => errors.push(e.stack ?? e.message));
+  await page.addInitScript(viewState);
   page.on("console", m => {
     const at = m.location().url;
     if (m.type() === "error" && !at.includes("/overview/")) errors.push(`${m.text()} (${at})`);
   });
   return { page, errors };
 }
+
+// A page's map state, from its own modules, as `window.viewState` once loaded; and its zoom.
+const viewState = () =>
+  addEventListener("load", async () => {
+    const main = [...document.scripts].find(s => s.src.includes("main.js"));
+    if (main) window.viewState = (await import(main.src.replace("main.js", "core.js"))).state;
+  });
+const scale = page => page.evaluate(() => window.viewState.view.scale);
 
 // Waits until `fn` (run in the page) is true and returns its value.
 const until = (page, fn, arg) => page.waitForFunction(fn, arg, { timeout: WAIT }).then(h => h.jsonValue());
@@ -264,6 +273,11 @@ test("an admin clicking a player has everyone follow them", async () => {
   assert.equal(await viewer.page.$eval("#rb-view", el => el.value), "follow");
   await viewer.page.click("#follow-stop");
   assert.equal(await viewer.page.$eval("#follow", el => el.hidden), false, "a viewer cannot stop following");
+  // The admin scrolls in on them: so does everyone.
+  const was = await scale(viewer.page);
+  await page.mouse.move(500, 400);
+  for (let i = 0; i < 5; i++) await page.mouse.wheel(0, -200);
+  await until(viewer.page, w => window.viewState.view.scale > w * 1.5, was);
   assert.deepEqual([...errors, ...viewer.errors], []);
   await viewer.page.close();
   await page.close();

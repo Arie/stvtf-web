@@ -9,8 +9,8 @@
 //   holds to the same, so a move that crosses a choice on the way cannot undo it.
 // - A page leads, not a person: an admin's two tabs are two pages.
 // - Auto zoom is everyone's, the admin who chose it too. An admin's view is moved by hand: no auto
-//   zoom or following, for that admin either. A followed player is everyone's; stopping goes back
-//   to the view before.
+//   zoom or following, for that admin either. A followed player is everyone's, at the zoom of the
+//   admin who clicked them, which they still scroll; stopping goes back to the view before.
 // - Viewers cannot move their camera unless the view is free; admins always can.
 // - A view is applied once when it changes, not on every camera move that comes in (many a
 //   second): the admin may click a player between two of them.
@@ -24,9 +24,10 @@ export const HAND_MS = 400;
 /** A view to send: `take` when chosen, otherwise a camera move. @typedef {{ view: View; take: boolean }} Send */
 /** What the page's camera is doing. @typedef {{ follow: number | null; handMoved: number; now: number }} Seen */
 /**
- * What the page does: lock the viewer's camera or not, replay the admin's camera or not, and,
- * when the view changed, auto zoom on or off and whom to follow.
- * @typedef {{ locked: boolean; mirror: boolean; auto?: boolean; follow?: number | null }} Effects
+ * What the page does: lock the viewer's camera or not, replay the admin's camera or not, how
+ * much of the map to show round a followed player (null: as it is), and, when the view changed,
+ * auto zoom on or off and whom to follow.
+ * @typedef {{ locked: boolean; mirror: boolean; zoom: { w: number; h: number } | null; auto?: boolean; follow?: number | null }} Effects
  */
 
 export class RoomView {
@@ -72,8 +73,13 @@ export class RoomView {
   apply(seen) {
     const v = this.line,
       lead = this.leading();
+    const zoom = v.mode === "follow" && !lead && v.w && v.h ? { w: v.w, h: v.h } : null;
     /** @type {Effects} */
-    const fx = { locked: v.mode !== "free" && !this.admin, mirror: v.mode === "admin" && !lead && !this.moving(seen) };
+    const fx = {
+      locked: v.mode !== "free" && !this.admin,
+      mirror: v.mode === "admin" && !lead && !this.moving(seen),
+      zoom,
+    };
     const key = [v.mode, v.page, lead, v.mode === "follow" ? v.player : ""].join();
     if (key === this.applied) return fx;
     this.applied = key;
@@ -107,18 +113,23 @@ export class RoomView {
       this.followSeen = seen.follow;
       if (seen.follow != null) {
         if (this.line.mode !== "follow") this.beforeFollow = this.line.mode;
-        return { view: { mode: "follow", player: seen.follow }, take: true };
+        return { view: following(seen.follow, camera()), take: true };
       }
       if (this.line.mode !== "follow") return null;
       return { view: this.beforeFollow === "admin" ? camera() : { mode: this.beforeFollow }, take: true };
     }
-    if (this.line.mode === "admin" && seen.handMoved > this.handSent) {
-      this.handSent = seen.handMoved;
-      return { view: camera(), take: false };
-    }
+    if (seen.handMoved <= this.handSent) return null;
+    this.handSent = seen.handMoved;
+    if (this.line.mode === "admin") return { view: camera(), take: false };
+    // Scrolled while following: everyone's zoom.
+    if (this.line.mode === "follow" && seen.follow != null)
+      return { view: following(seen.follow, camera()), take: false };
     return null;
   }
 }
+
+/** Following `player`, as much of the map round them as `camera` shows. @param {number} player @param {View} camera */
+const following = (player, camera) => ({ mode: "follow", player, w: camera.w, h: camera.h });
 
 /**
  * Sends one request at a time, so they arrive in order and the delay stays one round trip
