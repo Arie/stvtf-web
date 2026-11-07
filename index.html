@@ -50,10 +50,11 @@
         <tr><td><kbd>?</kbd></td><td>Show or hide this list</td></tr>
       </table>
     </div>
+    <div id="roombar" hidden><button id="rb-play">⏸</button><div id="rb-track"><input id="rb-time" type="range" min="0" max="0" step="100" value="0" aria-label="Position"></div><span id="rb-clock"></span><select id="rb-speed" aria-label="Speed"></select></div>
     <div id="bgtoggle" hidden title="g"><button data-bg="overview" class="on">Overview</button><button data-bg="geometry">Geometry</button></div>
   </div>
   <aside>
-    <div id="title"><b id="map">connecting…</b><span id="status" class="bad">waiting for data</span><span id="age"></span></div>
+    <div id="title"><b id="map">connecting…</b><span id="status" class="bad">waiting for data</span><span id="age"></span><button id="roomopen" hidden title="Watch together: you control pause, speed and position">Room</button></div>
     <section style="display:flex;flex-direction:column;flex:1.4;min-height:0"><div id="feed"></div></section>
     <section style="display:flex;flex-direction:column;flex:1;min-height:0"><h3>Chat</h3><div id="chat"></div></section>
   </aside>

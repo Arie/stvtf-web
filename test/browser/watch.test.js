@@ -145,3 +145,30 @@ test("<stv-map> fires the messages as events", async () => {
   assert.deepEqual(errors, []);
   await page.close();
 });
+
+test("a room is driven by its owner and followed by everyone else", async () => {
+  const { page, errors } = await open();
+  await page.goto(base);
+  await page.click("#roomopen");
+  await page.waitForURL(/\/r\/[0-9a-f]{32}\/$/, { timeout: WAIT });
+  await until(page, m => document.getElementById("map").textContent === m, MAP);
+  await until(page, () => !(/** @type {HTMLButtonElement} */ (document.getElementById("rb-play")).disabled));
+  await page.click("#rb-play");
+  await until(page, () => document.getElementById("status").textContent === "paused");
+  await page.$eval("#rb-time", el => {
+    el.value = "0";
+    el.dispatchEvent(new Event("change"));
+  });
+  await until(page, () => document.getElementById("rb-clock").textContent.startsWith("0:00 /"));
+  assert.equal(await page.textContent("#status"), "paused", "a seek keeps it paused");
+
+  const viewer = await open();
+  await viewer.page.goto(page.url());
+  await until(viewer.page, () => document.getElementById("status").textContent === "paused");
+  assert.ok(await viewer.page.$eval("#rb-play", el => el.disabled), "only the owner controls it");
+  await page.click("#rb-play");
+  await until(viewer.page, () => document.getElementById("status").textContent === "live");
+  assert.deepEqual([...errors, ...viewer.errors], []);
+  await viewer.page.close();
+  await page.close();
+});

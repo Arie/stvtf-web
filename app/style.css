@@ -156,6 +156,19 @@ aside h3 { margin: 0 0 6px; font-size: 11px; text-transform: uppercase; letter-s
 #help kbd { display: inline-block; min-width: 18px; margin-right: 10px; padding: 1px 5px; border: 1px solid var(--line);
   border-radius: 4px; text-align: center; font: inherit; color: #fff; }
 #autozoom { bottom: 52px; }
+#roomopen { margin-left: auto; align-self: center; padding: 2px 8px; border: 1px solid var(--line); border-radius: 6px;
+  background: transparent; color: var(--text); font: inherit; font-size: 12px; cursor: pointer; }
+#roombar { position: absolute; left: 12px; bottom: 12px; z-index: 3; display: flex; align-items: center; gap: 8px; zoom: var(--s);
+  width: min(560px, calc(100% - 210px)); padding: 4px 8px 4px 4px; border-radius: 6px; background: #0b0c0ee6; color: #fff; font-size: 12px; }
+#roombar button, #roombar select { border: 0; border-radius: 4px; background: #ffffff1a; color: #fff; font: inherit; cursor: pointer; }
+#roombar button { width: 26px; height: 24px; font-size: 14px; line-height: 1; }
+#roombar select { padding: 3px 4px; }
+#roombar :disabled { cursor: default; opacity: .6; }
+#rb-track { position: relative; flex: 1; display: flex; align-items: center; }
+#rb-track input { width: 100%; margin: 0; accent-color: #e0a040; }
+#rb-track i { position: absolute; top: -4px; width: 2px; height: 5px; margin-left: -1px; background: var(--dim); pointer-events: none; }
+#rb-clock { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.stvtf.room #follow { bottom: 50px; }
 #bgtoggle { position: absolute; right: 12px; bottom: 12px; z-index: 3; display: flex; padding: 2px; border-radius: 6px; background: #0b0c0ee6; }
 #bgtoggle button { padding: 4px 10px; border-radius: 4px; background: transparent; color: var(--dim); font-size: 12px; }
 #bgtoggle button.on { background: #ffffff1f; color: #fff; }
@@ -163,7 +176,7 @@ aside h3 { margin: 0 0 6px; font-size: 11px; text-transform: uppercase; letter-s
 .stvtf.overlay { background: transparent; display: block; }
 .stvtf.overlay header, .stvtf.overlay aside, .stvtf.overlay .hud, .stvtf.overlay #follow, .stvtf.overlay #bgtoggle, .stvtf.overlay #sidetoggle,
 .stvtf.overlay #helptoggle, .stvtf.overlay #help, .stvtf.overlay #settingstoggle, .stvtf.overlay #settings,
-.stvtf.overlay #empty, .stvtf.overlay #banner { display: none !important; }
+.stvtf.overlay #empty, .stvtf.overlay #banner, .stvtf.overlay #roombar { display: none !important; }
 /* Except while a delay holds the match back: one dim line in the panel instead of nothing. */
 .stvtf.overlay #empty.holding { display: grid !important; font-size: 12px; color: #fff; text-shadow: 0 1px 2px #000, 0 0 6px #000; }
 .stvtf.overlay main { display: block; height: 100%; }
