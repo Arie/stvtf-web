@@ -46,8 +46,7 @@ fn play_once(hub: &SharedHub, path: &Path, play: &dyn Fn() -> bool) -> Result<us
 /// not read as a line of today's stvtf (a recording from an older one, or a non-finite number
 /// written as null) is skipped; returns how many were. `name` is what errors call it.
 pub(crate) fn play_lines(hub: &SharedHub, reader: impl Read, name: &str, play: &dyn Fn() -> bool, stop: &AtomicBool) -> Result<usize> {
-    let (mut last, mut timed, mut skipped): (Option<u64>, bool, usize) = (None, false, 0);
-    let mut interval = default_tick_interval();
+    let (mut clock, mut skipped) = (Clock::default(), 0);
     for (n, line) in BufReader::new(reader).lines().enumerate() {
         while !play() && !stop.load(Ordering::Relaxed) {
             std::thread::sleep(REPLAY_POLL);
@@ -55,37 +54,66 @@ pub(crate) fn play_lines(hub: &SharedHub, reader: impl Read, name: &str, play: &
         if stop.load(Ordering::Relaxed) {
             return Ok(skipped);
         }
-        let stamped: Stamped = match serde_json::from_str(&line?) {
-            Ok(s) => s,
-            Err(e) => {
-                if skipped == 0 {
-                    eprintln!("{name}:{}: {e}", n + 1);
-                }
-                skipped += 1;
-                continue;
-            }
-        };
-        if let Line::Server(server) = &stamped.line
-            && server.tick_interval > 0.0
-        {
-            interval = server.tick_interval;
-        }
-        // Each line waits for the gap since the previous one, capped so map loads and
-        // tick resets do not stall the replay.
-        if let Some(t) = line_time(&stamped, interval) {
-            if let Some(prev) = last {
-                std::thread::sleep(Duration::from_millis(t.saturating_sub(prev).min(MAX_REPLAY_GAP_MS)));
-            }
-            last = Some(t);
-            timed = true;
-        }
+        let Some(stamped) = read_line(&line?, name, n, &mut skipped) else { continue };
+        let before = clock.play;
+        std::thread::sleep(Duration::from_millis(clock.at(&stamped) - before));
         publish(hub, &stamped.line);
     }
     // Without any, the loop would replay the file as fast as it can, forever.
-    if !timed {
+    if !clock.timed {
         bail!("{name}: no line has a time or tick");
     }
     Ok(skipped)
+}
+
+/// A saved line, or None (counted in `skipped`, the first one logged) when today's stvtf cannot read it.
+pub(crate) fn read_line(line: &str, name: &str, n: usize, skipped: &mut usize) -> Option<Stamped> {
+    match serde_json::from_str(line) {
+        Ok(s) => Some(s),
+        Err(e) => {
+            if *skipped == 0 {
+                eprintln!("{name}:{}: {e}", n + 1);
+            }
+            *skipped += 1;
+            None
+        }
+    }
+}
+
+/// Play time of saved lines: the gaps between them, each capped so map loads and tick resets do
+/// not stall a replay.
+pub(crate) struct Clock {
+    /// Milliseconds played so far.
+    pub(crate) play: u64,
+    last: Option<u64>,
+    interval: f64,
+    /// Whether any line had a time.
+    pub(crate) timed: bool,
+}
+
+impl Default for Clock {
+    fn default() -> Self {
+        Clock { play: 0, last: None, interval: default_tick_interval(), timed: false }
+    }
+}
+
+impl Clock {
+    /// The play time of `stamped`, the next line.
+    pub(crate) fn at(&mut self, stamped: &Stamped) -> u64 {
+        if let Line::Server(server) = &stamped.line
+            && server.tick_interval > 0.0
+        {
+            self.interval = server.tick_interval;
+        }
+        if let Some(t) = line_time(stamped, self.interval) {
+            if let Some(prev) = self.last {
+                self.play += t.saturating_sub(prev).min(MAX_REPLAY_GAP_MS);
+            }
+            self.last = Some(t);
+            self.timed = true;
+        }
+        self.play
+    }
 }
 
 /// When a saved line happened, in milliseconds: live output has wall-clock `time`, offline output
