@@ -36,8 +36,8 @@ pub(crate) struct Hub {
     names: HashMap<PlayerId, Seen>,
     /// Seconds per tick, from the server line.
     tick_interval: Option<f64>,
-    /// A room's latest playback line.
-    playback: Option<Arc<str>>,
+    /// A room's latest lines of its own (playback, people), by type.
+    room: BTreeMap<&'static str, Arc<str>>,
 }
 
 /// A match at a glance, read from the latest server line and snapshot when the list asks.
@@ -93,7 +93,7 @@ impl Hub {
             snapshot_at: self.snapshot_at,
             names: self.names.clone(),
             tick_interval: self.tick_interval,
-            playback: self.playback.clone(),
+            room: self.room.clone(),
         }
     }
 
@@ -344,16 +344,16 @@ fn join_lines(h: &Hub) -> Vec<Arc<str>> {
         let age = DataAge { ms: age.as_millis() as u64 };
         lines.push(serde_json::to_string(&age).expect("a number serializes").into());
     }
-    lines.extend(h.playback.clone());
+    lines.extend(h.room.values().cloned());
     lines
 }
 
-/// Puts `from` (a [`Hub::checkpoint`] played on) in place, keeping the pages and the playback, and
+/// Puts `from` (a [`Hub::checkpoint`] played on) in place, keeping the pages and the room's lines, and
 /// starts the pages over from it.
 pub(crate) fn restore(hub: &SharedHub, mut from: Hub) {
     let mut h = lock(hub);
     from.clients = std::mem::take(&mut h.clients);
-    from.playback = h.playback.take();
+    from.room = std::mem::take(&mut h.room);
     from.snapshot_at = Some(Instant::now());
     *h = from;
     let mut lines = join_lines(&h);
@@ -366,10 +366,10 @@ pub(crate) fn send(hub: &SharedHub, json: &Arc<str>) {
     lock(hub).clients.retain(|c| c.tx.try_send(json.clone()).is_ok());
 }
 
-/// A room's playback line, to every page now and on join.
-pub(crate) fn announce(hub: &SharedHub, json: &Arc<str>) {
+/// A room's line of type `kind`, to every page now and (the latest of each kind) on join.
+pub(crate) fn announce(hub: &SharedHub, kind: &'static str, json: &Arc<str>) {
     let mut h = lock(hub);
-    h.playback = Some(json.clone());
+    h.room.insert(kind, json.clone());
     h.clients.retain(|c| c.tx.try_send(json.clone()).is_ok());
 }
 
@@ -523,9 +523,11 @@ mod tests {
     fn pages_hear_the_playback_on_join_and_on_change() {
         let hub = SharedHub::default();
         let early = subscribe(&hub, false);
-        announce(&hub, &r#"{"type":"playback"}"#.into());
-        assert_eq!(types(&early), ["playback"]);
-        assert_eq!(types(&subscribe(&hub, false)), ["playback"]);
+        announce(&hub, "playback", &r#"{"type":"playback"}"#.into());
+        announce(&hub, "people", &r#"{"type":"people"}"#.into());
+        announce(&hub, "playback", &r#"{"type":"playback"}"#.into());
+        assert_eq!(types(&early), ["playback", "people", "playback"]);
+        assert_eq!(types(&subscribe(&hub, false)), ["people", "playback"], "the latest of each");
     }
 
     #[test]

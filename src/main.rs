@@ -10,6 +10,7 @@ mod cli;
 mod demostf;
 mod http;
 mod hub;
+mod people;
 mod recording;
 mod replay;
 mod room;

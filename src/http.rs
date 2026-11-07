@@ -268,6 +268,30 @@ fn read_body(reader: &mut BufReader<Take<TcpStream>>, request: &Request) -> Resu
     Ok(body)
 }
 
+/// The browser's guest cookie, and a `Set-Cookie` for a new one if it had none.
+fn guest(app: &App, request: &Request) -> (String, Option<String>) {
+    if let Some(g) = &request.guest {
+        return (g.clone(), None);
+    }
+    let g = sessions::random_id();
+    let secure = if app.keys.is_some() { "; Secure" } else { "" };
+    let cookie = format!("stvtf_guest={g}; Path={}/; Max-Age=31536000; HttpOnly; SameSite=Lax{secure}", app.base);
+    (g, Some(cookie))
+}
+
+/// A JSON body read as `T`, or why not.
+fn json_body<T: serde::de::DeserializeOwned>(reader: &mut BufReader<Take<TcpStream>>, request: &Request) -> Result<T> {
+    Ok(serde_json::from_slice(&read_body(reader, request)?)?)
+}
+
+/// `204` when `done` is, `400` with why not.
+fn done(s: &mut TcpStream, done: Result<()>) -> std::io::Result<()> {
+    match done {
+        Ok(()) => respond(s, "204 No Content", TEXT, b""),
+        Err(e) => respond(s, "400 Bad Request", TEXT, format!("{e:#}").as_bytes()),
+    }
+}
+
 /// `GET` says whether a room can be opened on match `m`; `POST` opens one, owned by the browser.
 fn open_room(s: &mut TcpStream, app: &App, sessions: &Sessions, m: &Session, request: &Request) -> Result<()> {
     if !m.recordable() {
@@ -283,14 +307,7 @@ fn open_room(s: &mut TcpStream, app: &App, sessions: &Sessions, m: &Session, req
         Ok(r) => r,
         Err(e) => return Ok(respond(s, "409 Conflict", TEXT, format!("{e:#}").as_bytes())?),
     };
-    let (guest, cookie) = if let Some(g) = &request.guest {
-        (g.clone(), None)
-    } else {
-        let g = sessions::random_id();
-        let secure = if app.keys.is_some() { "; Secure" } else { "" };
-        let cookie = format!("stvtf_guest={g}; Path={}/; Max-Age=31536000; HttpOnly; SameSite=Lax{secure}", app.base);
-        (g, Some(cookie))
-    };
+    let (guest, cookie) = guest(app, request);
     let room = app.rooms.open(recording, &guest);
     eprintln!("stvtf-web: room {} opened on match {}", &room.id[..8], &m.id[..m.id.len().min(8)]);
     let body = serde_json::json!({ "page": format!("{}/r/{}/", app.base, room.id) }).to_string();
@@ -299,6 +316,20 @@ fn open_room(s: &mut TcpStream, app: &App, sessions: &Sessions, m: &Session, req
         headers.push(("Set-Cookie", c));
     }
     Ok(respond_with(s, "201 Created", &headers, body.as_bytes())?)
+}
+
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Name {
+    name: String,
+}
+
+/// Person `person` made an admin, or not.
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Admin {
+    person: u32,
+    admin: bool,
 }
 
 /// A room's page, event stream and controls: `path` is what follows `/r/`.
@@ -314,33 +345,38 @@ fn serve_room(
     let Some(room) = app.rooms.get(id) else {
         return Ok(respond(&mut s, "404 Not Found", TEXT, b"That room has closed.")?);
     };
-    let owner = request.guest.as_deref().is_some_and(|g| room.is_owner(g));
+    // Without a cookie (none yet, or refused), a page is someone new each time.
+    let (guest, cookie) = guest(app, request);
+    let admin = room.is_admin(&guest);
     match (rest, request.method.as_str()) {
         ("", _) if !path.ends_with('/') => app.redirect(&mut s, "308 Permanent Redirect", &format!("{}/", request.path))?,
-        (rest, "GET") if is_page(rest) => respond(&mut s, "200 OK", HTML, &app.page(INDEX))?,
+        (rest, "GET") if is_page(rest) => {
+            let mut headers = vec![("Content-Type", HTML)];
+            if let Some(c) = &cookie {
+                headers.push(("Set-Cookie", c));
+            }
+            respond_with(&mut s, "200 OK", &headers, &app.page(INDEX))?;
+        }
         ("events", "GET") => match app.stream_slot(client) {
             Some(_slot) => {
-                let _watching = room.watch();
+                let name = param(&request.query, "name").map(form_decode);
+                let _watching = room.join(&guest, name.as_deref());
                 stream(s, &room.hub, request.gzip, wants_detail(&request.query))?;
             }
             None => too_many_streams(&mut s)?,
         },
-        ("me", "GET") => respond(&mut s, "200 OK", JSON, serde_json::json!({ "admin": owner }).to_string().as_bytes())?,
-        ("control" | "draw", "POST") if !owner => respond(&mut s, "403 Forbidden", TEXT, b"Only the room's owner controls it.")?,
-        ("draw", "POST") => {
-            let draw = read_body(reader, request).and_then(|b| Ok(serde_json::from_slice::<Draw>(&b)?));
-            match draw.and_then(|d| room.draw(&d)) {
-                Ok(()) => respond(&mut s, "204 No Content", TEXT, b"")?,
-                Err(e) => respond(&mut s, "400 Bad Request", TEXT, format!("{e:#}").as_bytes())?,
-            }
+        ("me", "GET") => {
+            let (id, admin) = room.me(&guest);
+            respond(&mut s, "200 OK", JSON, serde_json::json!({ "id": id, "admin": admin }).to_string().as_bytes())?;
         }
-        ("control", "POST") => {
-            let control = read_body(reader, request).and_then(|b| Ok(serde_json::from_slice::<Control>(&b)?));
-            match control.and_then(|c| room.control(&c)) {
-                Ok(()) => respond(&mut s, "204 No Content", TEXT, b"")?,
-                Err(e) => respond(&mut s, "400 Bad Request", TEXT, format!("{e:#}").as_bytes())?,
-            }
+        ("name", "POST") => {
+            let name = json_body::<Name>(reader, request).map(|n| room.rename(&guest, &n.name));
+            done(&mut s, name)?;
         }
+        ("control" | "draw" | "admin", "POST") if !admin => respond(&mut s, "403 Forbidden", TEXT, b"Only the room's admins do that.")?,
+        ("draw", "POST") => done(&mut s, json_body::<Draw>(reader, request).and_then(|d| room.draw(&d, &guest)))?,
+        ("control", "POST") => done(&mut s, json_body::<Control>(reader, request).and_then(|c| room.control(&c)))?,
+        ("admin", "POST") => done(&mut s, json_body::<Admin>(reader, request).and_then(|a| room.set_admin(&guest, a.person, a.admin)))?,
         _ => not_found(&mut s)?,
     }
     Ok(())
@@ -621,14 +657,15 @@ mod tests {
         let (page, cookie) = open_room(&app);
         assert!(page.starts_with("/r/") && page.ends_with('/'), "{page}");
         assert!(get(&app, &page, "").contains("<canvas"));
-        assert!(get(&app, &format!("{page}me"), &cookie).ends_with(r#"{"admin":true}"#));
-        assert!(get(&app, &format!("{page}me"), "").ends_with(r#"{"admin":false}"#));
+        assert!(get(&app, &format!("{page}me"), &cookie).ends_with(r#"{"admin":true,"id":1}"#));
+        assert!(get(&app, &format!("{page}me"), "").contains(r#""admin":false"#));
+        assert!(get(&app, &page, "").contains("Set-Cookie: stvtf_guest="), "everyone in a room gets a cookie");
         let again = post(&app, "/w/demo/room", &cookie, "");
         assert!(!again.contains("Set-Cookie"), "a guest keeps their cookie: {again}");
     }
 
     #[test]
-    fn only_the_owner_controls_a_room() {
+    fn only_admins_control_a_room() {
         let (app, _dir) = demo_app();
         let (page, cookie) = open_room(&app);
         let control = format!("{page}control");
@@ -643,6 +680,24 @@ mod tests {
         assert!(post(&app, &draw, "", stroke).starts_with("HTTP/1.1 403"));
         assert!(post(&app, &draw, &cookie, stroke).starts_with("HTTP/1.1 204"));
         assert!(get(&app, "/r/0123/", "").starts_with("HTTP/1.1 404"));
+    }
+
+    #[test]
+    fn admins_make_others_admin() {
+        let (app, _dir) = demo_app();
+        let (page, owner) = open_room(&app);
+        let viewer = format!("stvtf_guest={}", "1".repeat(32));
+        let me = get(&app, &format!("{page}me"), &viewer);
+        assert!(me.ends_with(r#"{"admin":false,"id":2}"#), "{me}");
+        assert!(post(&app, &format!("{page}name"), &viewer, r#"{"name":"caster"}"#).starts_with("HTTP/1.1 204"));
+        let pause = r#"{"paused":true}"#;
+        assert!(post(&app, &format!("{page}control"), &viewer, pause).starts_with("HTTP/1.1 403"));
+        let promote = r#"{"person":2,"admin":true}"#;
+        assert!(post(&app, &format!("{page}admin"), &viewer, promote).starts_with("HTTP/1.1 403"));
+        assert!(post(&app, &format!("{page}admin"), &owner, promote).starts_with("HTTP/1.1 204"));
+        assert!(post(&app, &format!("{page}control"), &viewer, pause).starts_with("HTTP/1.1 204"));
+        let demote_owner = r#"{"person":1,"admin":false}"#;
+        assert!(post(&app, &format!("{page}admin"), &viewer, demote_owner).starts_with("HTTP/1.1 400"));
     }
 
     #[test]

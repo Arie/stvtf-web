@@ -3,6 +3,7 @@
 
 use crate::hub::{SharedHub, announce, publish, restore, send};
 use crate::lock;
+use crate::people::People;
 use crate::recording::Recording;
 use anyhow::{Result, bail};
 use serde::{Deserialize, Serialize};
@@ -20,8 +21,7 @@ const IDLE_POLL: Duration = Duration::from_millis(250);
 pub(crate) struct Room {
     pub(crate) id: String,
     pub(crate) hub: SharedHub,
-    /// The owner's guest cookie.
-    owner: String,
+    people: Mutex<People>,
     recording: Arc<Recording>,
     state: Mutex<State>,
     wake: Condvar,
@@ -58,11 +58,13 @@ pub(crate) struct Draw {
     pub(crate) points: Vec<[f64; 2]>,
 }
 
-/// Counts a page in the room until dropped.
-pub(crate) struct Watching(Arc<Room>);
+/// A page in the room, by its guest cookie, until dropped.
+pub(crate) struct Watching(Arc<Room>, String);
 
 impl Drop for Watching {
     fn drop(&mut self) {
+        lock(&self.0.people).leave(&self.1);
+        self.0.announce_people();
         if self.0.viewers.fetch_sub(1, Ordering::Relaxed) == 1 {
             *lock(&self.0.idle_since) = Some(Instant::now());
         }
@@ -71,11 +73,11 @@ impl Drop for Watching {
 
 impl Room {
     /// A room playing `recording` from the start, at 1×.
-    pub(crate) fn start(id: String, owner: String, recording: Arc<Recording>) -> Arc<Room> {
+    pub(crate) fn start(id: String, owner: &str, recording: Arc<Recording>) -> Arc<Room> {
         let room = Arc::new(Room {
             id,
             hub: SharedHub::default(),
-            owner,
+            people: Mutex::new(People::new(owner)),
             recording,
             state: Mutex::new(State { paused: false, speed: 1.0, at: 0, seek: None, stop: false }),
             wake: Condvar::new(),
@@ -87,8 +89,30 @@ impl Room {
         room
     }
 
-    pub(crate) fn is_owner(&self, guest: &str) -> bool {
-        !guest.is_empty() && guest == self.owner
+    pub(crate) fn is_admin(&self, guest: &str) -> bool {
+        lock(&self.people).is_admin(guest)
+    }
+
+    /// The number pages know `guest` by, and whether they are an admin.
+    pub(crate) fn me(&self, guest: &str) -> (u32, bool) {
+        let mut people = lock(&self.people);
+        (people.id(guest), people.is_admin(guest))
+    }
+
+    pub(crate) fn rename(&self, guest: &str, name: &str) {
+        lock(&self.people).rename(guest, name);
+        self.announce_people();
+    }
+
+    pub(crate) fn set_admin(&self, by: &str, id: u32, admin: bool) -> Result<()> {
+        lock(&self.people).set_admin(by, id, admin)?;
+        self.announce_people();
+        Ok(())
+    }
+
+    fn announce_people(&self) {
+        let line = serde_json::json!({ "type": "people", "people": lock(&self.people).shown() });
+        announce(&self.hub, "people", &line.to_string().into());
     }
 
     pub(crate) fn control(&self, c: &Control) -> Result<()> {
@@ -112,8 +136,8 @@ impl Room {
         Ok(())
     }
 
-    /// Passes a piece of a stroke on to every page.
-    pub(crate) fn draw(&self, d: &Draw) -> Result<()> {
+    /// Passes a piece of a stroke by `guest` on to every page.
+    pub(crate) fn draw(&self, d: &Draw, guest: &str) -> Result<()> {
         if d.points.is_empty() || d.points.len() > MAX_POINTS {
             bail!("1 to {MAX_POINTS} points");
         }
@@ -122,14 +146,18 @@ impl Room {
         }
         let mut line = serde_json::to_value(d)?;
         line["type"] = "draw".into();
+        line["by"] = lock(&self.people).id(guest).into();
         send(&self.hub, &line.to_string().into());
         Ok(())
     }
 
-    pub(crate) fn watch(self: &Arc<Self>) -> Watching {
+    /// A page of `guest`'s, called `name` if it says, joins.
+    pub(crate) fn join(self: &Arc<Self>, guest: &str, name: Option<&str>) -> Watching {
         self.viewers.fetch_add(1, Ordering::Relaxed);
         *lock(&self.idle_since) = None;
-        Watching(self.clone())
+        lock(&self.people).join(guest, name);
+        self.announce_people();
+        Watching(self.clone(), guest.to_string())
     }
 
     /// How long nobody has watched, if nobody does.
@@ -151,7 +179,7 @@ impl Room {
             "length": self.recording.length,
             "rounds": self.recording.rounds,
         });
-        announce(&self.hub, &line.to_string().into());
+        announce(&self.hub, "playback", &line.to_string().into());
     }
 
     /// The player: until stopped, plays the lines in time, seeking and pausing when told.
@@ -218,7 +246,7 @@ pub(crate) struct Rooms {
 
 impl Rooms {
     pub(crate) fn open(&self, recording: Arc<Recording>, owner: &str) -> Arc<Room> {
-        let room = Room::start(crate::sessions::random_id(), owner.to_string(), recording);
+        let room = Room::start(crate::sessions::random_id(), owner, recording);
         lock(&self.map).insert(room.id.clone(), room.clone());
         room
     }
@@ -261,7 +289,7 @@ mod tests {
         for tick in 1..=n {
             writeln!(lines, "{{\"type\":\"stalemate\",\"tick\":{tick}}}").unwrap();
         }
-        Room::start("r".into(), "me".into(), Arc::new(Recording::read(lines.as_bytes(), "test").unwrap()))
+        Room::start("r".into(), "me", Arc::new(Recording::read(lines.as_bytes(), "test").unwrap()))
     }
 
     fn until(what: &str, done: impl Fn() -> bool) {
@@ -283,7 +311,7 @@ mod tests {
         let r = room(10);
         std::thread::sleep(Duration::from_millis(50));
         assert!(r.hub.lock().unwrap().history.is_empty(), "nobody watches yet");
-        let _w = r.watch();
+        let _w = r.join("me", None);
         until("every line", || r.hub.lock().unwrap().history.len() == 10);
         r.stop();
     }
@@ -292,7 +320,7 @@ mod tests {
     fn a_paused_room_publishes_nothing() {
         let r = room(10);
         r.control(&Control { paused: Some(true), ..Control::default() }).unwrap();
-        let _w = r.watch();
+        let _w = r.join("me", None);
         std::thread::sleep(Duration::from_millis(100));
         assert!(r.hub.lock().unwrap().history.is_empty());
         r.stop();
@@ -313,7 +341,7 @@ mod tests {
     #[test]
     fn the_end_pauses_at_the_length() {
         let r = room(3);
-        let _w = r.watch();
+        let _w = r.join("me", None);
         until("the end", || lock(&r.state).paused);
         assert_eq!(lock(&r.state).at, 30);
         r.stop();
@@ -323,7 +351,7 @@ mod tests {
     fn an_unwatched_room_ends() {
         let rooms = Rooms::default();
         let r = rooms.open(room(1).recording.clone(), "me");
-        let w = r.watch();
+        let w = r.join("me", None);
         rooms.reap(Duration::ZERO);
         assert_eq!(rooms.count(), 1, "watched");
         drop(w);
@@ -336,12 +364,26 @@ mod tests {
     fn strokes_reach_every_page_and_stay_on_the_map() {
         let r = room(1);
         let page = subscribe(&r.hub, false);
-        r.draw(&Draw { stroke: 7, points: vec![[1.0, 2.0], [3.5, -4.0]] }).unwrap();
+        r.draw(&Draw { stroke: 7, points: vec![[1.0, 2.0], [3.5, -4.0]] }, "me").unwrap();
         let line = page.try_iter().find(|l| l.contains(r#""type":"draw""#)).unwrap();
-        assert_eq!(&*line, r#"{"points":[[1.0,2.0],[3.5,-4.0]],"stroke":7,"type":"draw"}"#);
-        assert!(r.draw(&Draw { stroke: 7, points: vec![] }).is_err());
-        assert!(r.draw(&Draw { stroke: 7, points: vec![[1e9, 0.0]] }).is_err());
-        assert!(r.draw(&Draw { stroke: 7, points: vec![[0.0, 0.0]; 257] }).is_err());
+        assert_eq!(&*line, r#"{"by":1,"points":[[1.0,2.0],[3.5,-4.0]],"stroke":7,"type":"draw"}"#);
+        assert!(r.draw(&Draw { stroke: 7, points: vec![] }, "me").is_err());
+        assert!(r.draw(&Draw { stroke: 7, points: vec![[1e9, 0.0]] }, "me").is_err());
+        assert!(r.draw(&Draw { stroke: 7, points: vec![[0.0, 0.0]; 257] }, "me").is_err());
+        r.stop();
+    }
+
+    #[test]
+    fn pages_hear_who_is_in_the_room() {
+        let r = room(1);
+        let page = subscribe(&r.hub, false);
+        let w = r.join("me", Some("coach"));
+        let _v = r.join("you", None);
+        r.set_admin("me", 2, true).unwrap();
+        drop(w);
+        let people: Vec<_> = page.try_iter().filter(|l| l.contains(r#""type":"people""#)).collect();
+        assert_eq!(&*people[people.len() - 1], r#"{"people":[{"admin":true,"id":2,"name":"Guest 2","owner":false}],"type":"people"}"#);
+        assert!(r.is_admin("you"));
         r.stop();
     }
 
