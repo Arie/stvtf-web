@@ -55,6 +55,8 @@ pub struct Session {
     /// What a room on it plays, once known.
     source: Mutex<Option<Source>>,
     recording: OnceLock<Arc<Recording>>,
+    /// Whether its recording is being read for rooms ahead of the first.
+    preparing: AtomicBool,
 }
 
 /// A recorded match: a saved file, or a demo's gzipped output.
@@ -86,6 +88,7 @@ impl Session {
             saving: Mutex::new(None),
             source: Mutex::new(None),
             recording: OnceLock::new(),
+            preparing: AtomicBool::new(false),
         }
     }
 
@@ -117,13 +120,31 @@ impl Session {
         self.recording.get().is_some() || lock(&self.source).is_some()
     }
 
+    /// Reads what a room on it would play, in the background, so a room opens at once; once.
+    pub fn prepare(self: &Arc<Self>) {
+        if self.recording.get().is_some() || !self.recordable() || self.preparing.swap(true, Ordering::Relaxed) {
+            return;
+        }
+        let s = self.clone();
+        std::thread::spawn(move || {
+            if let Err(e) = s.recording() {
+                eprintln!("stvtf-web: match {}: preparing a room: {e:#}", s.label());
+            }
+        });
+    }
+
     /// What a room on it plays: read once, then kept.
     pub fn recording(&self) -> Result<Arc<Recording>> {
         if let Some(r) = self.recording.get() {
             return Ok(r.clone());
         }
+        // One read at a time: one asked for meanwhile waits for it rather than reading it again.
+        let source = lock(&self.source);
+        if let Some(r) = self.recording.get() {
+            return Ok(r.clone());
+        }
         let name = self.label();
-        let read = match &*lock(&self.source) {
+        let read = match &*source {
             Some(Source::File(path)) => {
                 let file = std::fs::File::open(path)?;
                 if path.extension().is_some_and(|e| e == "gz") {
@@ -809,6 +830,26 @@ mod tests {
         }
         assert_eq!(demo.recording().unwrap().length(), 750);
         assert!(Arc::ptr_eq(&demo.recording().unwrap(), &demo.recording().unwrap()), "read once");
+    }
+
+    #[test]
+    fn a_demo_s_recording_is_prepared_in_the_background() {
+        let dir = TempDir::new("prepared");
+        let path = dir.join("demo.jsonl");
+        std::fs::write(&path, "{\"type\":\"stalemate\",\"tick\":5}\n{\"type\":\"stalemate\",\"tick\":55}\n").unwrap();
+        let s = Sessions::new(false, 1, 20.0);
+        s.pin("demo", move |s| s.set_file(path));
+        let demo = s.get("demo").unwrap();
+        while !demo.recordable() {
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        demo.prepare();
+        let started = Instant::now();
+        while demo.recording.get().is_none() {
+            assert!(started.elapsed() < Duration::from_secs(5), "prepared");
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        assert!(Arc::ptr_eq(&demo.recording().unwrap(), demo.recording.get().unwrap()), "the room plays what was prepared");
     }
 
     #[test]

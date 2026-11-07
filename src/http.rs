@@ -395,6 +395,8 @@ fn open_room(s: &mut TcpStream, app: &App, sessions: &Sessions, m: &Arc<Session>
         return Ok(respond(s, "409 Conflict", TEXT, b"This match has nothing to play (yet).")?);
     }
     if request.method != "POST" {
+        // Someone may open one: have it ready.
+        m.prepare();
         return Ok(respond(s, "200 OK", JSON, b"{}")?);
     }
     if sessions.running() + app.rooms.count() >= sessions.max {
