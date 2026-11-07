@@ -171,7 +171,8 @@ page, its overlay and live matches never change.
 Everyone in a room is listed beside the map, by the name they give (kept in the browser) or as
 Guest N. Admins make others admin, or not; the owner stays one. Each admin's pen has its own
 colour, which they pick by the swatch after their name. An admin also sets how everyone sees the map: free (each their own camera), auto zoom, or the
-admin's view (the same part of the map as on their screen, fitted to each, moving smoothly);
+admin's view (moved by hand: auto zoom and following stop, for that admin too; everyone sees the
+same part of the map as on their screen, fitted to each, moving smoothly);
 an admin clicking a player has everyone follow that player, until they stop following. Viewers
 cannot move the camera unless it is free. The page that chose the view leads; another admin can
 take it over. A room's overlay follows it

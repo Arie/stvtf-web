@@ -355,3 +355,35 @@ test("the leader switching from their view to auto zoom stays on auto zoom", asy
   await viewer.page.close();
   await page.close();
 });
+
+test("an admin's view is by hand, for them too, until they click a player", async () => {
+  const { page, errors } = await open();
+  await page.goto(base);
+  await page.click("#roomopen");
+  await page.waitForURL(/\/r\/[0-9a-f]{32}\/$/, { timeout: WAIT });
+  const viewer = await open();
+  await viewer.page.goto(page.url());
+  await until(page, () => !(/** @type {HTMLSelectElement} */ (document.getElementById("rb-view")).disabled));
+  await page.selectOption("#rb-view", "auto");
+  await until(page, () => document.getElementById("autozoom").hidden);
+  await page.selectOption("#rb-view", "admin");
+  // Auto zoom is off for the admin: its button shows.
+  await until(page, () => !document.getElementById("autozoom").hidden);
+  await until(viewer.page, () => document.getElementById("rb-view").value === "admin");
+  await until(page, () => document.querySelectorAll("#hud-red .card").length > 0);
+  await page.click("#hud-red .card");
+  const name = await until(
+    page,
+    () => !document.getElementById("follow").hidden && document.getElementById("follow-name").textContent,
+  );
+  await until(
+    viewer.page,
+    n => !document.getElementById("follow").hidden && document.getElementById("follow-name").textContent === n,
+    name,
+  );
+  await page.selectOption("#rb-view", "admin");
+  await until(page, () => document.getElementById("follow").hidden);
+  assert.deepEqual([...errors, ...viewer.errors], []);
+  await viewer.page.close();
+  await page.close();
+});

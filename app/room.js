@@ -329,6 +329,8 @@ let chosen = "";
 /** @type {number | null} */
 let followSeen = null;
 let beforeFollow = "free";
+// The view as last applied here.
+let applied = "";
 
 // Who leads a view of someone's player or camera; other admins can take a camera view over.
 function showLead() {
@@ -354,17 +356,25 @@ function applyView() {
   state.locked = view.mode !== "free" && !lead && !me.admin;
   if (state.locked) $("autozoom").hidden = true;
   if (lead || view.mode !== "admin") state.mirror = null;
-  // Auto zoom is everyone's, the admin who chose it too; the other views follow the leader.
+  // Once per view: a camera view comes in many times a second, and the admin may click a player
+  // between two of them.
+  const key = [view.mode, view.page, lead, view.mode === "follow" ? view.player : ""].join();
+  if (key === applied) return;
+  applied = key;
+  // Auto zoom is everyone's, the admin who chose it too. An admin's view is theirs by hand: no
+  // auto zoom or following, for them either. A followed player is the leader's own.
   if (view.mode === "auto") {
     if (state.follow != null) setFollow(null);
     setAutoZoom(true);
-  } else if (lead) return;
-  else if (view.mode === "follow") {
-    if (state.follow !== view.player) setFollow(view.player);
-  } else if (view.mode === "admin") {
-    if (state.follow != null) setFollow(null);
-    setAutoZoom(false);
-  }
+  } else if (view.mode === "admin") manual();
+  else if (view.mode === "follow" && !lead && state.follow !== view.player) setFollow(view.player);
+  followSeen = state.follow;
+}
+
+// The camera by hand: no auto zoom, following nobody.
+function manual() {
+  if (state.follow != null) setFollow(null);
+  setAutoZoom(false);
   followSeen = state.follow;
 }
 
@@ -423,8 +433,14 @@ function roomView() {
     if (m.mode === "admin" && !leading()) pushMirror(m);
     applyView();
   });
-  choose.onchange = () => take(viewOf(choose.value));
-  $("rb-take").onclick = () => take(viewOf("admin"));
+  choose.onchange = () => {
+    if (choose.value === "admin") manual();
+    take(viewOf(choose.value));
+  };
+  $("rb-take").onclick = () => {
+    manual();
+    take(viewOf("admin"));
+  };
   setInterval(() => {
     if (!me.admin) return;
     // An admin clicked a player, or stopped following one: everyone does.
