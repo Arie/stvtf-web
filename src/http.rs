@@ -69,6 +69,8 @@ struct Request {
     bearer: Option<String>,
     /// The `stvtf_guest` cookie: who the browser is, to the rooms.
     guest: Option<String>,
+    /// The `stvtf_user` cookie: who signed in with the site, still sealed.
+    user: Option<String>,
 }
 
 /// The request line and headers.
@@ -88,6 +90,7 @@ fn read_request(reader: &mut impl BufRead) -> Result<Request> {
         forwarded: None,
         bearer: None,
         guest: None,
+        user: None,
     };
     loop {
         let mut header = String::new();
@@ -108,6 +111,7 @@ fn read_request(reader: &mut impl BufRead) -> Result<Request> {
         } else if name.eq_ignore_ascii_case("cookie") {
             let guest = value.split(';').find_map(|c| c.trim().strip_prefix("stvtf_guest="));
             request.guest = guest.filter(|g| sessions::is_id(g)).map(str::to_string);
+            request.user = value.split(';').find_map(|c| c.trim().strip_prefix("stvtf_user=")).map(str::to_string);
         } else if name.eq_ignore_ascii_case("accept-encoding") {
             request.gzip = value.split(',').any(|e| e.split(';').next().is_some_and(|e| e.trim().eq_ignore_ascii_case("gzip")));
         }
@@ -201,6 +205,25 @@ fn serve_many(
     match (request.path.as_str(), request.method.as_str()) {
         (path @ ("/" | "/watch"), _) if app.keys.is_some() => front_door(&mut s, app, path)?,
         ("/matches", "GET") if let Some(keys) = &app.keys => list_matches(&mut s, keys, sessions, request)?,
+        ("/signin", "GET") if let Some(site) = app.home.as_deref().and_then(origin) => {
+            let back = local_path(param(&request.query, "return"), app);
+            redirect(&mut s, "302 Found", &format!("{site}/stv/sign_in?return={}", url_encode(&back)))?;
+        }
+        ("/signed_in", "GET") if let Some(keys) = &app.keys => {
+            let back = local_path(param(&request.query, "return"), app);
+            match keys.open_signin(param(&request.query, "t").unwrap_or_default(), unix_now()) {
+                Ok(user) => {
+                    let kept = format!("stvtf_user={}; {}", keys.keep(&user, unix_now()), cookie_attributes(app, token::SIGNED_IN_FOR));
+                    respond_with(&mut s, "303 See Other", &[("Location", &back), ("Set-Cookie", &kept)], b"")?;
+                }
+                Err(e) => respond(&mut s, "400 Bad Request", TEXT, format!("{e:#}").as_bytes())?,
+            }
+        }
+        ("/signout", "GET") => {
+            let back = local_path(param(&request.query, "return"), app);
+            let gone = format!("stvtf_user=; {}", cookie_attributes(app, 0));
+            respond_with(&mut s, "303 See Other", &[("Location", &back), ("Set-Cookie", &gone)], b"")?;
+        }
         ("/start", _) => match start(app, sessions, &request.query) {
             // <stv-map> asks where the match is instead of following the redirect.
             Ok(m) if param(&request.query, "format") == Some("json") => {
@@ -271,15 +294,55 @@ fn read_body(reader: &mut BufReader<Take<TcpStream>>, request: &Request) -> Resu
     Ok(body)
 }
 
-/// The browser's guest cookie, and a `Set-Cookie` for a new one if it had none.
-fn guest(app: &App, request: &Request) -> (String, Option<String>) {
+/// A cookie's attributes, lasting `seconds`: only for us, never to scripts, and over HTTPS when
+/// a site is in front.
+fn cookie_attributes(app: &App, seconds: u64) -> String {
+    let secure = if app.keys.is_some() { "; Secure" } else { "" };
+    format!("Path={}/; Max-Age={seconds}; HttpOnly; SameSite=Lax{secure}", app.base)
+}
+
+/// Who is asking, to the rooms: the user signed in with the site, by their Steam id, or the
+/// browser by its guest cookie; and a `Set-Cookie` for a new guest cookie if it had none.
+struct Who {
+    key: String,
+    cookie: Option<String>,
+    user: Option<token::User>,
+}
+
+fn who(app: &App, request: &Request) -> Who {
+    let user = app.keys.as_ref().zip(request.user.as_deref()).and_then(|(k, c)| k.kept(c, unix_now()));
+    if let Some(user) = user {
+        return Who { key: format!("steam:{}", user.uid), cookie: None, user: Some(user) };
+    }
     if let Some(g) = &request.guest {
-        return (g.clone(), None);
+        return Who { key: g.clone(), cookie: None, user: None };
     }
     let g = sessions::random_id();
-    let secure = if app.keys.is_some() { "; Secure" } else { "" };
-    let cookie = format!("stvtf_guest={g}; Path={}/; Max-Age=31536000; HttpOnly; SameSite=Lax{secure}", app.base);
-    (g, Some(cookie))
+    let cookie = format!("stvtf_guest={g}; {}", cookie_attributes(app, 365 * 24 * 3600));
+    Who { key: g, cookie: Some(cookie), user: None }
+}
+
+/// The site's address, from where `/` sends visitors (`--home`): its scheme and host.
+fn origin(home: &str) -> Option<&str> {
+    let rest = home.find("://")? + 3;
+    Some(&home[..home[rest..].find('/').map_or(home.len(), |i| rest + i)])
+}
+
+/// A page of ours to go back to: `wanted` if it is one (a path, not another site), else our home.
+fn local_path(wanted: Option<&str>, app: &App) -> String {
+    let path = wanted.map(form_decode).unwrap_or_default();
+    let ours = path.starts_with(&format!("{}/", app.base)) && !path.starts_with("//") && !path.contains(['\\', '\r', '\n']);
+    if ours { path } else { format!("{}/", app.base) }
+}
+
+/// `v` for a query string.
+fn url_encode(v: &str) -> String {
+    v.bytes()
+        .map(|b| match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' | b'/' => char::from(b).to_string(),
+            _ => format!("%{b:02X}"),
+        })
+        .collect()
 }
 
 /// A JSON body read as `T`, or why not.
@@ -310,7 +373,7 @@ fn open_room(s: &mut TcpStream, app: &App, sessions: &Sessions, m: &Session, req
         Ok(r) => r,
         Err(e) => return Ok(respond(s, "409 Conflict", TEXT, format!("{e:#}").as_bytes())?),
     };
-    let (guest, cookie) = guest(app, request);
+    let Who { key: guest, cookie, .. } = who(app, request);
     let room = match app.rooms.open(m, recording, &guest) {
         Ok(r) => r,
         Err(e) => return Ok(respond(s, "409 Conflict", TEXT, format!("{e:#}").as_bytes())?),
@@ -359,7 +422,7 @@ fn serve_room(
         return Ok(respond(&mut s, "404 Not Found", TEXT, b"That room has closed.")?);
     };
     // Without a cookie (none yet, or refused), a page is someone new each time.
-    let (guest, cookie) = guest(app, request);
+    let Who { key: guest, cookie, user } = who(app, request);
     let admin = room.is_admin(&guest);
     match (rest, request.method.as_str()) {
         ("", _) if !path.ends_with('/') => app.redirect(&mut s, "308 Permanent Redirect", &format!("{}/", request.path))?,
@@ -374,14 +437,29 @@ fn serve_room(
             Some(_slot) => {
                 let name = param(&request.query, "name").map(form_decode);
                 let listed = param(&request.query, "overlay") != Some("1");
-                let _watching = room.join(&guest, name.as_deref(), listed);
+                let site = user.as_ref().map(|u| u.name.as_str());
+                let _watching = room.join(&guest, name.as_deref(), site, listed);
                 stream(s, &room.hub, request.gzip, wants_detail(&request.query))?;
             }
             None => too_many_streams(&mut s)?,
         },
         ("me", "GET") => {
             let (id, admin) = room.me(&guest);
-            respond(&mut s, "200 OK", JSON, serde_json::json!({ "id": id, "admin": admin }).to_string().as_bytes())?;
+            let me = serde_json::json!({
+                "id": id,
+                "admin": admin,
+                "signed": user.is_some(),
+                "streamer": user.as_ref().is_some_and(|u| u.streamer),
+                "signin": app.keys.is_some() && app.home.as_deref().and_then(origin).is_some(),
+            });
+            respond(&mut s, "200 OK", JSON, me.to_string().as_bytes())?;
+        }
+        ("claim", "POST") if user.as_ref().is_some_and(|u| u.streamer) => {
+            room.make_admin(&guest);
+            respond(&mut s, "204 No Content", TEXT, b"")?;
+        }
+        ("claim", "POST") => {
+            respond(&mut s, "403 Forbidden", TEXT, b"Only the site's streamers make themselves admin.")?;
         }
         ("name", "POST") => {
             let name = json_body::<Name>(reader, request).map(|n| room.rename(&guest, &n.name));
@@ -649,6 +727,68 @@ mod tests {
         (app(Matches::Many(sessions)), dir)
     }
 
+    /// The demo server behind the site, with its key: (app, key's hex, the folder).
+    fn site_app() -> (App, String, TempDir) {
+        let (mut app, dir) = demo_app();
+        let key = "42".repeat(32);
+        app.keys = Some(Arc::new(token::Keys::from_hex(&key).unwrap()));
+        app.home = Some("https://serveme.tf/stv".into());
+        (app, key, dir)
+    }
+
+    /// `stvtf_user` as the site's sign-in leaves it, for `json` (`{"uid", "name", "streamer"}`).
+    fn signed_in(app: &App, key: &str, json: &str) -> String {
+        let t = token::seal(key, &format!(r#"{{"signin":{json},"exp":{}}}"#, unix_now() + 60), [5; 12]);
+        let back = get(app, &format!("/signed_in?t={t}&return=/r/x/"), "");
+        assert!(back.starts_with("HTTP/1.1 303") && back.contains("Location: /r/x/"), "{back}");
+        let cookie = back.split("Set-Cookie: ").nth(1).unwrap().split(';').next().unwrap().to_string();
+        assert!(back.contains("HttpOnly; SameSite=Lax; Secure"), "{back}");
+        cookie
+    }
+
+    #[test]
+    fn signing_in_goes_by_the_site_and_back_only_to_our_own_pages() {
+        let (app, key, _dir) = site_app();
+        let out = get(&app, "/signin?return=/r/abc/", "");
+        assert!(out.contains("Location: https://serveme.tf/stv/sign_in?return=/r/abc/"), "{out}");
+        for elsewhere in ["https://evil.example/", "//evil.example/", "/\\evil.example"] {
+            let out = get(&app, &format!("/signin?return={elsewhere}"), "");
+            assert!(out.contains("sign_in?return=/\r\n"), "{elsewhere}: {out}");
+        }
+        signed_in(&app, &key, r#"{"uid":"7656","name":"Arie","streamer":false}"#);
+        let stale = token::seal(&key, r#"{"signin":{"uid":"1","name":"x"},"exp":5}"#, [6; 12]);
+        assert!(get(&app, &format!("/signed_in?t={stale}"), "").starts_with("HTTP/1.1 400"));
+        let start = token::seal(&key, &format!(r#"{{"demo":1,"exp":{}}}"#, unix_now() + 60), [7; 12]);
+        assert!(get(&app, &format!("/signed_in?t={start}"), "").starts_with("HTTP/1.1 400"), "a start token signs nobody in");
+        assert!(get(&app, "/signout?return=/r/x/", "").contains("Set-Cookie: stvtf_user=; Path=/; Max-Age=0"));
+    }
+
+    #[test]
+    fn someone_signed_in_is_their_steam_id_in_a_room_and_a_streamer_makes_themselves_admin() {
+        let (app, key, _dir) = site_app();
+        let owner = signed_in(&app, &key, r#"{"uid":"7656","name":"Arie","streamer":false}"#);
+        let opened = post(&app, "/w/demo/room", &owner, "");
+        let page = opened.split(r#""page":""#).nth(1).unwrap().split('"').next().unwrap().to_string();
+        let me = get(&app, &format!("{page}me"), &owner);
+        assert!(me.ends_with(r#"{"admin":true,"id":1,"signed":true,"signin":true,"streamer":false}"#), "{me}");
+        // The same user from another browser (no guest cookie) is still the owner.
+        let elsewhere = format!("{owner}; stvtf_guest={}", "3".repeat(32));
+        assert!(get(&app, &format!("{page}me"), &elsewhere).contains(r#""admin":true"#));
+        let streamer = signed_in(&app, &key, r#"{"uid":"9999","name":"caster","streamer":true}"#);
+        let viewer = format!("stvtf_guest={}", "1".repeat(32));
+        assert!(post(&app, &format!("{page}claim"), &viewer, "").starts_with("HTTP/1.1 403"));
+        assert!(post(&app, &format!("{page}claim"), &streamer, "").starts_with("HTTP/1.1 204"));
+        assert!(get(&app, &format!("{page}me"), &streamer).contains(r#""admin":true"#));
+        // A cookie sealed with another key is nobody.
+        let forged = format!(
+            "stvtf_user={}",
+            token::Keys::from_hex(&"ee".repeat(32))
+                .unwrap()
+                .keep(&token::User { uid: "9999".into(), name: "caster".into(), streamer: true }, unix_now(),)
+        );
+        assert!(post(&app, &format!("{page}claim"), &forged, "").starts_with("HTTP/1.1 403"));
+    }
+
     fn post(app: &App, path: &str, cookie: &str, body: &str) -> String {
         let send = format!("POST {path} HTTP/1.1\r\nCookie: {cookie}\r\nContent-Length: {}\r\n\r\n{body}", body.len());
         request_to(app, send.as_bytes()).1
@@ -675,7 +815,9 @@ mod tests {
         let (page, cookie) = open_room(&app);
         assert!(page.starts_with("/r/") && page.ends_with('/'), "{page}");
         assert!(get(&app, &page, "").contains("<canvas"));
-        assert!(get(&app, &format!("{page}me"), &cookie).ends_with(r#"{"admin":true,"id":1}"#));
+        assert!(
+            get(&app, &format!("{page}me"), &cookie).ends_with(r#"{"admin":true,"id":1,"signed":false,"signin":false,"streamer":false}"#)
+        );
         assert!(get(&app, &format!("{page}me"), "").contains(r#""admin":false"#));
         assert!(get(&app, &page, "").contains("Set-Cookie: stvtf_guest="), "everyone in a room gets a cookie");
         let again = post(&app, "/w/demo/room", &cookie, "");
@@ -706,7 +848,7 @@ mod tests {
         let (page, owner) = open_room(&app);
         let viewer = format!("stvtf_guest={}", "1".repeat(32));
         let me = get(&app, &format!("{page}me"), &viewer);
-        assert!(me.ends_with(r#"{"admin":false,"id":2}"#), "{me}");
+        assert!(me.ends_with(r#"{"admin":false,"id":2,"signed":false,"signin":false,"streamer":false}"#), "{me}");
         assert!(post(&app, &format!("{page}name"), &viewer, r#"{"name":"caster"}"#).starts_with("HTTP/1.1 204"));
         let pause = r#"{"paused":true}"#;
         assert!(post(&app, &format!("{page}control"), &viewer, pause).starts_with("HTTP/1.1 403"));
