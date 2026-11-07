@@ -210,21 +210,33 @@ aside section {
   field-sizing: content;
   min-width: 6ch;
   max-width: 60%;
-  margin: -1px 0;
-  padding: 0 3px;
-  border: 1px solid transparent;
-  border-radius: 3px;
+  /* No border or padding, so its text lines up with the other names; an outline when it is in use. */
+  padding: 0;
+  border: 0;
+  border-radius: 2px;
+  outline: 1px solid transparent;
+  outline-offset: 2px;
   background: transparent;
   color: var(--text);
   font: inherit;
 }
+#peoplelist .rename {
+  margin-left: -4px;
+  color: var(--dim);
+  font-size: 11px;
+  cursor: pointer;
+}
+#peoplelist .rename:hover {
+  color: var(--text);
+}
+#myname:focus + .rename {
+  display: none;
+}
 #myname:hover {
-  border-color: var(--line);
+  outline-color: var(--line);
 }
 #myname:focus {
-  border-color: var(--dim);
-  outline: none;
-  background: var(--bg);
+  outline-color: var(--dim);
 }
 #myname::placeholder {
   color: var(--text);

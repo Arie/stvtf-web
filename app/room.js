@@ -312,7 +312,11 @@ function people(allow) {
           tag = document.createElement("span");
         if (own) {
           name.placeholder = p.name;
-          li.append(name);
+          // A pen says it can be changed.
+          const pen = Object.assign(document.createElement("span"), { className: "rename", textContent: "✎" });
+          pen.title = "Change your name";
+          pen.onclick = () => name.focus();
+          li.append(name, pen);
         } else {
           nm.className = "nm";
           nm.textContent = p.name;
