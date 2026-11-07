@@ -327,13 +327,6 @@ function drawIcon({ p, x, y, rad, cloaked }) {
   }
   if (p.ubered) drawResistBadge(p, x, y, rad);
   if (SHOW_BUILDINGS && p.carrying) drawCarried(p, x, y, rad);
-  if (p.id === state.follow) {
-    ctx.beginPath();
-    ctx.arc(x, y, rad + 7, 0, Math.PI * 2);
-    ctx.strokeStyle = "#fff";
-    ctx.lineWidth = 2;
-    ctx.stroke();
-  }
 }
 
 // The building an engineer carries, as a small badge like the ones on the map.
