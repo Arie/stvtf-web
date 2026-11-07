@@ -98,6 +98,11 @@ impl Default for Clock {
 }
 
 impl Clock {
+    /// Goes on from `play` milliseconds: the next line is the next moment.
+    pub(crate) fn resume(&mut self, play: u64) {
+        (self.play, self.last, self.timed) = (play, None, true);
+    }
+
     /// The play time of `stamped`, the next line.
     pub(crate) fn at(&mut self, stamped: &Stamped) -> u64 {
         if let Line::Server(server) = &stamped.line

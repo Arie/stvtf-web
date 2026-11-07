@@ -1,6 +1,7 @@
 //! A match as a room plays it: stvtf lines in gzipped chunks of play time, each starting from a
 //! checkpoint of the hub, so a seek replays at most one chunk. A live match's recording grows
-//! as it is played: its last chunk stays open, as text, until its time is up.
+//! as it is played: its last chunk stays open, as text, until its time is up, and each chunk
+//! closed can go to a file (one gzip member after another), from which it resumes.
 
 use crate::hub::{Hub, SharedHub, publish};
 use crate::lock;
@@ -18,11 +19,15 @@ use stvtf::output::Stamped;
 /// Play time per chunk, in milliseconds.
 const CHUNK_MS: u64 = 10_000;
 
+/// Where a live recording's chunks go as they close: their gzipped lines.
+pub(crate) type Sink = Box<dyn FnMut(&[u8]) + Send>;
+
 #[derive(Default)]
 pub(crate) struct Recording {
     inner: Mutex<Inner>,
     /// Still being recorded (a live match): playback waits at its end for more.
     live: AtomicBool,
+    sink: Mutex<Option<Sink>>,
 }
 
 #[derive(Default)]
@@ -34,6 +39,8 @@ struct Inner {
     /// The last chunk's lines while it is open: `{at}\t{json}`.
     open: Vec<String>,
     rounds: Vec<u64>,
+    /// The next line starts a chunk: the last one was resumed, and is in its file already.
+    fresh: bool,
 }
 
 struct Chunk {
@@ -49,18 +56,37 @@ struct Chunk {
 pub(crate) type Lines = Vec<(u64, Line)>;
 
 impl Inner {
-    /// Gzips the open chunk's lines.
-    fn close(&mut self) -> Result<()> {
-        let Some(last) = self.chunks.last_mut() else { return Ok(()) };
+    /// Gzips the open chunk's lines; true if there were any.
+    fn close(&mut self) -> Result<bool> {
+        let Some(last) = self.chunks.last_mut() else { return Ok(false) };
         if self.open.is_empty() {
-            return Ok(());
+            return Ok(false);
         }
         let mut gz = GzEncoder::new(Vec::new(), Compression::default());
         for line in self.open.drain(..) {
             writeln!(gz, "{line}")?;
         }
         last.lines = gz.finish()?;
-        Ok(())
+        Ok(true)
+    }
+
+    /// Line `text`, read as `stamped`, at play time `at`; the gzipped chunk it closed, if any.
+    fn add(&mut self, at: u64, stamped: &Stamped, text: &str) -> Result<Option<Vec<u8>>> {
+        let mut closed = None;
+        if self.fresh || self.chunks.last().is_none_or(|c| at >= c.start + CHUNK_MS) {
+            if self.close()? {
+                closed = self.chunks.last().map(|c| c.lines.clone());
+            }
+            let hub = lock(&self.scratch).checkpoint();
+            self.chunks.push(Chunk { start: at, hub, lines: Vec::new() });
+            self.fresh = false;
+        }
+        if matches!(stamped.line, Line::RoundStart(_)) {
+            self.rounds.push(at);
+        }
+        self.open.push(format!("{at}\t{text}"));
+        publish(&self.scratch, &stamped.line);
+        Ok(closed)
     }
 }
 
@@ -91,20 +117,43 @@ impl Recording {
         r
     }
 
+    /// A live recording whose chunks go to `sink` as they close.
+    pub(crate) fn live_to(sink: Sink) -> Recording {
+        let r = Recording::live();
+        *lock(&r.sink) = Some(sink);
+        r
+    }
+
+    /// A live recording going on from the chunks `saved` (as a sink got them), to `sink`.
+    pub(crate) fn resume(saved: impl Read, sink: Sink) -> Result<Recording> {
+        let r = Recording::live();
+        {
+            let mut inner = lock(&r.inner);
+            let mut at = 0;
+            for text in BufReader::new(flate2::read::MultiGzDecoder::new(saved)).lines() {
+                let text = text?;
+                let Some((t, json)) = text.split_once('\t') else { bail!("not a recording") };
+                at = t.parse()?;
+                inner.add(at, &serde_json::from_str(json)?, json)?;
+            }
+            inner.close()?;
+            inner.clock.resume(at);
+            inner.fresh = true;
+        }
+        *lock(&r.sink) = Some(sink);
+        Ok(r)
+    }
+
     /// The next line, `text` as read into `stamped`.
     pub(crate) fn push(&self, stamped: &Stamped, text: &str) -> Result<()> {
-        let mut inner = lock(&self.inner);
-        let at = inner.clock.at(stamped);
-        if inner.chunks.last().is_none_or(|c| at >= c.start + CHUNK_MS) {
-            inner.close()?;
-            let hub = lock(&inner.scratch).checkpoint();
-            inner.chunks.push(Chunk { start: at, hub, lines: Vec::new() });
+        let closed = {
+            let mut inner = lock(&self.inner);
+            let at = inner.clock.at(stamped);
+            inner.add(at, stamped, text)?
+        };
+        if let (Some(gz), Some(sink)) = (closed, lock(&self.sink).as_mut()) {
+            sink(&gz);
         }
-        if matches!(stamped.line, Line::RoundStart(_)) {
-            inner.rounds.push(at);
-        }
-        inner.open.push(format!("{at}\t{text}"));
-        publish(&inner.scratch, &stamped.line);
         Ok(())
     }
 
@@ -237,6 +286,42 @@ mod tests {
         assert_eq!((hub.history.len(), i, played), (24, 1, 4));
         r.end();
         assert!(!r.is_live());
+    }
+
+    /// `n` stalemates half a second apart from `time`, into `r`; the time after.
+    fn live_lines(r: &Recording, n: usize, mut time: u64) -> u64 {
+        for _ in 0..n {
+            let text = r#"{"type":"stalemate","tick":5}"#;
+            let mut stamped: Stamped = serde_json::from_str(text).unwrap();
+            stamped.time = Some(time);
+            r.push(&stamped, text).unwrap();
+            time += 500;
+        }
+        time
+    }
+
+    #[test]
+    fn a_live_recording_saves_its_chunks_and_goes_on_from_them() {
+        let saved = Arc::new(Mutex::new(Vec::new()));
+        let to = |saved: &Arc<Mutex<Vec<u8>>>| -> Sink {
+            let saved = saved.clone();
+            Box::new(move |gz: &[u8]| lock(&saved).extend_from_slice(gz))
+        };
+        let r = Recording::live_to(to(&saved));
+        let time = live_lines(&r, 45, 1_700_000_000_000);
+        // 0 to 22 s: two chunks closed and saved, the third open.
+        assert_eq!((r.chunks(), r.length()), (3, 22_000));
+        let file = lock(&saved).clone();
+        let again = Recording::resume(file.as_slice(), to(&saved)).unwrap();
+        assert_eq!((again.chunks(), again.length(), again.is_live()), (2, 19_500, true));
+        // On after a pause (a deploy): from where it was, in a chunk of its own.
+        live_lines(&again, 25, time + 60_000);
+        assert_eq!((again.chunks(), again.length()), (4, 31_500));
+        assert_eq!(again.chunk(2).unwrap().first().map(|(t, _)| *t), Some(19_500));
+        let (hub, _, _) = again.seek(31_500);
+        assert_eq!(hub.history.len(), 40 + 24, "every line once");
+        let resumed = Recording::resume(lock(&saved).as_slice(), Box::new(|_: &[u8]| {})).unwrap();
+        assert_eq!(resumed.chunks(), 3, "the chunks saved before, and the one closed after");
     }
 
     #[test]
