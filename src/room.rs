@@ -11,12 +11,14 @@ use std::collections::VecDeque;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
+use stvtf::Line;
 
 pub(crate) const SPEEDS: [f64; 5] = [0.25, 0.5, 1.0, 2.0, 4.0];
 /// How often pages hear where playback is while it plays.
 const ANNOUNCE_EVERY: Duration = Duration::from_secs(1);
-/// How often a room nobody watches looks again.
+/// How often a room nobody watches looks again, and one at a live match's end for more of it.
 const IDLE_POLL: Duration = Duration::from_millis(250);
+const LIVE_POLL: Duration = Duration::from_millis(20);
 
 pub(crate) struct Room {
     pub(crate) id: String,
@@ -133,15 +135,16 @@ impl Drop for Watching {
 }
 
 impl Room {
-    /// A room playing `recording` from the start, at 1×.
+    /// A room playing `recording` from the start, at 1×; a live match's from where it is now.
     pub(crate) fn start(id: String, owner: &str, recording: Arc<Recording>) -> Arc<Room> {
-        let state = State { paused: false, speed: 1.0, at: 0, seek: None, stop: false };
+        let at = if recording.is_live() { recording.length() } else { 0 };
+        let state = State { paused: false, speed: 1.0, at, seek: (at > 0).then_some(at), stop: false };
         Room::run(id, People::new(owner), None, None, state, recording)
     }
 
     /// The room `saved` was, back where it was.
     pub(crate) fn restore(id: String, saved: Saved, recording: Arc<Recording>) -> Arc<Room> {
-        let at = saved.at.min(recording.length);
+        let at = saved.at.min(recording.length());
         let state = State { paused: saved.paused, speed: saved.speed, at, seek: Some(at), stop: false };
         let room = Room::run(id, saved.people, saved.leader, saved.view.map(Into::into), state, recording);
         if let Some(view) = lock(&room.view).clone() {
@@ -241,7 +244,7 @@ impl Room {
             st.paused = paused;
         }
         if let Some(at) = c.seek {
-            st.seek = Some(at.min(self.recording.length));
+            st.seek = Some(at.min(self.recording.length()));
         }
         self.announce(&st);
         self.wake.notify_all();
@@ -324,16 +327,21 @@ impl Room {
             "paused": st.paused,
             "speed": st.speed,
             "at": st.at,
-            "length": self.recording.length,
-            "rounds": self.recording.rounds,
+            "length": self.recording.length(),
+            "rounds": self.recording.rounds(),
+            "live": self.recording.is_live(),
         });
         announce(&self.hub, "playback", &line.to_string().into());
     }
 
-    /// The player: until stopped, plays the lines in time, seeking and pausing when told.
+    /// The player: until stopped, plays the lines in time, seeking and pausing when told. At the
+    /// end of a live match's recording it waits for more; at the end of any other it pauses.
     fn play(&self) {
         let rec = &self.recording;
-        let (mut chunk, mut lines) = (0, VecDeque::from(rec.chunk(0).unwrap_or_default()));
+        // Where playback is: the chunk, how many of its lines are played, and the lines after,
+        // as far as the recording had them when last looked at (`looked`: its length then).
+        let (mut chunk, mut done, mut looked) = (0, 0, None);
+        let mut lines: VecDeque<(u64, Line)> = VecDeque::new();
         let mut st = lock(&self.state);
         self.announce(&st);
         let mut announced = Instant::now();
@@ -342,22 +350,36 @@ impl Room {
                 return;
             }
             if let Some(target) = st.seek.take() {
-                let (hub, rest, i) = rec.seek(target);
+                let (hub, i, played) = rec.seek(target);
                 restore(&self.hub, hub);
-                (chunk, lines, st.at) = (i, rest.into(), target);
+                (chunk, done, looked, st.at) = (i, played, None, target);
+                lines.clear();
                 self.announce(&st);
                 continue;
             }
-            while lines.is_empty() && chunk + 1 < rec.chunks() {
-                chunk += 1;
-                lines = rec.chunk(chunk).unwrap_or_default().into();
+            // More of this chunk (a live one grows), or on to the next.
+            if lines.is_empty() && looked != Some((rec.length(), rec.chunks())) {
+                looked = Some((rec.length(), rec.chunks()));
+                lines = rec.chunk(chunk).unwrap_or_default().into_iter().skip(done).collect();
+                while lines.is_empty() && chunk + 1 < rec.chunks() {
+                    (chunk, done) = (chunk + 1, 0);
+                    lines = rec.chunk(chunk).unwrap_or_default().into();
+                }
             }
             let Some(&(t, _)) = lines.front() else {
-                if !st.paused {
-                    (st.paused, st.at) = (true, rec.length);
-                    self.announce(&st);
+                if rec.is_live() {
+                    // At live: as far as the match is.
+                    if !st.paused {
+                        st.at = st.at.max(rec.length());
+                    }
+                    st = self.sleep(st, LIVE_POLL);
+                } else {
+                    if !st.paused {
+                        (st.paused, st.at) = (true, rec.length());
+                        self.announce(&st);
+                    }
+                    st = self.sleep(st, IDLE_POLL);
                 }
-                st = self.sleep(st, IDLE_POLL);
                 continue;
             };
             if st.paused || self.viewers.load(Ordering::Relaxed) == 0 {
@@ -377,6 +399,7 @@ impl Room {
                 continue;
             }
             let (_, line) = lines.pop_front().expect("a front line");
+            done += 1;
             publish(&self.hub, &line);
         }
     }
