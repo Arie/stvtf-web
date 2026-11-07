@@ -69,9 +69,10 @@ pub(crate) enum View {
     Admin { cx: f64, cy: f64, w: f64, h: f64, rot: f64 },
 }
 
-/// A view as an admin's page sends it: `take` when they chose it, and so that page leads from now
-/// on; otherwise it is its camera moving, which counts only while it leads. `page` tells an
-/// admin's pages apart (two tabs, say).
+/// A view as an admin's page sends it: `take` when they chose it, which sets the kind of view;
+/// otherwise it is their camera moving, which counts only while the view is of that kind (a move
+/// sent before someone chose another no longer stands). Either way that page leads from then on:
+/// the latest to choose or move it. `page` tells an admin's pages apart (two tabs, say).
 #[derive(Debug, Deserialize)]
 pub(crate) struct ViewPost {
     #[serde(flatten)]
@@ -263,14 +264,11 @@ impl Room {
         }
         let by = lock(&self.people).id(guest);
         let mut leader = lock(&self.leader);
-        let from = (by, post.page.clone(), kind(view).to_string());
-        if post.take {
-            *leader = Some(from);
-        } else if leader.as_ref() != Some(&from) {
-            // Sent before another page took over, or before this one chose another kind of view:
-            // it no longer stands.
+        let kind = kind(view).to_string();
+        if !post.take && leader.as_ref().is_none_or(|(_, _, now)| *now != kind) {
             return Ok(());
         }
+        *leader = Some((by, post.page.clone(), kind));
         let mut line = serde_json::to_value(view)?;
         line["type"] = "view".into();
         line["by"] = by.into();
@@ -496,25 +494,21 @@ mod tests {
     }
 
     #[test]
-    fn a_camera_moving_after_another_page_took_the_view_over_is_refused() {
+    fn a_camera_moving_counts_only_while_the_view_is_of_its_kind() {
         let r = room(1);
         let post = |view, take, page: &str| ViewPost { view, take, page: page.into() };
         let mine = |x: f64| View::Admin { cx: x, cy: 0.0, w: 10.0, h: 10.0, rot: 0.0 };
-        r.set_view(&post(View::Auto, false, "a"), "me").unwrap();
-        assert!(subscribe(&r.hub, false).try_iter().all(|l| !l.contains(r#""type":"view""#)), "nobody took it yet");
+        let latest = || subscribe(&r.hub, false).try_iter().find(|l| l.contains(r#""type":"view""#));
+        r.set_view(&post(mine(1.0), false, "a"), "me").unwrap();
+        assert!(latest().is_none(), "nobody chose a view yet");
         r.set_view(&post(mine(1.0), true, "a"), "me").unwrap();
-        r.set_view(&post(mine(2.0), false, "a"), "me").unwrap();
-        // The same admin's other tab is not the one leading.
-        r.set_view(&post(mine(9.0), false, "b"), "me").unwrap();
-        // A camera move sent before the same page chose auto zoom does not bring its view back.
+        // Any admin's page moving it leads it from then on.
+        r.set_view(&post(mine(2.0), false, "c"), "you").unwrap();
+        assert!(latest().unwrap().contains(r#""page":"c""#));
+        // A move sent before auto zoom was chosen does not bring the admin's view back.
         r.set_view(&post(View::Auto, true, "a"), "me").unwrap();
-        r.set_view(&post(mine(2.5), false, "a"), "me").unwrap();
-        let latest = subscribe(&r.hub, false).try_iter().find(|l| l.contains(r#""type":"view""#)).unwrap();
-        assert!(latest.contains(r#""mode":"auto""#), "{latest}");
-        r.set_view(&post(View::Free, true, "c"), "you").unwrap();
-        r.set_view(&post(mine(3.0), false, "a"), "me").unwrap();
-        let latest = subscribe(&r.hub, false).try_iter().find(|l| l.contains(r#""type":"view""#)).unwrap();
-        assert_eq!(&*latest, r#"{"by":2,"mode":"free","page":"c","type":"view"}"#);
+        r.set_view(&post(mine(3.0), false, "c"), "you").unwrap();
+        assert_eq!(&*latest().unwrap(), r#"{"by":1,"mode":"auto","page":"a","type":"view"}"#);
         r.stop();
     }
 
