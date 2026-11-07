@@ -36,6 +36,8 @@ pub(crate) struct Hub {
     names: HashMap<PlayerId, Seen>,
     /// Seconds per tick, from the server line.
     tick_interval: Option<f64>,
+    /// A room's latest playback line.
+    playback: Option<Arc<str>>,
 }
 
 /// A match at a glance, read from the latest server line and snapshot when the list asks.
@@ -74,6 +76,25 @@ impl Hub {
     /// How long ago the latest snapshot came in.
     pub(crate) fn data_age(&self) -> Option<Duration> {
         self.snapshot_at.map(|t| t.elapsed())
+    }
+
+    /// The state a page joins with, without the pages.
+    pub(crate) fn checkpoint(&self) -> Hub {
+        Hub {
+            status: self.status.clone(),
+            server: self.server.clone(),
+            world: self.world.clone(),
+            snapshot: self.snapshot.clone(),
+            clients: Vec::new(),
+            map: self.map.clone(),
+            history: self.history.clone(),
+            changes: self.changes,
+            round_clock: self.round_clock,
+            snapshot_at: self.snapshot_at,
+            names: self.names.clone(),
+            tick_interval: self.tick_interval,
+            playback: self.playback.clone(),
+        }
     }
 
     pub(crate) fn summary(&self) -> Summary {
@@ -308,16 +329,43 @@ pub(crate) fn watch_into(
 pub(crate) fn subscribe(hub: &SharedHub, detail: bool) -> Receiver<Arc<str>> {
     let (tx, rx) = sync_channel(PAGE_QUEUE);
     let mut h = lock(hub);
-    // The snapshot goes before the history so the page knows the players' names.
-    for line in [&h.status, &h.server, &h.world, &h.snapshot].into_iter().flatten().chain(&h.history) {
-        let _ = tx.try_send(line.clone());
-    }
-    if let Some(age) = h.data_age() {
-        let age = DataAge { ms: age.as_millis() as u64 };
-        let _ = tx.try_send(serde_json::to_string(&age).expect("a number serializes").into());
+    for line in join_lines(&h) {
+        let _ = tx.try_send(line);
     }
     h.clients.push(Client { tx, detail });
     rx
+}
+
+/// What a page joins with.
+fn join_lines(h: &Hub) -> Vec<Arc<str>> {
+    // The snapshot goes before the history so the page knows the players' names.
+    let mut lines: Vec<Arc<str>> = [&h.status, &h.server, &h.world, &h.snapshot].into_iter().flatten().chain(&h.history).cloned().collect();
+    if let Some(age) = h.data_age() {
+        let age = DataAge { ms: age.as_millis() as u64 };
+        lines.push(serde_json::to_string(&age).expect("a number serializes").into());
+    }
+    lines.extend(h.playback.clone());
+    lines
+}
+
+/// Puts `from` (a [`Hub::checkpoint`] played on) in place, keeping the pages and the playback, and
+/// starts the pages over from it.
+pub(crate) fn restore(hub: &SharedHub, mut from: Hub) {
+    let mut h = lock(hub);
+    from.clients = std::mem::take(&mut h.clients);
+    from.playback = h.playback.take();
+    from.snapshot_at = Some(Instant::now());
+    *h = from;
+    let mut lines = join_lines(&h);
+    lines.insert(0, r#"{"type":"seek"}"#.into());
+    h.clients.retain(|c| lines.iter().all(|l| c.tx.try_send(l.clone()).is_ok()));
+}
+
+/// A room's playback line, to every page now and on join.
+pub(crate) fn announce(hub: &SharedHub, json: &Arc<str>) {
+    let mut h = lock(hub);
+    h.playback = Some(json.clone());
+    h.clients.retain(|c| c.tx.try_send(json.clone()).is_ok());
 }
 
 #[cfg(test)]
@@ -450,6 +498,29 @@ mod tests {
         let last: Value = serde_json::from_str(&subscribe(&hub, false).try_iter().last().unwrap()).unwrap();
         assert_eq!(last["type"], "data_age");
         assert!(last["ms"].as_u64().is_some_and(|ms| ms < 1000), "{last}");
+    }
+
+    #[test]
+    fn a_restored_hub_reprimes_its_pages() {
+        let hub = SharedHub::default();
+        publish(&hub, &server("cp_process_f12"));
+        publish(&hub, &kill(2, 3, 4));
+        let saved = hub.lock().unwrap().checkpoint();
+        let page = subscribe(&hub, false);
+        publish(&hub, &kill(3, 4, 3));
+        page.try_iter().count();
+        restore(&hub, saved);
+        assert_eq!(types(&page), ["seek", "server", "kill", "data_age"]);
+        assert_eq!(hub.lock().unwrap().history.len(), 1);
+    }
+
+    #[test]
+    fn pages_hear_the_playback_on_join_and_on_change() {
+        let hub = SharedHub::default();
+        let early = subscribe(&hub, false);
+        announce(&hub, &r#"{"type":"playback"}"#.into());
+        assert_eq!(types(&early), ["playback"]);
+        assert_eq!(types(&subscribe(&hub, false)), ["playback"]);
     }
 
     #[test]
