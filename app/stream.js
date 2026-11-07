@@ -40,12 +40,15 @@ const later = fn => (DELAY_MS ? setTimeout(fn, DELAY_MS) : fn());
 // Every (re)connect starts with the whole feed and chat so far: replace what is shown rather
 // than adding it twice (a deploy or a network blip reconnects).
 let opened = false;
+// What else the page tells the stream it opens (in a room, the viewer's name).
+export const streamParams = new URLSearchParams();
 /** @type {EventSource | null} */
 let es = null;
 export function openStream() {
   es?.close();
   const url = new URL(EVENTS_URL);
   if (detailNeeded()) url.searchParams.set("detail", "1");
+  for (const [k, v] of streamParams) url.searchParams.set(k, v);
   const s = (es = new EventSource(url));
   s.onmessage = e => {
     const m = parseMessage(e.data);
@@ -149,6 +152,10 @@ function handle(m) {
     case "draw":
       onDraw(/** @type {import("../types/stream").DrawLine} */ (/** @type {unknown} */ (m)));
       break;
+    case "people":
+      for (const f of peopleListeners)
+        f(/** @type {import("../types/stream").PeopleLine} */ (/** @type {unknown} */ (m)));
+      break;
     case "playback":
       onPlayback(/** @type {import("../types/stream").PlaybackLine} */ (/** @type {unknown} */ (m)));
       break;
@@ -174,6 +181,8 @@ function onServer(m) {
 // A room's controls hear its playback lines.
 /** @type {Set<(m: import("../types/stream").PlaybackLine) => void>} */
 export const playbackListeners = new Set();
+/** @type {Set<(m: import("../types/stream").PeopleLine) => void>} */
+export const peopleListeners = new Set();
 /** @param {import("../types/stream").PlaybackLine} m */
 function onPlayback(m) {
   setClockRate(m.paused ? 0 : m.speed);

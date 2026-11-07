@@ -2,8 +2,8 @@
 // on a match's own page, the button that opens a room on it.
 import { $, OVERLAY, PAGE, canvas, state } from "./core.js";
 import { env } from "./env.js";
-import { playbackListeners } from "./stream.js";
-import { drawOwn } from "./telestrator.js";
+import { peopleListeners, playbackListeners, streamParams } from "./stream.js";
+import { drawOwn, inkOf } from "./telestrator.js";
 import { screenOffset } from "./view.js";
 /** @typedef {import("../types/stream").PlaybackLine} PlaybackLine */
 
@@ -16,6 +16,19 @@ const STEP_MS = 5000;
 export const IN_ROOM = /\/r\/[0-9a-f]{32}\/$/.test(PAGE.replace(/overlay\/?$/, ""));
 // The room's or match's own address, which its routes are under.
 const HOME = new URL(PAGE.replace(/(overlay\/?|index\.html)?$/, ""), env.base);
+
+// Who this page is in the room: its number, and whether it is an admin.
+const me = { id: 0, admin: false };
+// Where a name is kept between visits.
+const NAME_KEY = "name";
+
+/** @param {string} path @param {object} body */
+const post = (path, body) =>
+  fetch(new URL(path, HOME), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
 
 /** @param {number} ms */
 export function clock(ms) {
@@ -77,12 +90,7 @@ function roomBar() {
     return Math.min(last.length, last.at + ran);
   };
   /** @param {{ paused?: boolean; speed?: number; seek?: number }} c */
-  const control = c =>
-    fetch(new URL("control", HOME), {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(c),
-    });
+  const control = c => post("control", c);
   const show = () => {
     if (!last) return;
     if (!dragging) time.value = String(at());
@@ -109,17 +117,23 @@ function roomBar() {
   setInterval(show, 250);
   /** @param {boolean} on */
   const allow = on => {
-    admin = on;
+    admin = me.admin = on;
     for (const c of [play, time, speed, pen]) c.disabled = !on;
-    bar.title = on ? "" : "The room's owner controls playback";
+    bar.title = on ? "" : "The room's admins control playback";
+    if (!on && pen.classList.contains("on")) pen.click();
   };
   allow(false);
   fetch(new URL("me", HOME))
     .then(r => r.json())
     .then(
-      me => allow(me.admin === true),
+      m => {
+        me.id = m.id;
+        allow(m.admin === true);
+        showPeople();
+      },
       () => {},
     );
+  const showPeople = people(allow);
   play.onclick = () => last && control({ paused: !last.paused });
   speed.onchange = () => control({ speed: Number(speed.value) });
   time.oninput = () => {
@@ -182,7 +196,7 @@ function drawing(pen) {
     /** @type {[number, number]} */
     const point = [Math.round(state.view.cx + dx), Math.round(state.view.cy + dy)];
     stroke.points.push(point);
-    drawOwn({ stroke: stroke.id, points: [point] });
+    drawOwn({ stroke: stroke.id, points: [point], by: me.id });
   };
   canvas.addEventListener(
     "pointerdown",
@@ -205,4 +219,64 @@ function drawing(pen) {
   canvas.addEventListener("pointerup", end);
   canvas.addEventListener("pointercancel", end);
   setInterval(send, SEND_MS);
+}
+
+// Who is in the room, with the viewer's own name to set; admins make others admin or not.
+/** @param {(admin: boolean) => void} allow @returns {() => void} shows the list again */
+function people(allow) {
+  const list = $("peoplelist"),
+    name = /** @type {HTMLInputElement} */ ($("myname"));
+  $("people").hidden = false;
+  try {
+    name.value = (env.storage && localStorage.getItem(NAME_KEY)) || "";
+  } catch {}
+  // The stream opens with it, so the room knows the name from the start.
+  if (name.value) streamParams.set("name", name.value);
+  name.onchange = () => {
+    post("name", { name: name.value });
+    streamParams.set("name", name.value);
+    try {
+      if (env.storage) localStorage.setItem(NAME_KEY, name.value);
+    } catch {}
+  };
+  name.onkeydown = e => {
+    if (e.key === "Enter") name.blur();
+  };
+  /** @type {import("../types/stream").PeopleLine | null} */
+  let latest = null;
+  peopleListeners.add(m => {
+    latest = m;
+    show(m);
+  });
+  return () => latest && show(latest);
+  /** @param {import("../types/stream").PeopleLine} m */
+  function show(m) {
+    const self = m.people.find(p => p.id === me.id);
+    if (self && self.admin !== me.admin) allow(self.admin);
+    list.replaceChildren(
+      ...m.people.map(p => {
+        const li = document.createElement("li"),
+          nm = document.createElement("span"),
+          tag = document.createElement("span");
+        nm.className = "nm";
+        nm.textContent = p.name;
+        tag.className = "tag";
+        tag.textContent = [p.id === me.id && "you", p.owner ? "owner" : p.admin && "admin"].filter(Boolean).join(", ");
+        if (p.admin) {
+          const ink = document.createElement("i");
+          ink.className = "ink";
+          ink.style.background = inkOf(p.id);
+          li.append(ink);
+        }
+        li.append(nm, tag);
+        if (me.admin && !p.owner && p.id !== me.id) {
+          const b = document.createElement("button");
+          b.textContent = p.admin ? "Remove admin" : "Make admin";
+          b.onclick = () => post("admin", { person: p.id, admin: !p.admin });
+          li.append(b);
+        }
+        return li;
+      }),
+    );
+  }
 }

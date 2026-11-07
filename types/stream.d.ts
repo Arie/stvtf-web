@@ -160,7 +160,13 @@ export type PlaybackLine = {
 };
 
 /** A piece of a room's telestrator stroke, in map coordinates. */
-export type DrawLine = { type: "draw"; stroke: number; points: [number, number][] };
+export type DrawLine = { type: "draw"; stroke: number; points: [number, number][]; by?: number };
+
+/** Who is in a room, in the order they came; `id` is their number in it. */
+export type PeopleLine = {
+  type: "people";
+  people: { id: number; name: string; admin: boolean; owner: boolean }[];
+};
 
 export type StreamMessage =
   Snapshot | ServerLine | StatusLine | PlaybackLine | { type: "data_age"; ms: number } | { type: "seek" } | GameEvent;

@@ -207,3 +207,23 @@ test("the owner draws on the map and everyone in the room sees it", async () => 
   await viewer.page.close();
   await page.close();
 });
+
+test("people in a room see each other and admins make others admin", async () => {
+  const { page, errors } = await open();
+  await page.goto(base);
+  await page.click("#roomopen");
+  await page.waitForURL(/\/r\/[0-9a-f]{32}\/$/, { timeout: WAIT });
+  await page.fill("#myname", "coach");
+  await page.press("#myname", "Enter");
+  await until(page, () => document.getElementById("peoplelist").textContent.includes("coach"));
+  const viewer = await open();
+  await viewer.page.goto(page.url());
+  await until(page, () => document.querySelectorAll("#peoplelist li").length === 2);
+  assert.match(await viewer.page.textContent("#peoplelist"), /coachowner.*Guest 2you/);
+  await page.click("#peoplelist button");
+  await until(viewer.page, () => !(/** @type {HTMLButtonElement} */ (document.getElementById("rb-play")).disabled));
+  assert.match(await viewer.page.textContent("#peoplelist"), /Guest 2you, admin/);
+  assert.deepEqual([...errors, ...viewer.errors], []);
+  await viewer.page.close();
+  await page.close();
+});

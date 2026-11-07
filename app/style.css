@@ -35,6 +35,17 @@ canvas#c:active { cursor: grabbing; }
 aside { width: 380px; border-left: 1px solid var(--line); background: var(--panel); display: flex;
   flex-direction: column; min-height: 0; }
 aside section { padding: 8px 10px; border-bottom: 1px solid var(--line); }
+#people { max-height: 35%; overflow-y: auto; }
+#myname { width: 100%; margin-bottom: 6px; padding: 4px 6px; border: 1px solid var(--line); border-radius: 4px;
+  background: var(--bg); color: var(--text); font: inherit; }
+#peoplelist { margin: 0; padding: 0; list-style: none; }
+#peoplelist li { display: flex; align-items: center; gap: 6px; padding: 2px 0; }
+#peoplelist .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; unicode-bidi: isolate; }
+#peoplelist .ink { flex: none; width: 8px; height: 8px; border-radius: 50%; }
+#peoplelist .tag { color: var(--dim); font-size: 11px; }
+#peoplelist button { margin-left: auto; flex: none; padding: 1px 6px; border: 1px solid var(--line); border-radius: 4px;
+  background: transparent; color: var(--dim); font: inherit; font-size: 11px; cursor: pointer; }
+#peoplelist button:hover { color: var(--text); }
 aside h3 { margin: 0 0 6px; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--dim); }
 /* Spectator HUD over the map: BLU down the left edge, RED down the right, like TF2. */
 .hud { position: absolute; top: 50%; transform: translateY(-50%); display: flex; flex-direction: column;

@@ -7,10 +7,13 @@ import { toScreen } from "./view.js";
 // A stroke shows this long after its last point, then fades out over FADE_MS.
 const HOLD_MS = 3000,
   FADE_MS = 1000;
-const INK = "#ffd23f",
-  EDGE = "#0b0c0e";
+// A colour per admin, by their number in the room: the owner's (1) first.
+export const INKS = ["#ffd23f", "#4fd1c5", "#f472b6", "#a3e635", "#fb923c", "#c084fc"];
+const EDGE = "#0b0c0e";
+/** @param {number} by */
+export const inkOf = by => INKS[(Math.max(1, by) - 1) % INKS.length];
 
-/** @type {Map<number, { points: [number, number][]; last: number }>} */
+/** @type {Map<number, { points: [number, number][]; last: number; ink: string }>} */
 const strokes = new Map();
 // Strokes drawn on this page: shown as drawn, and their echo from the room skipped.
 /** @type {Set<number>} */
@@ -21,15 +24,15 @@ export function onDraw(m) {
   if (!mine.has(m.stroke)) addPoints(m);
 }
 
-/** @param {{ stroke: number; points: [number, number][] }} m */
+/** @param {{ stroke: number; points: [number, number][]; by?: number }} m */
 export function drawOwn(m) {
   mine.add(m.stroke);
   addPoints(m);
 }
 
-/** @param {{ stroke: number; points: [number, number][] }} m */
+/** @param {{ stroke: number; points: [number, number][]; by?: number }} m */
 function addPoints(m) {
-  const s = strokes.get(m.stroke) ?? { points: [], last: 0 };
+  const s = strokes.get(m.stroke) ?? { points: [], last: 0, ink: inkOf(m.by ?? 1) };
   s.points.push(...m.points);
   s.last = performance.now();
   strokes.set(m.stroke, s);
@@ -59,7 +62,7 @@ export function drawStrokes(now = performance.now()) {
     ctx.strokeStyle = EDGE;
     ctx.lineWidth = w + 3;
     ctx.stroke();
-    ctx.strokeStyle = INK;
+    ctx.strokeStyle = s.ink;
     ctx.lineWidth = w;
     ctx.stroke();
   }
