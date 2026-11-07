@@ -922,6 +922,7 @@ aside h3 {
     transform: rotate(360deg);
   }
 }
+#roomlink,
 #roomopen {
   margin-left: auto;
   align-self: center;
@@ -933,6 +934,9 @@ aside h3 {
   font: inherit;
   font-size: 12px;
   cursor: pointer;
+}
+#roomlink {
+  margin-left: 8px;
 }
 #roombar {
   position: absolute;
@@ -1202,6 +1206,10 @@ aside h3 {
 .stvtf.watch #rb-pen,
 .stvtf.watch #rb-view,
 .stvtf.watch #rb-lead {
+  display: none;
+}
+/* A room's link is by its name, not on the timeline. */
+.stvtf.room:not(.watch) #rb-link {
   display: none;
 }
 #bgtoggle {

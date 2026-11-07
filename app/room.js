@@ -83,15 +83,15 @@ function roomButton() {
   };
 }
 
-// The link button: copies the link `url` makes (and says so).
-/** @param {() => URL} url */
-function copyLink(url) {
-  const link = $("rb-link");
+// A link button: copies the link `url` makes (and says so).
+/** @param {HTMLElement} link @param {() => URL} url */
+function copyLink(link, url) {
+  const idle = link.textContent;
   link.onclick = () =>
     navigator.clipboard?.writeText(url().href).then(
       () => {
         link.textContent = "Copied";
-        setTimeout(() => (link.textContent = "Link"), COPIED_MS);
+        setTimeout(() => (link.textContent = idle), COPIED_MS);
       },
       () => {},
     );
@@ -100,8 +100,9 @@ function copyLink(url) {
 function roomBar() {
   env.el.classList.add("room");
   // A room's link, to send.
-  $("rb-link").title = "Copy the room's link";
-  copyLink(() => new URL(location.pathname, location.origin));
+  // The room's link, to send, by its name.
+  $("roomlink").hidden = false;
+  copyLink($("roomlink"), () => new URL(location.pathname, location.origin));
   const pen = /** @type {HTMLButtonElement} */ ($("rb-pen"));
   const control = (/** @type {import("./playbar.js").Control} */ c) => post("control", c);
   const bar = playbar({ home: HOME, send: control, live: end => control({ seek: end, paused: false }) });
@@ -194,7 +195,7 @@ function watchBar() {
   playbackListeners.add(m => own && bar.heard(m));
   // A link to a moment (?t=12:34, from the map's start) watches from there.
   let wanted = moment(new URLSearchParams(location.search).get("t"));
-  copyLink(() => {
+  copyLink($("rb-link"), () => {
     const url = new URL(location.href);
     url.search = `?t=${clock(Math.max(0, bar.since()))}`;
     history.replaceState(null, "", url);
