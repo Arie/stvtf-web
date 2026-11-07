@@ -26,6 +26,12 @@ export function clock(ms) {
   return `${Math.floor(s / 3600)}:${pad(Math.floor(s / 60) % 60)}:${pad(s % 60)}`;
 }
 
+/** A time as `clock` writes it (or seconds) in ms; null if it is not one. @param {string | null} s */
+export function moment(s) {
+  if (!s || !/^\d+(:\d\d){0,2}$/.test(s)) return null;
+  return s.split(":").reduce((all, n) => all * 60 + Number(n), 0) * 1000;
+}
+
 /**
  * @param {{
  *   home: URL; send: (c: Control) => unknown; live: (length: number) => void;
@@ -123,6 +129,8 @@ export function playbar(o) {
   return {
     control,
     at,
+    /** Where playback is, from the map's start. */
+    since: () => at() - (last?.origin ?? 0),
     /** The speed and pause now. */
     state: () => ({ speed: last?.speed ?? 1, paused: last?.paused ?? false }),
     /** What playback is now. @param {PlaybackLine} m */

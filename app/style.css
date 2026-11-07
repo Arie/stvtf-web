@@ -989,7 +989,8 @@ aside h3 {
   color: var(--dim);
   white-space: nowrap;
 }
-#roombar #rb-live {
+#roombar #rb-live,
+#roombar #rb-link {
   width: auto;
   padding: 0 8px;
   white-space: nowrap;
@@ -1201,6 +1202,10 @@ aside h3 {
 .stvtf.watch #rb-pen,
 .stvtf.watch #rb-view,
 .stvtf.watch #rb-lead {
+  display: none;
+}
+/* A link to a moment: a match page's, which a room is not. */
+.stvtf:not(.watch) #rb-link {
   display: none;
 }
 #bgtoggle {

@@ -2,7 +2,7 @@
 // on a match's own page, the button that opens a room on it.
 import { $, OVERLAY, PAGE, canvas, setClockRate, state } from "./core.js";
 import { EMBEDDED } from "./embed.js";
-import { playbar } from "./playbar.js";
+import { clock, moment, playbar } from "./playbar.js";
 import { env } from "./env.js";
 import { setAutoZoom, setFollow } from "./input.js";
 import { EVENTS_URL, openStream, peopleListeners, playbackListeners, streamParams, viewListeners } from "./stream.js";
@@ -16,6 +16,8 @@ import { focusOf, screenOffset, viewArea } from "./view.js";
 const MIN_STEP_PX = 3;
 // How often a match page looks where its shared playback is, in milliseconds.
 const SHARED_MS = 1000;
+// How long the link button says it copied, in milliseconds.
+const COPIED_MS = 1500;
 export const IN_ROOM = /\/r\/[0-9a-f]{32}\/$/.test(PAGE.replace(/overlay\/?$/, ""));
 // The room's or match's own address, which its routes are under.
 const HOME = new URL(PAGE.replace(/(overlay\/?|index\.html)?$/, ""), env.base);
@@ -168,13 +170,33 @@ function watchBar() {
   });
   bar.allow(true);
   playbackListeners.add(m => own && bar.heard(m));
+  // A link to a moment (?t=12:34, from the map's start) watches from there.
+  let wanted = moment(new URLSearchParams(location.search).get("t"));
+  const link = $("rb-link");
+  link.onclick = () => {
+    const url = new URL(location.href);
+    url.search = `?t=${clock(Math.max(0, bar.since()))}`;
+    history.replaceState(null, "", url);
+    navigator.clipboard?.writeText(url.href).then(
+      () => {
+        link.textContent = "Copied";
+        setTimeout(() => (link.textContent = "Link"), COPIED_MS);
+      },
+      () => {},
+    );
+  };
   // Where the shared playback is, while this viewer watches along.
   const shared = () =>
     !own &&
     fetch(new URL("timeline", HOME))
       .then(r => (r.status === 200 ? r.json() : null))
       .then(
-        t => t && !own && bar.heard({ type: "playback", paused: false, speed: 1, ...t }),
+        t => {
+          if (!t || own) return;
+          bar.heard({ type: "playback", paused: false, speed: 1, ...t });
+          if (wanted != null) send({ seek: (t.origin ?? 0) + wanted });
+          wanted = null;
+        },
         () => {},
       );
   shared();

@@ -479,3 +479,15 @@ test("a viewer of a match page goes back on their own, and returns", async () =>
   assert.deepEqual(errors, []);
   await page.close();
 });
+
+test("a link to a moment watches from there", async () => {
+  const { page, errors } = await open();
+  await page.goto(`${base}?t=0:10`);
+  await until(page, () => /^0:1\d \//.test(document.getElementById("rb-clock").textContent ?? ""));
+  await until(page, () => document.getElementById("status").textContent === "replay");
+  await page.click("#rb-play");
+  await page.click("#rb-link");
+  await until(page, () => /[?]t=0:1\d$/.test(location.href));
+  assert.deepEqual(errors, []);
+  await page.close();
+});
