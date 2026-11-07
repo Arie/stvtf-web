@@ -14,6 +14,7 @@ mod people;
 mod recording;
 mod replay;
 mod room;
+mod rooms;
 mod sessions;
 mod token;
 
@@ -56,6 +57,7 @@ fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
 /// How often the sessions are reaped, and every how many rounds of that they are saved (5 s).
 const HOUSEKEEPING: Duration = Duration::from_millis(250);
 const PERSIST_ROUNDS: u64 = 20;
+const ROOM_PERSIST_ROUNDS: u64 = 4;
 
 /// What the server watches: one match at `/`, or any number at `/w/<id>/`.
 enum Matches {
@@ -79,7 +81,7 @@ struct App {
     home: Option<String>,
     /// Open event streams by client address.
     streams: Mutex<HashMap<IpAddr, usize>>,
-    rooms: room::Rooms,
+    rooms: rooms::Rooms,
 }
 
 /// Counts an event stream against its client's limit until dropped.
@@ -285,6 +287,7 @@ fn keep_house(app: Arc<App>, stop: &'static AtomicBool) {
             if stop.load(Ordering::Relaxed) {
                 // The feed up to now, for the process that takes over.
                 sessions.persist();
+                app.rooms.persist();
                 sessions.stop_all();
                 std::process::exit(0);
             }
@@ -293,6 +296,10 @@ fn keep_house(app: Arc<App>, stop: &'static AtomicBool) {
             // What a deploy's next container picks up, feed included.
             if round % PERSIST_ROUNDS == 0 {
                 sessions.persist();
+            }
+            // Where each room is, to the second.
+            if round % ROOM_PERSIST_ROUNDS == 0 {
+                app.rooms.persist();
             }
             std::thread::sleep(HOUSEKEEPING);
         }
@@ -325,8 +332,10 @@ fn main() -> Result<()> {
     watch::stop_on_ctrl_c(&STOP)?;
     let keys = std::env::var("STVTF_TOKEN_KEY").ok().map(|k| token::Keys::from_hex(&k).map(Arc::new)).transpose()?;
     let console_prompt = keys.is_none() && std::io::IsTerminal::is_terminal(&std::io::stdin());
+    let matches = matches(&options, keys.as_ref(), &STOP)?;
+    let store = if let Matches::Many(sessions) = &matches { sessions.store.clone() } else { None };
     let app = Arc::new(App {
-        matches: matches(&options, keys.as_ref(), &STOP)?,
+        matches,
         cache: options.cache.clone(),
         backpack: options.backpack.clone(),
         maps: Mutex::default(),
@@ -335,8 +344,9 @@ fn main() -> Result<()> {
         keys,
         home: options.home.clone(),
         streams: Mutex::default(),
-        rooms: room::Rooms::default(),
+        rooms: rooms::Rooms::new(store),
     });
+    app.rooms.sweep();
     if let Matches::Many(_) = app.matches {
         keep_house(app.clone(), &STOP);
         if !options.no_warm {
@@ -459,7 +469,7 @@ mod testing {
             keys: None,
             home: None,
             streams: Mutex::default(),
-            rooms: room::Rooms::default(),
+            rooms: rooms::Rooms::default(),
         }
     }
 

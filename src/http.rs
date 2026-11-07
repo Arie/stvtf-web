@@ -224,7 +224,7 @@ fn serve_many(
             }
         }
         (p, _) if let Some(path) = p.strip_prefix("/w/") => serve_match(s, app, sessions, request, path, client)?,
-        (p, _) if let Some(path) = p.strip_prefix("/r/") => serve_room(s, reader, app, request, path, client)?,
+        (p, _) if let Some(path) = p.strip_prefix("/r/") => serve_room(s, reader, app, sessions, request, path, client)?,
         (path, _) => serve_file(&mut s, app, path, request.gzip)?,
     }
     Ok(())
@@ -311,7 +311,10 @@ fn open_room(s: &mut TcpStream, app: &App, sessions: &Sessions, m: &Session, req
         Err(e) => return Ok(respond(s, "409 Conflict", TEXT, format!("{e:#}").as_bytes())?),
     };
     let (guest, cookie) = guest(app, request);
-    let room = app.rooms.open(recording, &guest);
+    let room = match app.rooms.open(m, recording, &guest) {
+        Ok(r) => r,
+        Err(e) => return Ok(respond(s, "409 Conflict", TEXT, format!("{e:#}").as_bytes())?),
+    };
     eprintln!("stvtf-web: room {} opened on match {}", &room.id[..8], &m.id[..m.id.len().min(8)]);
     let body = serde_json::json!({ "page": format!("{}/r/{}/", app.base, room.id) }).to_string();
     let mut headers = vec![("Content-Type", JSON)];
@@ -346,12 +349,13 @@ fn serve_room(
     mut s: TcpStream,
     reader: &mut BufReader<Take<TcpStream>>,
     app: &App,
+    sessions: &Sessions,
     request: &Request,
     path: &str,
     client: IpAddr,
 ) -> Result<()> {
     let (id, rest) = path.split_once('/').unwrap_or((path, ""));
-    let Some(room) = app.rooms.get(id) else {
+    let Some(room) = app.rooms.get(id, sessions) else {
         return Ok(respond(&mut s, "404 Not Found", TEXT, b"That room has closed.")?);
     };
     // Without a cookie (none yet, or refused), a page is someone new each time.

@@ -180,7 +180,11 @@ each other by number.
 
 A room keeps the demo in memory in 10-second chunks, each starting from the state a page joins
 with, so a jump replays at most one chunk. It counts towards `--max-matches` and ends a minute
-after its last viewer left.
+after its last viewer left. With `--sessions DIR` each room is saved there too, once a second
+(sealed like the matches; a demos.tf demo's output beside it), and the process that replaces
+this one picks it up when its pages reconnect: where it was, paused or not, at the same speed,
+with the same people, admins and view. A saved room nobody comes back to within an hour is
+dropped.
 
 | route | |
 |---|---|
