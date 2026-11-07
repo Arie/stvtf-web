@@ -9,9 +9,8 @@ import { focusOf, screenOffset, viewArea } from "./view.js";
 /** @typedef {import("../types/stream").PlaybackLine} PlaybackLine */
 
 const SPEEDS = [0.25, 0.5, 1, 2, 4];
-// How often a stroke being drawn is sent, in milliseconds, and the closest its points are, in pixels.
-const SEND_MS = 30,
-  MIN_STEP_PX = 3;
+// The closest a stroke's points are, in pixels.
+const MIN_STEP_PX = 3;
 // How far the arrow keys jump, in milliseconds.
 const STEP_MS = 5000;
 export const IN_ROOM = /\/r\/[0-9a-f]{32}\/$/.test(PAGE.replace(/overlay\/?$/, ""));
@@ -176,20 +175,27 @@ function roomBar() {
 // The pen: while on, dragging on the map draws (in map coordinates) instead of moving the view.
 /** @param {HTMLButtonElement} pen */
 function drawing(pen) {
-  /** @type {{ id: number; points: [number, number, number][]; last: [number, number] | null; began: number } | null} */
+  /** @type {{ id: number; last: [number, number] | null; began: number } | null} */
   let stroke = null;
-  /** @type {Promise<unknown>} */
-  let sent = Promise.resolve();
+  // Points not sent yet, by stroke, oldest first.
+  /** @type {{ id: number; points: [number, number, number][] }[]} */
+  const unsent = [];
+  let sending = false;
   pen.onclick = () => env.el.classList.toggle("drawing", pen.classList.toggle("on"));
+  // One request at a time, so a stroke's pieces arrive in order; what is drawn meanwhile goes in
+  // the next one, as soon as this one is done. The delay stays one round trip however slow it is.
   const send = () => {
-    if (!stroke?.points.length) return;
-    const body = JSON.stringify({ stroke: stroke.id, points: stroke.points.splice(0, 256) });
-    // In order: a stroke's pieces join up end to end.
-    sent = sent
-      .then(() =>
-        fetch(new URL("draw", HOME), { method: "POST", headers: { "Content-Type": "application/json" }, body }),
-      )
-      .catch(() => {});
+    while (unsent.length && !unsent[0].points.length && unsent.length > 1) unsent.shift();
+    const next = unsent[0];
+    if (sending || !next?.points.length) return;
+    sending = true;
+    const body = JSON.stringify({ stroke: next.id, points: next.points.splice(0, 256) });
+    fetch(new URL("draw", HOME), { method: "POST", headers: { "Content-Type": "application/json" }, body })
+      .catch(() => {})
+      .finally(() => {
+        sending = false;
+        send();
+      });
   };
   /** @param {PointerEvent} e */
   const add = e => {
@@ -206,8 +212,11 @@ function drawing(pen) {
       Math.round(state.view.cy + dy),
       Math.round(performance.now() - stroke.began),
     ];
-    stroke.points.push(point);
+    const last = unsent[unsent.length - 1];
+    if (last?.id === stroke.id) last.points.push(point);
+    else unsent.push({ id: stroke.id, points: [point] });
     drawOwn({ stroke: stroke.id, points: [point], by: me.id });
+    send();
   };
   canvas.addEventListener(
     "pointerdown",
@@ -217,19 +226,15 @@ function drawing(pen) {
       e.preventDefault();
       e.stopImmediatePropagation();
       canvas.setPointerCapture(e.pointerId);
-      stroke = { id: Math.floor(Math.random() * 2 ** 31), points: [], last: null, began: performance.now() };
+      stroke = { id: Math.floor(Math.random() * 2 ** 31), last: null, began: performance.now() };
       add(e);
     },
     { capture: true },
   );
   canvas.addEventListener("pointermove", add);
-  const end = () => {
-    send();
-    stroke = null;
-  };
+  const end = () => (stroke = null);
   canvas.addEventListener("pointerup", end);
   canvas.addEventListener("pointercancel", end);
-  setInterval(send, SEND_MS);
 }
 
 // Who is in the room, with the viewer's own name to set; admins make others admin or not.

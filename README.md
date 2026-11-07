@@ -191,7 +191,7 @@ after its last viewer left.
 | `POST /r/<id>/admin` | an admin's `{"person": <number>, "admin": true\|false}` |
 | `POST /r/<id>/view` | an admin's `{"mode": "free"\|"auto"}`, `{"mode": "follow", "player": <id>}` or `{"mode": "admin", "cx", "cy", "w", "h", "rot"}` (the map area they see), with `"take": true` when chosen (that admin leads from then on); without, it counts only from the admin who leads |
 | `POST /r/<id>/control` | an admin's `{"paused", "speed", "seek"}` (any of them; `seek` in milliseconds) |
-| `POST /r/<id>/draw` | an admin's `{"stroke": <id>, "points": [[x, y, ms], …]}`, up to 256 map points, each with when it was drawn (milliseconds into the stroke); a stroke's next points continue it, and pages draw it at that pace, a tenth of a second behind |
+| `POST /r/<id>/draw` | an admin's `{"stroke": <id>, "points": [[x, y, ms], …]}`, up to 256 map points, each with when it was drawn (milliseconds into the stroke); a stroke's next points continue it, and pages draw it at that pace, 40 ms behind |
 
 The room's event stream adds five lines: `view` (as posted, with `by`), `people` (`id`, `name`, `admin`, `owner` and, once picked, `ink` each), `draw`
 (as posted, with `by`, the drawer's number), `playback` (`paused`, `speed`, `at` and `length` in

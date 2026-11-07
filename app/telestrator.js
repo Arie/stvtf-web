@@ -22,7 +22,7 @@ export const inkOf = by => picked.get(by) ?? INKS[(Math.max(1, by) - 1) % INKS.l
 
 // Others' strokes show this far behind, so their points come in time to be drawn at the pace
 // they were drawn instead of in jumps as each piece arrives.
-const BEHIND_MS = 100;
+const BEHIND_MS = 40;
 
 // A stroke's points ([x, y, ms into the stroke]), and when its start shows here.
 /** @type {Map<number, { points: [number, number, number][]; start: number; ink: string }>} */
