@@ -57,6 +57,7 @@ pub(crate) fn play_lines(hub: &SharedHub, reader: impl Read, name: &str, play: &
         let Some(stamped) = read_line(&line?, name, n, &mut skipped) else { continue };
         let before = clock.play;
         std::thread::sleep(Duration::from_millis(clock.at(&stamped) - before));
+        crate::lock(hub).played = clock.play;
         publish(hub, &stamped.line);
     }
     // Without any, the loop would replay the file as fast as it can, forever.

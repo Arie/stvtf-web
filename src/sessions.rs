@@ -123,6 +123,11 @@ impl Session {
         self.live.get().is_some() || self.recording.get().is_some() || lock(&self.source).is_some()
     }
 
+    /// Its recording, if it is ready now: a live match's, or a demo's once read.
+    pub fn ready(&self) -> Option<Arc<Recording>> {
+        self.live.get().or_else(|| self.recording.get()).cloned()
+    }
+
     /// Reads the room recording in the background, once.
     pub fn prepare(self: &Arc<Self>) {
         if self.recording.get().is_some() || !self.recordable() || self.preparing.swap(true, Ordering::Relaxed) {

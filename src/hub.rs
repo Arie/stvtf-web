@@ -36,6 +36,8 @@ pub(crate) struct Hub {
     names: HashMap<PlayerId, Seen>,
     /// Seconds per tick, from the server line.
     tick_interval: Option<f64>,
+    /// Play time of a replayed recording, in milliseconds: where its shared playback is.
+    pub(crate) played: u64,
     /// A room's latest lines of its own (playback, people), by type.
     room: BTreeMap<&'static str, Arc<str>>,
 }
@@ -99,6 +101,7 @@ impl Hub {
             names: self.names.clone(),
             tick_interval: self.tick_interval,
             room: self.room.clone(),
+            played: self.played,
         }
     }
 

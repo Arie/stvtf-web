@@ -4,7 +4,7 @@ use crate::hub::{SharedHub, subscribe};
 use crate::room::{Control, Draw, ViewPost};
 use crate::sessions::{Session, Sessions, Viewer};
 use crate::token::Source;
-use crate::{App, Matches, sessions, token};
+use crate::{App, Matches, lock, sessions, token};
 use anyhow::{Result, anyhow, bail};
 use flate2::Compression;
 use flate2::write::GzEncoder;
@@ -273,6 +273,7 @@ fn serve_match(mut s: TcpStream, app: &App, sessions: &Sessions, request: &Reque
         }
         (Some(_), rest) if is_page(rest) => respond(&mut s, "200 OK", HTML, &app.page(INDEX))?,
         (Some(m), "room") => open_room(&mut s, app, sessions, &m, request)?,
+        (Some(m), part @ ("timeline" | "marks")) => match_timeline(&mut s, &m, request, part)?,
         (Some(m), "events") => match app.stream_slot(client) {
             Some(_slot) => {
                 let _viewer = Viewer::new(m.clone());
@@ -283,6 +284,25 @@ fn serve_match(mut s: TcpStream, app: &App, sessions: &Sessions, request: &Reque
         _ => not_found(&mut s)?,
     }
     Ok(())
+}
+
+/// A match page's timeline: where its shared playback is (a live match at live), how long it is,
+/// its rounds and how many marks; or the marks from `?from=` on. While a demo is read, `202 {}`.
+fn match_timeline(s: &mut TcpStream, m: &Arc<Session>, request: &Request, part: &str) -> std::io::Result<()> {
+    let Some(r) = m.ready() else {
+        m.prepare();
+        return respond(s, "202 Accepted", JSON, b"{}");
+    };
+    let body = if part == "marks" {
+        let from = param(&request.query, "from").and_then(|f| f.parse().ok()).unwrap_or(0);
+        let (marks, all) = r.marks(from);
+        serde_json::json!({ "marks": marks, "all": all })
+    } else {
+        let at = if r.is_live() { r.length() } else { lock(&m.hub).played.min(r.length()) };
+        let (length, live, rounds, marks) = (r.length(), r.is_live(), r.rounds(), r.marks(usize::MAX).1);
+        serde_json::json!({ "at": at, "length": length, "live": live, "rounds": rounds, "marks": marks })
+    };
+    respond(s, "200 OK", JSON, body.to_string().as_bytes())
 }
 
 /// The body of a request, up to [`MAX_REQUEST`] bytes.
@@ -880,6 +900,26 @@ mod tests {
         assert!(post(&app, &format!("{page}ink"), &viewer, r##"{"ink":"#123abc"}"##).starts_with("HTTP/1.1 204"));
         let demote_owner = r#"{"person":1,"admin":false}"#;
         assert!(post(&app, &format!("{page}admin"), &viewer, demote_owner).starts_with("HTTP/1.1 400"));
+    }
+
+    #[test]
+    fn a_match_page_has_a_timeline() {
+        let (app, _dir) = demo_app();
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let timeline = loop {
+            let t = get(&app, "/w/demo/timeline", "");
+            if t.starts_with("HTTP/1.1 200") {
+                break t;
+            }
+            assert!(t.starts_with("HTTP/1.1 202") && Instant::now() < deadline, "{t}");
+            std::thread::sleep(Duration::from_millis(5));
+        };
+        assert!(timeline.contains(r#""length":750"#) && timeline.contains(r#""live":false"#), "{timeline}");
+        assert!(get(&app, "/w/demo/marks?from=0", "").ends_with(r#"{"all":0,"marks":[]}"#));
+        let Matches::Many(sessions) = &app.matches else { unreachable!() };
+        let m = sessions.open("192.0.2.1:27020 tv", None, None).unwrap();
+        assert!(get(&app, &format!("/w/{}/timeline", m.id), "").contains(r#""live":true"#));
+        sessions.stop_all();
     }
 
     #[test]
