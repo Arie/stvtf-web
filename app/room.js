@@ -5,6 +5,7 @@ import { env } from "./env.js";
 import { setAutoZoom, setFollow } from "./input.js";
 import { peopleListeners, playbackListeners, streamParams, viewListeners } from "./stream.js";
 import { drawOwn, inkOf, setInks } from "./telestrator.js";
+import { timeline } from "./timeline.js";
 import { pushMirror } from "./camera.js";
 import { RoomView, latestView, morePoints, sender } from "./roomview.js";
 import { focusOf, screenOffset, viewArea } from "./view.js";
@@ -108,30 +109,23 @@ function roomBar() {
     if (!last) return;
     time.max = String(length());
     if (!dragging) time.value = String(at());
+    track.style.setProperty("--played", `${(100 * Number(time.value)) / Math.max(1, length())}%`);
     shown.textContent = `${clock(dragging ? Number(time.value) : at())} / ${clock(length())}`;
     // At live: within a couple of seconds of its end, and playing.
     live.hidden = !last.live;
     live.classList.toggle("at", !last.paused && length() - at() < LIVE_MS);
   };
   playbackListeners.add(m => {
-    const marks = !last || last.length !== m.length || last.rounds.join() !== m.rounds.join();
     [last, heard] = [m, performance.now()];
     play.textContent = m.paused ? "▶" : "⏸";
     play.title = m.paused ? "Play (space)" : "Pause (space)";
     speed.value = String(m.speed);
     time.max = String(m.length);
-    if (marks)
-      track.replaceChildren(
-        time,
-        ...m.rounds.map(r => {
-          const i = document.createElement("i");
-          i.style.left = `${(100 * r) / Math.max(1, m.length)}%`;
-          return i;
-        }),
-      );
+    marks.heard(m);
     show();
   });
   setInterval(show, 250);
+  const marks = timeline({ track, home: HOME, clock, length, jump: null });
   /** @param {boolean} on */
   const allow = on => {
     admin = me.admin = on;
@@ -139,6 +133,7 @@ function roomBar() {
     bar.title = on ? "" : "The room's admins control playback";
     if (!on && pen.classList.contains("on")) pen.click();
     if (on) $("claim").hidden = true;
+    marks.allow(on ? ms => control({ seek: ms }) : null);
     setViewAdmin(on);
   };
   allow(false);
