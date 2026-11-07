@@ -316,6 +316,22 @@ test("the leader switching from their view to auto zoom stays on auto zoom", asy
   await until(page, () => !(/** @type {HTMLSelectElement} */ (document.getElementById("rb-view")).disabled));
   await page.selectOption("#rb-view", "admin");
   await until(viewer.page, () => document.getElementById("rb-view").value === "admin");
+  // The camera moving does not touch the menu, which would flicker while open.
+  await page.evaluate(() => {
+    window.menuChanges = 0;
+    new MutationObserver(r => (window.menuChanges += r.length)).observe(document.getElementById("rb-view"), {
+      subtree: true,
+      childList: true,
+      characterData: true,
+      attributes: true,
+    });
+  });
+  await page.mouse.move(400, 300);
+  await page.mouse.down();
+  await page.mouse.move(500, 350, { steps: 20 });
+  await page.mouse.up();
+  await page.waitForTimeout(300);
+  assert.equal(await page.evaluate(() => window.menuChanges), 0);
   // Slow requests: camera moves sent before the switch arrive after it.
   await page.route("**/view", r => setTimeout(() => r.continue(), 300));
   await page.mouse.move(400, 300);

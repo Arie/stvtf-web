@@ -335,10 +335,13 @@ function showLead() {
   const led = view.mode === "follow" || view.mode === "admin",
     who = $("rb-lead"),
     name = view.by === me.id ? "you" : (names.get(view.by) ?? "an admin");
+  // Only what changed: a camera view comes in many times a second, and touching the menu while
+  // it is open would pull its highlight back.
+  /** @param {HTMLElement} el @param {string} text */
+  const say = (el, text) => el.textContent !== text && (el.textContent = text);
   who.hidden = !led;
-  who.textContent = `by ${name}`;
-  const following = /** @type {HTMLOptionElement} */ ($("rb-follow"));
-  following.textContent = `Following ${view.mode === "follow" ? (playerName(view.player) ?? "a player") : ""}`;
+  say(who, `by ${name}`);
+  say($("rb-follow"), `Following ${view.mode === "follow" ? (playerName(view.player) ?? "a player") : ""}`);
   $("rb-take").hidden = !(view.mode === "admin" && me.admin && !leading());
 }
 
@@ -416,7 +419,7 @@ function roomView() {
   viewListeners.add(m => {
     view = m;
     if (m.page !== PAGE_ID) chosen = sent = "";
-    choose.value = m.mode;
+    if (choose.value !== m.mode) choose.value = m.mode;
     if (m.mode === "admin" && !leading()) pushMirror(m);
     applyView();
   });
