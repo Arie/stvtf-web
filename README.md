@@ -160,8 +160,9 @@ server that much later, so it also starts that much later; `o` keeps the delay.
 
 ## Rooms
 
-A room is a demo watched together under control: the Room button on a demo's page (a demos.tf
-demo, or `--demo`/`--demos`) opens one at `/r/<id>/`, with its overlay at `/r/<id>/overlay`. The
+A room is a match watched together under control: the Room button on a match's page (live, a
+demos.tf demo, or `--demo`/`--demos`) opens one at `/r/<id>/`, with its overlay at
+`/r/<id>/overlay`. Anyone may open one; the match's own page never changes. The
 browser that opened it owns it and is its first admin. Admins pause (space), change speed
 (¼× to 4×) and jump anywhere on the timeline (← and → by 5 s), and everyone in the room sees the
 same. With the pen (✎ or `d`) dragging on the map draws a line instead, which everyone in the
@@ -191,17 +192,23 @@ their Steam id instead of the browser, so their admin rights go with them to any
 their name is the site's, marked as such. A streamer (or more) on the site may make themselves
 admin in any room.
 
-A room keeps the demo in memory in 10-second chunks, each starting from the state a page joins
-with, so a jump replays at most one chunk. It counts towards `--max-matches` and ends a minute
-after its last viewer left. With `--sessions DIR` each room is saved there too, once a second
-(sealed like the matches; a demos.tf demo's output beside it), and the process that replaces
-this one picks it up when its pages reconnect: where it was, paused or not, at the same speed,
-with the same people, admins and view. A saved room nobody comes back to within an hour is
-dropped.
+A room keeps the match in memory in 10-second chunks, each starting from the state a page joins
+with, so a jump replays at most one chunk. Rooms on the same match share it. A live match is
+recorded from when its first room opened, for as long as a room plays it (the room counts as one
+of the match's viewers): a room starts at live, the ● Live button goes back there, and playback
+waits at live rather than going past it; a room opened later can go back to when the first one
+opened. A room counts towards `--max-matches` and ends a minute after its last viewer left.
+
+With `--sessions DIR` each room is saved there too, once a second (sealed like the matches; a
+demos.tf demo's output beside the rooms on it, as `demo-<number>.gz`), and the process that
+replaces this one picks it up when its pages reconnect: where it was, paused or not, at the
+same speed, with the same people, admins and view. A live match's room picks up at live, recording
+it again from then: what was recorded before is gone. A saved room nobody comes back to within an
+hour is dropped.
 
 | route | |
 |---|---|
-| `GET /w/<id>/room` | 200 when a room can be opened on the match, 409 when not (live, or a demo still being fetched) |
+| `GET /w/<id>/room` | 200 when a room can be opened on the match, 409 when not (a demo still being fetched) |
 | `POST /w/<id>/room` | opens one: `{"page": "/r/<id>/"}` |
 | `GET /r/<id>/me` | `{"id", "admin", "signed", "streamer", "signin"}`: the caller's number in the room, whether they are an admin, signed in with the site and a streamer there, and whether signing in is offered |
 | `POST /r/<id>/claim` | a streamer signed in with the site makes themselves admin |
@@ -212,7 +219,7 @@ dropped.
 | `POST /r/<id>/control` | an admin's `{"paused", "speed", "seek"}` (any of them; `seek` in milliseconds) |
 | `POST /r/<id>/draw` | an admin's `{"stroke": <id>, "points": [[x, y, ms], …]}`, up to 256 map points, each with when it was drawn (milliseconds into the stroke); a stroke's next points continue it, and pages draw it at that pace, 40 ms behind |
 
-The room's event stream adds five lines: `view` (as posted, with `by`), `people` (`id`, `name`, `admin`, `owner` and, once picked, `ink` each), `draw`
+The room's event stream adds five lines (`playback` also says `live`, for a live match whose recording grows): `view` (as posted, with `by`), `people` (`id`, `name`, `admin`, `owner` and, once picked, `ink` each), `draw`
 (as posted, with `by`, the drawer's number), `playback` (`paused`, `speed`, `at` and `length` in
 milliseconds, and `rounds`, when each round started) on every change and every second while it
 plays, and `seek` before the state at the new position.

@@ -13,6 +13,8 @@ import { focusOf, screenOffset, viewArea } from "./view.js";
 const SPEEDS = [0.25, 0.5, 1, 2, 4];
 // The closest a stroke's points are, in pixels.
 const MIN_STEP_PX = 3;
+// Playback this close to a live match's end is at live, in milliseconds.
+const LIVE_MS = 2500;
 // How far the arrow keys jump, in milliseconds.
 const STEP_MS = 5000;
 export const IN_ROOM = /\/r\/[0-9a-f]{32}\/$/.test(PAGE.replace(/overlay\/?$/, ""));
@@ -82,6 +84,7 @@ function roomBar() {
     time = /** @type {HTMLInputElement} */ ($("rb-time")),
     speed = /** @type {HTMLSelectElement} */ ($("rb-speed")),
     shown = $("rb-clock"),
+    live = /** @type {HTMLButtonElement} */ ($("rb-live")),
     pen = /** @type {HTMLButtonElement} */ ($("rb-pen")),
     track = $("rb-track");
   bar.hidden = false;
@@ -91,17 +94,24 @@ function roomBar() {
   let heard = 0,
     dragging = false,
     admin = false;
+  // Where playback is, and how long the recording is, by now: a live match's grows as it goes.
+  // Between two playback lines, a second apart: no further, when a match sends little.
+  const length = () => (last ? last.length + (last.live ? Math.min(performance.now() - heard, LIVE_MS / 2) : 0) : 0);
   const at = () => {
     if (!last) return 0;
     const ran = last.paused ? 0 : (performance.now() - heard) * last.speed;
-    return Math.min(last.length, last.at + ran);
+    return Math.min(length(), last.at + ran);
   };
   /** @param {{ paused?: boolean; speed?: number; seek?: number }} c */
   const control = c => post("control", c);
   const show = () => {
     if (!last) return;
+    time.max = String(length());
     if (!dragging) time.value = String(at());
-    shown.textContent = `${clock(dragging ? Number(time.value) : at())} / ${clock(last.length)}`;
+    shown.textContent = `${clock(dragging ? Number(time.value) : at())} / ${clock(length())}`;
+    // At live: within a couple of seconds of its end, and playing.
+    live.hidden = !last.live;
+    live.classList.toggle("at", !last.paused && length() - at() < LIVE_MS);
   };
   playbackListeners.add(m => {
     const marks = !last || last.length !== m.length || last.rounds.join() !== m.rounds.join();
@@ -125,7 +135,7 @@ function roomBar() {
   /** @param {boolean} on */
   const allow = on => {
     admin = me.admin = on;
-    for (const c of [play, time, speed, pen, $("rb-view")]) /** @type {HTMLButtonElement} */ (c).disabled = !on;
+    for (const c of [play, time, speed, pen, live, $("rb-view")]) /** @type {HTMLButtonElement} */ (c).disabled = !on;
     bar.title = on ? "" : "The room's admins control playback";
     if (!on && pen.classList.contains("on")) pen.click();
     if (on) $("claim").hidden = true;
@@ -145,6 +155,7 @@ function roomBar() {
     );
   const showPeople = people(allow);
   play.onclick = () => last && control({ paused: !last.paused });
+  live.onclick = () => control({ seek: Math.round(length()), paused: false });
   speed.onchange = () => control({ speed: Number(speed.value) });
   time.oninput = () => {
     dragging = true;
@@ -155,16 +166,19 @@ function roomBar() {
     control({ seek: Math.round(Number(time.value)) });
   };
   drawing(pen);
+  shortcuts(() => (admin ? last : null), control, at, pen);
+}
+
+// Space pauses, d takes the pen, the arrow keys jump: an admin's, while playback is known.
+/**
+ * @param {() => PlaybackLine | null} playing @param {(c: { paused?: boolean; seek?: number }) => void} control
+ * @param {() => number} at @param {HTMLButtonElement} pen
+ */
+function shortcuts(playing, control, at, pen) {
   env.keys.addEventListener("keydown", e => {
+    const last = playing();
     const target = /** @type {Element} */ (e.composedPath()[0]);
-    if (
-      !admin ||
-      !last ||
-      e.ctrlKey ||
-      e.metaKey ||
-      e.altKey ||
-      target.closest?.("input:not([type=range]), select, textarea")
-    )
+    if (!last || e.ctrlKey || e.metaKey || e.altKey || target.closest?.("input:not([type=range]), select, textarea"))
       return;
     // Space on a focused button presses that button instead.
     if (e.key === " " && !target.closest?.("button")) control({ paused: !last.paused });

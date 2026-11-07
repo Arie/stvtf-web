@@ -186,6 +186,8 @@ aside h3 { margin: 0 0 6px; font-size: 11px; text-transform: uppercase; letter-s
 #roombar #rb-pen.on { background: #ffd23f; color: #0b0c0e; }
 .stvtf.drawing canvas#c, .stvtf.drawing canvas#c:active { cursor: crosshair; touch-action: none; }
 #rb-lead { color: var(--dim); white-space: nowrap; }
+#roombar #rb-live { width: auto; padding: 0 8px; white-space: nowrap; color: var(--dim); }
+#roombar #rb-live.at { background: #d0453f; color: #fff; }
 #roombar :disabled { cursor: default; opacity: .6; }
 #rb-track { position: relative; flex: 1; display: flex; align-items: center; }
 #rb-track input { width: 100%; margin: 0; accent-color: #e0a040; }

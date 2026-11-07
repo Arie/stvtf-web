@@ -157,6 +157,8 @@ export type PlaybackLine = {
   at: number;
   length: number;
   rounds: number[];
+  /** A live match, still being recorded: its length grows. */
+  live: boolean;
 };
 
 /** A piece of a room's telestrator stroke: map points with when they were drawn, in ms into the stroke. */
