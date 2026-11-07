@@ -37,16 +37,22 @@ export function timeline(t) {
   const marks = [];
   /** @type {number[]} */
   let starts = [];
-  let fetching = false;
+  // The marks fetched (by the room's count, which goes on past those dropped), and what is kept
+  // (from `start`) of the map that began at `origin`.
+  let fetched = 0,
+    fetching = false,
+    start = 0,
+    origin = 0;
 
   // The marks the room has that this page does not yet.
   /** @param {number} all */
   const more = async all => {
-    if (fetching || all <= marks.length) return;
+    if (fetching || all <= fetched) return;
     fetching = true;
     try {
-      const r = await fetch(new URL(`marks?from=${marks.length}`, t.home));
-      marks.push(...(await r.json()).marks);
+      const r = await (await fetch(new URL(`marks?from=${fetched}`, t.home))).json();
+      marks.push(...r.marks);
+      fetched = r.all;
     } catch {}
     fetching = false;
     draw();
@@ -54,45 +60,32 @@ export function timeline(t) {
 
   // Marks are moved, never laid out again, as a live match's timeline grows (place): a transform
   // glides between pixels at the same width. The rounds and the fight strip are laid out for one
-  // length and scaled to the next.
+  // stretch of time and scaled to the next.
   /** @type {[HTMLElement, number][]} */
   let placed = [];
-  let spanLen = 1,
-    heatLen = 1,
+  let spanTo = 1,
+    heatFrom = 0,
+    heatTo = 1,
     at = { len: 0, width: 0 };
   /** @param {number} len @param {number} width */
   const place = (len, width) => {
     at = { len, width };
-    for (const [e, ms] of placed) e.style.transform = `translate3d(${(ms / len) * width}px, 0, 0)`;
-    span.style.transform = `scaleX(${spanLen / len})`;
-    heat.style.transform = `scaleX(${heatLen / len})`;
+    const all = Math.max(1, len - start),
+      px = (/** @type {number} */ ms) => ((ms - start) / all) * width;
+    for (const [e, ms] of placed) e.style.transform = `translate3d(${px(ms)}px, 0, 0)`;
+    span.style.transform = `scaleX(${(spanTo - start) / all})`;
+    heat.style.transform = `translate3d(${px(heatFrom)}px, 0, 0) scaleX(${(heatTo - heatFrom) / all})`;
   };
 
   /** @param {HTMLElement} e @param {Mark} m @param {string} what */
   const mark = (e, m, what) => {
     placed.push([e, m.at]);
     e.style.setProperty("--team", TEAM[m.team] ?? TEAM.none);
-    e.title = `${what} · ${t.clock(m.at)}${t.jump ? " · click to watch it" : ""}`;
+    e.title = `${what} · ${t.clock(m.at - origin)}${t.jump ? " · click to watch it" : ""}`;
     const jump = t.jump;
-    if (jump) e.onclick = () => jump(Math.max(0, m.at - BEFORE_MS));
+    if (jump) e.onclick = () => jump(Math.max(start, m.at - BEFORE_MS));
     return e;
   };
-
-  // A mark's element, or none for a kill (the strip shows those).
-  /** @param {Mark} m */
-  function make(m) {
-    const team = NAMES[m.team] ?? "";
-    if (m.kind === "uber") return mark(el("rb-uber"), m, `${team} uber${m.who ? `, ${m.who}` : ""}`);
-    if (m.kind === "drop")
-      return Object.assign(mark(el("rb-drop"), m, `${team} drop${m.who ? `, ${m.who}` : ""}`), { innerHTML: SKULL });
-    if (m.kind !== "win") return null;
-    const round = starts.filter(s => s <= m.at).length;
-    const score = m.score ? ` ${m.score[0]}–${m.score[1]}` : "";
-    const what = team ? `${team} won round ${round}` : `Stalemate, round ${round}`;
-    return Object.assign(mark(el("rb-win"), m, `${what}${score && `,${score} (BLU–RED)`}`), {
-      textContent: score.trim(),
-    });
-  }
 
   // Marks are made once (so clicks land) and only moved as a live match grows.
   let drawn = 0,
@@ -106,23 +99,26 @@ export function timeline(t) {
     }
     const before = drawn;
     for (; drawn < marks.length; drawn++) {
-      const e = make(marks[drawn]);
+      const m = marks[drawn],
+        e = m.at >= start ? make(m, starts, mark) : null;
       if (e) lane.append(e);
     }
     // The rounds again when one starts or is won; the fight strip when there are new kills, or
     // every HEAT_MS as it stretches.
-    const now = [starts.join(), drawn].join();
+    const len = Math.max(start + 1, t.length()),
+      now = [starts.join(), drawn].join();
     if (again || now !== laid) {
       laid = now;
-      spanLen = Math.max(1, t.length());
-      span.style.setProperty("--len", String(spanLen));
+      spanTo = len;
+      span.style.setProperty("--from", String(start));
+      span.style.setProperty("--len", String(len - start));
       drawRounds(span, starts, marks);
     }
     if (again || drawn !== before || performance.now() - heated > HEAT_MS) {
       heated = performance.now();
-      heatLen = drawHeat(heat, marks, t.length());
+      [heatFrom, heatTo] = drawHeat(heat, marks, start, len);
     }
-    place(Math.max(1, t.length()), at.width);
+    place(len, at.width);
   }
 
   return {
@@ -130,11 +126,17 @@ export function timeline(t) {
     place(len, width) {
       if (len !== at.len || width !== at.width) place(len, width);
     },
-    /** A playback line: the rounds so far, and how many marks there are. @param {{ rounds: number[]; marks?: number }} m */
+    /**
+     * A playback line: the rounds so far, how many marks there are, and what is kept of which map.
+     * @param {{ rounds: number[]; marks?: number; start?: number; origin?: number }} m
+     */
     heard(m) {
       starts = m.rounds;
+      origin = m.origin ?? 0;
+      const moved = (m.start ?? 0) !== start;
+      start = m.start ?? 0;
       more(m.marks ?? 0);
-      draw();
+      draw(moved);
     },
     /** Whether a viewer may jump: an admin. @param {((ms: number) => void) | null} jump */
     allow(jump) {
@@ -142,6 +144,22 @@ export function timeline(t) {
       draw(true);
     },
   };
+}
+
+// A mark's element, made by `mark`, or none for a kill (the strip shows those).
+/** @param {Mark} m @param {number[]} starts @param {(e: HTMLElement, m: Mark, what: string) => HTMLElement} mark */
+function make(m, starts, mark) {
+  const team = NAMES[m.team] ?? "";
+  if (m.kind === "uber") return mark(el("rb-uber"), m, `${team} uber${m.who ? `, ${m.who}` : ""}`);
+  if (m.kind === "drop")
+    return Object.assign(mark(el("rb-drop"), m, `${team} drop${m.who ? `, ${m.who}` : ""}`), { innerHTML: SKULL });
+  if (m.kind !== "win") return null;
+  const round = starts.filter(s => s <= m.at).length;
+  const score = m.score ? ` ${m.score[0]}–${m.score[1]}` : "";
+  const what = team ? `${team} won round ${round}` : `Stalemate, round ${round}`;
+  return Object.assign(mark(el("rb-win"), m, `${what}${score && `,${score} (BLU–RED)`}`), {
+    textContent: score.trim(),
+  });
 }
 
 // The rounds in their winner's colour; grey for a stalemate, none while unplayed.
@@ -159,19 +177,21 @@ function drawRounds(span, starts, marks) {
   );
 }
 
-// Kills binned across the strip, in the colour of the team with more; how long a time it covers.
-/** @param {HTMLCanvasElement} heat @param {Mark[]} marks @param {number} length @returns {number} */
-function drawHeat(heat, marks, length) {
+// Kills binned across the strip, in the colour of the team with more; the time it covers.
+/** @param {HTMLCanvasElement} heat @param {Mark[]} marks @param {number} start @param {number} length @returns {[number, number]} */
+function drawHeat(heat, marks, start, length) {
   // Fixed bins of time, a pixel each: a bin once counted stays put as a live match grows.
-  const bins = Math.max(1, Math.ceil(length / HEAT_BIN_MS));
+  const first = Math.floor(start / HEAT_BIN_MS),
+    bins = Math.max(1, Math.ceil(length / HEAT_BIN_MS) - first),
+    covers = /** @type {[number, number]} */ ([first * HEAT_BIN_MS, (first + bins) * HEAT_BIN_MS]);
   heat.width = bins;
   heat.height = 1;
   const g = heat.getContext("2d");
-  if (!g) return bins * HEAT_BIN_MS;
+  if (!g) return covers;
   const count = Array.from({ length: bins }, () => ({ blue: 0, red: 0 }));
   for (const m of marks) {
-    const b = count[Math.min(bins - 1, Math.floor(m.at / HEAT_BIN_MS))];
-    if (m.kind === "kill" && (m.team === "blue" || m.team === "red")) b[m.team]++;
+    const b = count[Math.floor(m.at / HEAT_BIN_MS) - first];
+    if (b && m.kind === "kill" && (m.team === "blue" || m.team === "red")) b[m.team]++;
   }
   g.clearRect(0, 0, bins, 1);
   count.forEach((c, i) => {
@@ -181,5 +201,5 @@ function drawHeat(heat, marks, length) {
     g.fillStyle = c.blue >= c.red ? TEAM.blue : TEAM.red;
     g.fillRect(i, 0, 1, 1);
   });
-  return bins * HEAT_BIN_MS;
+  return covers;
 }

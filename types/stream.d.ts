@@ -156,6 +156,9 @@ export type PlaybackLine = {
   speed: number;
   at: number;
   length: number;
+  /** What is kept, from `start`, of the map that began at `origin`: a new map drops the one before. */
+  start?: number;
+  origin?: number;
   rounds: number[];
   /** A live match, still being recorded: its length grows. */
   live: boolean;

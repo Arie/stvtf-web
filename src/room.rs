@@ -144,7 +144,7 @@ impl Room {
 
     /// A room playing `recording` from `at`, at `speed` (1× unless one of [`SPEEDS`]), paused or not.
     pub(crate) fn start_at(id: String, owner: &str, recording: Arc<Recording>, at: u64, speed: f64, paused: bool) -> Arc<Room> {
-        let at = at.min(recording.length());
+        let at = at.clamp(recording.start(), recording.length());
         let speed = if SPEEDS.contains(&speed) { speed } else { 1.0 };
         let state = State { paused, speed, at, seek: Some(at), stop: false };
         Room::run(id, People::new(owner), None, None, state, recording)
@@ -152,7 +152,7 @@ impl Room {
 
     /// The room `saved` was, back where it was.
     pub(crate) fn restore(id: String, saved: Saved, recording: Arc<Recording>) -> Arc<Room> {
-        let at = saved.at.min(recording.length());
+        let at = saved.at.clamp(recording.start(), recording.length());
         let state = State { paused: saved.paused, speed: saved.speed, at, seek: Some(at), stop: false };
         let room = Room::run(id, saved.people, saved.leader, saved.view.map(Into::into), state, recording);
         if let Some(view) = lock(&room.view).clone() {
@@ -252,7 +252,7 @@ impl Room {
             st.paused = paused;
         }
         if let Some(at) = c.seek {
-            st.seek = Some(at.min(self.recording.length()));
+            st.seek = Some(at.clamp(self.recording.start(), self.recording.length()));
         }
         self.announce(&st);
         self.wake.notify_all();
@@ -341,6 +341,9 @@ impl Room {
             "speed": st.speed,
             "at": st.at,
             "length": self.recording.length(),
+            // What is kept (from `start`), and where the map began.
+            "start": self.recording.start(),
+            "origin": self.recording.origin(),
             "rounds": self.recording.rounds(),
             "live": self.recording.is_live(),
             // Marks so far: a page fetches the ones it lacks.
@@ -369,10 +372,14 @@ impl Room {
                 self.announce(&st);
                 announced = Instant::now();
             }
+            // What is played was dropped (a new map): on from what is kept.
+            if st.seek.is_none() && st.at < rec.start() {
+                st.seek = Some(rec.start());
+            }
             if let Some(target) = st.seek.take() {
                 let (hub, i, played) = rec.seek(target);
                 restore(&self.hub, hub);
-                (chunk, done, looked, st.at) = (i, played, None, target);
+                (chunk, done, looked, st.at) = (i, played, None, target.max(rec.start()));
                 lines.clear();
                 self.announce(&st);
                 continue;
@@ -619,6 +626,26 @@ mod tests {
         r.control(&Control { seek: Some(0), speed: Some(4.0), ..Control::default() }).unwrap();
         until("live again", || lock(&r.state).at >= 900);
         until("1x", || (lock(&r.state).speed - 1.0).abs() < f64::EPSILON);
+        r.stop();
+    }
+
+    #[test]
+    fn a_room_behind_on_the_old_map_goes_on_to_the_new() {
+        let rec = Arc::new(Recording::live());
+        let push = |line: &Line, time: u64| {
+            let text = serde_json::to_string(line).unwrap();
+            let mut stamped: stvtf::output::Stamped = serde_json::from_str(&text).unwrap();
+            stamped.time = Some(time);
+            rec.push(&stamped, &text).unwrap();
+        };
+        let t0 = 1_700_000_000_000;
+        push(&crate::testing::server("cp_one"), t0);
+        let r = Room::start_at("r".into(), "me", rec.clone(), 0, 1.0, true);
+        push(&crate::testing::server("cp_two"), t0 + 500);
+        until("the new map's start", || lock(&r.state).at == 500);
+        let _w = r.join("me", None, None, true);
+        r.control(&Control { paused: Some(false), ..Control::default() }).unwrap();
+        until("the new map", || r.hub.lock().unwrap().map.as_deref() == Some("cp_two"));
         r.stop();
     }
 

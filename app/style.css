@@ -1053,7 +1053,7 @@ aside h3 {
   position: absolute;
   top: 0;
   height: 100%;
-  left: calc(100% * var(--at) / var(--len, 1));
+  left: calc(100% * (var(--at) - var(--from, 0)) / var(--len, 1));
   width: calc(100% * (var(--to) - var(--at)) / var(--len, 1));
   background: #ffffff0a;
   border-left: 1px solid #ffffff59;

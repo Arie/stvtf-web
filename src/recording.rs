@@ -1,7 +1,8 @@
 //! A match as a room plays it: stvtf lines in gzipped chunks of play time, each starting from a
 //! checkpoint of the hub, so a seek replays at most one chunk. A live match's recording grows
 //! as it is played: its last chunk stays open, as text, until its time is up, and each chunk
-//! closed can go to a file (one gzip member after another), from which it resumes.
+//! closed can go to a file (one gzip member after another), from which it resumes. A new map
+//! starts it over: what came before is dropped, though chunks and marks keep their numbers.
 
 use crate::hub::{Hub, SharedHub, publish};
 use crate::lock;
@@ -20,8 +21,14 @@ use stvtf::output::{Stamped, Team};
 /// Play time per chunk, in milliseconds.
 const CHUNK_MS: u64 = 10_000;
 
-/// Where a live recording's chunks go as they close: their gzipped lines.
-pub(crate) type Sink = Box<dyn FnMut(&[u8]) + Send>;
+/// Where a live recording's chunks go as they close.
+pub(crate) type Sink = Box<dyn FnMut(&Save) + Send>;
+
+/// For a live recording's file: a chunk closed (its gzipped lines), or all the file is now.
+pub(crate) enum Save {
+    Add(Vec<u8>),
+    All(Vec<u8>),
+}
 
 #[derive(Default)]
 pub(crate) struct Recording {
@@ -36,7 +43,13 @@ struct Inner {
     /// The match as it is at the latest line, for the next chunk's checkpoint.
     scratch: SharedHub,
     clock: Clock,
+    /// Play time of the current map's first line, and of the first line kept.
+    origin: u64,
+    start: u64,
     chunks: Vec<Chunk>,
+    /// Chunks and marks dropped before these.
+    dropped: usize,
+    marks_dropped: usize,
     /// The last chunk's lines while it is open: `{at}\t{json}`.
     open: Vec<String>,
     rounds: Vec<u64>,
@@ -110,6 +123,36 @@ impl Inner {
         self.marks.extend(new);
     }
 
+    /// Whether `line` starts another map than the one so far.
+    fn new_map(&self, line: &Line) -> bool {
+        let Line::Server(server) = line else { return false };
+        lock(&self.scratch).map.as_deref().is_some_and(|m| m != server.map)
+    }
+
+    /// Drops everything before play time `at`, where a new map starts.
+    fn cut(&mut self, at: u64) {
+        self.dropped += self.chunks.len();
+        self.marks_dropped += self.marks.len();
+        self.chunks.clear();
+        self.open.clear();
+        self.marks.clear();
+        self.rounds.clear();
+        self.scores = None;
+        (self.origin, self.start) = (at, at);
+    }
+
+    /// The file: a header, then the closed chunks.
+    fn file(&self) -> Result<Vec<u8>> {
+        let mut gz = GzEncoder::new(Vec::new(), Compression::default());
+        writeln!(gz, "origin\t{}\nmarks\t{}", self.origin, self.marks_dropped)?;
+        let mut file = gz.finish()?;
+        let closed = if self.open.is_empty() { &self.chunks[..] } else { &self.chunks[..self.chunks.len() - 1] };
+        for c in closed {
+            file.extend_from_slice(&c.lines);
+        }
+        Ok(file)
+    }
+
     /// Gzips the open chunk's lines; true if there were any.
     fn close(&mut self) -> Result<bool> {
         let Some(last) = self.chunks.last_mut() else { return Ok(false) };
@@ -124,12 +167,16 @@ impl Inner {
         Ok(true)
     }
 
-    /// Line `text`, read as `stamped`, at play time `at`; the gzipped chunk it closed, if any.
-    fn add(&mut self, at: u64, stamped: &Stamped, text: &str) -> Result<Option<Vec<u8>>> {
-        let mut closed = None;
+    /// Line `text`, read as `stamped`, at play time `at`; what the file gets, if anything.
+    fn add(&mut self, at: u64, stamped: &Stamped, text: &str) -> Result<Option<Save>> {
+        let mut save = None;
+        if self.new_map(&stamped.line) {
+            self.cut(at);
+            save = Some(Save::All(self.file()?));
+        }
         if self.fresh || self.chunks.last().is_none_or(|c| at >= c.start + CHUNK_MS) {
             if self.close()? {
-                closed = self.chunks.last().map(|c| c.lines.clone());
+                save = self.chunks.last().map(|c| Save::Add(c.lines.clone()));
             }
             let hub = lock(&self.scratch).checkpoint();
             self.chunks.push(Chunk { start: at, hub, lines: Vec::new() });
@@ -142,7 +189,7 @@ impl Inner {
         self.count += 1;
         self.mark(at, &stamped.line);
         publish(&self.scratch, &stamped.line);
-        Ok(closed)
+        Ok(save)
     }
 }
 
@@ -185,16 +232,31 @@ impl Recording {
         let r = Recording::live();
         {
             let mut inner = lock(&r.inner);
-            let mut at = 0;
+            let (mut at, mut cut) = (0, false);
             for text in BufReader::new(flate2::read::MultiGzDecoder::new(saved)).lines() {
                 let text = text?;
-                let Some((t, json)) = text.split_once('\t') else { bail!("not a recording") };
-                at = t.parse()?;
-                inner.add(at, &serde_json::from_str(json)?, json)?;
+                let Some((key, value)) = text.split_once('\t') else { bail!("not a recording") };
+                match key {
+                    "origin" => inner.origin = value.parse()?,
+                    "marks" => inner.marks_dropped = value.parse()?,
+                    _ => {
+                        at = key.parse()?;
+                        cut |= matches!(inner.add(at, &serde_json::from_str(value)?, value)?, Some(Save::All(_)));
+                    }
+                }
             }
             inner.close()?;
             inner.clock.resume(at);
+            inner.start = inner.chunks.first().map_or(inner.origin, |c| c.start);
             inner.fresh = true;
+            // A file from before that went on to a new map: it starts over too.
+            if cut {
+                let mut sink = sink;
+                sink(&Save::All(inner.file()?));
+                *lock(&r.sink) = Some(sink);
+                drop(inner);
+                return Ok(r);
+            }
         }
         *lock(&r.sink) = Some(sink);
         Ok(r)
@@ -202,13 +264,13 @@ impl Recording {
 
     /// The next line, `text` as read into `stamped`.
     pub(crate) fn push(&self, stamped: &Stamped, text: &str) -> Result<()> {
-        let closed = {
+        let save = {
             let mut inner = lock(&self.inner);
             let at = inner.clock.at(stamped);
             inner.add(at, stamped, text)?
         };
-        if let (Some(gz), Some(sink)) = (closed, lock(&self.sink).as_mut()) {
-            sink(&gz);
+        if let (Some(save), Some(sink)) = (save, lock(&self.sink).as_mut()) {
+            sink(&save);
         }
         Ok(())
     }
@@ -227,15 +289,26 @@ impl Recording {
         lock(&self.inner).clock.play
     }
 
+    /// Play time of the first line kept, and of the current map's first line.
+    pub(crate) fn start(&self) -> u64 {
+        lock(&self.inner).start
+    }
+
+    pub(crate) fn origin(&self) -> u64 {
+        lock(&self.inner).origin
+    }
+
     /// Play times of the rounds' starts.
     pub(crate) fn rounds(&self) -> Vec<u64> {
         lock(&self.inner).rounds.clone()
     }
 
-    /// What a timeline shows, from the `from`th on, and how many there are in all.
+    /// What a timeline shows, from the `from`th on, and how many there are in all, the dropped
+    /// ones too.
     pub(crate) fn marks(&self, from: usize) -> (Vec<Mark>, usize) {
         let inner = lock(&self.inner);
-        (inner.marks.get(from..).unwrap_or_default().to_vec(), inner.marks.len())
+        let kept = from.saturating_sub(inner.marks_dropped);
+        (inner.marks.get(kept..).unwrap_or_default().to_vec(), inner.marks_dropped + inner.marks.len())
     }
 
     /// Lines in all: more of a live match's means more to play, even at the same play time.
@@ -243,11 +316,13 @@ impl Recording {
         lock(&self.inner).count
     }
 
+    /// Chunks in all, the dropped ones too.
     pub(crate) fn chunks(&self) -> usize {
-        lock(&self.inner).chunks.len()
+        let inner = lock(&self.inner);
+        inner.dropped + inner.chunks.len()
     }
 
-    /// Chunk `i`'s lines, so far if it is still open.
+    /// Chunk `i`'s lines, so far if it is still open; none if dropped.
     pub(crate) fn chunk(&self, i: usize) -> Option<Lines> {
         enum Text {
             Gz(Vec<u8>),
@@ -255,6 +330,7 @@ impl Recording {
         }
         let text = {
             let inner = lock(&self.inner);
+            let i = i.checked_sub(inner.dropped)?;
             let chunk = inner.chunks.get(i)?;
             if i + 1 == inner.chunks.len() && !inner.open.is_empty() {
                 Text::Open(inner.open.clone())
@@ -273,14 +349,15 @@ impl Recording {
         })
     }
 
-    /// The hub just before play time `at`, the chunk it is in, and how many of its lines are
-    /// before it.
+    /// The hub just before play time `at` (the start, if before), the chunk it is in, and how
+    /// many of its lines are before it.
     pub(crate) fn seek(&self, at: u64) -> (Hub, usize, usize) {
-        let (i, hub) = {
+        let (i, hub, at) = {
             let inner = lock(&self.inner);
+            let at = at.max(inner.start);
             let i = inner.chunks.partition_point(|c| c.start <= at).saturating_sub(1);
-            let Some(chunk) = inner.chunks.get(i) else { return (Hub::default(), 0, 0) };
-            (i, chunk.hub.checkpoint())
+            let Some(chunk) = inner.chunks.get(i) else { return (Hub::default(), inner.dropped, 0) };
+            (inner.dropped + i, chunk.hub.checkpoint(), at)
         };
         let scratch = Arc::new(Mutex::new(hub));
         let lines = self.chunk(i).unwrap_or_default();
@@ -372,7 +449,10 @@ mod tests {
         let saved = Arc::new(Mutex::new(Vec::new()));
         let to = |saved: &Arc<Mutex<Vec<u8>>>| -> Sink {
             let saved = saved.clone();
-            Box::new(move |gz: &[u8]| lock(&saved).extend_from_slice(gz))
+            Box::new(move |save: &Save| match save {
+                Save::Add(gz) => lock(&saved).extend_from_slice(gz),
+                Save::All(gz) => *lock(&saved) = gz.clone(),
+            })
         };
         let r = Recording::live_to(to(&saved));
         let time = live_lines(&r, 45, 1_700_000_000_000);
@@ -387,8 +467,48 @@ mod tests {
         assert_eq!(again.chunk(2).unwrap().first().map(|(t, _)| *t), Some(19_500));
         let (hub, _, _) = again.seek(31_500);
         assert_eq!(hub.history.len(), 40 + 24, "every line once");
-        let resumed = Recording::resume(lock(&saved).as_slice(), Box::new(|_: &[u8]| {})).unwrap();
+        let resumed = Recording::resume(lock(&saved).as_slice(), Box::new(|_: &Save| {})).unwrap();
         assert_eq!(resumed.chunks(), 3, "the chunks saved before, and the one closed after");
+    }
+
+    /// Line `line` at `time` into `r`.
+    fn push_at(r: &Recording, line: &Line, time: u64) {
+        let text = serde_json::to_string(line).unwrap();
+        let mut stamped: Stamped = serde_json::from_str(&text).unwrap();
+        stamped.time = Some(time);
+        r.push(&stamped, &text).unwrap();
+    }
+
+    #[test]
+    fn a_new_map_starts_a_live_recording_over() {
+        use crate::testing::server;
+        let saved = Arc::new(Mutex::new(Vec::new()));
+        let to = |saved: &Arc<Mutex<Vec<u8>>>| -> Sink {
+            let saved = saved.clone();
+            Box::new(move |save: &Save| match save {
+                Save::Add(gz) => lock(&saved).extend_from_slice(gz),
+                Save::All(gz) => *lock(&saved) = gz.clone(),
+            })
+        };
+        let r = Recording::live_to(to(&saved));
+        let t0 = 1_700_000_000_000;
+        push_at(&r, &server("cp_one"), t0);
+        let time = live_lines(&r, 45, t0 + 500);
+        // Played again on the same map: no new start.
+        push_at(&r, &server("cp_one"), time);
+        assert_eq!((r.start(), r.origin(), r.chunks()), (0, 0, 3));
+        push_at(&r, &server("cp_two"), time + 500);
+        let at = time + 500 - t0;
+        assert_eq!((r.start(), r.origin(), r.chunks()), (at, at, 4), "chunks keep their numbers");
+        assert!(r.chunk(2).is_none(), "the old map's are gone");
+        let (_, i, played) = r.seek(1000);
+        assert_eq!((i, played), (3, 0), "before the start is the start");
+        let time = live_lines(&r, 25, time + 1000);
+        let again = Recording::resume(lock(&saved).as_slice(), to(&saved)).unwrap();
+        assert_eq!((again.start(), again.origin()), (at, at), "the file starts at the new map");
+        assert_eq!(again.chunk(0).unwrap().first().map(|(t, _)| *t), Some(at));
+        live_lines(&again, 1, time + 60_000);
+        assert_eq!(again.marks(0).1, r.marks(0).1, "the marks keep their numbers too");
     }
 
     #[test]

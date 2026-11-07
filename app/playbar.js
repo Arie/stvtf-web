@@ -54,6 +54,9 @@ export function playbar(o) {
   // How long the recording is by now: a live match's grows, between playback lines no further
   // than half of LIVE_MS.
   const length = () => (last ? last.length + (last.live ? Math.min(performance.now() - heard, LIVE_MS / 2) : 0) : 0);
+  // What is kept, from the start, of the map that began at the origin; the clock counts from it.
+  const start = () => last?.start ?? 0,
+    since = (/** @type {number} */ ms) => clock(Math.max(0, ms - (last?.origin ?? 0)));
   // A jump made here, shown until playback confirms it.
   /** @type {{ at: number; since: number } | null} */
   let jumped = null;
@@ -61,7 +64,7 @@ export function playbar(o) {
     if (!last) return 0;
     const from = jumped ?? { at: last.at, since: heard };
     const ran = last.paused ? 0 : (performance.now() - from.since) * last.speed;
-    return Math.min(length(), from.at + ran);
+    return Math.min(length(), Math.max(start(), from.at + ran));
   };
   /** @param {Control} c */
   const control = c => {
@@ -73,14 +76,16 @@ export function playbar(o) {
     if (!last) return;
     const behind = Boolean(last.live) && length() - at() >= LIVE_MS,
       atLive = Boolean(last.live) && !last.paused && !behind;
-    time.max = String(length());
-    marks.place(Math.max(1, length()), track.clientWidth);
+    const len = Math.max(start() + 1, length());
+    time.min = String(start());
+    time.max = String(len);
+    marks.place(len, track.clientWidth);
     // At live the timeline is all played and the playhead, which could only waver at its end, hides.
     const now = atLive ? length() : at();
     if (!dragging) time.value = String(now);
     track.classList.toggle("at-live", atLive && !dragging);
-    track.style.setProperty("--played", `${(100 * Number(time.value)) / Math.max(1, length())}%`);
-    shown.textContent = `${clock(dragging ? Number(time.value) : now)} / ${clock(length())}`;
+    track.style.setProperty("--played", `${(100 * (Number(time.value) - start())) / (len - start())}%`);
+    shown.textContent = `${since(dragging ? Number(time.value) : now)} / ${since(len)}`;
     const label = liveLabel(last);
     live.hidden = !label;
     if (label && live.textContent !== label) live.textContent = label;

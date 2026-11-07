@@ -334,7 +334,8 @@ fn match_timeline(s: &mut TcpStream, m: &Arc<Session>, request: &Request, part: 
     } else {
         let at = if r.is_live() { r.length() } else { lock(&m.hub).played.min(r.length()) };
         let (length, live, rounds, marks) = (r.length(), r.is_live(), r.rounds(), r.marks(usize::MAX).1);
-        serde_json::json!({ "at": at, "length": length, "live": live, "rounds": rounds, "marks": marks })
+        let (start, origin) = (r.start(), r.origin());
+        serde_json::json!({ "at": at, "length": length, "start": start, "origin": origin, "live": live, "rounds": rounds, "marks": marks })
     };
     respond(s, "200 OK", JSON, body.to_string().as_bytes())
 }

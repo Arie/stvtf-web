@@ -5,7 +5,7 @@
 use crate::cache::write_atomic;
 use crate::cli::{DEFAULT_TV_PASSWORD, parse_connect};
 use crate::hub::{SharedHub, Summary, subscribe, watch_into};
-use crate::recording::{Recording, Sink};
+use crate::recording::{Recording, Save, Sink};
 use crate::{demostf, lock, token};
 use aes_gcm::aead::OsRng;
 use aes_gcm::aead::rand_core::RngCore;
@@ -385,7 +385,13 @@ impl Store {
         Ok(std::fs::File::options().create(true).append(true).open(self.path(name))?.write_all(data)?)
     }
 
-    /// What `append` wrote as `name`.
+    /// `data` as all of `name`, as it is, as for `append`.
+    pub(crate) fn replace(&self, name: &str, data: &[u8]) -> Result<()> {
+        std::fs::create_dir_all(&self.dir)?;
+        Ok(write_atomic(&self.path(name), data)?)
+    }
+
+    /// What `append` or `replace` wrote as `name`.
     pub(crate) fn read(&self, name: &str) -> Result<Vec<u8>> {
         Ok(std::fs::read(self.path(name))?)
     }
@@ -665,11 +671,15 @@ pub(crate) fn live_file(id: &str) -> String {
     format!("live-{id}.gz")
 }
 
-/// Chunks to the end of file `name`; the first that fails says so.
+/// Chunks to the end of file `name`, or all of it anew; the first that fails says so.
 pub(crate) fn to_file(store: &Store, name: &str) -> Sink {
     let (store, name, mut said) = (store.clone(), name.to_string(), false);
-    Box::new(move |gz: &[u8]| {
-        if let Err(e) = store.append(&name, gz)
+    Box::new(move |save: &Save| {
+        let saved = match save {
+            Save::Add(gz) => store.append(&name, gz),
+            Save::All(gz) => store.replace(&name, gz),
+        };
+        if let Err(e) = saved
             && !std::mem::replace(&mut said, true)
         {
             eprintln!("stvtf-web: saving {name}: {e:#}");
