@@ -348,6 +348,19 @@ impl Store {
         Ok(write_atomic(&self.path(name), &data)?)
     }
 
+    /// Adds `data` to the end of `name`, as it is: not sealed (a match's lines, which `SourceTV`
+    /// shows anyone).
+    pub(crate) fn append(&self, name: &str, data: &[u8]) -> Result<()> {
+        use std::io::Write as _;
+        std::fs::create_dir_all(&self.dir)?;
+        Ok(std::fs::File::options().create(true).append(true).open(self.path(name))?.write_all(data)?)
+    }
+
+    /// What `append` wrote as `name`.
+    pub(crate) fn read(&self, name: &str) -> Result<Vec<u8>> {
+        Ok(std::fs::read(self.path(name))?)
+    }
+
     /// Whether there is a `name`.
     pub(crate) fn has(&self, name: &str) -> bool {
         self.path(name).exists()

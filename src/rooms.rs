@@ -3,7 +3,7 @@
 
 use crate::hub::subscribe;
 use crate::lock;
-use crate::recording::Recording;
+use crate::recording::{Recording, Sink};
 use crate::room::{Room, Saved};
 use crate::sessions::{Session, Sessions, Store, Viewer};
 use anyhow::{Result, bail};
@@ -49,6 +49,23 @@ struct SavedRoom {
     room: Saved,
 }
 
+/// Chunks to the end of file `name`; the first that fails says so.
+fn to_file(store: &Store, name: &str) -> Sink {
+    let (store, name, mut said) = (store.clone(), name.to_string(), false);
+    Box::new(move |gz: &[u8]| {
+        if let Err(e) = store.append(&name, gz)
+            && !std::mem::replace(&mut said, true)
+        {
+            eprintln!("stvtf-web: saving {name}: {e:#}");
+        }
+    })
+}
+
+/// A live match's recording, beside the rooms playing it.
+fn live_file(match_id: &str) -> String {
+    format!("live-{match_id}.gz")
+}
+
 /// A room's file in the store, and a demo's beside the rooms on it.
 fn file(id: &str) -> String {
     format!("room-{id}")
@@ -83,14 +100,28 @@ impl Rooms {
 
     /// A room on live match `from`, owned by `owner`, recording it from now on.
     pub(crate) fn open_live(&self, from: &Arc<Session>, owner: &str) -> Arc<Room> {
-        let room = Room::start(crate::sessions::random_id(), owner, self.recording_of(from));
+        let room = Room::start(crate::sessions::random_id(), owner, self.recording_of(from, false));
         self.add(&room, Source::Live(from.id.clone()));
         room
     }
 
-    /// Live match `from`'s recording: the one its rooms play, or a new one from now on.
-    fn recording_of(&self, from: &Arc<Session>) -> Arc<Recording> {
-        self.shared(&format!("live:{}", from.id), || Some(record(from.clone()))).expect("recording starts")
+    /// Live match `from`'s recording: the one its rooms play, the one saved before this process
+    /// (`resume`: a room picked up), or a new one from now on. With a store, each chunk goes to a
+    /// file as it closes, which goes when the last room playing it does.
+    fn recording_of(&self, from: &Arc<Session>, resume: bool) -> Arc<Recording> {
+        self.shared(&format!("live:{}", from.id), || {
+            let Some(store) = self.store.clone() else { return Some(record(Recording::live(), from.clone(), Box::new(|| {}))) };
+            let name = live_file(&from.id);
+            let saved = resume.then(|| store.read(&name).ok()).flatten();
+            let resumed = saved.and_then(|gz| Recording::resume(gz.as_slice(), to_file(&store, &name)).ok());
+            // Nothing saved (or not readable): from now on.
+            let recording = resumed.unwrap_or_else(|| {
+                store.forget(&name);
+                Recording::live_to(to_file(&store, &name))
+            });
+            Some(record(recording, from.clone(), Box::new(move || store.forget(&name))))
+        })
+        .expect("recording starts")
     }
 
     /// The recording rooms on `key` play, or `make`'s.
@@ -127,7 +158,7 @@ impl Rooms {
                 let gz = store.take(&demo_file(*demo)).ok()?;
                 Some(Arc::new(Recording::read(flate2::read::GzDecoder::new(gz.as_slice()), &format!("demo {demo}")).ok()?))
             })?,
-            Source::Live(match_id) => self.recording_of(&Some(sessions.get(match_id)?).filter(|m| m.is_live())?),
+            Source::Live(match_id) => self.recording_of(&Some(sessions.get(match_id)?).filter(|m| m.is_live())?, true),
         };
         let mut map = lock(&self.map);
         // Another page of it may have picked it up meanwhile.
@@ -200,7 +231,7 @@ impl Rooms {
             let name = entry.file_name().to_string_lossy().into_owned();
             let old =
                 entry.metadata().and_then(|m| m.modified()).is_ok_and(|t| SystemTime::now().duration_since(t).unwrap_or_default() > STALE);
-            if (name.starts_with("room-") || name.starts_with("demo-")) && old {
+            if (name.starts_with("room-") || name.starts_with("demo-") || name.starts_with("live-")) && old {
                 store.forget(&name);
             }
         }
@@ -209,8 +240,9 @@ impl Rooms {
 
 /// A live match's recording from now on, filled by a thread of its own while the match runs and
 /// a room plays it. It watches the match as a page does, so the match is not dropped as unwatched.
-fn record(from: Arc<Session>) -> Arc<Recording> {
-    let recording = Arc::new(Recording::live());
+/// When the last room playing it goes, `gone` runs (the file goes); not when the match ends.
+fn record(recording: Recording, from: Arc<Session>, gone: Box<dyn FnOnce() + Send>) -> Arc<Recording> {
+    let recording = Arc::new(recording);
     let filling = recording.clone();
     std::thread::spawn(move || {
         let _watching = Viewer::new(from.clone());
@@ -231,6 +263,9 @@ fn record(from: Arc<Session>) -> Arc<Recording> {
             let _ = filling.push(&stamped, &json);
         }
         filling.end();
+        if Arc::strong_count(&filling) == 1 {
+            gone();
+        }
     });
     recording
 }

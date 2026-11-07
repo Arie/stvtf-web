@@ -202,8 +202,10 @@ opened. A room counts towards `--max-matches` and ends a minute after its last v
 With `--sessions DIR` each room is saved there too, once a second (sealed like the matches; a
 demos.tf demo's output beside the rooms on it, as `demo-<number>.gz`), and the process that
 replaces this one picks it up when its pages reconnect: where it was, paused or not, at the
-same speed, with the same people, admins and view. A live match's room picks up at live, recording
-it again from then: what was recorded before is gone. A saved room nobody comes back to within an
+same speed, with the same people, admins and view. A live match's recording goes there too, as
+`live-<match>.gz` (each 10-second chunk added as it closes), so its rooms pick up with it and
+go on recording: only the last few seconds before the restart are missing. The file goes with
+the last room on the match. A saved room nobody comes back to within an
 hour is dropped.
 
 | route | |
