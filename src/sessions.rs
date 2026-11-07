@@ -4,8 +4,8 @@
 
 use crate::cache::write_atomic;
 use crate::cli::{DEFAULT_TV_PASSWORD, parse_connect};
-use crate::hub::{SharedHub, Summary, watch_into};
-use crate::recording::Recording;
+use crate::hub::{SharedHub, Summary, subscribe, watch_into};
+use crate::recording::{Recording, Sink};
 use crate::{demostf, lock, token};
 use aes_gcm::aead::OsRng;
 use aes_gcm::aead::rand_core::RngCore;
@@ -55,6 +55,8 @@ pub struct Session {
     /// What a room on it plays, once known.
     source: Mutex<Option<Source>>,
     recording: OnceLock<Arc<Recording>>,
+    /// A live match's recording, from when it started being watched.
+    live: OnceLock<Arc<Recording>>,
     /// Whether `prepare` started.
     preparing: AtomicBool,
 }
@@ -88,6 +90,7 @@ impl Session {
             saving: Mutex::new(None),
             source: Mutex::new(None),
             recording: OnceLock::new(),
+            live: OnceLock::new(),
             preparing: AtomicBool::new(false),
         }
     }
@@ -117,7 +120,7 @@ impl Session {
 
     /// Whether a room can be opened on it now.
     pub fn recordable(&self) -> bool {
-        self.recording.get().is_some() || lock(&self.source).is_some()
+        self.live.get().is_some() || self.recording.get().is_some() || lock(&self.source).is_some()
     }
 
     /// Reads the room recording in the background, once.
@@ -135,7 +138,7 @@ impl Session {
 
     /// What a room on it plays: read once, then kept.
     pub fn recording(&self) -> Result<Arc<Recording>> {
-        if let Some(r) = self.recording.get() {
+        if let Some(r) = self.live.get().or_else(|| self.recording.get()) {
             return Ok(r.clone());
         }
         // One read at a time; a caller meanwhile waits and reuses it.
@@ -465,6 +468,7 @@ impl Sessions {
         }
         self.check_room(&map)?;
         let s = self.start(&mut map, random_id(), server, password, owner.map(str::to_string), SharedHub::default());
+        record(&s, self.store.as_ref(), false);
         s.link(reservation);
         eprintln!("stvtf-web: match {} started on {server}, owner {}", s.label(), owner.unwrap_or("-"));
         if let Some(store) = &self.store
@@ -573,6 +577,7 @@ impl Sessions {
             h.history = saved.history.into_iter().map(Into::into).collect();
         }
         let s = self.start(map, id.to_string(), saved.server, saved.password, saved.owner, hub);
+        record(&s, Some(store), true);
         s.link(saved.reservation);
         Some(s)
     }
@@ -631,6 +636,7 @@ impl Sessions {
         s.ended(why);
         if let Some(store) = &self.store {
             store.forget(&s.id);
+            store.forget(&live_file(&s.id));
         }
     }
 
@@ -647,6 +653,61 @@ impl Sessions {
             }
         }
     }
+}
+
+/// A live match's recording beside its file.
+pub(crate) fn live_file(id: &str) -> String {
+    format!("live-{id}.gz")
+}
+
+/// Chunks to the end of file `name`; the first that fails says so.
+pub(crate) fn to_file(store: &Store, name: &str) -> Sink {
+    let (store, name, mut said) = (store.clone(), name.to_string(), false);
+    Box::new(move |gz: &[u8]| {
+        if let Err(e) = store.append(&name, gz)
+            && !std::mem::replace(&mut said, true)
+        {
+            eprintln!("stvtf-web: saving {name}: {e:#}");
+        }
+    })
+}
+
+/// How long the recorder waits for a line before it looks whether to stop.
+const RECORD_POLL: Duration = Duration::from_millis(250);
+
+/// Records live match `s` from now on, to its file when there is a store (`resume`: going on from
+/// what the process before saved), until the match ends. The feed from before is not recorded
+/// again as new.
+fn record(s: &Arc<Session>, store: Option<&Store>, resume: bool) {
+    let name = live_file(&s.id);
+    let recording = Arc::new(match store {
+        None => Recording::live(),
+        Some(store) => {
+            let saved = resume.then(|| store.read(&name).ok()).flatten();
+            saved.and_then(|gz| Recording::resume(gz.as_slice(), to_file(store, &name)).ok()).unwrap_or_else(|| {
+                store.forget(&name);
+                Recording::live_to(to_file(store, &name))
+            })
+        }
+    });
+    let _ = s.live.set(recording.clone());
+    let (lines, s) = (subscribe(&s.hub, true), s.clone());
+    std::thread::spawn(move || {
+        while s.is_live() && !s.stop.load(Ordering::Relaxed) {
+            let json = match lines.recv_timeout(RECORD_POLL) {
+                Ok(json) => json,
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => continue,
+                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
+            };
+            let Ok(mut stamped) = serde_json::from_str::<stvtf::output::Stamped>(&json) else { continue };
+            if json.contains(r#""history":true"#) {
+                continue;
+            }
+            stamped.time = Some(std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_millis() as u64));
+            let _ = recording.push(&stamped, &json);
+        }
+        recording.end();
+    });
 }
 
 /// Joins `s`, a match already running, for `owner`; logged, so the log shows everyone who asked
@@ -853,11 +914,11 @@ mod tests {
     }
 
     #[test]
-    fn a_live_match_cannot_be_recorded() {
+    fn a_live_match_is_recorded_from_the_start() {
         let s = Sessions::new(false, 1, 20.0);
         let m = s.open("192.0.2.1:27020 tv", None, None).unwrap();
-        assert!(!m.recordable());
-        assert!(m.recording().is_err());
+        assert!(m.recordable());
+        assert!(m.recording().unwrap().is_live());
         s.stop_all();
     }
 

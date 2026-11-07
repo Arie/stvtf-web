@@ -362,20 +362,6 @@ fn done(s: &mut TcpStream, done: Result<()>) -> std::io::Result<()> {
     }
 }
 
-/// A room on live match `m`, recording it from now on.
-fn open_live_room(s: &mut TcpStream, app: &App, sessions: &Sessions, m: &Arc<Session>, request: &Request) -> Result<()> {
-    if request.method != "POST" {
-        return Ok(respond(s, "200 OK", JSON, b"{}")?);
-    }
-    if sessions.running() + app.rooms.count() >= sessions.max {
-        return Ok(respond(s, "503 Service Unavailable", TEXT, b"This server is watching all it can.")?);
-    }
-    let Who { key: guest, cookie, .. } = who(app, request);
-    let room = app.rooms.open_live(m, &guest);
-    eprintln!("stvtf-web: room {} opened on live match {}", &room.id[..8], &m.id[..m.id.len().min(8)]);
-    opened(s, app, &room.id, cookie.as_deref())
-}
-
 /// The new room's page, for the browser that opened it.
 fn opened(s: &mut TcpStream, app: &App, id: &str, cookie: Option<&str>) -> Result<()> {
     let body = serde_json::json!({ "page": format!("{}/r/{id}/", app.base) }).to_string();
@@ -388,9 +374,6 @@ fn opened(s: &mut TcpStream, app: &App, id: &str, cookie: Option<&str>) -> Resul
 
 /// `GET` says whether a room can be opened on match `m`; `POST` opens one, owned by the browser.
 fn open_room(s: &mut TcpStream, app: &App, sessions: &Sessions, m: &Arc<Session>, request: &Request) -> Result<()> {
-    if m.is_live() {
-        return open_live_room(s, app, sessions, m, request);
-    }
     if !m.recordable() {
         return Ok(respond(s, "409 Conflict", TEXT, b"This match has nothing to play (yet).")?);
     }
