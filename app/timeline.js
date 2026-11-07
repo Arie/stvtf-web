@@ -1,17 +1,15 @@
-// A room's timeline round its slider: the rounds, each ending in its winner's colour with the
-// score; above it, ubers and drops; below, where the fights were (kills close together, in the
-// colour of the team getting them). Hovering a mark says what it was; clicking jumps a little
-// before it, for an admin. The marks come from the room as the recording has them.
+// A room's timeline: rounds in their winner's colour with the score, ubers and drops, and fight
+// heat below. Hover says what a mark is; an admin's click jumps just before it.
 import { TEAM } from "./core.js";
 /** @typedef {{ at: number; kind: "win" | "uber" | "drop" | "kill"; team: string; who?: string; score?: [number, number] }} Mark */
 
-// A click on a mark jumps this far before it, to see what led to it.
+// A click on a mark lands this far before it.
 const BEFORE_MS = 3000;
-// The fight strip's bins, in pixels; and how many kills in one is a fight in full colour.
+// Fight strip bins in pixels, and kills per bin for full colour.
 const HEAT_PX = 4,
   HEAT_FULL = 3;
 const NAMES = /** @type {Record<string, string>} */ ({ blue: "BLU", red: "RED" });
-// A medic's drop: a skull in the team's colour (currentColor), its eyes and nose cut out.
+// A drop: a skull in the team's colour.
 const SKULL = `<svg viewBox="0 0 12 12" aria-hidden="true"><path fill="currentColor" fill-rule="evenodd" d="M6 .5C2.9.5.8 2.6.8 5.3c0 1.6.8 2.8 1.9 3.5v1.9c0 .4.3.8.8.8h.9v-1.1h.9v1.1h1.4v-1.1h.9v1.1h.9c.5 0 .8-.4.8-.8V8.8c1.1-.7 1.9-1.9 1.9-3.5C11.2 2.6 9.1.5 6 .5zM4 4.2a1.3 1.3 0 1 1 0 2.6 1.3 1.3 0 0 1 0-2.6zm4 0a1.3 1.3 0 1 1 0 2.6 1.3 1.3 0 0 1 0-2.6zM6 7l.7 1.2H5.3z"/></svg>`;
 
 /** @param {string} cls @param {string} [tag] */
@@ -76,7 +74,7 @@ export function timeline(t) {
     });
   }
 
-  // Marks are made once and stay, so a click on one lands; they only move as a live match grows.
+  // Marks are made once (so clicks land) and only moved as a live match grows.
   let drawn = 0,
     laid = "";
   function draw(again = false) {
@@ -96,7 +94,7 @@ export function timeline(t) {
       e.style.left = left(e.at);
     rounds.replaceChildren(
       ...starts.map((s, i) => {
-        // In the colour of the team that won it, grey for a stalemate; not yet won, neither.
+        // The winner's colour; grey for a stalemate, none while unplayed.
         const end = starts[i + 1] ?? Infinity,
           won = marks.find(m => m.kind === "win" && m.at >= s && m.at < end);
         const r = el(won ? `rb-round won ${won.team}` : "rb-round");
@@ -123,7 +121,7 @@ export function timeline(t) {
   };
 }
 
-// Kills in bins across the strip: each in the colour of the team with more, as strong as many.
+// Kills binned across the strip, in the colour of the team with more.
 /** @param {HTMLCanvasElement} heat @param {Mark[]} marks @param {number} length */
 function drawHeat(heat, marks, length) {
   const w = Math.max(1, Math.round(heat.clientWidth)),

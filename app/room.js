@@ -14,8 +14,7 @@ import { focusOf, screenOffset, viewArea } from "./view.js";
 const SPEEDS = [0.25, 0.5, 1, 2, 4];
 // The closest a stroke's points are, in pixels.
 const MIN_STEP_PX = 3;
-// A jump shows at once; the room's playback this close to it says it is there, and one not said
-// within JUMP_WAIT_MS did not happen. In milliseconds.
+// A local jump is confirmed by playback within JUMP_MS of it, or dropped after JUMP_WAIT_MS.
 const JUMP_MS = 1500,
   JUMP_WAIT_MS = 3000;
 // A jump to an event in the feed or chat lands this long before it, in milliseconds.
@@ -73,7 +72,7 @@ function roomButton() {
       () => {},
     );
   ask();
-  // A long demo takes the server a few seconds to make ready: say so meanwhile.
+  // Opening can take a few seconds: say so.
   const idle = button.textContent;
   button.onclick = async () => {
     button.disabled = true;
@@ -108,8 +107,7 @@ function roomBar() {
   // Where playback is, and how long the recording is, by now: a live match's grows as it goes.
   // Between two playback lines, a second apart: no further, when a match sends little.
   const length = () => (last ? last.length + (last.live ? Math.min(performance.now() - heard, LIVE_MS / 2) : 0) : 0);
-  // A jump asked for here shows at once, until the room's playback says it is there (or does not
-  // within JUMP_WAIT_MS).
+  // A jump made here, shown until the room confirms it.
   /** @type {{ at: number; since: number } | null} */
   let jumped = null;
   const at = () => {

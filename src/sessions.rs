@@ -55,7 +55,7 @@ pub struct Session {
     /// What a room on it plays, once known.
     source: Mutex<Option<Source>>,
     recording: OnceLock<Arc<Recording>>,
-    /// Whether its recording is being read for rooms ahead of the first.
+    /// Whether `prepare` started.
     preparing: AtomicBool,
 }
 
@@ -120,7 +120,7 @@ impl Session {
         self.recording.get().is_some() || lock(&self.source).is_some()
     }
 
-    /// Reads what a room on it would play, in the background, so a room opens at once; once.
+    /// Reads the room recording in the background, once.
     pub fn prepare(self: &Arc<Self>) {
         if self.recording.get().is_some() || !self.recordable() || self.preparing.swap(true, Ordering::Relaxed) {
             return;
@@ -138,7 +138,7 @@ impl Session {
         if let Some(r) = self.recording.get() {
             return Ok(r.clone());
         }
-        // One read at a time: one asked for meanwhile waits for it rather than reading it again.
+        // One read at a time; a caller meanwhile waits and reuses it.
         let source = lock(&self.source);
         if let Some(r) = self.recording.get() {
             return Ok(r.clone());

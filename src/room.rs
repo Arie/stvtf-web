@@ -335,7 +335,7 @@ impl Room {
             "length": self.recording.length(),
             "rounds": self.recording.rounds(),
             "live": self.recording.is_live(),
-            // How many marks the timeline has: a page asks for the ones it does not.
+            // Marks so far: a page fetches the ones it lacks.
             "marks": self.recording.marks(usize::MAX).1,
         });
         announce(&self.hub, "playback", &line.to_string().into());

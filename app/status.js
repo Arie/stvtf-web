@@ -58,10 +58,8 @@ function uberFlickerOff(p) {
   return Boolean(cleanUber.get(p.id)) && Math.floor(performance.now() / 90) % 2 === 1;
 }
 
-// Über like the game's invulnerable sheen, and as loud: bright team-coloured metal with bands of
-// reflection flowing across it, a white flash sweeping over it now and then, a rim light, and a
-// halo pulsing round the dot (drawUberGlow). The class icon, chrome in a dark outline
-// (drawUberIcon), stays readable on it.
+// Über, loud: bright team-coloured metal with flowing bands, a sweeping flash, a rim light and a
+// pulsing halo (drawUberGlow); the chrome class icon keeps a dark outline.
 const UBER_BANDS = /** @type {const} */ ([
   [0, 0.4],
   [0.18, 0.05],
@@ -70,7 +68,7 @@ const UBER_BANDS = /** @type {const} */ ([
   [0.68, 0.55],
   [0.85, 0],
 ]);
-// The flash: one sweep every SWEEP_S seconds, taking SWEEP_ON of it.
+// One flash every SWEEP_S seconds, lasting SWEEP_ON of it.
 const SWEEP_S = 1.4,
   SWEEP_ON = 0.45;
 // The icon's bands: the same pattern, light.
@@ -126,8 +124,7 @@ function uber({ base, id, x, y, rad, t }) {
   fillDot(x, y, rad, ball);
 }
 
-// An übered player is seen from across the map: a halo in the team's colour, pulsing, round the dot
-// and behind it.
+// A pulsing team-coloured halo behind an übered player's dot.
 /** @param {Player} p @param {number} x @param {number} y @param {number} rad */
 export function drawUberGlow(p, x, y, rad) {
   if (!uberShown(p)) return;
@@ -142,7 +139,7 @@ export function drawUberGlow(p, x, y, rad) {
   ctx.beginPath();
   ctx.arc(x, y, r, 0, TAU);
   ctx.fill();
-  // A thick ring in the team's colour, glowing, outside the health ring.
+  // A glowing ring outside the health ring.
   ctx.save();
   ctx.shadowColor = base;
   ctx.shadowBlur = rad * (0.8 + 0.8 * pulse);

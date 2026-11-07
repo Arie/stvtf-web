@@ -46,15 +46,14 @@ struct Inner {
     count: usize,
     /// What a timeline shows.
     marks: Vec<Mark>,
-    /// The latest score, and when: a round won takes it if it came with it.
+    /// The latest score and when, for the next round won.
     scores: Option<(u64, [u16; 2])>,
 }
 
-/// A score and a round won this close together, in play time, go together (either comes first).
+/// A score and a round won this close (ms) belong together, either first.
 const SCORE_WITH_WIN_MS: u64 = 2000;
 
-/// A moment a timeline marks: a round won (with the score after), an uber, a drop (a medic dying
-/// with it ready), or a kill (for where the fights were), with the team and who, if anyone.
+/// A timeline mark: a round won (with the score), an uber, a drop, or a kill (for fight heat).
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub(crate) struct Mark {
     pub(crate) at: u64,

@@ -143,7 +143,7 @@ fn respond_with(s: &mut TcpStream, status: &str, headers: &[(&str, &str)], body:
 }
 
 fn respond(s: &mut TcpStream, status: &str, ctype: &str, body: &[u8]) -> std::io::Result<()> {
-    // A page names the build's files: asked again each time, so a reload gets a new build's.
+    // Pages name the build's files: no-cache, so a reload gets a new build.
     if ctype == HTML {
         return respond_with(s, status, &[("Content-Type", ctype), ("Cache-Control", "no-cache")], body);
     }
