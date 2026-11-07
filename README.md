@@ -170,9 +170,10 @@ page, its overlay and live matches never change.
 
 Everyone in a room is listed beside the map, by the name they give (kept in the browser) or as
 Guest N. Admins make others admin, or not; the owner stays one. Each admin's pen has its own
-colour, which they pick by the swatch after their name. An admin also sets how everyone sees the map: each their own view, auto zoom, following
-the player the admin follows, or the admin's own view (the same part of the map, fitted to each
-screen); until it is back to their own, viewers cannot move the camera. A room's overlay follows it
+colour, which they pick by the swatch after their name. An admin also sets how everyone sees the map: free (each their own camera), auto zoom,
+following the player the admin follows, or the admin's view (the same part of the map, fitted to
+each screen); until it is free again, viewers cannot move the camera. The admin who chose it
+leads; another admin can take over, which keeps the view but follows their player or camera. A room's overlay follows it
 too, and is not listed. People are known by the `stvtf_guest` cookie, which only the server sees: pages know
 each other by number.
 

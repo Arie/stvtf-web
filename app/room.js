@@ -20,6 +20,9 @@ const HOME = new URL(PAGE.replace(/(overlay\/?|index\.html)?$/, ""), env.base);
 
 // Who this page is in the room: its number, and whether it is an admin.
 const me = { id: 0, admin: false };
+// Everyone's names, by number.
+/** @type {Map<number, string>} */
+const names = new Map();
 // Where a name is kept between visits.
 const NAME_KEY = "name";
 
@@ -262,6 +265,9 @@ function people(allow) {
     const self = m.people.find(p => p.id === me.id);
     if (self && self.admin !== me.admin) allow(self.admin);
     setInks(m.people);
+    names.clear();
+    for (const p of m.people) names.set(p.id, p.name);
+    showLead();
     list.replaceChildren(
       ...m.people.map(p => {
         const li = document.createElement("li"),
@@ -309,7 +315,18 @@ const leading = () => me.admin && view.by === me.id;
 // How often a leading admin's camera is sent on, at most, in milliseconds.
 const VIEW_MS = 100;
 
+// Who leads a view that follows someone's player or camera, and for other admins, a way to
+// take it over.
+function showLead() {
+  const led = view.mode === "follow" || view.mode === "admin",
+    who = $("rb-lead");
+  who.hidden = !led;
+  who.textContent = `by ${view.by === me.id ? "you" : (names.get(view.by) ?? "an admin")}`;
+  $("rb-take").hidden = !(led && me.admin && !leading());
+}
+
 function applyView() {
+  showLead();
   const lead = leading();
   state.locked = view.mode !== "free" && !lead;
   state.mirror = !lead && view.mode === "admin" ? view : null;
@@ -366,6 +383,11 @@ function roomView() {
     choose.title = v ? "How everyone sees the map" : "Follow a player first, then pick this";
     if (v) send(v, true);
     else choose.value = view.mode;
+  };
+  $("rb-take").onclick = () => {
+    const v = viewOf(view.mode);
+    $("rb-take").title = v ? "Lead the view: your player, or your camera" : "Follow a player first";
+    if (v) send(v, true);
   };
   setInterval(() => leading() && send(viewOf(view.mode), false), VIEW_MS);
 }

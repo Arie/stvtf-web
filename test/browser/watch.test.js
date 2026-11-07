@@ -289,6 +289,14 @@ test("another admin taking the view over keeps it", async () => {
   await page.mouse.up();
   await page.waitForTimeout(1000);
   for (const p of [page, other.page]) assert.equal(await p.$eval("#rb-view", el => el.value), "free");
+  await page.unroute("**/view");
+  await page.selectOption("#rb-view", "admin");
+  await until(other.page, () => document.getElementById("rb-lead").textContent === "by Guest 1");
+  assert.equal(await page.$eval("#rb-take", el => el.hidden), true, "the leader has nothing to take over");
+  await other.page.click("#rb-take");
+  await until(page, () => document.getElementById("rb-lead").textContent === "by Guest 2");
+  assert.equal(await page.$eval("#rb-view", el => el.value), "admin", "taking over keeps the view");
+  assert.equal(await page.$eval("#rb-take", el => el.hidden), false);
   assert.deepEqual([...errors, ...other.errors], []);
   await other.page.close();
   await page.close();
