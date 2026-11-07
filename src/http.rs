@@ -358,10 +358,37 @@ fn done(s: &mut TcpStream, done: Result<()>) -> std::io::Result<()> {
     }
 }
 
+/// A room on live match `m`, recording it from now on.
+fn open_live_room(s: &mut TcpStream, app: &App, sessions: &Sessions, m: &Arc<Session>, request: &Request) -> Result<()> {
+    if request.method != "POST" {
+        return Ok(respond(s, "200 OK", JSON, b"{}")?);
+    }
+    if sessions.running() + app.rooms.count() >= sessions.max {
+        return Ok(respond(s, "503 Service Unavailable", TEXT, b"This server is watching all it can.")?);
+    }
+    let Who { key: guest, cookie, .. } = who(app, request);
+    let room = app.rooms.open_live(m, &guest);
+    eprintln!("stvtf-web: room {} opened on live match {}", &room.id[..8], &m.id[..m.id.len().min(8)]);
+    opened(s, app, &room.id, cookie.as_deref())
+}
+
+/// The new room's page, for the browser that opened it.
+fn opened(s: &mut TcpStream, app: &App, id: &str, cookie: Option<&str>) -> Result<()> {
+    let body = serde_json::json!({ "page": format!("{}/r/{id}/", app.base) }).to_string();
+    let mut headers = vec![("Content-Type", JSON)];
+    if let Some(c) = cookie {
+        headers.push(("Set-Cookie", c));
+    }
+    Ok(respond_with(s, "201 Created", &headers, body.as_bytes())?)
+}
+
 /// `GET` says whether a room can be opened on match `m`; `POST` opens one, owned by the browser.
-fn open_room(s: &mut TcpStream, app: &App, sessions: &Sessions, m: &Session, request: &Request) -> Result<()> {
+fn open_room(s: &mut TcpStream, app: &App, sessions: &Sessions, m: &Arc<Session>, request: &Request) -> Result<()> {
+    if m.is_live() {
+        return open_live_room(s, app, sessions, m, request);
+    }
     if !m.recordable() {
-        return Ok(respond(s, "409 Conflict", TEXT, b"Rooms play demos; this match has none (yet).")?);
+        return Ok(respond(s, "409 Conflict", TEXT, b"This match has nothing to play (yet).")?);
     }
     if request.method != "POST" {
         return Ok(respond(s, "200 OK", JSON, b"{}")?);
@@ -379,12 +406,7 @@ fn open_room(s: &mut TcpStream, app: &App, sessions: &Sessions, m: &Session, req
         Err(e) => return Ok(respond(s, "409 Conflict", TEXT, format!("{e:#}").as_bytes())?),
     };
     eprintln!("stvtf-web: room {} opened on match {}", &room.id[..8], &m.id[..m.id.len().min(8)]);
-    let body = serde_json::json!({ "page": format!("{}/r/{}/", app.base, room.id) }).to_string();
-    let mut headers = vec![("Content-Type", JSON)];
-    if let Some(c) = &cookie {
-        headers.push(("Set-Cookie", c));
-    }
-    Ok(respond_with(s, "201 Created", &headers, body.as_bytes())?)
+    opened(s, app, &room.id, cookie.as_deref())
 }
 
 #[derive(serde::Deserialize)]
@@ -864,12 +886,30 @@ mod tests {
     }
 
     #[test]
-    fn a_live_match_offers_no_room() {
+    fn a_live_match_opens_a_room_that_records_it_from_then_on() {
         let app = app(Matches::Many(Sessions::new(false, 2, 20.0)));
         let Matches::Many(sessions) = &app.matches else { unreachable!() };
         let m = sessions.open("192.0.2.1:27020 tv", None, None).unwrap();
-        assert!(get(&app, &format!("/w/{}/room", m.id), "").starts_with("HTTP/1.1 409"));
-        assert!(post(&app, &format!("/w/{}/room", m.id), "", "").starts_with("HTTP/1.1 409"));
+        publish(&m.hub, &server("cp_process_f12"));
+        assert!(get(&app, &format!("/w/{}/room", m.id), "").starts_with("HTTP/1.1 200"));
+        let opened = post(&app, &format!("/w/{}/room", m.id), "", "");
+        assert!(opened.starts_with("HTTP/1.1 201"), "{opened}");
+        let page = opened.split(r#""page":""#).nth(1).unwrap().split('"').next().unwrap().to_string();
+        let id = page.trim_start_matches("/r/").trim_end_matches('/');
+        let room = app.rooms.get(id, sessions).unwrap();
+        let _watching = room.join("me", None, None, true);
+        assert!(m.watched(), "the room watches the match");
+        // What happens in the match from now on plays in the room.
+        std::thread::sleep(Duration::from_millis(50));
+        let kill = serde_json::from_str::<Line>(r#"{"type":"stalemate","tick":500}"#).unwrap();
+        publish(&m.hub, &kill);
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while room.hub.lock().unwrap().history.is_empty() {
+            assert!(Instant::now() < deadline, "the room plays the match");
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        assert_eq!(room.hub.lock().unwrap().map.as_deref(), Some("cp_process_f12"));
+        room.stop();
         sessions.stop_all();
     }
 
