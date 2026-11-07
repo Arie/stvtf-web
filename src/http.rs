@@ -360,7 +360,8 @@ fn serve_room(
         ("events", "GET") => match app.stream_slot(client) {
             Some(_slot) => {
                 let name = param(&request.query, "name").map(form_decode);
-                let _watching = room.join(&guest, name.as_deref());
+                let listed = param(&request.query, "overlay") != Some("1");
+                let _watching = room.join(&guest, name.as_deref(), listed);
                 stream(s, &room.hub, request.gzip, wants_detail(&request.query))?;
             }
             None => too_many_streams(&mut s)?,

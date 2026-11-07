@@ -72,13 +72,15 @@ pub(crate) struct Draw {
     pub(crate) points: Vec<[f64; 2]>,
 }
 
-/// A page in the room, by its guest cookie, until dropped.
-pub(crate) struct Watching(Arc<Room>, String);
+/// A page in the room, by its guest cookie if it is listed, until dropped.
+pub(crate) struct Watching(Arc<Room>, Option<String>);
 
 impl Drop for Watching {
     fn drop(&mut self) {
-        lock(&self.0.people).leave(&self.1);
-        self.0.announce_people();
+        if let Some(guest) = &self.1 {
+            lock(&self.0.people).leave(guest);
+            self.0.announce_people();
+        }
         if self.0.viewers.fetch_sub(1, Ordering::Relaxed) == 1 {
             *lock(&self.0.idle_since) = Some(Instant::now());
         }
@@ -179,13 +181,15 @@ impl Room {
         Ok(())
     }
 
-    /// A page of `guest`'s, called `name` if it says, joins.
-    pub(crate) fn join(self: &Arc<Self>, guest: &str, name: Option<&str>) -> Watching {
+    /// A page of `guest`'s, called `name` if it says, joins; an overlay is not listed.
+    pub(crate) fn join(self: &Arc<Self>, guest: &str, name: Option<&str>, listed: bool) -> Watching {
         self.viewers.fetch_add(1, Ordering::Relaxed);
         *lock(&self.idle_since) = None;
-        lock(&self.people).join(guest, name);
-        self.announce_people();
-        Watching(self.clone(), guest.to_string())
+        if listed {
+            lock(&self.people).join(guest, name);
+            self.announce_people();
+        }
+        Watching(self.clone(), listed.then(|| guest.to_string()))
     }
 
     /// How long nobody has watched, if nobody does.
@@ -339,7 +343,7 @@ mod tests {
         let r = room(10);
         std::thread::sleep(Duration::from_millis(50));
         assert!(r.hub.lock().unwrap().history.is_empty(), "nobody watches yet");
-        let _w = r.join("me", None);
+        let _w = r.join("me", None, true);
         until("every line", || r.hub.lock().unwrap().history.len() == 10);
         r.stop();
     }
@@ -348,7 +352,7 @@ mod tests {
     fn a_paused_room_publishes_nothing() {
         let r = room(10);
         r.control(&Control { paused: Some(true), ..Control::default() }).unwrap();
-        let _w = r.join("me", None);
+        let _w = r.join("me", None, true);
         std::thread::sleep(Duration::from_millis(100));
         assert!(r.hub.lock().unwrap().history.is_empty());
         r.stop();
@@ -369,7 +373,7 @@ mod tests {
     #[test]
     fn the_end_pauses_at_the_length() {
         let r = room(3);
-        let _w = r.join("me", None);
+        let _w = r.join("me", None, true);
         until("the end", || lock(&r.state).paused);
         assert_eq!(lock(&r.state).at, 30);
         r.stop();
@@ -379,7 +383,7 @@ mod tests {
     fn an_unwatched_room_ends() {
         let rooms = Rooms::default();
         let r = rooms.open(room(1).recording.clone(), "me");
-        let w = r.join("me", None);
+        let w = r.join("me", None, true);
         rooms.reap(Duration::ZERO);
         assert_eq!(rooms.count(), 1, "watched");
         drop(w);
@@ -405,8 +409,9 @@ mod tests {
     fn pages_hear_who_is_in_the_room() {
         let r = room(1);
         let page = subscribe(&r.hub, false);
-        let w = r.join("me", Some("coach"));
-        let _v = r.join("you", None);
+        let w = r.join("me", Some("coach"), true);
+        let _v = r.join("you", None, true);
+        let _overlay = r.join("cast", None, false);
         r.set_admin("me", 2, true).unwrap();
         drop(w);
         let people: Vec<_> = page.try_iter().filter(|l| l.contains(r#""type":"people""#)).collect();
