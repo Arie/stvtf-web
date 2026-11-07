@@ -36,7 +36,12 @@ aside { width: 380px; border-left: 1px solid var(--line); background: var(--pane
   flex-direction: column; min-height: 0; }
 aside section { padding: 8px 10px; border-bottom: 1px solid var(--line); }
 #people { max-height: 35%; overflow-y: auto; }
-#myname { width: 100%; margin-bottom: 6px; padding: 4px 6px; border: 1px solid var(--line); border-radius: 4px;
+#whoami { display: flex; gap: 8px; align-items: center; margin-bottom: 6px; font-size: 12px; }
+#whoami a { color: var(--dim); white-space: nowrap; cursor: pointer; } #whoami a:hover { color: var(--text); }
+#claim { padding: 1px 6px; border: 1px solid var(--line); border-radius: 4px; background: transparent; color: var(--text);
+  font: inherit; cursor: pointer; white-space: nowrap; }
+#peoplelist .signed { color: #7cc47f; font-size: 11px; }
+#myname { flex: 1; min-width: 0; padding: 4px 6px; border: 1px solid var(--line); border-radius: 4px;
   background: var(--bg); color: var(--text); font: inherit; }
 #peoplelist { margin: 0; padding: 0; list-style: none; }
 #peoplelist li { display: flex; align-items: center; gap: 6px; padding: 2px 0; }

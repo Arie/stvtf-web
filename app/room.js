@@ -128,6 +128,7 @@ function roomBar() {
     for (const c of [play, time, speed, pen, $("rb-view")]) /** @type {HTMLButtonElement} */ (c).disabled = !on;
     bar.title = on ? "" : "The room's admins control playback";
     if (!on && pen.classList.contains("on")) pen.click();
+    if (on) $("claim").hidden = true;
     setViewAdmin(on);
   };
   allow(false);
@@ -137,6 +138,7 @@ function roomBar() {
       m => {
         me.id = m.id;
         allow(m.admin === true);
+        signedIn(m);
         showPeople();
       },
       () => {},
@@ -261,6 +263,13 @@ function people(allow) {
           tag = document.createElement("span");
         nm.className = "nm";
         nm.textContent = p.name;
+        if (p.signed) {
+          const mark = document.createElement("span");
+          mark.className = "signed";
+          mark.textContent = "✓";
+          mark.title = "Signed in with serveme";
+          nm.append(" ", mark);
+        }
         tag.className = "tag";
         tag.textContent = [p.id === me.id && "you", p.owner ? "owner" : p.admin && "admin"].filter(Boolean).join(", ");
         li.append(nm, tag);
@@ -368,4 +377,20 @@ function roomView() {
     if (!s.take) state.mirror = null;
     send(s);
   }, VIEW_MS);
+}
+
+// Signing in with serveme: the name is theirs there, and a streamer may make themselves admin.
+/** @param {{ admin: boolean; signed: boolean; streamer: boolean; signin: boolean }} m */
+function signedIn(m) {
+  const back = encodeURIComponent(location.pathname);
+  const signin = /** @type {HTMLAnchorElement} */ ($("signin")),
+    signout = /** @type {HTMLAnchorElement} */ ($("signout")),
+    claim = /** @type {HTMLButtonElement} */ ($("claim"));
+  signin.href = new URL(`signin?return=${back}`, env.base).href;
+  signout.href = new URL(`signout?return=${back}`, env.base).href;
+  signin.hidden = !m.signin || m.signed;
+  signout.hidden = !m.signed;
+  $("myname").hidden = m.signed;
+  claim.hidden = !m.streamer || m.admin;
+  claim.onclick = () => post("claim", {}).then(() => (claim.hidden = true));
 }

@@ -165,7 +165,7 @@ export type DrawLine = { type: "draw"; stroke: number; points: [number, number, 
 /** Who is in a room, in the order they came; `id` is their number in it. */
 export type PeopleLine = {
   type: "people";
-  people: { id: number; name: string; admin: boolean; owner: boolean; ink?: string }[];
+  people: { id: number; name: string; admin: boolean; owner: boolean; signed: boolean; ink?: string }[];
 };
 
 /** How a room's admin `by` has everyone see the map. */

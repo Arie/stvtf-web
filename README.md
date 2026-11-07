@@ -181,6 +181,15 @@ Viewers cannot move the camera unless it is free; admins always can. A room's ov
 the view too, and is not listed. People are known by the `stvtf_guest` cookie, which only the server sees: pages know
 each other by number.
 
+Behind a site with `STVTF_TOKEN_KEY` and `--home`, people sign in with it from a room ("Sign in
+with serveme"): `/signin?return=PATH` sends them to the site's `/stv/sign_in?return=PATH`,
+which signs them in there if need be and sends them back to `/signed_in?t=TOKEN&return=PATH`,
+the token sealed like a start token, of `{"signin": {"uid", "name", "streamer"}, "exp"}`. We keep
+the user in a sealed `stvtf_user` cookie for 30 days (`/signout` drops it). In a room they are then
+their Steam id instead of the browser, so their admin rights go with them to any device, and
+their name is the site's, marked as such. A streamer (or more) on the site may make themselves
+admin in any room.
+
 A room keeps the demo in memory in 10-second chunks, each starting from the state a page joins
 with, so a jump replays at most one chunk. It counts towards `--max-matches` and ends a minute
 after its last viewer left. With `--sessions DIR` each room is saved there too, once a second
@@ -193,7 +202,8 @@ dropped.
 |---|---|
 | `GET /w/<id>/room` | 200 when a room can be opened on the match, 409 when not (live, or a demo still being fetched) |
 | `POST /w/<id>/room` | opens one: `{"page": "/r/<id>/"}` |
-| `GET /r/<id>/me` | `{"id", "admin"}`: the caller's number in the room, and whether they are an admin |
+| `GET /r/<id>/me` | `{"id", "admin", "signed", "streamer", "signin"}`: the caller's number in the room, whether they are an admin, signed in with the site and a streamer there, and whether signing in is offered |
+| `POST /r/<id>/claim` | a streamer signed in with the site makes themselves admin |
 | `POST /r/<id>/name` | `{"name"}`: the caller's name in the room |
 | `POST /r/<id>/ink` | an admin's `{"ink": "#rrggbb"}`: their pen colour |
 | `POST /r/<id>/admin` | an admin's `{"person": <number>, "admin": true\|false}` |
