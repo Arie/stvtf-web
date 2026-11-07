@@ -152,6 +152,9 @@ function handle(m) {
     case "draw":
       onDraw(/** @type {import("../types/stream").DrawLine} */ (/** @type {unknown} */ (m)));
       break;
+    case "view":
+      for (const f of viewListeners) f(/** @type {import("../types/stream").ViewLine} */ (/** @type {unknown} */ (m)));
+      break;
     case "people":
       for (const f of peopleListeners)
         f(/** @type {import("../types/stream").PeopleLine} */ (/** @type {unknown} */ (m)));
@@ -183,6 +186,8 @@ function onServer(m) {
 export const playbackListeners = new Set();
 /** @type {Set<(m: import("../types/stream").PeopleLine) => void>} */
 export const peopleListeners = new Set();
+/** @type {Set<(m: import("../types/stream").ViewLine) => void>} */
+export const viewListeners = new Set();
 /** @param {import("../types/stream").PlaybackLine} m */
 function onPlayback(m) {
   setClockRate(m.paused ? 0 : m.speed);

@@ -79,6 +79,10 @@ export type State = {
   bg: string;
   /** The followed player's id. */
   follow: number | null;
+  /** A room's admin leads the camera: the viewer's own pan, zoom and follow are off. */
+  locked: boolean;
+  /** The map area a room's admin sees, which this view glides to. */
+  mirror: { cx: number; cy: number; w: number; h: number; rot: number } | null;
   lastPlayers: Player[];
   lastScores: GameEvent | null;
   /** The spawn room each team was last seen spawning in, and when. */

@@ -2,9 +2,10 @@
 // on a match's own page, the button that opens a room on it.
 import { $, OVERLAY, PAGE, canvas, state } from "./core.js";
 import { env } from "./env.js";
-import { peopleListeners, playbackListeners, streamParams } from "./stream.js";
+import { setAutoZoom, setFollow } from "./input.js";
+import { peopleListeners, playbackListeners, streamParams, viewListeners } from "./stream.js";
 import { drawOwn, inkOf } from "./telestrator.js";
-import { screenOffset } from "./view.js";
+import { focusOf, screenOffset, viewArea } from "./view.js";
 /** @typedef {import("../types/stream").PlaybackLine} PlaybackLine */
 
 const SPEEDS = [0.25, 0.5, 1, 2, 4];
@@ -40,7 +41,9 @@ export function clock(ms) {
 
 // The playback bar in a room, the Room button elsewhere; neither on the overlay or another site.
 export function initRoom() {
-  if (OVERLAY || env.component) return;
+  if (env.component) return;
+  if (IN_ROOM) roomView();
+  if (OVERLAY) return;
   if (IN_ROOM) roomBar();
   else roomButton();
 }
@@ -118,9 +121,10 @@ function roomBar() {
   /** @param {boolean} on */
   const allow = on => {
     admin = me.admin = on;
-    for (const c of [play, time, speed, pen]) c.disabled = !on;
+    for (const c of [play, time, speed, pen, $("rb-view")]) /** @type {HTMLButtonElement} */ (c).disabled = !on;
     bar.title = on ? "" : "The room's admins control playback";
     if (!on && pen.classList.contains("on")) pen.click();
+    applyView();
   };
   allow(false);
   fetch(new URL("me", HOME))
@@ -279,4 +283,70 @@ function people(allow) {
       }),
     );
   }
+}
+
+// How everyone sees the map, as an admin sets it: each their own camera, auto zoom, following
+// one player, or the admin's own view. The admin who set it leads with their own camera, and
+// their pan, zoom or follow is sent on as it changes; everyone else is locked to it.
+/** @type {import("../types/stream").ViewLine} */
+let view = { type: "view", mode: "free", by: 0 };
+const leading = () => me.admin && view.by === me.id;
+// How often a leading admin's camera is sent on, at most, in milliseconds.
+const VIEW_MS = 100;
+
+function applyView() {
+  const lead = leading();
+  state.locked = view.mode !== "free" && !lead;
+  state.mirror = !lead && view.mode === "admin" ? view : null;
+  if (state.locked) $("autozoom").hidden = true;
+  if (lead) return;
+  if (view.mode === "auto") {
+    if (state.follow != null) setFollow(null);
+    setAutoZoom(true);
+  } else if (view.mode === "follow") {
+    if (state.follow !== view.player) setFollow(view.player);
+  } else if (view.mode === "admin") {
+    if (state.follow != null) setFollow(null);
+    setAutoZoom(false);
+  }
+}
+
+// What a leading admin's camera says for `mode`; null when following nobody.
+/** @param {string} mode */
+function viewOf(mode) {
+  if (mode === "follow") return state.follow == null ? null : { mode, player: state.follow };
+  if (mode !== "admin") return { mode };
+  const v = state.view,
+    { w, h } = viewArea(),
+    f = focusOf(v);
+  const r = (/** @type {number} */ x) => Math.round(x * 100) / 100;
+  return { mode, cx: r(f.cx), cy: r(f.cy), w: r(w / v.scale), h: r(h / v.scale), rot: r(v.rot) };
+}
+
+function roomView() {
+  // An overlay (in a stream, say) is nobody in the room.
+  if (OVERLAY) streamParams.set("overlay", "1");
+  const choose = /** @type {HTMLSelectElement} */ ($("rb-view"));
+  let sent = "";
+  /** @param {object | null} v */
+  const send = v => {
+    const body = JSON.stringify(v);
+    if (!v || body === sent) return;
+    sent = body;
+    post("view", v);
+  };
+  viewListeners.add(m => {
+    view = m;
+    // Someone else leads now: what this page sent last no longer stands.
+    if (m.by !== me.id) sent = "";
+    choose.value = m.mode;
+    applyView();
+  });
+  choose.onchange = () => {
+    const v = viewOf(choose.value);
+    choose.title = v ? "How everyone sees the map" : "Follow a player first, then pick this";
+    if (v) send(v);
+    else choose.value = view.mode;
+  };
+  setInterval(() => leading() && send(viewOf(view.mode)), VIEW_MS);
 }

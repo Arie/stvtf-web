@@ -14,10 +14,9 @@ addEventListener("resize", refit);
 if (env.component) new ResizeObserver(refit).observe(env.el);
 /** @type {{ x: number; y: number; cx: number; cy: number; moved: boolean } | null} */
 let drag = null;
-canvas.addEventListener(
-  "mousedown",
-  e => (drag = { x: e.clientX, y: e.clientY, cx: state.view.cx, cy: state.view.cy, moved: false }),
-);
+canvas.addEventListener("mousedown", e => {
+  if (!state.locked) drag = { x: e.clientX, y: e.clientY, cx: state.view.cx, cy: state.view.cy, moved: false };
+});
 window.addEventListener("mouseup", e => {
   if (drag && !drag.moved) followAt(e.clientX, e.clientY);
   drag = null;
@@ -64,7 +63,7 @@ env.keys.addEventListener("blur", () => showBoard(false));
 // What each key does (Tab is held, so it is handled on its own).
 const KEYS = {
   Escape() {
-    setFollow(null);
+    if (!state.locked) setFollow(null);
     $("help").hidden = true;
     $("settings").hidden = true;
   },
@@ -122,7 +121,7 @@ for (const cls of ["nohud", "noscore"]) {
 if (!OVERLAY) env.el.classList.toggle("noscore", !optOn("score", !env.el.classList.contains("noscore")));
 
 /** @param {boolean} on */
-function setAutoZoom(on) {
+export function setAutoZoom(on) {
   if (OVERLAY || state.autoZoom === on) return;
   state.autoZoom = on;
   state.camTarget = null;
@@ -159,10 +158,10 @@ function followAt(cx, cy) {
 for (const id of ["hud-blue", "hud-red"]) {
   $(id).addEventListener("click", e => {
     const c = /** @type {HTMLElement} */ (/** @type {Element} */ (e.target).closest(".card"));
-    if (c) setFollow(Number(c.dataset.id));
+    if (c && !state.locked) setFollow(Number(c.dataset.id));
   });
 }
-$("follow-stop").addEventListener("click", () => setFollow(null));
+$("follow-stop").addEventListener("click", () => state.locked || setFollow(null));
 $("settingstoggle").addEventListener("click", () => toggleExclusive("settings"));
 $("settings").addEventListener("change", e => {
   const box = /** @type {HTMLInputElement} */ (e.target),
@@ -172,11 +171,11 @@ $("settings").addEventListener("change", e => {
 });
 
 $("helptoggle").addEventListener("click", () => toggleExclusive("help"));
-$("autozoom").addEventListener("click", () => setAutoZoom(true));
+$("autozoom").addEventListener("click", () => state.locked || setAutoZoom(true));
 $("feed").addEventListener("click", e => {
   const who = /** @type {HTMLElement} */ (/** @type {Element} */ (e.target).closest(".who[data-id]"));
   const id = Number(who?.dataset.id);
-  if (!OVERLAY && Number.isFinite(id) && id !== state.follow) setFollow(id);
+  if (!OVERLAY && !state.locked && Number.isFinite(id) && id !== state.follow) setFollow(id);
 });
 
 /** @param {boolean} show */
@@ -206,6 +205,7 @@ canvas.addEventListener(
   "wheel",
   e => {
     e.preventDefault();
+    if (state.locked) return;
     setAutoZoom(false);
     const r = canvas.getBoundingClientRect(),
       v = state.view;

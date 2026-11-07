@@ -153,6 +153,8 @@ export const state = {
   autoZoom: !OVERLAY || OPT.get("zoom") !== "map",
   bg: "overview",
   follow: null,
+  locked: false,
+  mirror: null,
   // The players last drawn, the score line for the feed, rooms seen spawning, when the HUD last refreshed.
   lastPlayers: [],
   lastScores: null,

@@ -168,5 +168,21 @@ export type PeopleLine = {
   people: { id: number; name: string; admin: boolean; owner: boolean }[];
 };
 
+/** How a room's admin `by` has everyone see the map. */
+export type ViewLine = { type: "view"; by: number } & (
+  | { mode: "free" | "auto" }
+  | { mode: "follow"; player: number }
+  | { mode: "admin"; cx: number; cy: number; w: number; h: number; rot: number }
+);
+
 export type StreamMessage =
-  Snapshot | ServerLine | StatusLine | PlaybackLine | { type: "data_age"; ms: number } | { type: "seek" } | GameEvent;
+  | Snapshot
+  | ServerLine
+  | StatusLine
+  | PlaybackLine
+  | DrawLine
+  | PeopleLine
+  | ViewLine
+  | { type: "data_age"; ms: number }
+  | { type: "seek" }
+  | GameEvent;

@@ -178,6 +178,26 @@ function glide(v, target, dt, { escaping, keep, at }) {
   Object.assign(v, viewCentre({ cx: fx, cy: fy }, v.scale));
 }
 
+// Glides toward the area a room's admin sees, fitted to this view, turned as theirs.
+/** @param {{ cx: number; cy: number; w: number; h: number; rot: number }} m */
+export function mirror(m) {
+  const v = state.view,
+    { w, h } = viewArea(),
+    z = Math.log(v.scale),
+    focus = focusOf(v);
+  v.rot = m.rot;
+  v.scale = Math.exp(z + (Math.log(Math.min(w / m.w, h / m.h)) - z) * MIRROR_EASE);
+  Object.assign(
+    v,
+    viewCentre(
+      { cx: focus.cx + (m.cx - focus.cx) * MIRROR_EASE, cy: focus.cy + (m.cy - focus.cy) * MIRROR_EASE },
+      v.scale,
+    ),
+  );
+}
+// The share of the way to an admin's view a frame goes.
+const MIRROR_EASE = 0.25;
+
 /** @param {Player[]} players */
 export function followAction(players) {
   const now = performance.now(),

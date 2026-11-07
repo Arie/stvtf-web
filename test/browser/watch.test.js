@@ -227,3 +227,31 @@ test("people in a room see each other and admins make others admin", async () =>
   await viewer.page.close();
   await page.close();
 });
+
+test("an admin has everyone follow the player they follow", async () => {
+  const { page, errors } = await open();
+  await page.goto(base);
+  await page.click("#roomopen");
+  await page.waitForURL(/\/r\/[0-9a-f]{32}\/$/, { timeout: WAIT });
+  await until(page, () => !(/** @type {HTMLSelectElement} */ (document.getElementById("rb-view")).disabled));
+  const viewer = await open();
+  await viewer.page.goto(page.url());
+  await until(page, () => document.querySelectorAll("#hud-blue .card").length > 0);
+  await page.click("#hud-blue .card");
+  const name = await until(
+    page,
+    () => !document.getElementById("follow").hidden && document.getElementById("follow-name").textContent,
+  );
+  await page.selectOption("#rb-view", "follow");
+  await until(
+    viewer.page,
+    n => document.getElementById("follow-name").textContent === n && !document.getElementById("follow").hidden,
+    name,
+  );
+  assert.equal(await viewer.page.$eval("#rb-view", el => el.value), "follow");
+  await viewer.page.click("#follow-stop");
+  assert.equal(await viewer.page.$eval("#follow", el => el.hidden), false, "a viewer cannot stop following");
+  assert.deepEqual([...errors, ...viewer.errors], []);
+  await viewer.page.close();
+  await page.close();
+});
