@@ -146,7 +146,7 @@ export function playbar(o) {
   };
 }
 
-// Watching a moment that is not live says so: how far behind SourceTV, else a replay.
+// Watching a moment that is not live says so: how far behind SourceTV, or a replay (a demo too).
 /**
  * @param {(behind: boolean, p: PlaybackLine) => boolean} replay @param {boolean} behind
  * @param {PlaybackLine} p @param {number} by how far behind, in ms
@@ -154,7 +154,8 @@ export function playbar(o) {
 function say(replay, behind, p, by) {
   const status = $("status").textContent ?? "";
   let want = "live";
-  if (replay(behind, p)) want = behind ? `${clock(by)} behind STV` : "replay";
+  if (!p.live) want = "replay";
+  else if (replay(behind, p)) want = behind ? `${clock(by)} behind STV` : "replay";
   if (playbackStatus(status) && status !== "paused" && status !== want) setStatus(want, true);
 }
 

@@ -181,7 +181,8 @@ test("a room is driven by its owner and followed by everyone else", async () => 
   await until(viewer.page, () => document.getElementById("status").textContent === "paused");
   assert.ok(await viewer.page.$eval("#rb-play", el => el.disabled), "only the owner controls it");
   await page.click("#rb-play");
-  await until(viewer.page, () => document.getElementById("status").textContent === "live");
+  // A demo plays as a replay.
+  await until(viewer.page, () => document.getElementById("status").textContent === "replay");
   assert.deepEqual([...errors, ...viewer.errors], []);
   await viewer.page.close();
   await page.close();
@@ -473,7 +474,7 @@ test("a viewer of a match page goes back on their own, and returns", async () =>
   await page.click("#rb-live");
   // Hidden, keeping its room.
   await until(page, () => document.getElementById("rb-live").style.visibility === "hidden");
-  await until(page, () => document.getElementById("status").textContent === "live");
+  await until(page, () => document.getElementById("status").textContent === "replay");
   assert.equal(streams.at(-1), "/w/demo/events", "back on the shared stream");
   assert.deepEqual(errors, []);
   await page.close();
