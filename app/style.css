@@ -951,8 +951,33 @@ aside h3 {
   font-size: 12px;
   cursor: pointer;
 }
+/* An icon: a chain, a check once copied. */
 #roomlink {
-  margin-left: 8px;
+  align-self: center;
+  margin-left: 0;
+  padding: 3px 5px;
+  line-height: 0;
+  color: var(--dim);
+}
+#roomlink:hover {
+  color: var(--text);
+}
+#roomlink svg {
+  width: 13px;
+  height: 13px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+#roomlink .check,
+#roomlink.copied .chain {
+  display: none;
+}
+#roomlink.copied .check {
+  display: block;
+  color: #7cc47f;
 }
 #roombar {
   position: absolute;

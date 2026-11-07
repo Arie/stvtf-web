@@ -83,15 +83,20 @@ function roomButton() {
   };
 }
 
-// A link button: copies the link `url` makes (and says so).
+// A link button: copies the link `url` makes, and says so for a moment (an icon by its look).
 /** @param {HTMLElement} link @param {() => URL} url */
 function copyLink(link, url) {
-  const idle = link.textContent;
+  const idle = link.textContent,
+    icon = Boolean(link.querySelector("svg"));
   link.onclick = () =>
     navigator.clipboard?.writeText(url().href).then(
       () => {
-        link.textContent = "Copied";
-        setTimeout(() => (link.textContent = idle), COPIED_MS);
+        link.classList.add("copied");
+        if (!icon) link.textContent = "Copied";
+        setTimeout(() => {
+          link.classList.remove("copied");
+          if (!icon) link.textContent = idle;
+        }, COPIED_MS);
       },
       () => {},
     );
