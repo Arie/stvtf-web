@@ -26,7 +26,9 @@ const el = (cls, tag = "div") => Object.assign(document.createElement(tag), { cl
 export function timeline(t) {
   const lane = el("rb-lane"),
     rounds = el("rb-rounds"),
+    span = el("rb-span"),
     heat = /** @type {HTMLCanvasElement} */ (el("rb-heat", "canvas"));
+  rounds.append(span);
   t.track.prepend(rounds);
   const strip = el("rb-heat-wrap");
   strip.append(heat);
@@ -50,11 +52,25 @@ export function timeline(t) {
     draw();
   };
 
-  // Positions are moments (--at, ms) on a track as long as --len, which the bar sets every frame:
-  // the browser places them, so a live match's timeline glides as it grows.
+  // Marks are moved, never laid out again, as a live match's timeline grows (place): a transform
+  // glides between pixels at the same width. The rounds and the fight strip are laid out for one
+  // length and scaled to the next.
+  /** @type {[HTMLElement, number][]} */
+  let placed = [];
+  let spanLen = 1,
+    heatLen = 1,
+    at = { len: 0, width: 0 };
+  /** @param {number} len @param {number} width */
+  const place = (len, width) => {
+    at = { len, width };
+    for (const [e, ms] of placed) e.style.transform = `translate3d(${(ms / len) * width}px, 0, 0)`;
+    span.style.transform = `scaleX(${spanLen / len})`;
+    heat.style.transform = `scaleX(${heatLen / len})`;
+  };
+
   /** @param {HTMLElement} e @param {Mark} m @param {string} what */
   const mark = (e, m, what) => {
-    e.style.setProperty("--at", String(m.at));
+    placed.push([e, m.at]);
     e.style.setProperty("--team", TEAM[m.team] ?? TEAM.none);
     e.title = `${what} · ${t.clock(m.at)}${t.jump ? " · click to watch it" : ""}`;
     const jump = t.jump;
@@ -85,6 +101,7 @@ export function timeline(t) {
   function draw(again = false) {
     if (again) {
       lane.replaceChildren();
+      placed = [];
       drawn = 0;
     }
     const before = drawn;
@@ -97,25 +114,22 @@ export function timeline(t) {
     const now = [starts.join(), drawn].join();
     if (again || now !== laid) {
       laid = now;
-      rounds.replaceChildren(
-        ...starts.map((s, i) => {
-          // The winner's colour; grey for a stalemate, none while unplayed.
-          const end = starts[i + 1],
-            won = marks.find(m => m.kind === "win" && m.at >= s && m.at < (end ?? Infinity));
-          const r = el(`rb-round${won ? ` won ${won.team}` : ""}${end == null ? " last" : ""}`);
-          r.style.setProperty("--at", String(s));
-          if (end != null) r.style.setProperty("--to", String(end));
-          return r;
-        }),
-      );
+      spanLen = Math.max(1, t.length());
+      span.style.setProperty("--len", String(spanLen));
+      drawRounds(span, starts, marks);
     }
     if (again || drawn !== before || performance.now() - heated > HEAT_MS) {
       heated = performance.now();
-      drawHeat(heat, marks, t.length());
+      heatLen = drawHeat(heat, marks, t.length());
     }
+    place(Math.max(1, t.length()), at.width);
   }
 
   return {
+    /** Fit the timeline to its length and width (px) now. @param {number} len @param {number} width */
+    place(len, width) {
+      if (len !== at.len || width !== at.width) place(len, width);
+    },
     /** A playback line: the rounds so far, and how many marks there are. @param {{ rounds: number[]; marks?: number }} m */
     heard(m) {
       starts = m.rounds;
@@ -130,17 +144,30 @@ export function timeline(t) {
   };
 }
 
-// Kills binned across the strip, in the colour of the team with more.
-/** @param {HTMLCanvasElement} heat @param {Mark[]} marks @param {number} length */
+// The rounds in their winner's colour; grey for a stalemate, none while unplayed.
+/** @param {HTMLElement} span @param {number[]} starts @param {Mark[]} marks */
+function drawRounds(span, starts, marks) {
+  span.replaceChildren(
+    ...starts.map((s, i) => {
+      const end = starts[i + 1],
+        won = marks.find(m => m.kind === "win" && m.at >= s && m.at < (end ?? Infinity));
+      const r = el(`rb-round${won ? ` won ${won.team}` : ""}${end == null ? " last" : ""}`);
+      r.style.setProperty("--at", String(s));
+      if (end != null) r.style.setProperty("--to", String(end));
+      return r;
+    }),
+  );
+}
+
+// Kills binned across the strip, in the colour of the team with more; how long a time it covers.
+/** @param {HTMLCanvasElement} heat @param {Mark[]} marks @param {number} length @returns {number} */
 function drawHeat(heat, marks, length) {
-  // Fixed bins of time, a pixel each, stretched over the part of the track they span (--drawn):
-  // a bin once counted stays put as a live match grows.
+  // Fixed bins of time, a pixel each: a bin once counted stays put as a live match grows.
   const bins = Math.max(1, Math.ceil(length / HEAT_BIN_MS));
-  heat.style.setProperty("--drawn", String(bins * HEAT_BIN_MS));
   heat.width = bins;
   heat.height = 1;
   const g = heat.getContext("2d");
-  if (!g) return;
+  if (!g) return bins * HEAT_BIN_MS;
   const count = Array.from({ length: bins }, () => ({ blue: 0, red: 0 }));
   for (const m of marks) {
     const b = count[Math.min(bins - 1, Math.floor(m.at / HEAT_BIN_MS))];
@@ -154,4 +181,5 @@ function drawHeat(heat, marks, length) {
     g.fillStyle = c.blue >= c.red ? TEAM.blue : TEAM.red;
     g.fillRect(i, 0, 1, 1);
   });
+  return bins * HEAT_BIN_MS;
 }
