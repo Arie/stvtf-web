@@ -2,7 +2,8 @@
 //! checkpoint of the hub, so a seek replays at most one chunk. A live match's recording grows
 //! as it is played: its last chunk stays open, as text, until its time is up, and each chunk
 //! closed can go to a file (one gzip member after another), from which it resumes. A new map
-//! starts it over: what came before is dropped, though chunks and marks keep their numbers.
+//! starts it over: what came before is dropped, though chunks and marks keep their numbers. So is
+//! what is more than [`KEEP_MS`] old.
 
 use crate::hub::{Hub, SharedHub, publish};
 use crate::lock;
@@ -20,6 +21,10 @@ use stvtf::output::{Stamped, Team};
 
 /// Play time per chunk, in milliseconds.
 const CHUNK_MS: u64 = 10_000;
+
+/// Play time a live recording keeps, in milliseconds, dropping more once over by [`TRIM_MS`].
+const KEEP_MS: u64 = 3 * 3600 * 1000;
+const TRIM_MS: u64 = 10 * 60 * 1000;
 
 /// Where a live recording's chunks go as they close.
 pub(crate) type Sink = Box<dyn FnMut(&Save) + Send>;
@@ -141,10 +146,27 @@ impl Inner {
         (self.origin, self.start) = (at, at);
     }
 
-    /// The file: a header, then the closed chunks.
+    /// Drops the chunks before play time `before`, and the marks and rounds before what is left;
+    /// the round going on stays.
+    fn trim(&mut self, before: u64) {
+        let n = self.chunks.partition_point(|c| c.start < before).min(self.chunks.len().saturating_sub(1));
+        self.chunks.drain(..n);
+        self.dropped += n;
+        self.start = self.chunks.first().map_or(self.start, |c| c.start);
+        let n = self.marks.partition_point(|m| m.at < self.start);
+        self.marks.drain(..n);
+        self.marks_dropped += n;
+        let n = self.rounds.partition_point(|r| *r < self.start).saturating_sub(1);
+        self.rounds.drain(..n);
+    }
+
+    /// The file: a header (with the match as it was at the first chunk), then the closed chunks.
     fn file(&self) -> Result<Vec<u8>> {
         let mut gz = GzEncoder::new(Vec::new(), Compression::default());
         writeln!(gz, "origin\t{}\nmarks\t{}", self.origin, self.marks_dropped)?;
+        for line in self.chunks.first().into_iter().flat_map(|c| c.hub.state()) {
+            writeln!(gz, "hub\t{line}")?;
+        }
         let mut file = gz.finish()?;
         let closed = if self.open.is_empty() { &self.chunks[..] } else { &self.chunks[..self.chunks.len() - 1] };
         for c in closed {
@@ -181,6 +203,10 @@ impl Inner {
             let hub = lock(&self.scratch).checkpoint();
             self.chunks.push(Chunk { start: at, hub, lines: Vec::new() });
             self.fresh = false;
+            if at.saturating_sub(self.start) > KEEP_MS + TRIM_MS {
+                self.trim(at - KEEP_MS);
+                save = Some(Save::All(self.file()?));
+            }
         }
         if matches!(stamped.line, Line::RoundStart(_)) {
             self.rounds.push(at);
@@ -239,6 +265,7 @@ impl Recording {
                 match key {
                     "origin" => inner.origin = value.parse()?,
                     "marks" => inner.marks_dropped = value.parse()?,
+                    "hub" => publish(&inner.scratch, &serde_json::from_str(value)?),
                     _ => {
                         at = key.parse()?;
                         cut |= matches!(inner.add(at, &serde_json::from_str(value)?, value)?, Some(Save::All(_)));
@@ -509,6 +536,38 @@ mod tests {
         assert_eq!(again.chunk(0).unwrap().first().map(|(t, _)| *t), Some(at));
         live_lines(&again, 1, time + 60_000);
         assert_eq!(again.marks(0).1, r.marks(0).1, "the marks keep their numbers too");
+    }
+
+    #[test]
+    fn a_live_recording_keeps_the_last_hours() {
+        use crate::testing::server;
+        let saved = Arc::new(Mutex::new(Vec::new()));
+        let to = |saved: &Arc<Mutex<Vec<u8>>>| -> Sink {
+            let saved = saved.clone();
+            Box::new(move |save: &Save| match save {
+                Save::Add(gz) => lock(&saved).extend_from_slice(gz),
+                Save::All(gz) => *lock(&saved) = gz.clone(),
+            })
+        };
+        let r = Recording::live_to(to(&saved));
+        let t0 = 1_700_000_000_000;
+        push_at(&r, &server("cp_long"), t0);
+        // A line a second, up to just past what is kept and trimmed at once.
+        let last = (KEEP_MS + TRIM_MS) / 1000 + 10;
+        let stalemate: Line = serde_json::from_str(r#"{"type":"stalemate","tick":5}"#).unwrap();
+        for s in 1..=last {
+            push_at(&r, &stalemate, t0 + s * 1000);
+        }
+        let start = r.start();
+        assert!(start > 0 && last * 1000 - start <= KEEP_MS, "{start}");
+        assert_eq!(r.origin(), 0, "the map began where it did");
+        assert!(r.chunk(0).is_none());
+        let (hub, _, _) = r.seek(0);
+        assert_eq!(hub.map.as_deref(), Some("cp_long"), "the match as it was at the start");
+        let again = Recording::resume(lock(&saved).as_slice(), to(&saved)).unwrap();
+        assert_eq!(again.start(), start, "the file was trimmed too");
+        let (hub, _, _) = again.seek(0);
+        assert_eq!(hub.map.as_deref(), Some("cp_long"), "and keeps the match as it was");
     }
 
     #[test]

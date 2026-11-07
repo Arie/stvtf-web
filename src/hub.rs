@@ -105,6 +105,11 @@ impl Hub {
         }
     }
 
+    /// The latest status, server, world and snapshot lines: the match's state, without its feed.
+    pub(crate) fn state(&self) -> impl Iterator<Item = &Arc<str>> {
+        [&self.status, &self.server, &self.world, &self.snapshot].into_iter().flatten()
+    }
+
     pub(crate) fn summary(&self) -> Summary {
         Summary { hostname: parse(self.server.as_ref()).map(|s: ServerSummary| s.hostname), snapshot: parse(self.snapshot.as_ref()) }
     }

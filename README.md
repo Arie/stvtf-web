@@ -210,7 +210,8 @@ A room keeps the match in memory in 10-second chunks, each starting from the sta
 with, so a jump replays at most one chunk. Rooms on the same match share it. A live match is
 recorded from when it is first watched: a room on it starts at live and can go back to the start,
 the ● Live button goes back to live, and playback waits there rather than going past it (the room
-counts as one of the match's viewers). A room counts towards `--max-matches` and ends a minute
+counts as one of the match's viewers). A new map starts the recording over, and only its last
+three hours are kept. A room counts towards `--max-matches` and ends a minute
 after its last viewer left.
 
 With `--sessions DIR` each room is saved there too, once a second (sealed like the matches; a
@@ -237,7 +238,8 @@ hour is dropped.
 
 The room's event stream adds five lines (`playback` also says `live`, for a live match whose recording grows): `view` (as posted, with `by`), `people` (`id`, `name`, `admin`, `owner`, `signed`, and when there is one, `ink` and `steamid` each), `draw`
 (as posted, with `by`, the drawer's number), `playback` (`paused`, `speed`, `at` and `length` in
-milliseconds, and `rounds`, when each round started) on every change and every second while it
+milliseconds, `start`, the first moment kept, and `origin`, where the map began, and
+`rounds`, when each round started) on every change and every second while it
 plays, and `seek` before the state at the new position.
 
 ## Embedding
