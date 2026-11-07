@@ -198,6 +198,12 @@ impl Room {
         self.announce_people();
     }
 
+    /// `guest` makes themselves an admin, as a streamer of the site's may.
+    pub(crate) fn make_admin(&self, guest: &str) {
+        lock(&self.people).make_admin(guest);
+        self.announce_people();
+    }
+
     pub(crate) fn set_ink(&self, guest: &str, ink: &str) -> Result<()> {
         lock(&self.people).set_ink(guest, ink)?;
         self.announce_people();
@@ -279,12 +285,13 @@ impl Room {
         Ok(())
     }
 
-    /// A page of `guest`'s, called `name` if it says, joins; an overlay is not listed.
-    pub(crate) fn join(self: &Arc<Self>, guest: &str, name: Option<&str>, listed: bool) -> Watching {
+    /// A page of `guest`'s, called `name` if it says (or `site` when they signed in there),
+    /// joins; an overlay is not listed.
+    pub(crate) fn join(self: &Arc<Self>, guest: &str, name: Option<&str>, site: Option<&str>, listed: bool) -> Watching {
         self.viewers.fetch_add(1, Ordering::Relaxed);
         *lock(&self.idle_since) = None;
         if listed {
-            lock(&self.people).join(guest, name);
+            lock(&self.people).join(guest, name, site);
             self.announce_people();
         }
         Watching(self.clone(), listed.then(|| guest.to_string()))
@@ -417,7 +424,7 @@ mod tests {
         let r = room(10);
         std::thread::sleep(Duration::from_millis(50));
         assert!(r.hub.lock().unwrap().history.is_empty(), "nobody watches yet");
-        let _w = r.join("me", None, true);
+        let _w = r.join("me", None, None, true);
         until("every line", || r.hub.lock().unwrap().history.len() == 10);
         r.stop();
     }
@@ -426,7 +433,7 @@ mod tests {
     fn a_paused_room_publishes_nothing() {
         let r = room(10);
         r.control(&Control { paused: Some(true), ..Control::default() }).unwrap();
-        let _w = r.join("me", None, true);
+        let _w = r.join("me", None, None, true);
         std::thread::sleep(Duration::from_millis(100));
         assert!(r.hub.lock().unwrap().history.is_empty());
         r.stop();
@@ -447,7 +454,7 @@ mod tests {
     #[test]
     fn the_end_pauses_at_the_length() {
         let r = room(3);
-        let _w = r.join("me", None, true);
+        let _w = r.join("me", None, None, true);
         until("the end", || lock(&r.state).paused);
         assert_eq!(lock(&r.state).at, 30);
         r.stop();
@@ -471,13 +478,16 @@ mod tests {
     fn pages_hear_who_is_in_the_room() {
         let r = room(1);
         let page = subscribe(&r.hub, false);
-        let w = r.join("me", Some("coach"), true);
-        let _v = r.join("you", None, true);
-        let _overlay = r.join("cast", None, false);
+        let w = r.join("me", Some("coach"), None, true);
+        let _v = r.join("you", None, None, true);
+        let _overlay = r.join("cast", None, None, false);
         r.set_admin("me", 2, true).unwrap();
         drop(w);
         let people: Vec<_> = page.try_iter().filter(|l| l.contains(r#""type":"people""#)).collect();
-        assert_eq!(&*people[people.len() - 1], r#"{"people":[{"admin":true,"id":2,"name":"Guest 2","owner":false}],"type":"people"}"#);
+        assert_eq!(
+            &*people[people.len() - 1],
+            r#"{"people":[{"admin":true,"id":2,"name":"Guest 2","owner":false,"signed":false}],"type":"people"}"#
+        );
         assert!(r.is_admin("you"));
         r.stop();
     }

@@ -184,7 +184,7 @@ mod tests {
         let rooms = Rooms::new(Some(store(&dir)));
         let m = sessions.get("demo").unwrap();
         let r = rooms.open(&m, m.recording().unwrap(), "me").unwrap();
-        let w = r.join("me", None, true);
+        let w = r.join("me", None, None, true);
         rooms.reap(Duration::ZERO);
         assert_eq!(rooms.count(), 1, "watched");
         drop(w);
@@ -200,7 +200,7 @@ mod tests {
         let rooms = Rooms::new(Some(store(&dir)));
         let m = sessions.get("demo").unwrap();
         let r = rooms.open(&m, m.recording().unwrap(), "me").unwrap();
-        let _w = r.join("me", Some("coach"), true);
+        let _w = r.join("me", Some("coach"), None, true);
         r.control(&crate::room::Control { paused: Some(true), speed: Some(2.0), seek: Some(600) }).unwrap();
         rooms.persist();
         r.stop();

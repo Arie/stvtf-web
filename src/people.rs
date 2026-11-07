@@ -1,5 +1,6 @@
 //! Who is in a room: names, and who of them are admins. People are known by their guest cookie,
-//! which only the server sees; pages see a number per person instead.
+//! or, signed in with the site, by their Steam id; only the server sees either: pages see a
+//! number per person instead.
 
 use anyhow::{Result, bail};
 use serde::{Deserialize, Serialize};
@@ -23,6 +24,9 @@ struct Person {
     name: String,
     /// Pen colour, as `#rrggbb`, once chosen.
     ink: Option<String>,
+    /// Signed in with the site: the name is theirs there.
+    #[serde(default)]
+    signed: bool,
     /// Open pages: someone with none has left. Not saved: pages come back to a new process.
     #[serde(skip)]
     pages: usize,
@@ -37,6 +41,7 @@ pub(crate) struct Shown {
     pub(crate) owner: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) ink: Option<String>,
+    pub(crate) signed: bool,
 }
 
 impl People {
@@ -51,7 +56,7 @@ impl People {
         let next = &mut self.next;
         self.by_guest.entry(guest.to_string()).or_insert_with(|| {
             *next += 1;
-            Person { id: *next - 1, name: String::new(), ink: None, pages: 0 }
+            Person { id: *next - 1, name: String::new(), ink: None, signed: false, pages: 0 }
         })
     }
 
@@ -60,10 +65,14 @@ impl People {
         self.person(guest).id
     }
 
-    pub(crate) fn join(&mut self, guest: &str, name: Option<&str>) {
+    /// A page of `guest`'s joins, with the name it gives; one signed in (`site`) is called what the
+    /// site calls them.
+    pub(crate) fn join(&mut self, guest: &str, name: Option<&str>, site: Option<&str>) {
         let p = self.person(guest);
         p.pages += 1;
-        if let Some(name) = name {
+        if let Some(name) = site {
+            (p.name, p.signed) = (clean(name), true);
+        } else if let Some(name) = name.filter(|_| !p.signed) {
             p.name = clean(name);
         }
     }
@@ -73,8 +82,18 @@ impl People {
         p.pages = p.pages.saturating_sub(1);
     }
 
+    /// A new name, unless the site names them.
     pub(crate) fn rename(&mut self, guest: &str, name: &str) {
-        self.person(guest).name = clean(name);
+        let p = self.person(guest);
+        if !p.signed {
+            p.name = clean(name);
+        }
+    }
+
+    /// `guest` is an admin from now on: a streamer of the site's, say.
+    pub(crate) fn make_admin(&mut self, guest: &str) {
+        self.person(guest);
+        self.admins.insert(guest.to_string());
     }
 
     /// An admin's pen colour, `#rrggbb`.
@@ -122,6 +141,7 @@ impl People {
                 admin: self.admins.contains(g),
                 owner: *g == self.owner,
                 ink: p.ink.clone(),
+                signed: p.signed,
             })
             .collect();
         here.sort_by_key(|p| p.id);
@@ -141,11 +161,11 @@ mod tests {
     #[test]
     fn people_are_shown_by_number_with_their_names() {
         let mut p = People::new("owner");
-        p.join("owner", Some("  coach\n"));
-        p.join("viewer", None);
+        p.join("owner", Some("  coach\n"), None);
+        p.join("viewer", None, None);
         let shown = p.shown();
-        assert_eq!(shown[0], Shown { id: 1, name: "coach".into(), admin: true, owner: true, ink: None });
-        assert_eq!(shown[1], Shown { id: 2, name: "Guest 2".into(), admin: false, owner: false, ink: None });
+        assert_eq!(shown[0], Shown { id: 1, name: "coach".into(), admin: true, owner: true, ink: None, signed: false });
+        assert_eq!(shown[1], Shown { id: 2, name: "Guest 2".into(), admin: false, owner: false, ink: None, signed: false });
         p.rename("viewer", &"x".repeat(40));
         assert_eq!(p.shown()[1].name.len(), MAX_NAME);
     }
@@ -153,20 +173,32 @@ mod tests {
     #[test]
     fn someone_with_no_pages_left_is_gone_and_keeps_their_number() {
         let mut p = People::new("owner");
-        p.join("viewer", None);
-        p.join("viewer", None);
+        p.join("viewer", None, None);
+        p.join("viewer", None, None);
         p.leave("viewer");
         assert_eq!(p.shown().len(), 1, "one page still open");
         p.leave("viewer");
         assert_eq!(p.shown(), []);
-        p.join("viewer", None);
+        p.join("viewer", None, None);
         assert_eq!(p.shown()[0].id, 2, "the owner is 1");
+    }
+
+    #[test]
+    fn the_site_names_who_signed_in_and_streamers_make_themselves_admin() {
+        let mut p = People::new("owner");
+        p.join("steam:7656", Some("fake"), Some("Arie"));
+        p.rename("steam:7656", "someone else");
+        p.join("steam:7656", Some("again"), None);
+        let shown = p.shown();
+        assert_eq!((shown[0].name.as_str(), shown[0].signed, shown[0].admin), ("Arie", true, false));
+        p.make_admin("steam:7656");
+        assert!(p.is_admin("steam:7656"));
     }
 
     #[test]
     fn admins_pick_their_pen_colour() {
         let mut p = People::new("owner");
-        p.join("owner", None);
+        p.join("owner", None, None);
         p.set_ink("owner", "#00FF7f").unwrap();
         assert_eq!(p.shown()[0].ink.as_deref(), Some("#00ff7f"));
         assert!(p.set_ink("owner", "red").is_err());
