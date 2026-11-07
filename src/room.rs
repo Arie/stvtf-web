@@ -388,9 +388,13 @@ impl Room {
             }
             let Some(&(t, _)) = lines.front() else {
                 if rec.is_live() {
-                    // At live: as far as the match is.
+                    // At live: as far as the match is, which comes in at 1× however fast it was played.
                     if !st.paused {
                         st.at = st.at.max(rec.length());
+                    }
+                    if (st.speed - 1.0).abs() > f64::EPSILON {
+                        st.speed = 1.0;
+                        self.announce(&st);
                     }
                     st = self.sleep(st, LIVE_POLL);
                 } else {
@@ -596,6 +600,25 @@ mod tests {
         r.control(&Control { seek: Some(9_600), speed: Some(4.0), ..Control::default() }).unwrap();
         until("the next chunk", || lock(&r.state).at > 10_500);
         assert!(!lock(&r.state).paused, "still playing");
+        r.stop();
+    }
+
+    #[test]
+    fn catching_up_with_a_live_match_plays_on_at_1x() {
+        let rec = Arc::new(Recording::live());
+        let mut time = 1_700_000_000_000;
+        for _ in 0..10 {
+            let text = r#"{"type":"stalemate","tick":5}"#;
+            let mut stamped: stvtf::output::Stamped = serde_json::from_str(text).unwrap();
+            stamped.time = Some(time);
+            rec.push(&stamped, text).unwrap();
+            time += 100;
+        }
+        let r = Room::start("r".into(), "me", rec);
+        let _w = r.join("me", None, None, true);
+        r.control(&Control { seek: Some(0), speed: Some(4.0), ..Control::default() }).unwrap();
+        until("live again", || lock(&r.state).at >= 900);
+        until("1x", || (lock(&r.state).speed - 1.0).abs() < f64::EPSILON);
         r.stop();
     }
 
