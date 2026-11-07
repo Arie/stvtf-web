@@ -158,6 +158,29 @@ stream of it (Twitch runs a few seconds behind SourceTV): `/w/<id>/5`, `/w/<id>/
 or `/5` and `/overlay/5` for a single server, up to 60. The page handles everything from the
 server that much later, so it also starts that much later; `o` keeps the delay.
 
+## Rooms
+
+A room is a demo watched together under control: the Room button on a demo's page (a demos.tf
+demo, or `--demo`/`--demos`) opens one at `/r/<id>/`, with its overlay at `/r/<id>/overlay`. The
+browser that opened it owns it (a random `stvtf_guest` cookie): it pauses (space), changes speed
+(¼× to 4×) and jumps anywhere on the timeline (← and → by 5 s), and everyone in the room sees the
+same. The demo's own page, its overlay and live matches never change.
+
+A room keeps the demo in memory in 10-second chunks, each starting from the state a page joins
+with, so a jump replays at most one chunk. It counts towards `--max-matches` and ends a minute
+after its last viewer left.
+
+| route | |
+|---|---|
+| `GET /w/<id>/room` | 200 when a room can be opened on the match, 409 when not (live, or a demo still being fetched) |
+| `POST /w/<id>/room` | opens one: `{"page": "/r/<id>/"}` |
+| `GET /r/<id>/me` | `{"admin": true}` for the owner |
+| `POST /r/<id>/control` | the owner's `{"paused", "speed", "seek"}` (any of them; `seek` in milliseconds) |
+
+The room's event stream adds two lines: `playback` (`paused`, `speed`, `at` and `length` in
+milliseconds, and `rounds`, when each round started) on every change and every second while it
+plays, and `seek` before the state at the new position.
+
 ## Embedding
 
 A site embeds a match by putting a start link (from serveme.tf's API) in an iframe. The link
