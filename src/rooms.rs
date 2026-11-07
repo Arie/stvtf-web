@@ -61,14 +61,29 @@ impl Rooms {
         Rooms { store, ..Rooms::default() }
     }
 
-    /// A room on match `from`, owned by `owner`; one on a live match starts at live.
-    pub(crate) fn open(&self, from: &Arc<Session>, recording: Arc<Recording>, owner: &str) -> Result<Arc<Room>> {
-        let id = crate::sessions::random_id();
-        let source = match from.demo_id() {
+    /// The room `owner` opened on match `from` and still has, if any (not a private playback).
+    pub(crate) fn owned(&self, from: &Session, owner: &str) -> Option<Arc<Room>> {
+        let source = Self::source(from);
+        // One lock at a time: others take the map before the rest.
+        let rooms: Vec<Arc<Room>> = lock(&self.map).values().cloned().collect();
+        let private = lock(&self.private).clone();
+        let sources = lock(&self.sources).clone();
+        rooms.into_iter().find(|r| sources.get(&r.id) == Some(&source) && !private.contains(&r.id) && r.owned_by(owner))
+    }
+
+    /// What a room on match `from` plays.
+    fn source(from: &Session) -> Source {
+        match from.demo_id() {
             Some(demo) => Source::Demo(demo),
             None if from.is_pinned() => Source::Pinned(from.id.clone()),
             None => Source::Live(from.id.clone()),
-        };
+        }
+    }
+
+    /// A room on match `from`, owned by `owner`; one on a live match starts at live.
+    pub(crate) fn open(&self, from: &Arc<Session>, recording: Arc<Recording>, owner: &str) -> Result<Arc<Room>> {
+        let id = crate::sessions::random_id();
+        let source = Self::source(from);
         if let (Source::Demo(demo), Some(store)) = (&source, &self.store)
             && !store.has(&demo_file(*demo))
         {

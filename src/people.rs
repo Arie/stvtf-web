@@ -118,6 +118,10 @@ impl People {
         self.admins.contains(guest)
     }
 
+    pub(crate) fn is_owner(&self, guest: &str) -> bool {
+        self.owner == guest
+    }
+
     /// Admin `by` makes person `id` an admin, or not; the owner stays one.
     pub(crate) fn set_admin(&mut self, by: &str, id: u32, admin: bool) -> Result<()> {
         if !self.is_admin(by) {

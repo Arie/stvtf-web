@@ -446,6 +446,11 @@ fn open_room(s: &mut TcpStream, app: &App, sessions: &Sessions, m: &Arc<Session>
         m.prepare();
         return Ok(respond(s, "200 OK", JSON, b"{}")?);
     }
+    let Who { key: guest, cookie, .. } = who(app, request);
+    // One's room on it already: back to that.
+    if let Some(room) = app.rooms.owned(m, &guest) {
+        return opened(s, app, &room.id, cookie.as_deref());
+    }
     if sessions.running() + app.rooms.shared_count() >= sessions.max {
         return Ok(respond(s, "503 Service Unavailable", TEXT, b"This server is watching all it can.")?);
     }
@@ -453,7 +458,6 @@ fn open_room(s: &mut TcpStream, app: &App, sessions: &Sessions, m: &Arc<Session>
         Ok(r) => r,
         Err(e) => return Ok(respond(s, "409 Conflict", TEXT, format!("{e:#}").as_bytes())?),
     };
-    let Who { key: guest, cookie, .. } = who(app, request);
     let room = match app.rooms.open(m, recording, &guest) {
         Ok(r) => r,
         Err(e) => return Ok(respond(s, "409 Conflict", TEXT, format!("{e:#}").as_bytes())?),
@@ -913,6 +917,16 @@ mod tests {
         assert!(opened.contains("HttpOnly; SameSite=Lax"), "{opened}");
         let page = opened.split(r#""page":""#).nth(1).unwrap().split('"').next().unwrap().to_string();
         (page, cookie)
+    }
+
+    #[test]
+    fn opening_a_room_again_is_back_to_ones_own() {
+        let (app, _dir) = demo_app();
+        let (page, cookie) = open_room(&app);
+        let again = post(&app, "/w/demo/room", &cookie, "");
+        assert!(again.contains(&format!(r#""page":"{page}""#)), "{again}");
+        let (other, _) = open_room(&app);
+        assert_ne!(other, page, "someone else's is their own");
     }
 
     #[test]

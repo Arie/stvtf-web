@@ -180,7 +180,8 @@ one for where the viewer is.
 
 A room is a match watched together under control: Watch together on a match's page (live, a
 demos.tf demo, or `--demo`/`--demos`) opens one at `/r/<id>/`, with its overlay at
-`/r/<id>/overlay`, and copies its link to send (as does Link in it). Anyone may open one; the
+`/r/<id>/overlay`, and copies its link to send (as does Link in it); pressed again, it goes back to
+the room one owns on that match. Anyone may open one; the
 match's own page never changes. The
 browser that opened it owns it and is its first admin. Admins pause (space), change speed
 (¼× to 4×) and jump anywhere on the timeline (← and → by 5 s), and everyone in the room sees the

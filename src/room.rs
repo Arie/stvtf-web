@@ -329,6 +329,10 @@ impl Room {
         self.recording.marks(from)
     }
 
+    pub(crate) fn owned_by(&self, guest: &str) -> bool {
+        lock(&self.people).is_owner(guest)
+    }
+
     pub(crate) fn stop(&self) {
         lock(&self.state).stop = true;
         self.wake.notify_all();
