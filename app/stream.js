@@ -147,7 +147,8 @@ function handle(m) {
       // A room jumped: everything shown is from before it.
       $("feed").replaceChildren();
       $("chat").replaceChildren();
-      resetMatch(true);
+      resetMatch(true, true);
+      sought = true;
       break;
     case "draw":
       onDraw(/** @type {import("../types/stream").DrawLine} */ (/** @type {unknown} */ (m)));
@@ -177,9 +178,13 @@ function onServer(m) {
     embedMap(m.map);
   }
   setTickInterval(m.tick_interval);
-  // The same map again (a reconnect, a signon restart) keeps who you are following.
-  resetMatch(sameMap);
+  // The same map again (a reconnect, a signon restart) keeps who you are following; after a
+  // room's jump, also the HUD and points, which the next snapshot updates instead of rebuilding.
+  resetMatch(sameMap, sameMap && sought);
+  sought = false;
 }
+// A room just jumped: the server line that follows is the same match, elsewhere in it.
+let sought = false;
 
 // A room's controls hear its playback lines.
 /** @type {Set<(m: import("../types/stream").PlaybackLine) => void>} */
@@ -222,7 +227,7 @@ function onSnapshot(snap) {
 }
 
 // A map change (or a signon restart) starts from nothing: drop everything from the old map.
-function resetMatch(keepFollow = false) {
+function resetMatch(keepFollow = false, keepHud = false) {
   state.snaps = [];
   state.events = [];
   state.effects = [];
@@ -239,6 +244,7 @@ function resetMatch(keepFollow = false) {
   state.lastScores = null;
   state.spawnSeen = {};
   if (state.follow != null && !keepFollow) setFollow(null);
+  if (keepHud) return;
   $("hud-blue").replaceChildren();
   $("hud-red").replaceChildren();
   hudNodes.clear();

@@ -155,12 +155,17 @@ test("a room is driven by its owner and followed by everyone else", async () => 
   await until(page, () => !(/** @type {HTMLButtonElement} */ (document.getElementById("rb-play")).disabled));
   await page.click("#rb-play");
   await until(page, () => document.getElementById("status").textContent === "paused");
+  // The HUD and points stay as they are through a jump, updated rather than built again.
+  await until(page, () => document.querySelector("#hud-blue .card") && document.querySelector("#cps > *"));
+  await page.evaluate(() => (window.card = document.querySelector("#hud-blue .card")));
   await page.$eval("#rb-time", el => {
     el.value = "0";
     el.dispatchEvent(new Event("change"));
   });
   await until(page, () => document.getElementById("rb-clock").textContent.startsWith("0:00 /"));
   assert.equal(await page.textContent("#status"), "paused", "a seek keeps it paused");
+  await page.waitForTimeout(300);
+  assert.ok(await page.evaluate(() => window.card.isConnected), "the HUD's cards are kept");
 
   const viewer = await open();
   await viewer.page.goto(page.url());
