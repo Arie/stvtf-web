@@ -349,6 +349,11 @@ impl Room {
             if st.stop {
                 return;
             }
+            // A live match goes on, paused or not: pages hear how long it is now.
+            if rec.is_live() && announced.elapsed() >= ANNOUNCE_EVERY {
+                self.announce(&st);
+                announced = Instant::now();
+            }
             if let Some(target) = st.seek.take() {
                 let (hub, i, played) = rec.seek(target);
                 restore(&self.hub, hub);
