@@ -949,7 +949,7 @@ aside h3 {
     transform: rotate(360deg);
   }
 }
-#roomlink,
+#copylink,
 #roomopen {
   margin-left: auto;
   padding: 2px 8px;
@@ -962,17 +962,17 @@ aside h3 {
   cursor: pointer;
 }
 /* An icon: a chain, a check once copied. */
-#roomlink {
+#copylink {
   align-self: center;
   margin-left: 0;
   padding: 3px 5px;
   line-height: 0;
   color: var(--dim);
 }
-#roomlink:hover {
+#copylink:hover {
   color: var(--text);
 }
-#roomlink svg {
+#copylink svg {
   width: 13px;
   height: 13px;
   fill: none;
@@ -981,11 +981,11 @@ aside h3 {
   stroke-linecap: round;
   stroke-linejoin: round;
 }
-#roomlink .check,
-#roomlink.copied .chain {
+#copylink .check,
+#copylink.copied .chain {
   display: none;
 }
-#roomlink.copied .check {
+#copylink.copied .check {
   display: block;
   color: #7cc47f;
 }
@@ -1044,8 +1044,7 @@ aside h3 {
   color: var(--dim);
   white-space: nowrap;
 }
-#roombar #rb-live,
-#roombar #rb-link {
+#roombar #rb-live {
   width: auto;
   padding: 0 8px;
   white-space: nowrap;
@@ -1257,10 +1256,6 @@ aside h3 {
 .stvtf.watch #rb-pen,
 .stvtf.watch #rb-view,
 .stvtf.watch #rb-lead {
-  display: none;
-}
-/* A room's link is by its name, not on the timeline. */
-.stvtf.room:not(.watch) #rb-link {
   display: none;
 }
 #bgtoggle {

@@ -486,7 +486,7 @@ test("a link to a moment watches from there", async () => {
   await until(page, () => /^0:1\d \//.test(document.getElementById("rb-clock").textContent ?? ""));
   await until(page, () => document.getElementById("status").textContent === "replay");
   await page.click("#rb-play");
-  await page.click("#rb-link");
+  await page.click("#copylink");
   await until(page, () => /[?]t=0:1\d$/.test(location.href));
   assert.deepEqual(errors, []);
   await page.close();

@@ -83,20 +83,18 @@ function roomButton() {
   };
 }
 
-// A link button: copies the link `url` makes, and says so for a moment (an icon by its look).
-/** @param {HTMLElement} link @param {() => URL} url */
-function copyLink(link, url) {
-  const idle = link.textContent,
-    icon = Boolean(link.querySelector("svg"));
+// The link button by the map's name: copies the link `url` makes (`what` it is), a check for a
+// moment once it has.
+/** @param {string} what @param {() => URL} url */
+function copyLink(what, url) {
+  const link = $("copylink");
+  Object.assign(link, { hidden: false, title: what });
+  link.setAttribute("aria-label", what);
   link.onclick = () =>
     navigator.clipboard?.writeText(url().href).then(
       () => {
         link.classList.add("copied");
-        if (!icon) link.textContent = "Copied";
-        setTimeout(() => {
-          link.classList.remove("copied");
-          if (!icon) link.textContent = idle;
-        }, COPIED_MS);
+        setTimeout(() => link.classList.remove("copied"), COPIED_MS);
       },
       () => {},
     );
@@ -106,8 +104,7 @@ function roomBar() {
   env.el.classList.add("room");
   // A room's link, to send.
   // The room's link, to send, by its name.
-  $("roomlink").hidden = false;
-  copyLink($("roomlink"), () => new URL(location.pathname, location.origin));
+  copyLink("Copy the room's link, to send", () => new URL(location.pathname, location.origin));
   const pen = /** @type {HTMLButtonElement} */ ($("rb-pen"));
   const control = (/** @type {import("./playbar.js").Control} */ c) => post("control", c);
   const bar = playbar({ home: HOME, send: control, live: end => control({ seek: end, paused: false }) });
@@ -200,7 +197,7 @@ function watchBar() {
   playbackListeners.add(m => own && bar.heard(m));
   // A link to a moment (?t=12:34, from the map's start) watches from there.
   let wanted = moment(new URLSearchParams(location.search).get("t"));
-  copyLink($("rb-link"), () => {
+  copyLink("Copy a link to this moment", () => {
     const url = new URL(location.href);
     url.search = `?t=${clock(Math.max(0, bar.since()))}`;
     history.replaceState(null, "", url);
