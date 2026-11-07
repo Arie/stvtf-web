@@ -73,14 +73,18 @@ function roomButton() {
       () => {},
     );
   ask();
+  // A long demo takes the server a few seconds to make ready: say so meanwhile.
+  const idle = button.textContent;
   button.onclick = async () => {
     button.disabled = true;
-    const r = await fetch(new URL("room", HOME), { method: "POST" });
-    if (r.ok) location.assign(new URL((await r.json()).page, location.origin));
-    else {
-      button.disabled = false;
-      button.title = await r.text();
-    }
+    button.classList.add("busy");
+    button.textContent = "Opening…";
+    const r = await fetch(new URL("room", HOME), { method: "POST" }).catch(() => null);
+    if (r?.ok) return location.assign(new URL((await r.json()).page, location.origin));
+    button.disabled = false;
+    button.classList.remove("busy");
+    button.textContent = idle;
+    button.title = r ? await r.text() : "Could not reach the server";
   };
 }
 
