@@ -12,7 +12,7 @@ import { drawMarks, drawPacks, drawJumpTrails } from "./overkill.js";
 import { drawHealBeams, drawPlayers } from "./players.js";
 import { drawProjectiles } from "./projectiles.js";
 import { drawEffects } from "./effects.js";
-import "./room.js";
+import { initRoom } from "./room.js";
 import { drawSpawnRooms } from "./spawns.js";
 import { openStream } from "./stream.js";
 import { frameMap, drawBackground } from "./view.js";
@@ -172,6 +172,7 @@ function advance() {
 }
 
 renderSettings();
+initRoom();
 openStream();
 
 requestAnimationFrame(frame);

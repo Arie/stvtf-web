@@ -20,7 +20,9 @@ export function clock(ms) {
   return `${Math.floor(s / 3600)}:${pad(Math.floor(s / 60) % 60)}:${pad(s % 60)}`;
 }
 
-if (!OVERLAY && !env.component) {
+// The playback bar in a room, the Room button elsewhere; neither on the overlay or another site.
+export function initRoom() {
+  if (OVERLAY || env.component) return;
   if (IN_ROOM) roomBar();
   else roomButton();
 }
