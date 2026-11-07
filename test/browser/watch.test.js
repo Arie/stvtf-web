@@ -237,7 +237,7 @@ test("people in a room see each other and admins make others admin", async () =>
   await page.close();
 });
 
-test("an admin has everyone follow the player they follow", async () => {
+test("an admin clicking a player has everyone follow them", async () => {
   const { page, errors } = await open();
   await page.goto(base);
   await page.click("#roomopen");
@@ -251,7 +251,6 @@ test("an admin has everyone follow the player they follow", async () => {
     page,
     () => !document.getElementById("follow").hidden && document.getElementById("follow-name").textContent,
   );
-  await page.selectOption("#rb-view", "follow");
   await until(
     viewer.page,
     n => document.getElementById("follow-name").textContent === n && !document.getElementById("follow").hidden,
@@ -299,5 +298,38 @@ test("another admin taking the view over keeps it", async () => {
   assert.equal(await page.$eval("#rb-take", el => el.hidden), false);
   assert.deepEqual([...errors, ...other.errors], []);
   await other.page.close();
+  await page.close();
+});
+
+test("the leader switching from their view to auto zoom stays on auto zoom", async () => {
+  const { page, errors } = await open();
+  await page.goto(base);
+  await page.click("#roomopen");
+  await page.waitForURL(/\/r\/[0-9a-f]{32}\/$/, { timeout: WAIT });
+  const viewer = await open();
+  await viewer.page.goto(page.url());
+  await until(page, () => !(/** @type {HTMLSelectElement} */ (document.getElementById("rb-view")).disabled));
+  await page.selectOption("#rb-view", "admin");
+  await until(viewer.page, () => document.getElementById("rb-view").value === "admin");
+  // Slow requests: camera moves sent before the switch arrive after it.
+  await page.route("**/view", r => setTimeout(() => r.continue(), 300));
+  await page.mouse.move(400, 300);
+  await page.mouse.down();
+  const panning = page.mouse.move(700, 450, { steps: 40 });
+  await page.waitForTimeout(150);
+  await page.selectOption("#rb-view", "auto");
+  await panning;
+  await page.mouse.up();
+  const seen = [];
+  for (let i = 0; i < 10; i++) {
+    seen.push(await viewer.page.$eval("#rb-view", el => el.value));
+    await page.waitForTimeout(150);
+  }
+  // Once on auto zoom, it never goes back.
+  const from = seen.indexOf("auto");
+  assert.ok(from >= 0 && seen.slice(from).every(v => v === "auto"), seen.join(" "));
+  assert.equal(await page.$eval("#rb-view", el => el.value), "auto");
+  assert.deepEqual([...errors, ...viewer.errors], []);
+  await viewer.page.close();
   await page.close();
 });

@@ -169,7 +169,7 @@ export type PeopleLine = {
 };
 
 /** How a room's admin `by` has everyone see the map. */
-export type ViewLine = { type: "view"; by: number } & (
+export type ViewLine = { type: "view"; by: number; page: string } & (
   | { mode: "free" | "auto" }
   | { mode: "follow"; player: number }
   | { mode: "admin"; cx: number; cy: number; w: number; h: number; rot: number }

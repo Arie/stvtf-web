@@ -5,6 +5,7 @@ import { env } from "./env.js";
 import { setAutoZoom, setFollow } from "./input.js";
 import { peopleListeners, playbackListeners, streamParams, viewListeners } from "./stream.js";
 import { drawOwn, inkOf, setInks } from "./telestrator.js";
+import { pushMirror } from "./camera.js";
 import { focusOf, screenOffset, viewArea } from "./view.js";
 /** @typedef {import("../types/stream").PlaybackLine} PlaybackLine */
 
@@ -311,31 +312,45 @@ function people(allow) {
   }
 }
 
-// How everyone sees the map, as an admin sets it: each their own camera, auto zoom, following
-// one player, or the admin's own view. The admin who set it leads with their own camera, and
-// their pan, zoom or follow is sent on as it changes; everyone else is locked to it.
+// How everyone sees the map, as an admin sets it: each their own camera, auto zoom, following a
+// player (an admin clicks one), or an admin's own view. The page that set it leads: its camera is
+// sent on as it moves. Viewers are locked to it; admins are not, and clicking a player is theirs.
+// This page among its admin's pages (two tabs, say): the lead is a page's, not a person's.
+const PAGE_ID = Math.random().toString(36).slice(2, 12);
 /** @type {import("../types/stream").ViewLine} */
-let view = { type: "view", mode: "free", by: 0 };
-const leading = () => me.admin && view.by === me.id;
+let view = { type: "view", mode: "free", by: 0, page: "" };
+const leading = () => me.admin && view.page === PAGE_ID;
 // How often a leading admin's camera is sent on, at most, in milliseconds.
-const VIEW_MS = 100;
+const VIEW_MS = 50;
+// The kind of view this page chose last: its camera is sent on only for that one.
+let chosen = "";
+// Who the view follows as the room last set it, so an admin's own click shows as a change; and
+// the view before an admin started following someone, to go back to when they stop.
+/** @type {number | null} */
+let followSeen = null;
+let beforeFollow = "free";
 
-// Who leads a view that follows someone's player or camera, and for other admins, a way to
-// take it over.
+// Who leads a view of someone's player or camera; other admins can take a camera view over.
 function showLead() {
   const led = view.mode === "follow" || view.mode === "admin",
-    who = $("rb-lead");
+    who = $("rb-lead"),
+    name = view.by === me.id ? "you" : (names.get(view.by) ?? "an admin");
   who.hidden = !led;
-  who.textContent = `by ${view.by === me.id ? "you" : (names.get(view.by) ?? "an admin")}`;
-  $("rb-take").hidden = !(led && me.admin && !leading());
+  who.textContent = `by ${name}`;
+  const following = /** @type {HTMLOptionElement} */ ($("rb-follow"));
+  following.textContent = `Following ${view.mode === "follow" ? (playerName(view.player) ?? "a player") : ""}`;
+  $("rb-take").hidden = !(view.mode === "admin" && me.admin && !leading());
 }
+
+/** @param {number} id */
+const playerName = id => state.players.get(id)?.name;
 
 function applyView() {
   showLead();
   const lead = leading();
-  state.locked = view.mode !== "free" && !lead;
-  state.mirror = !lead && view.mode === "admin" ? view : null;
+  state.locked = view.mode !== "free" && !lead && !me.admin;
   if (state.locked) $("autozoom").hidden = true;
+  if (lead || view.mode !== "admin") state.mirror = null;
   if (lead) return;
   if (view.mode === "auto") {
     if (state.follow != null) setFollow(null);
@@ -346,12 +361,12 @@ function applyView() {
     if (state.follow != null) setFollow(null);
     setAutoZoom(false);
   }
+  followSeen = state.follow;
 }
 
-// What a leading admin's camera says for `mode`; null when following nobody.
+// The view this page's camera shows, as `mode`.
 /** @param {string} mode */
 function viewOf(mode) {
-  if (mode === "follow") return state.follow == null ? null : { mode, player: state.follow };
   if (mode !== "admin") return { mode };
   const v = state.view,
     { w, h } = viewArea(),
@@ -367,32 +382,40 @@ function roomView() {
   let sent = "";
   /** @type {Promise<unknown>} */
   let queue = Promise.resolve();
-  // `take`: chosen, so this admin leads from now on; otherwise their camera moved, which the
-  // room takes only while they lead. One at a time, in order.
-  /** @param {object | null} v @param {boolean} take */
+  // `take`: chosen here, so this page leads from now on; otherwise its camera moved, which the
+  // room takes only while it leads that kind of view. One at a time, in order.
+  /** @param {object} v @param {boolean} take */
   const send = (v, take) => {
     const body = JSON.stringify(v);
-    if (!v || (!take && body === sent)) return;
+    if (!take && body === sent) return;
     sent = body;
-    queue = queue.then(() => post("view", { ...v, take })).catch(() => {});
+    queue = queue.then(() => post("view", { ...v, take, page: PAGE_ID })).catch(() => {});
+  };
+  /** @param {{ mode: string; [k: string]: unknown }} v */
+  const take = v => {
+    chosen = v.mode;
+    send(v, true);
   };
   viewListeners.add(m => {
     view = m;
-    // Someone else leads now: what this page sent last no longer stands.
-    if (m.by !== me.id) sent = "";
+    if (m.page !== PAGE_ID) chosen = sent = "";
     choose.value = m.mode;
+    if (m.mode === "admin" && !leading()) pushMirror(m);
     applyView();
   });
-  choose.onchange = () => {
-    const v = viewOf(choose.value);
-    choose.title = v ? "How everyone sees the map" : "Follow a player first, then pick this";
-    if (v) send(v, true);
-    else choose.value = view.mode;
-  };
-  $("rb-take").onclick = () => {
-    const v = viewOf(view.mode);
-    $("rb-take").title = v ? "Lead the view: your player, or your camera" : "Follow a player first";
-    if (v) send(v, true);
-  };
-  setInterval(() => leading() && send(viewOf(view.mode), false), VIEW_MS);
+  choose.onchange = () => take(viewOf(choose.value));
+  $("rb-take").onclick = () => take(viewOf("admin"));
+  setInterval(() => {
+    if (!me.admin) return;
+    // An admin clicked a player, or stopped following one: everyone does.
+    if (state.follow !== followSeen) {
+      followSeen = state.follow;
+      if (state.follow != null) {
+        if (view.mode !== "follow") beforeFollow = view.mode;
+        take({ mode: "follow", player: state.follow });
+      } else if (view.mode === "follow") take(viewOf(beforeFollow));
+      return;
+    }
+    if (leading() && chosen === "admin") send(viewOf("admin"), false);
+  }, VIEW_MS);
 }

@@ -124,7 +124,7 @@ function draw() {
 function aim(f, tick) {
   // Frame once the map's spawn points are in (or known to be missing).
   if (!state.framed && state.mapData) frameMap();
-  if (state.mirror) mirror(state.mirror);
+  if (state.mirror?.length) mirror(state.mirror);
   else if (state.framed && state.autoZoom && state.follow == null) followAction(f.players);
   state.lastPlayers = f.players;
   // Dead players are reported where they died (no position if before we connected).

@@ -178,25 +178,59 @@ function glide(v, target, dt, { escaping, keep, at }) {
   Object.assign(v, viewCentre({ cx: fx, cy: fy }, v.scale));
 }
 
-// Glides toward the area a room's admin sees, fitted to this view, turned as theirs.
+// A room's admin's camera, replayed this far behind it so its samples (about every 50 ms) are in
+// before they are needed and the view moves between them smoothly. A gap longer than
+// MIRROR_STILL_MS was their camera standing still: it starts moving again from there.
+const MIRROR_BEHIND_MS = 120,
+  MIRROR_STILL_MS = 250,
+  MIRROR_KEEP_MS = 2000;
+// The share of the way a frame goes toward the first sample, which comes from anywhere.
+const MIRROR_EASE = 0.25;
+
 /** @param {{ cx: number; cy: number; w: number; h: number; rot: number }} m */
-export function mirror(m) {
+export function pushMirror(m) {
+  const now = performance.now(),
+    s = (state.mirror ??= []),
+    last = s[s.length - 1];
+  if (last && now - last.at > MIRROR_STILL_MS) s.push({ ...last, at: now - MIRROR_STILL_MS / 5 });
+  s.push({ at: now, cx: m.cx, cy: m.cy, w: m.w, h: m.h, rot: m.rot });
+  while (s.length > 2 && s[1].at < now - MIRROR_KEEP_MS) s.shift();
+}
+
+// The view as the admin's was MIRROR_BEHIND_MS ago, fitted to this one.
+/** @param {{ at: number; cx: number; cy: number; w: number; h: number; rot: number }[]} s */
+export function mirror(s) {
   const v = state.view,
     { w, h } = viewArea(),
-    z = Math.log(v.scale),
+    t = performance.now() - MIRROR_BEHIND_MS,
+    i = s.findIndex(x => x.at > t);
+  /** @type {{ cx: number; cy: number; w: number; h: number; rot: number }} */
+  let m,
+    ease = 1;
+  if (i === -1) m = s[s.length - 1];
+  else if (i === 0) [m, ease] = [s[0], MIRROR_EASE];
+  else {
+    const a = s[i - 1],
+      b = s[i],
+      k = (t - a.at) / (b.at - a.at);
+    m = {
+      cx: a.cx + (b.cx - a.cx) * k,
+      cy: a.cy + (b.cy - a.cy) * k,
+      w: a.w * (b.w / a.w) ** k,
+      h: a.h * (b.h / a.h) ** k,
+      rot: b.rot,
+    };
+  }
+  if (s.length === 1) ease = MIRROR_EASE;
+  const z = Math.log(v.scale),
     focus = focusOf(v);
   v.rot = m.rot;
-  v.scale = Math.exp(z + (Math.log(Math.min(w / m.w, h / m.h)) - z) * MIRROR_EASE);
+  v.scale = Math.exp(z + (Math.log(Math.min(w / m.w, h / m.h)) - z) * ease);
   Object.assign(
     v,
-    viewCentre(
-      { cx: focus.cx + (m.cx - focus.cx) * MIRROR_EASE, cy: focus.cy + (m.cy - focus.cy) * MIRROR_EASE },
-      v.scale,
-    ),
+    viewCentre({ cx: focus.cx + (m.cx - focus.cx) * ease, cy: focus.cy + (m.cy - focus.cy) * ease }, v.scale),
   );
 }
-// The share of the way to an admin's view a frame goes.
-const MIRROR_EASE = 0.25;
 
 /** @param {Player[]} players */
 export function followAction(players) {
