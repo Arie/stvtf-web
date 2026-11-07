@@ -181,11 +181,16 @@ aside h3 { margin: 0 0 6px; font-size: 11px; text-transform: uppercase; letter-s
 #signout:hover { color: var(--text); }
 #roomopen { margin-left: auto; align-self: center; padding: 2px 8px; border: 1px solid var(--line); border-radius: 6px;
   background: transparent; color: var(--text); font: inherit; font-size: 12px; cursor: pointer; }
-#roombar { position: absolute; left: 12px; right: 12px; bottom: 12px; z-index: 3; display: flex; align-items: center; gap: 8px; zoom: var(--s);
-  padding: 4px 8px 4px 4px; border-radius: 6px; background: #0b0c0ee6; color: #fff; font-size: 12px; }
-#roombar button, #roombar select { border: 0; border-radius: 4px; background: #ffffff1a; color: #fff; font: inherit; cursor: pointer; }
-#roombar button { width: 26px; height: 24px; font-size: 14px; line-height: 1; }
-#roombar select { padding: 3px 4px; }
+#roombar { position: absolute; left: 12px; right: 12px; bottom: 12px; z-index: 3; display: flex; align-items: center; gap: 10px; zoom: var(--s);
+  padding: 4px 8px; border-radius: 6px; background: #0b0c0ee6; color: #fff; font-size: 12px; }
+/* The browser's own controls (an open menu, say) in its dark look, the options in the panel's colours;
+   the highlight on them is the browser's. */
+.stvtf { color-scheme: dark; }
+#roombar option { background: var(--panel); color: var(--text); }
+#roombar button, #roombar select { height: 24px; border: 0; border-radius: 6px; background: #ffffff1a; color: #fff; font: inherit;
+  cursor: pointer; }
+#roombar button { width: 28px; font-size: 14px; line-height: 1; }
+#roombar select { padding: 0 6px; }
 #roombar #rb-pen.on { background: #ffd23f; color: #0b0c0e; }
 .stvtf.drawing canvas#c, .stvtf.drawing canvas#c:active { cursor: crosshair; touch-action: none; }
 #rb-lead { color: var(--dim); white-space: nowrap; }
