@@ -154,6 +154,7 @@ export const state = {
   bg: "overview",
   follow: null,
   locked: false,
+  handMoved: 0,
   mirror: null,
   // The players last drawn, the score line for the feed, rooms seen spawning, when the HUD last refreshed.
   lastPlayers: [],

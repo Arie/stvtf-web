@@ -170,13 +170,15 @@ page, its overlay and live matches never change.
 
 Everyone in a room is listed beside the map, by the name they give (kept in the browser) or as
 Guest N. Admins make others admin, or not; the owner stays one. Each admin's pen has its own
-colour, which they pick by the swatch after their name. An admin also sets how everyone sees the map: free (each their own camera), auto zoom, or the
-admin's view (moved by hand: auto zoom and following stop, for that admin too; everyone sees the
-same part of the map as on their screen, fitted to each, moving smoothly);
-an admin clicking a player has everyone follow that player, until they stop following. Viewers
-cannot move the camera unless it is free. The page that chose the view leads; another admin can
-take it over. A room's overlay follows it
-too, and is not listed. People are known by the `stvtf_guest` cookie, which only the server sees: pages know
+colour, which they pick by the swatch after their name.
+
+An admin also sets how everyone sees the map: free (each their own camera), auto zoom (theirs
+too), or the admin's view, moved by hand: auto zoom and following stop, and everyone sees the
+same part of the map as on that admin's screen, fitted to theirs and moving smoothly. Any admin
+dragging or scrolling moves it, the latest to move it leading. An admin clicking a player has
+everyone follow that player, until they stop following, which goes back to the view before.
+Viewers cannot move the camera unless it is free; admins always can. A room's overlay follows
+the view too, and is not listed. People are known by the `stvtf_guest` cookie, which only the server sees: pages know
 each other by number.
 
 A room keeps the demo in memory in 10-second chunks, each starting from the state a page joins
@@ -195,7 +197,7 @@ dropped.
 | `POST /r/<id>/name` | `{"name"}`: the caller's name in the room |
 | `POST /r/<id>/ink` | an admin's `{"ink": "#rrggbb"}`: their pen colour |
 | `POST /r/<id>/admin` | an admin's `{"person": <number>, "admin": true\|false}` |
-| `POST /r/<id>/view` | an admin's `{"mode": "free"\|"auto"}`, `{"mode": "follow", "player": <id>}` or `{"mode": "admin", "cx", "cy", "w", "h", "rot"}` (the map area they see), with `"page"` (the sending tab's name) and `"take": true` when chosen there (that page leads from then on); without `take` it counts only from the page leading that kind of view |
+| `POST /r/<id>/view` | an admin's `{"mode": "free"\|"auto"}`, `{"mode": "follow", "player": <id>}` or `{"mode": "admin", "cx", "cy", "w", "h", "rot"}` (the map area they see), with `"page"` (the sending tab's name). `"take": true` chooses the view; without it, it is a camera move, which counts only while the view is of its kind. Either way that page leads from then on |
 | `POST /r/<id>/control` | an admin's `{"paused", "speed", "seek"}` (any of them; `seek` in milliseconds) |
 | `POST /r/<id>/draw` | an admin's `{"stroke": <id>, "points": [[x, y, ms], …]}`, up to 256 map points, each with when it was drawn (milliseconds into the stroke); a stroke's next points continue it, and pages draw it at that pace, 40 ms behind |
 

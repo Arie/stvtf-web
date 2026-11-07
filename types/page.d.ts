@@ -81,6 +81,8 @@ export type State = {
   follow: number | null;
   /** A room's admin leads the camera: the viewer's own pan, zoom and follow are off. */
   locked: boolean;
+  /** When the viewer last moved the camera by hand (dragged or scrolled), in performance.now() ms. */
+  handMoved: number;
   /** A room's admin's camera as it came, when this view replays it: the map area they saw, and when it came. */
   mirror: { at: number; cx: number; cy: number; w: number; h: number; rot: number }[] | null;
   lastPlayers: Player[];

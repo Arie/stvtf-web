@@ -32,6 +32,7 @@ window.addEventListener("mousemove", e => {
   const [dx, dy] = screenOffset(e.clientX - drag.x, e.clientY - drag.y, state.view.scale);
   state.view.cx = drag.cx - dx;
   state.view.cy = drag.cy - dy;
+  state.handMoved = performance.now();
 });
 // h: player HUD and scores, s: just the scores, e: events and chat, g: overview or geometry,
 // o: the overlay or back.
@@ -216,6 +217,7 @@ canvas.addEventListener(
       wx = v.cx + ax,
       wy = v.cy + ay;
     v.scale *= Math.exp(-e.deltaY * 0.0015);
+    state.handMoved = performance.now();
     const [bx, by] = screenOffset(mx, my, v.scale);
     v.cx = wx - bx;
     v.cy = wy - by;

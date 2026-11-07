@@ -6,6 +6,7 @@ import { setAutoZoom, setFollow } from "./input.js";
 import { peopleListeners, playbackListeners, streamParams, viewListeners } from "./stream.js";
 import { drawOwn, inkOf, setInks } from "./telestrator.js";
 import { pushMirror } from "./camera.js";
+import { RoomView, latestView, morePoints, sender } from "./roomview.js";
 import { focusOf, screenOffset, viewArea } from "./view.js";
 /** @typedef {import("../types/stream").PlaybackLine} PlaybackLine */
 
@@ -127,7 +128,7 @@ function roomBar() {
     for (const c of [play, time, speed, pen, $("rb-view")]) /** @type {HTMLButtonElement} */ (c).disabled = !on;
     bar.title = on ? "" : "The room's admins control playback";
     if (!on && pen.classList.contains("on")) pen.click();
-    applyView();
+    setViewAdmin(on);
   };
   allow(false);
   fetch(new URL("me", HOME))
@@ -178,26 +179,8 @@ function roomBar() {
 function drawing(pen) {
   /** @type {{ id: number; last: [number, number] | null; began: number } | null} */
   let stroke = null;
-  // Points not sent yet, by stroke, oldest first.
-  /** @type {{ id: number; points: [number, number, number][] }[]} */
-  const unsent = [];
-  let sending = false;
   pen.onclick = () => env.el.classList.toggle("drawing", pen.classList.toggle("on"));
-  // One request at a time, so a stroke's pieces arrive in order; what is drawn meanwhile goes in
-  // the next one, as soon as this one is done. The delay stays one round trip however slow it is.
-  const send = () => {
-    while (unsent.length && !unsent[0].points.length && unsent.length > 1) unsent.shift();
-    const next = unsent[0];
-    if (sending || !next?.points.length) return;
-    sending = true;
-    const body = JSON.stringify({ stroke: next.id, points: next.points.splice(0, 256) });
-    fetch(new URL("draw", HOME), { method: "POST", headers: { "Content-Type": "application/json" }, body })
-      .catch(() => {})
-      .finally(() => {
-        sending = false;
-        send();
-      });
-  };
+  const send = sender((/** @type {import("./roomview.js").Strokes} */ s) => post("draw", s), morePoints);
   /** @param {PointerEvent} e */
   const add = e => {
     if (!stroke) return;
@@ -213,11 +196,8 @@ function drawing(pen) {
       Math.round(state.view.cy + dy),
       Math.round(performance.now() - stroke.began),
     ];
-    const last = unsent[unsent.length - 1];
-    if (last?.id === stroke.id) last.points.push(point);
-    else unsent.push({ id: stroke.id, points: [point] });
     drawOwn({ stroke: stroke.id, points: [point], by: me.id });
-    send();
+    send({ stroke: stroke.id, points: [point] });
   };
   canvas.addEventListener(
     "pointerdown",
@@ -312,146 +292,80 @@ function people(allow) {
   }
 }
 
-// How everyone sees the map, as an admin sets it: each their own camera, auto zoom, following a
-// player (an admin clicks one), or an admin's own view. The page that set it leads: its camera is
-// sent on as it moves. Viewers are locked to it; admins are not, and clicking a player is theirs.
-// This page among its admin's pages (two tabs, say): the lead is a page's, not a person's.
-const PAGE_ID = Math.random().toString(36).slice(2, 12);
-/** @type {import("../types/stream").ViewLine} */
-let view = { type: "view", mode: "free", by: 0, page: "" };
-const leading = () => me.admin && view.page === PAGE_ID;
-// How often a leading admin's camera is sent on, at most, in milliseconds.
+// How everyone sees the map, as its admins set it (see roomview.js for the rules), on this page.
+// This page among its admin's pages (two tabs, say): a page leads, not a person.
+const views = new RoomView(Math.random().toString(36).slice(2, 12));
+// How often an admin's clicks and camera moves are looked at, in milliseconds.
 const VIEW_MS = 50;
-// The kind of view this page chose last: its camera is sent on only for that one.
-let chosen = "";
-// Who the view follows as the room last set it, so an admin's own click shows as a change; and
-// the view before an admin started following someone, to go back to when they stop.
-/** @type {number | null} */
-let followSeen = null;
-let beforeFollow = "free";
-// The view as last applied here.
-let applied = "";
 
-// Who leads a view of someone's player or camera; other admins can take a camera view over.
-function showLead() {
-  const led = view.mode === "follow" || view.mode === "admin",
-    who = $("rb-lead"),
-    name = view.by === me.id ? "you" : (names.get(view.by) ?? "an admin");
-  // Only what changed: a camera view comes in many times a second, and touching the menu while
-  // it is open would pull its highlight back.
-  /** @param {HTMLElement} el @param {string} text */
-  const say = (el, text) => el.textContent !== text && (el.textContent = text);
-  who.hidden = !led;
-  say(who, `by ${name}`);
-  say($("rb-follow"), `Following ${view.mode === "follow" ? (playerName(view.player) ?? "a player") : ""}`);
-  $("rb-take").hidden = !(view.mode === "admin" && me.admin && !leading());
-}
+/** @returns {import("./roomview.js").Seen} */
+const seen = () => ({ follow: state.follow, handMoved: state.handMoved, now: performance.now() });
 
-/** @param {number} id */
-const playerName = id => state.players.get(id)?.name;
-
-function applyView() {
-  showLead();
-  const lead = leading();
-  state.locked = view.mode !== "free" && !lead && !me.admin;
-  if (state.locked) $("autozoom").hidden = true;
-  if (lead || view.mode !== "admin") state.mirror = null;
-  // Once per view: a camera view comes in many times a second, and the admin may click a player
-  // between two of them.
-  const key = [view.mode, view.page, lead, view.mode === "follow" ? view.player : ""].join();
-  if (key === applied) return;
-  applied = key;
-  // Auto zoom is everyone's, the admin who chose it too. An admin's view is theirs by hand: no
-  // auto zoom or following, for them either. A followed player is the leader's own.
-  if (view.mode === "auto") {
-    if (state.follow != null) setFollow(null);
-    setAutoZoom(true);
-  } else if (view.mode === "admin") manual();
-  else if (view.mode === "follow" && !lead && state.follow !== view.player) setFollow(view.player);
-  followSeen = state.follow;
-}
-
-// The camera by hand: no auto zoom, following nobody.
-function manual() {
-  if (state.follow != null) setFollow(null);
-  setAutoZoom(false);
-  followSeen = state.follow;
-}
-
-// The view this page's camera shows, as `mode`.
-/** @param {string} mode */
-function viewOf(mode) {
-  if (mode !== "admin") return { mode };
+// This page's camera, as an admin's view.
+function camera() {
   const v = state.view,
     { w, h } = viewArea(),
     f = focusOf(v);
   const r = (/** @type {number} */ x) => Math.round(x * 100) / 100;
-  return { mode, cx: r(f.cx), cy: r(f.cy), w: r(w / v.scale), h: r(h / v.scale), rot: r(v.rot) };
+  return { mode: "admin", cx: r(f.cx), cy: r(f.cy), w: r(w / v.scale), h: r(h / v.scale), rot: r(v.rot) };
+}
+
+/** What the view has this page do. @param {Partial<import("./roomview.js").Effects>} fx */
+function act(fx) {
+  if (fx.locked !== undefined) state.locked = fx.locked;
+  if (state.locked) $("autozoom").hidden = true;
+  if (fx.mirror === false) state.mirror = null;
+  if (fx.follow !== undefined && state.follow !== fx.follow) setFollow(fx.follow);
+  if (fx.auto !== undefined) setAutoZoom(fx.auto);
+}
+
+// Who leads a view of someone's player or camera, and whom it follows. Only what changed: a
+// camera view comes in many times a second, and touching the menu while it is open would pull
+// its highlight back.
+function showLead() {
+  const v = views.line,
+    who = $("rb-lead");
+  /** @param {HTMLElement} el @param {string} text */
+  const say = (el, text) => el.textContent !== text && (el.textContent = text);
+  who.hidden = v.mode !== "follow" && v.mode !== "admin";
+  say(who, `by ${v.by === me.id ? "you" : (names.get(v.by) ?? "an admin")}`);
+  const following = v.mode === "follow" ? (state.players.get(v.player)?.name ?? "a player") : "";
+  say($("rb-follow"), `Following ${following}`);
+  const choose = /** @type {HTMLSelectElement} */ ($("rb-view"));
+  if (choose.value !== v.mode) choose.value = v.mode;
+}
+
+/** @param {boolean} on */
+function setViewAdmin(on) {
+  act(views.setAdmin(on, seen()));
+  showLead();
 }
 
 function roomView() {
   // An overlay (in a stream, say) is nobody in the room.
   if (OVERLAY) streamParams.set("overlay", "1");
-  const choose = /** @type {HTMLSelectElement} */ ($("rb-view"));
-  let sent = "";
-  // One request at a time; what waits is only the latest, a choice kept as one (`take`). The
-  // delay stays one round trip however slow requests are.
-  /** @type {{ v: object; take: boolean } | null} */
-  let pending = null,
-    busy = false;
-  const flush = () => {
-    if (busy || !pending) return;
-    const { v, take } = pending;
-    pending = null;
-    busy = true;
-    post("view", { ...v, take, page: PAGE_ID })
-      .catch(() => {})
-      .finally(() => {
-        busy = false;
-        flush();
-      });
-  };
-  // `take`: chosen here, so this page leads from now on; otherwise its camera moved, which the
-  // room takes only while it leads that kind of view.
-  /** @param {object} v @param {boolean} take */
-  const send = (v, take) => {
-    const body = JSON.stringify(v);
-    if (!take && body === sent) return;
-    sent = body;
-    pending = { v, take: take || (pending?.take ?? false) };
-    flush();
-  };
-  /** @param {{ mode: string; [k: string]: unknown }} v */
-  const take = v => {
-    chosen = v.mode;
-    send(v, true);
-  };
+  const send = sender(
+    (/** @type {import("./roomview.js").Send} */ s) => post("view", { ...s.view, take: s.take, page: views.page }),
+    latestView,
+  );
   viewListeners.add(m => {
-    view = m;
-    if (m.page !== PAGE_ID) chosen = sent = "";
-    if (choose.value !== m.mode) choose.value = m.mode;
-    if (m.mode === "admin" && !leading()) pushMirror(m);
-    applyView();
+    const fx = views.hear(m, seen());
+    if (fx.mirror && m.mode === "admin") pushMirror(m);
+    act(fx);
+    showLead();
   });
+  const choose = /** @type {HTMLSelectElement} */ ($("rb-view"));
   choose.onchange = () => {
-    if (choose.value === "admin") manual();
-    take(viewOf(choose.value));
-  };
-  $("rb-take").onclick = () => {
-    manual();
-    take(viewOf("admin"));
+    const chosen = views.choose(choose.value, camera);
+    if (!chosen) return;
+    act(chosen.fx);
+    send(chosen.send);
   };
   setInterval(() => {
-    if (!me.admin) return;
-    // An admin clicked a player, or stopped following one: everyone does.
-    if (state.follow !== followSeen) {
-      followSeen = state.follow;
-      if (state.follow != null) {
-        if (view.mode !== "follow") beforeFollow = view.mode;
-        take({ mode: "follow", player: state.follow });
-      } else if (view.mode === "follow") take(viewOf(beforeFollow));
-      return;
-    }
-    if (leading() && chosen === "admin") send(viewOf("admin"), false);
+    const s = views.tick(seen(), camera);
+    if (!s) return;
+    // Moving it by hand: this admin's camera, not another's replayed.
+    if (!s.take) state.mirror = null;
+    send(s);
   }, VIEW_MS);
 }

@@ -269,7 +269,7 @@ test("an admin clicking a player has everyone follow them", async () => {
   await page.close();
 });
 
-test("another admin taking the view over keeps it", async () => {
+test("admins take the view over by choosing or moving it", async () => {
   const { page, errors } = await open();
   await page.goto(base);
   await page.click("#roomopen");
@@ -296,11 +296,22 @@ test("another admin taking the view over keeps it", async () => {
   await page.unroute("**/view");
   await page.selectOption("#rb-view", "admin");
   await until(other.page, () => document.getElementById("rb-lead").textContent === "by Guest 1");
-  assert.equal(await page.$eval("#rb-take", el => el.hidden), true, "the leader has nothing to take over");
-  await other.page.click("#rb-take");
+  // The other admin moving the view by hand takes it over, and the first moving it takes it back.
+  await other.page.mouse.move(400, 300);
+  await other.page.mouse.wheel(0, -200);
   await until(page, () => document.getElementById("rb-lead").textContent === "by Guest 2");
-  assert.equal(await page.$eval("#rb-view", el => el.value), "admin", "taking over keeps the view");
-  assert.equal(await page.$eval("#rb-take", el => el.hidden), false);
+  assert.equal(await page.$eval("#rb-view", el => el.value), "admin", "moving it keeps the view");
+  await page.mouse.move(400, 300);
+  await page.mouse.down();
+  await page.mouse.move(450, 330, { steps: 5 });
+  await page.mouse.up();
+  await until(
+    other.page,
+    () =>
+      document.getElementById("rb-lead").textContent === "by you" ||
+      document.getElementById("rb-lead").textContent === "by Guest 1",
+  );
+  await until(page, () => document.getElementById("rb-lead").textContent === "by you");
   assert.deepEqual([...errors, ...other.errors], []);
   await other.page.close();
   await page.close();

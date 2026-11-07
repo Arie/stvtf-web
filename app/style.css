@@ -180,7 +180,6 @@ aside h3 { margin: 0 0 6px; font-size: 11px; text-transform: uppercase; letter-s
 #roombar select { padding: 3px 4px; }
 #roombar #rb-pen.on { background: #ffd23f; color: #0b0c0e; }
 .stvtf.drawing canvas#c, .stvtf.drawing canvas#c:active { cursor: crosshair; touch-action: none; }
-#roombar #rb-take { width: auto; padding: 0 8px; white-space: nowrap; }
 #rb-lead { color: var(--dim); white-space: nowrap; }
 #roombar :disabled { cursor: default; opacity: .6; }
 #rb-track { position: relative; flex: 1; display: flex; align-items: center; }
