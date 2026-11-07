@@ -29,9 +29,11 @@ export function clock(ms) {
 /**
  * @param {{
  *   home: URL; send: (c: Control) => unknown; live: (length: number) => void;
- *   liveLabel?: (p: PlaybackLine) => string | null; replay?: (behind: boolean, p: PlaybackLine) => boolean;
+ *   liveLabel?: (p: PlaybackLine) => string | null; liveSpace?: string;
+ *   replay?: (behind: boolean, p: PlaybackLine) => boolean;
  * }} o `home`: where the marks are; `send`: a control; `live`: the Live button;
- * `liveLabel`: its text, or none to hide it (default: "● Live" for a live match); `replay`: whether
+ * `liveLabel`: its text, or none to hide it (default: "● Live" for a live match); `liveSpace`: a
+ * text it keeps room for while hidden, so the timeline does not shift; `replay`: whether
  * the status says replay, from whether playback is behind a live match (default: that).
  */
 export function playbar(o) {
@@ -85,10 +87,15 @@ export function playbar(o) {
     if (!dragging) time.value = String(now);
     track.classList.toggle("at-live", atLive && !dragging);
     track.style.setProperty("--played", `${(100 * (Number(time.value) - start())) / (len - start())}%`);
+    // The clock as wide as it gets, and the button keeping its room: the timeline stays put.
     shown.textContent = `${since(dragging ? Number(time.value) : now)} / ${since(len)}`;
-    const label = liveLabel(last);
-    live.hidden = !label;
-    if (label && live.textContent !== label) live.textContent = label;
+    const widest = `${since(len).length * 2 + 3}ch`;
+    if (shown.style.minWidth !== widest) shown.style.minWidth = widest;
+    const label = liveLabel(last),
+      text = label ?? o.liveSpace;
+    live.hidden = !text;
+    live.style.visibility = label ? "" : "hidden";
+    if (text && live.textContent !== text) live.textContent = text;
     live.classList.toggle("at", atLive);
     // Watching a moment that is not live says so.
     const status = $("status").textContent ?? "";

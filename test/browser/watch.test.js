@@ -457,7 +457,8 @@ test("a viewer of a match page goes back on their own, and returns", async () =>
   await page.mouse.click(box[0] + box[2] * 0.1, box[1] + 20);
   await until(
     page,
-    () => document.getElementById("rb-live").textContent === "Back" && !document.getElementById("rb-live").hidden,
+    () =>
+      document.getElementById("rb-live").textContent === "Back" && !document.getElementById("rb-live").style.visibility,
   );
   assert.ok(
     streams.some(s => s.startsWith("/r/")),
@@ -465,7 +466,8 @@ test("a viewer of a match page goes back on their own, and returns", async () =>
   );
   await until(page, () => document.getElementById("status").textContent === "replay");
   await page.click("#rb-live");
-  await until(page, () => document.getElementById("rb-live").hidden);
+  // Hidden, keeping its room.
+  await until(page, () => document.getElementById("rb-live").style.visibility === "hidden");
   await until(page, () => document.getElementById("status").textContent === "live");
   assert.equal(streams.at(-1), "/w/demo/events", "back on the shared stream");
   assert.deepEqual(errors, []);

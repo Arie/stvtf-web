@@ -162,6 +162,7 @@ function watchBar() {
     live: back,
     // Live for a live match; on a demo, back to the shared playback from one's own.
     liveLabel: p => (p.live ? "● Live" : own && "Back"),
+    liveSpace: "Back",
     // One's own playback is a replay, unless at a live match's live.
     replay: (behind, p) => Boolean(own) && (behind || !p.live),
   });

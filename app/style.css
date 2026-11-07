@@ -1161,6 +1161,7 @@ aside h3 {
 }
 #rb-clock {
   font-variant-numeric: tabular-nums;
+  text-align: right;
   white-space: nowrap;
 }
 .stvtf.room #follow {
