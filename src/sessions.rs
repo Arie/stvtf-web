@@ -89,6 +89,19 @@ impl Session {
         }
     }
 
+    /// Whether it is a fixed match (`--demo`, `--demos`), there again in the next process.
+    pub fn is_pinned(&self) -> bool {
+        self.pinned
+    }
+
+    /// A demo's gzipped stvtf output, once fetched.
+    pub fn output(&self) -> Option<Arc<Vec<u8>>> {
+        match &*lock(&self.source) {
+            Some(Source::Output(gz)) => Some(gz.clone()),
+            _ => None,
+        }
+    }
+
     /// Rooms play `file`, the recording this session loops.
     pub fn set_file(&self, file: PathBuf) {
         *lock(&self.source) = Some(Source::File(file));
@@ -244,6 +257,7 @@ pub struct Sessions {
 /// on the release it replaces saves only the matches it starts, for the new one to pick up when
 /// their pages reconnect to it, and not the others, so it cannot bring back a match the new one
 /// ended.
+#[derive(Clone)]
 pub struct Store {
     pub dir: PathBuf,
     pub keys: Option<Arc<token::Keys>>,
@@ -313,8 +327,24 @@ impl Store {
         Ok(())
     }
 
-    fn forget(&self, id: &str) {
+    pub(crate) fn forget(&self, id: &str) {
         let _ = std::fs::remove_file(self.path(id));
+    }
+
+    /// Writes `plain` as `name`, sealed when there are keys.
+    pub(crate) fn put(&self, name: &str, plain: &[u8]) -> Result<()> {
+        std::fs::create_dir_all(&self.dir)?;
+        let data = self.keys.as_ref().map_or_else(|| plain.to_vec(), |k| k.seal(plain));
+        Ok(write_atomic(&self.path(name), &data)?)
+    }
+
+    /// What `put` wrote as `name`.
+    pub(crate) fn take(&self, name: &str) -> Result<Vec<u8>> {
+        let data = std::fs::read(self.path(name))?;
+        Ok(match &self.keys {
+            Some(k) => k.unseal(&data)?,
+            None => data,
+        })
     }
 
     fn load(&self, data: &[u8]) -> Result<SavedMatch> {
