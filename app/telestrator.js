@@ -10,8 +10,15 @@ const HOLD_MS = 3000,
 // A colour per admin, by their number in the room: the owner's (1) first.
 export const INKS = ["#ffd23f", "#4fd1c5", "#f472b6", "#a3e635", "#fb923c", "#c084fc"];
 const EDGE = "#0b0c0e";
+// The colours admins picked, by their number.
+/** @type {Map<number, string>} */
+const picked = new Map();
+/** @param {{ id: number; ink?: string }[]} people */
+export function setInks(people) {
+  for (const p of people) if (p.ink) picked.set(p.id, p.ink);
+}
 /** @param {number} by */
-export const inkOf = by => INKS[(Math.max(1, by) - 1) % INKS.length];
+export const inkOf = by => picked.get(by) ?? INKS[(Math.max(1, by) - 1) % INKS.length];
 
 // Others' strokes show this far behind, so their points come in time to be drawn at the pace
 // they were drawn instead of in jumps as each piece arrives.

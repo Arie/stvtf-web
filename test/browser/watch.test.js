@@ -223,6 +223,15 @@ test("people in a room see each other and admins make others admin", async () =>
   await page.click("#peoplelist button");
   await until(viewer.page, () => !(/** @type {HTMLButtonElement} */ (document.getElementById("rb-play")).disabled));
   assert.match(await viewer.page.textContent("#peoplelist"), /Guest 2you, admin/);
+  await page.$eval("#peoplelist input.ink", el => {
+    el.value = "#00ff00";
+    el.dispatchEvent(new Event("change"));
+  });
+  await until(viewer.page, () =>
+    [...document.querySelectorAll("#peoplelist .ink")].some(
+      el => getComputedStyle(el).backgroundColor === "rgb(0, 255, 0)",
+    ),
+  );
   assert.deepEqual([...errors, ...viewer.errors], []);
   await viewer.page.close();
   await page.close();

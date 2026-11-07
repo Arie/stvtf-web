@@ -4,7 +4,7 @@ import { $, OVERLAY, PAGE, canvas, state } from "./core.js";
 import { env } from "./env.js";
 import { setAutoZoom, setFollow } from "./input.js";
 import { peopleListeners, playbackListeners, streamParams, viewListeners } from "./stream.js";
-import { drawOwn, inkOf } from "./telestrator.js";
+import { drawOwn, inkOf, setInks } from "./telestrator.js";
 import { focusOf, screenOffset, viewArea } from "./view.js";
 /** @typedef {import("../types/stream").PlaybackLine} PlaybackLine */
 
@@ -261,6 +261,7 @@ function people(allow) {
   function show(m) {
     const self = m.people.find(p => p.id === me.id);
     if (self && self.admin !== me.admin) allow(self.admin);
+    setInks(m.people);
     list.replaceChildren(
       ...m.people.map(p => {
         const li = document.createElement("li"),
@@ -270,18 +271,28 @@ function people(allow) {
         nm.textContent = p.name;
         tag.className = "tag";
         tag.textContent = [p.id === me.id && "you", p.owner ? "owner" : p.admin && "admin"].filter(Boolean).join(", ");
-        if (p.admin) {
-          const ink = document.createElement("i");
-          ink.className = "ink";
-          ink.style.background = inkOf(p.id);
-          li.append(ink);
-        }
         li.append(nm, tag);
         if (me.admin && !p.owner && p.id !== me.id) {
           const b = document.createElement("button");
           b.textContent = p.admin ? "Remove admin" : "Make admin";
           b.onclick = () => post("admin", { person: p.id, admin: !p.admin });
           li.append(b);
+        }
+        // Last, so names line up: an admin's pen colour, which they pick for themselves.
+        if (p.admin && p.id === me.id) {
+          const pick = document.createElement("input");
+          pick.type = "color";
+          pick.className = "ink";
+          pick.title = "Your pen colour";
+          pick.value = inkOf(p.id);
+          pick.onchange = () => post("ink", { ink: pick.value });
+          li.append(pick);
+        } else if (p.admin) {
+          const ink = document.createElement("i");
+          ink.className = "ink";
+          ink.title = "Their pen colour";
+          ink.style.background = inkOf(p.id);
+          li.append(ink);
         }
         return li;
       }),

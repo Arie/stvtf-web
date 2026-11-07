@@ -170,7 +170,7 @@ page, its overlay and live matches never change.
 
 Everyone in a room is listed beside the map, by the name they give (kept in the browser) or as
 Guest N. Admins make others admin, or not; the owner stays one. Each admin's pen has its own
-colour. An admin also sets how everyone sees the map: each their own view, auto zoom, following
+colour, which they pick by the swatch after their name. An admin also sets how everyone sees the map: each their own view, auto zoom, following
 the player the admin follows, or the admin's own view (the same part of the map, fitted to each
 screen); until it is back to their own, viewers cannot move the camera. A room's overlay follows it
 too, and is not listed. People are known by the `stvtf_guest` cookie, which only the server sees: pages know
@@ -186,12 +186,13 @@ after its last viewer left.
 | `POST /w/<id>/room` | opens one: `{"page": "/r/<id>/"}` |
 | `GET /r/<id>/me` | `{"id", "admin"}`: the caller's number in the room, and whether they are an admin |
 | `POST /r/<id>/name` | `{"name"}`: the caller's name in the room |
+| `POST /r/<id>/ink` | an admin's `{"ink": "#rrggbb"}`: their pen colour |
 | `POST /r/<id>/admin` | an admin's `{"person": <number>, "admin": true\|false}` |
 | `POST /r/<id>/view` | an admin's `{"mode": "free"\|"auto"}`, `{"mode": "follow", "player": <id>}` or `{"mode": "admin", "cx", "cy", "w", "h", "rot"}` (the map area they see), with `"take": true` when chosen (that admin leads from then on); without, it counts only from the admin who leads |
 | `POST /r/<id>/control` | an admin's `{"paused", "speed", "seek"}` (any of them; `seek` in milliseconds) |
 | `POST /r/<id>/draw` | an admin's `{"stroke": <id>, "points": [[x, y, ms], …]}`, up to 256 map points, each with when it was drawn (milliseconds into the stroke); a stroke's next points continue it, and pages draw it at that pace, a tenth of a second behind |
 
-The room's event stream adds five lines: `view` (as posted, with `by`), `people` (`id`, `name`, `admin`, `owner` each), `draw`
+The room's event stream adds five lines: `view` (as posted, with `by`), `people` (`id`, `name`, `admin`, `owner` and, once picked, `ink` each), `draw`
 (as posted, with `by`, the drawer's number), `playback` (`paused`, `speed`, `at` and `length` in
 milliseconds, and `rounds`, when each round started) on every change and every second while it
 plays, and `seek` before the state at the new position.

@@ -41,9 +41,13 @@ aside section { padding: 8px 10px; border-bottom: 1px solid var(--line); }
 #peoplelist { margin: 0; padding: 0; list-style: none; }
 #peoplelist li { display: flex; align-items: center; gap: 6px; padding: 2px 0; }
 #peoplelist .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; unicode-bidi: isolate; }
-#peoplelist .ink { flex: none; width: 8px; height: 8px; border-radius: 50%; }
-#peoplelist .tag { color: var(--dim); font-size: 11px; }
-#peoplelist button { margin-left: auto; flex: none; padding: 1px 6px; border: 1px solid var(--line); border-radius: 4px;
+#peoplelist .ink { flex: none; width: 12px; height: 12px; border-radius: 50%; }
+#peoplelist input.ink { padding: 0; border: 1px solid var(--line); background: none; cursor: pointer; }
+#peoplelist input.ink::-webkit-color-swatch-wrapper { padding: 0; }
+#peoplelist input.ink::-webkit-color-swatch { border: 0; border-radius: 50%; }
+#peoplelist input.ink::-moz-color-swatch { border: 0; border-radius: 50%; }
+#peoplelist .tag { margin-right: auto; color: var(--dim); font-size: 11px; }
+#peoplelist button { flex: none; padding: 1px 6px; border: 1px solid var(--line); border-radius: 4px;
   background: transparent; color: var(--dim); font: inherit; font-size: 11px; cursor: pointer; }
 #peoplelist button:hover { color: var(--text); }
 aside h3 { margin: 0 0 6px; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--dim); }
