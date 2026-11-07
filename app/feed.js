@@ -355,6 +355,11 @@ const FEED_ROW = {
   },
 };
 
+// A row's time, with the event's tick: in a room, an admin clicks it to watch from there.
+/** @param {GameEvent} ev @param {string} stamp */
+const timeOf = (ev, stamp) =>
+  Number.isInteger(ev.tick) ? `<time data-tick="${ev.tick}">${stamp}</time>` : `<time>${stamp}</time>`;
+
 // One row per event, newest on top, stamped with the round clock.
 /** @param {GameEvent} ev @param {Who} p */
 export function feedEvent(ev, p) {
@@ -363,7 +368,7 @@ export function feedEvent(ev, p) {
   const d = document.createElement("div");
   d.className = `ev ${row.cls ?? ""}`;
   const stamp = ev.at != null ? mmss(ev.at) : state.clock;
-  d.innerHTML = `${stamp ? `<time>${stamp}</time>` : ""}${row.html}`;
+  d.innerHTML = `${stamp ? timeOf(ev, stamp) : ""}${row.html}`;
   prepend($("feed"), d);
 }
 /** @param {GameEvent} ev @param {Who} p */
@@ -371,7 +376,7 @@ export function chat(ev, p) {
   const d = document.createElement("div");
   const pl = ev.player != null ? p(ev.player) : null;
   const stamp = ev.at != null ? mmss(ev.at) : state.clock;
-  const time = stamp ? `<time>${stamp}</time>` : "";
+  const time = stamp ? timeOf(ev, stamp) : "";
   if (ev.type === "voice_command") {
     const text = VOICE[ev.menu]?.[ev.item];
     if (!layerOn("flow") || !pl || !text) return;

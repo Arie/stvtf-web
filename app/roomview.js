@@ -132,6 +132,14 @@ export class RoomView {
 const following = (player, camera) => ({ mode: "follow", player, w: camera.w, h: camera.h });
 
 /**
+ * Where in the recording an event of game tick `tick` is, from where playback is now (`at`,
+ * milliseconds of play, at game tick `now`): play time goes with ticks while a map plays.
+ * @param {number} tick @param {{ at: number; now: number }} playing @param {number} msPerTick
+ */
+export const atTick = (tick, playing, msPerTick) =>
+  Math.max(0, Math.round(playing.at - (playing.now - tick) * msPerTick));
+
+/**
  * Sends one request at a time, so they arrive in order and the delay stays one round trip
  * however slow they are; `add` folds what comes in meanwhile into what waits.
  * @template T @param {(item: T) => Promise<unknown>} post @param {(waiting: T[], item: T) => T[]} add

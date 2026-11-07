@@ -258,6 +258,8 @@ aside h3 { margin: 0 0 6px; font-size: 11px; text-transform: uppercase; letter-s
 .who, .t-red, .t-blue, .bn, .card .nm b, #follow-name { unicode-bidi: isolate; }
 #feed div.ev { display: flex; align-items: center; gap: 5px; padding: 3px 7px; margin: 0 0 2px; border-radius: 3px;
   background: #0b0c0e8c; white-space: nowrap; overflow: hidden; }
+.stvtf.seekable #feed time[data-tick], .stvtf.seekable #chat time[data-tick] { cursor: pointer; }
+.stvtf.seekable #feed time[data-tick]:hover, .stvtf.seekable #chat time[data-tick]:hover { color: #e0a040; text-decoration: underline; }
 #feed .ev time { color: var(--dim); font-size: 10px; font-variant-numeric: tabular-nums; min-width: 30px; }
 #feed .ev .who { overflow: hidden; text-overflow: ellipsis; }
 #feed .who[data-id] { cursor: pointer; } #feed .who[data-id]:hover { text-decoration: underline; }

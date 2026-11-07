@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { HAND_MS, RoomView, latestView, morePoints, sender } from "../../app/roomview.js";
+import { HAND_MS, RoomView, atTick, latestView, morePoints, sender } from "../../app/roomview.js";
 
 /** @typedef {import("../../app/roomview.js").Seen} Seen */
 
@@ -212,4 +212,11 @@ test("a followed player is followed at the zoom of the admin, who still scrolls 
     null,
     "the leader zooms their own",
   );
+});
+
+test("an event's tick is a moment in the recording, counted back from where playback is", () => {
+  // At 60 s of play, tick 10000; 15 ms a tick.
+  assert.equal(atTick(9000, { at: 60_000, now: 10_000 }, 15), 45_000);
+  assert.equal(atTick(10_000, { at: 60_000, now: 10_000 }, 15), 60_000);
+  assert.equal(atTick(1, { at: 1_000, now: 10_000 }, 15), 0, "not before the start");
 });

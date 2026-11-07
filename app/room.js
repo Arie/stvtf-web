@@ -1,19 +1,21 @@
 // A room (/r/<id>/): its playback bar, which its owner drives and everyone else watches; and
 // on a match's own page, the button that opens a room on it.
-import { $, OVERLAY, PAGE, canvas, state } from "./core.js";
+import { $, OVERLAY, PAGE, canvas, msPerTick, state } from "./core.js";
 import { env } from "./env.js";
 import { setAutoZoom, setFollow } from "./input.js";
 import { peopleListeners, playbackListeners, streamParams, viewListeners } from "./stream.js";
 import { drawOwn, inkOf, setInks } from "./telestrator.js";
 import { timeline } from "./timeline.js";
 import { pushMirror } from "./camera.js";
-import { RoomView, latestView, morePoints, sender } from "./roomview.js";
+import { RoomView, atTick, latestView, morePoints, sender } from "./roomview.js";
 import { focusOf, screenOffset, viewArea } from "./view.js";
 /** @typedef {import("../types/stream").PlaybackLine} PlaybackLine */
 
 const SPEEDS = [0.25, 0.5, 1, 2, 4];
 // The closest a stroke's points are, in pixels.
 const MIN_STEP_PX = 3;
+// A jump to an event in the feed or chat lands this long before it, in milliseconds.
+const LEAD_MS = 2000;
 // Playback this close to a live match's end is at live, in milliseconds.
 const LIVE_MS = 2500;
 // How far the arrow keys jump, in milliseconds.
@@ -133,6 +135,7 @@ function roomBar() {
     bar.title = on ? "" : "The room's admins control playback";
     if (!on && pen.classList.contains("on")) pen.click();
     if (on) $("claim").hidden = true;
+    env.el.classList.toggle("seekable", on);
     marks.allow(on ? ms => control({ seek: ms }) : null);
     setViewAdmin(on);
   };
@@ -162,6 +165,19 @@ function roomBar() {
   };
   drawing(pen);
   shortcuts(() => (admin ? last : null), control, at, pen);
+  timesJump(() => admin, control, at);
+}
+
+// An admin clicking an event's or a chat line's time watches from a little before it.
+/** @param {() => boolean} admin @param {(c: { seek: number }) => void} control @param {() => number} at */
+function timesJump(admin, control, at) {
+  for (const id of ["feed", "chat"])
+    $(id).addEventListener("click", e => {
+      const time = /** @type {HTMLElement | null} */ (/** @type {Element} */ (e.target).closest?.("time[data-tick]"));
+      if (!admin() || !time) return;
+      const when = atTick(Number(time.dataset.tick), { at: at(), now: state.lastTick }, msPerTick);
+      control({ seek: Math.max(0, when - LEAD_MS) });
+    });
 }
 
 // Space pauses, d takes the pen, the arrow keys jump: an admin's, while playback is known.

@@ -412,3 +412,29 @@ test("an admin's view is by hand, for them too, until they click a player", asyn
   await viewer.page.close();
   await page.close();
 });
+
+test("an admin clicking an event's time watches from just before it", async () => {
+  const { page, errors } = await open();
+  await page.goto(base);
+  await page.click("#roomopen");
+  await page.waitForURL(/\/r\/[0-9a-f]{32}\/$/, { timeout: WAIT });
+  await until(page, () => document.documentElement.querySelector(".stvtf.seekable"));
+  const tick = await until(page, () => document.querySelector("#feed time[data-tick]")?.getAttribute("data-tick"));
+  await page.waitForTimeout(3000);
+  const seconds = async () => {
+    const [m, s] = (await page.textContent("#rb-clock")).split(" / ")[0].split(":").map(Number);
+    return m * 60 + s;
+  };
+  const was = await seconds();
+  await page.click(`#feed time[data-tick="${tick}"]`);
+  // Back to before it, and on from there: the event comes round again.
+  await until(
+    page,
+    w => Number(document.getElementById("rb-clock").textContent.split(" / ")[0].split(":")[1]) < w,
+    was,
+  );
+  assert.ok((await seconds()) < was);
+  await until(page, t => document.querySelectorAll(`#feed time[data-tick="${t}"]`).length > 0, tick);
+  assert.deepEqual(errors, []);
+  await page.close();
+});
