@@ -2,12 +2,13 @@
 //! which only the server sees; pages see a number per person instead.
 
 use anyhow::{Result, bail};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 
 /// The longest name, in characters.
 const MAX_NAME: usize = 32;
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct People {
     owner: String,
     by_guest: HashMap<String, Person>,
@@ -16,12 +17,14 @@ pub(crate) struct People {
     next: u32,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
 struct Person {
     id: u32,
     name: String,
     /// Pen colour, as `#rrggbb`, once chosen.
     ink: Option<String>,
-    /// Open pages: someone with none has left.
+    /// Open pages: someone with none has left. Not saved: pages come back to a new process.
+    #[serde(skip)]
     pages: usize,
 }
 

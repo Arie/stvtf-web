@@ -7,7 +7,7 @@ use crate::people::People;
 use crate::recording::Recording;
 use anyhow::{Result, bail};
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, VecDeque};
+use std::collections::VecDeque;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
@@ -24,7 +24,9 @@ pub(crate) struct Room {
     people: Mutex<People>,
     /// The number of the admin who set the view last by choosing it.
     /// The admin's number, page and the kind of view it chose, when one did.
-    leader: Mutex<Option<(u32, String, std::mem::Discriminant<View>)>>,
+    leader: Mutex<Option<Leader>>,
+    /// The latest view line, to save.
+    view: Mutex<Option<Arc<str>>>,
     recording: Arc<Recording>,
     state: Mutex<State>,
     wake: Condvar,
@@ -95,6 +97,19 @@ pub(crate) struct Draw {
 /// The longest a stroke's points can say it took, in milliseconds.
 const MAX_STROKE_MS: f64 = 600_000.0;
 
+type Leader = (u32, String, String);
+
+/// What a room is, saved for the next process: where playback is, who is in it, and the view.
+#[derive(Debug, Serialize, Deserialize)]
+pub(crate) struct Saved {
+    paused: bool,
+    speed: f64,
+    at: u64,
+    people: People,
+    leader: Option<Leader>,
+    view: Option<String>,
+}
+
 /// A page in the room, by its guest cookie if it is listed, until dropped.
 pub(crate) struct Watching(Arc<Room>, Option<String>);
 
@@ -113,13 +128,38 @@ impl Drop for Watching {
 impl Room {
     /// A room playing `recording` from the start, at 1×.
     pub(crate) fn start(id: String, owner: &str, recording: Arc<Recording>) -> Arc<Room> {
+        let state = State { paused: false, speed: 1.0, at: 0, seek: None, stop: false };
+        Room::run(id, People::new(owner), None, None, state, recording)
+    }
+
+    /// The room `saved` was, back where it was.
+    pub(crate) fn restore(id: String, saved: Saved, recording: Arc<Recording>) -> Arc<Room> {
+        let at = saved.at.min(recording.length);
+        let state = State { paused: saved.paused, speed: saved.speed, at, seek: Some(at), stop: false };
+        let room = Room::run(id, saved.people, saved.leader, saved.view.map(Into::into), state, recording);
+        if let Some(view) = lock(&room.view).clone() {
+            announce(&room.hub, "view", &view);
+        }
+        room.announce_people();
+        room
+    }
+
+    fn run(
+        id: String,
+        people: People,
+        leader: Option<Leader>,
+        view: Option<Arc<str>>,
+        state: State,
+        recording: Arc<Recording>,
+    ) -> Arc<Room> {
         let room = Arc::new(Room {
             id,
             hub: SharedHub::default(),
-            people: Mutex::new(People::new(owner)),
-            leader: Mutex::new(None),
+            people: Mutex::new(people),
+            leader: Mutex::new(leader),
+            view: Mutex::new(view),
             recording,
-            state: Mutex::new(State { paused: false, speed: 1.0, at: 0, seek: None, stop: false }),
+            state: Mutex::new(state),
             wake: Condvar::new(),
             viewers: AtomicUsize::new(0),
             idle_since: Mutex::new(Some(Instant::now())),
@@ -127,6 +167,19 @@ impl Room {
         let player = room.clone();
         std::thread::spawn(move || player.play());
         room
+    }
+
+    /// The room as it is now, to pick up again.
+    pub(crate) fn saved(&self) -> Saved {
+        let st = lock(&self.state);
+        Saved {
+            paused: st.paused,
+            speed: st.speed,
+            at: st.seek.unwrap_or(st.at),
+            people: lock(&self.people).clone(),
+            leader: lock(&self.leader).clone(),
+            view: lock(&self.view).as_deref().map(str::to_string),
+        }
     }
 
     pub(crate) fn is_admin(&self, guest: &str) -> bool {
@@ -210,7 +263,7 @@ impl Room {
         }
         let by = lock(&self.people).id(guest);
         let mut leader = lock(&self.leader);
-        let from = (by, post.page.clone(), std::mem::discriminant(view));
+        let from = (by, post.page.clone(), kind(view).to_string());
         if post.take {
             *leader = Some(from);
         } else if leader.as_ref() != Some(&from) {
@@ -222,7 +275,9 @@ impl Room {
         line["type"] = "view".into();
         line["by"] = by.into();
         line["page"] = post.page.clone().into();
-        announce(&self.hub, "view", &line.to_string().into());
+        let line: Arc<str> = line.to_string().into();
+        *lock(&self.view) = Some(line.clone());
+        announce(&self.hub, "view", &line);
         Ok(())
     }
 
@@ -315,37 +370,13 @@ impl Room {
     }
 }
 
-/// The rooms open now.
-#[derive(Default)]
-pub(crate) struct Rooms {
-    map: Mutex<HashMap<String, Arc<Room>>>,
-}
-
-impl Rooms {
-    pub(crate) fn open(&self, recording: Arc<Recording>, owner: &str) -> Arc<Room> {
-        let room = Room::start(crate::sessions::random_id(), owner, recording);
-        lock(&self.map).insert(room.id.clone(), room.clone());
-        room
-    }
-
-    pub(crate) fn get(&self, id: &str) -> Option<Arc<Room>> {
-        lock(&self.map).get(id).cloned()
-    }
-
-    pub(crate) fn count(&self) -> usize {
-        lock(&self.map).len()
-    }
-
-    /// Ends the rooms nobody has watched for `linger`.
-    pub(crate) fn reap(&self, linger: Duration) {
-        lock(&self.map).retain(|id, room| {
-            let keep = room.idle_for().is_none_or(|t| t < linger);
-            if !keep {
-                room.stop();
-                eprintln!("stvtf-web: room {} ended", &id[..8]);
-            }
-            keep
-        });
+/// What kind of view `v` is.
+fn kind(v: &View) -> &'static str {
+    match v {
+        View::Free => "free",
+        View::Auto => "auto",
+        View::Follow { .. } => "follow",
+        View::Admin { .. } => "admin",
     }
 }
 
@@ -422,19 +453,6 @@ mod tests {
         until("the end", || lock(&r.state).paused);
         assert_eq!(lock(&r.state).at, 30);
         r.stop();
-    }
-
-    #[test]
-    fn an_unwatched_room_ends() {
-        let rooms = Rooms::default();
-        let r = rooms.open(room(1).recording.clone(), "me");
-        let w = r.join("me", None, true);
-        rooms.reap(Duration::ZERO);
-        assert_eq!(rooms.count(), 1, "watched");
-        drop(w);
-        rooms.reap(Duration::ZERO);
-        assert_eq!(rooms.count(), 0);
-        assert!(lock(&r.state).stop);
     }
 
     #[test]
