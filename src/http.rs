@@ -274,7 +274,8 @@ fn serve_match(
             if is_page(rest)
                 && let (Some(demo), Some(home)) = (sessions::id_demo(id), &app.home) =>
         {
-            let to = format!("{home}?connect=https%3A%2F%2Fdemos.tf%2F{demo}");
+            let at = moment(&request.query, "t").map(|t| format!("&at={t}")).unwrap_or_default();
+            let to = format!("{home}?connect=https%3A%2F%2Fdemos.tf%2F{demo}{at}");
             respond_with(&mut s, "303 See Other", &[("Location", &to)], b"")?;
         }
         (None, _) if app.keys.is_some() => {
@@ -660,7 +661,7 @@ fn start_view(query: &str) -> String {
     if !is_page(&path) {
         path = if overlay { "overlay".into() } else { String::new() };
     }
-    let options: Vec<String> = VIEW_OPTIONS
+    let mut options: Vec<String> = VIEW_OPTIONS
         .iter()
         .filter_map(|k| {
             param(query, k)
@@ -668,10 +669,20 @@ fn start_view(query: &str) -> String {
                 .map(|v| format!("{k}={v}"))
         })
         .collect();
+    // A moment to watch from: `t` on the page (`t` here being the token).
+    options.extend(moment(query, "at").map(|at| format!("t={at}")));
     if !options.is_empty() {
         path = format!("{path}?{}", options.join("&"));
     }
     path
+}
+
+/// Query parameter `key` if it is a moment, as a page's clock writes it: `12:34`, `1:02:03`, `90`.
+fn moment<'a>(query: &'a str, key: &str) -> Option<&'a str> {
+    let v = param(query, key)?;
+    let parts: Vec<&str> = v.split(':').collect();
+    let digits = |p: &str| !p.is_empty() && p.len() <= 6 && p.bytes().all(|b| b.is_ascii_digit());
+    (parts.len() <= 3 && parts.iter().all(|p| digits(p))).then_some(v)
 }
 
 /// The page or its overlay, either with a delay in seconds after it: `5`, `overlay/4.5`.
@@ -761,6 +772,8 @@ mod tests {
         let toggles = "names=0&score=1&panel=0.5&rotate=auto&dot=14&ui=1.5&zoom=map&side=0&bg=geometry&bgopacity=0.4&health=0&projectiles=0&beams=0&buildings=0&shots=0&deaths=0\
                        &caps=0&heals=1&hits=1&marks=1&jumps=1&pickups=1&points=0&flow=1&loadout=0&effects=0";
         assert_eq!(start_view(&format!("view=overlay&{toggles}&x=y")), format!("overlay?{toggles}"));
+        assert_eq!(start_view("at=1:02:03"), "?t=1:02:03", "a moment, as the page's t");
+        assert_eq!(start_view("at=1:2:3:4"), "");
     }
 
     /// Runs `serve` on one connection, with `send` written by the client; returns serve's result and the response.
@@ -833,6 +846,9 @@ mod tests {
             out.starts_with("HTTP/1.1 303") && out.contains("Location: https://serveme.tf/stv?connect=https%3A%2F%2Fdemos.tf%2F1531482"),
             "{out}"
         );
+        let at = get(&app, "/w/d1531482/?t=12:34", "");
+        assert!(at.contains("demos.tf%2F1531482&at=12:34\r\n"), "the moment goes along: {at}");
+        assert!(!get(&app, "/w/d1531482/?t=x%0d", "").contains("&at="));
         assert!(get(&app, "/w/d1531482/events", "").starts_with("HTTP/1.1 404"), "only the page");
         assert!(get(&app, "/w/dx/", "").starts_with("HTTP/1.1 404"));
     }
