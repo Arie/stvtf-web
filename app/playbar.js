@@ -1,6 +1,6 @@
 // The playback bar: play and pause, the timeline with its marks, the time, speed and Live. A room
 // drives it with the room's playback; a match page with the shared playback, or a viewer's own.
-import { $, msPerTick, setStatus, state } from "./core.js";
+import { $, msPerTick, playbackStatus, setStatus, state } from "./core.js";
 import { env } from "./env.js";
 import { atTick } from "./roomview.js";
 import { timeline } from "./timeline.js";
@@ -97,10 +97,7 @@ export function playbar(o) {
     live.style.visibility = label ? "" : "hidden";
     if (text && live.textContent !== text) live.textContent = text;
     live.classList.toggle("at", atLive);
-    // Watching a moment that is not live says so.
-    const status = $("status").textContent ?? "";
-    const want = (o.replay ?? (b => b))(behind, last) ? "replay" : "live";
-    if (!last.paused && ["live", "replay"].includes(status) && status !== want) setStatus(want, true);
+    if (!last.paused) say(o.replay ?? (b => b), behind, last, length() - now);
   };
   // Every frame: a live match's timeline grows smoothly, and the playhead moves smoothly.
   const marks = timeline({ track, home: o.home, clock, length, jump: null });
@@ -147,6 +144,18 @@ export function playbar(o) {
       marks.allow(on ? ms => control({ seek: ms }) : null);
     },
   };
+}
+
+// Watching a moment that is not live says so: how far behind SourceTV, else a replay.
+/**
+ * @param {(behind: boolean, p: PlaybackLine) => boolean} replay @param {boolean} behind
+ * @param {PlaybackLine} p @param {number} by how far behind, in ms
+ */
+function say(replay, behind, p, by) {
+  const status = $("status").textContent ?? "";
+  let want = "live";
+  if (replay(behind, p)) want = behind ? `${clock(by)} behind STV` : "replay";
+  if (playbackStatus(status) && status !== "paused" && status !== want) setStatus(want, true);
 }
 
 // Clicking an event's or a chat line's time watches from a little before it.
