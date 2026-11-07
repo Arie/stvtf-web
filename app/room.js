@@ -211,8 +211,10 @@ function watchBar() {
       .then(
         t => {
           if (!t || own) return;
-          bar.heard({ type: "playback", paused: false, speed: 1, ...t });
-          if (wanted != null) send({ seek: (t.origin ?? 0) + wanted });
+          // Heard as at the moment linked to, if one was: a live match shows no more of itself.
+          const at = wanted == null ? t.at : (t.origin ?? 0) + wanted;
+          bar.heard({ type: "playback", paused: false, speed: 1, ...t, at });
+          if (wanted != null) send({ seek: at });
           wanted = null;
         },
         () => {},

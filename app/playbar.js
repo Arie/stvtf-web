@@ -58,7 +58,8 @@ export function playbar(o) {
   let last = null;
   let heard = 0,
     dragging = false,
-    allowed = false;
+    allowed = false,
+    seen = 0;
   // How long the recording is by now: a live match's grows, between playback lines no further
   // than half of LIVE_MS.
   const length = () => (last ? last.length + (last.live ? Math.min(performance.now() - heard, LIVE_MS / 2) : 0) : 0);
@@ -88,6 +89,9 @@ export function playbar(o) {
     time.min = String(start());
     time.max = String(len);
     marks.place(len, track.clientWidth);
+    // A live match's timeline shows only as far as this viewer has watched; a demo's, all of it.
+    if (last.live) seen = Math.max(seen, atLive ? len : at());
+    marks.reveal(last.live ? seen : Infinity);
     // At live the timeline is all played and the playhead, which could only waver at its end, hides.
     const now = atLive ? length() : at();
     if (!dragging) time.value = String(now);

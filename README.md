@@ -167,7 +167,8 @@ far with its rounds, ubers, drops and fights, a live match from when it was firs
 default it follows what everyone sees, at live for a live match. Moving it, pausing or another
 speed gives that viewer a playback of their own from there (a private room: not listed, not saved,
 at most 200 at once, outside `--max-matches`); ● Live, or Back on a demo, returns to the shared one.
-`?t=12:34` (from the map's start) opens the page in such a playback at that moment, and the link button by the map's name copies
+A live match's timeline shows rounds, results, marks and fights only as far as the viewer has
+watched, so going back spoils nothing; a demo's shows all of it. `?t=12:34` (from the map's start) opens the page in such a playback at that moment, and the link button by the map's name copies
 one for where the viewer is.
 
 | route | |

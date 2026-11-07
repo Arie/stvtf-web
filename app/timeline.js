@@ -24,25 +24,15 @@ const el = (cls, tag = "div") => Object.assign(document.createElement(tag), { cl
  * }} t `jump` is null for a viewer, who cannot.
  */
 export function timeline(t) {
-  const lane = el("rb-lane"),
-    rounds = el("rb-rounds"),
-    span = el("rb-span"),
-    heat = /** @type {HTMLCanvasElement} */ (el("rb-heat", "canvas"));
-  rounds.append(span);
-  t.track.prepend(rounds);
-  const strip = el("rb-heat-wrap");
-  strip.append(heat);
-  t.track.append(lane, strip);
+  const { lane, span, heat } = parts(t.track);
   /** @type {Mark[]} */
   const marks = [];
   /** @type {number[]} */
   let starts = [];
-  // The marks fetched (by the room's count, which goes on past those dropped), and what is kept
-  // (from `start`) of the map that began at `origin`.
-  let fetched = 0,
-    fetching = false,
-    start = 0,
-    origin = 0;
+  // The marks fetched (by the room's count, which goes on past those dropped), what is kept (from
+  // `start`) of the map that began at `origin`, and how far it shows what happened (`upTo`, with
+  // the marks `shown`): a live match only as far as this viewer watched, no spoilers.
+  let [fetched, fetching, start, origin, upTo, shown] = [0, false, 0, 0, Infinity, 0];
 
   // The marks the room has that this page does not yet.
   /** @param {number} all */
@@ -52,7 +42,7 @@ export function timeline(t) {
     try {
       const r = await (await fetch(new URL(`marks?from=${fetched}`, t.home))).json();
       marks.push(...r.marks);
-      fetched = r.all;
+      [fetched, shown] = [r.all, until(marks, upTo)];
     } catch {}
     fetching = false;
     draw();
@@ -80,6 +70,7 @@ export function timeline(t) {
   /** @param {HTMLElement} e @param {Mark} m @param {string} what */
   const mark = (e, m, what) => {
     placed.push([e, m.at]);
+    e.style.visibility = m.at > upTo ? "hidden" : "";
     e.style.setProperty("--team", TEAM[m.team] ?? TEAM.none);
     e.title = `${what} · ${t.clock(m.at - origin)}${t.jump ? " · click to watch it" : ""}`;
     const jump = t.jump;
@@ -90,7 +81,8 @@ export function timeline(t) {
   // Marks are made once (so clicks land) and only moved as a live match grows.
   let drawn = 0,
     laid = "",
-    heated = 0;
+    heated = 0,
+    heatShown = 0;
   function draw(again = false) {
     if (again) {
       lane.replaceChildren();
@@ -98,7 +90,9 @@ export function timeline(t) {
       drawn = 0;
     }
     const before = drawn,
-      all = joined(starts, marks, start);
+      seen = marks.slice(0, shown),
+      begun = starts.filter(st => st <= upTo),
+      all = joined(begun, seen, start);
     for (; drawn < marks.length; drawn++) {
       const m = marks[drawn],
         e = m.at >= start ? make(m, all, mark) : null;
@@ -107,22 +101,29 @@ export function timeline(t) {
     // The rounds again when one starts or is won; the fight strip when there are new kills, or
     // every HEAT_MS as it stretches.
     const len = Math.max(start + 1, t.length()),
-      now = [all.join(), drawn].join();
+      now = [all.join(), drawn, shown].join();
     if (again || now !== laid) {
       laid = now;
       spanTo = len;
       span.style.setProperty("--from", String(start));
       span.style.setProperty("--len", String(len - start));
-      drawRounds(span, all, marks);
+      drawRounds(span, all, seen);
     }
-    if (again || drawn !== before || performance.now() - heated > HEAT_MS) {
-      heated = performance.now();
-      [heatFrom, heatTo] = drawHeat(heat, marks, start, len);
+    if (again || drawn !== before || heatShown !== shown || performance.now() - heated > HEAT_MS) {
+      [heated, heatShown] = [performance.now(), shown];
+      [heatFrom, heatTo] = drawHeat(heat, seen, start, len);
     }
     place(len, at.width);
   }
 
   return {
+    /** Show what happened up to `ms` (Infinity: all). @param {number} ms */
+    reveal(ms) {
+      if (ms === upTo) return;
+      [upTo, shown] = [ms, until(marks, ms)];
+      hideAfter(placed, ms);
+      draw();
+    },
     /** Fit the timeline to its length and width (px) now. @param {number} len @param {number} width */
     place(len, width) {
       if (len !== at.len || width !== at.width) place(len, width);
@@ -145,6 +146,38 @@ export function timeline(t) {
       draw(true);
     },
   };
+}
+
+// The timeline's parts on `track`: rounds (in a span scaled as a whole) under the marks' lane,
+// and the fight strip below.
+/** @param {HTMLElement} track */
+function parts(track) {
+  const lane = el("rb-lane"),
+    rounds = el("rb-rounds"),
+    span = el("rb-span"),
+    strip = el("rb-heat-wrap"),
+    heat = /** @type {HTMLCanvasElement} */ (el("rb-heat", "canvas"));
+  rounds.append(span);
+  strip.append(heat);
+  track.prepend(rounds);
+  track.append(lane, strip);
+  return { lane, span, heat };
+}
+
+// How many of `marks` (in time order) are at `ms` or before.
+/** @param {Mark[]} marks @param {number} ms */
+function until(marks, ms) {
+  const n = marks.findIndex(m => m.at > ms);
+  return n < 0 ? marks.length : n;
+}
+
+// Hides the marks after `ms`.
+/** @param {[HTMLElement, number][]} placed @param {number} ms */
+function hideAfter(placed, ms) {
+  for (const [e, at] of placed) {
+    const hide = at > ms ? "hidden" : "";
+    if (e.style.visibility !== hide) e.style.visibility = hide;
+  }
 }
 
 // A mark's element, made by `mark`, or none for a kill (the strip shows those).
