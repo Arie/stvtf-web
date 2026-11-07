@@ -250,7 +250,7 @@ fn serve_many(
                 Err(e) => respond(&mut s, "400 Bad Request", HTML, &app.page(&landing(&format!("{e:#}"))))?,
             }
         }
-        (p, _) if let Some(path) = p.strip_prefix("/w/") => serve_match(s, app, sessions, request, path, client)?,
+        (p, _) if let Some(path) = p.strip_prefix("/w/") => serve_match(s, reader, app, sessions, request, path, client)?,
         (p, _) if let Some(path) = p.strip_prefix("/r/") => serve_room(s, reader, app, sessions, request, path, client)?,
         (path, _) => serve_file(&mut s, app, path, request.gzip)?,
     }
@@ -258,7 +258,15 @@ fn serve_many(
 }
 
 /// A match's page and event stream: `path` is what follows `/w/`.
-fn serve_match(mut s: TcpStream, app: &App, sessions: &Sessions, request: &Request, path: &str, client: IpAddr) -> Result<()> {
+fn serve_match(
+    mut s: TcpStream,
+    reader: &mut BufReader<Take<TcpStream>>,
+    app: &App,
+    sessions: &Sessions,
+    request: &Request,
+    path: &str,
+    client: IpAddr,
+) -> Result<()> {
     let (id, rest) = path.split_once('/').unwrap_or((path, ""));
     match (sessions.get(id), rest) {
         (None, _) if app.keys.is_some() => {
@@ -274,6 +282,7 @@ fn serve_match(mut s: TcpStream, app: &App, sessions: &Sessions, request: &Reque
         (Some(_), rest) if is_page(rest) => respond(&mut s, "200 OK", HTML, &app.page(INDEX))?,
         (Some(m), "room") => open_room(&mut s, app, sessions, &m, request)?,
         (Some(m), part @ ("timeline" | "marks")) => match_timeline(&mut s, &m, request, part)?,
+        (Some(m), "rewind") if request.method == "POST" => rewind(&mut s, reader, app, &m, request)?,
         (Some(m), "events") => match app.stream_slot(client) {
             Some(_slot) => {
                 let _viewer = Viewer::new(m.clone());
@@ -284,6 +293,31 @@ fn serve_match(mut s: TcpStream, app: &App, sessions: &Sessions, request: &Reque
         _ => not_found(&mut s)?,
     }
     Ok(())
+}
+
+/// Where a viewer of a match page goes back to, and how.
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Rewind {
+    at: u64,
+    #[serde(default)]
+    speed: Option<f64>,
+    #[serde(default)]
+    paused: bool,
+}
+
+/// A viewer of match `m` goes back in time: a private playback, theirs alone, from where they say.
+fn rewind(s: &mut TcpStream, reader: &mut BufReader<Take<TcpStream>>, app: &App, m: &Arc<Session>, request: &Request) -> Result<()> {
+    let Some(recording) = m.ready() else { return Ok(respond(s, "409 Conflict", TEXT, b"No timeline yet.")?) };
+    let r = match json_body::<Rewind>(reader, request) {
+        Ok(r) => r,
+        Err(e) => return Ok(respond(s, "400 Bad Request", TEXT, format!("{e:#}").as_bytes())?),
+    };
+    let Who { key: guest, cookie, .. } = who(app, request);
+    match app.rooms.open_private(m, recording, &guest, r.at, r.speed.unwrap_or(1.0), r.paused) {
+        Ok(room) => opened(s, app, &room.id, cookie.as_deref()),
+        Err(e) => Ok(respond(s, "503 Service Unavailable", TEXT, format!("{e:#}").as_bytes())?),
+    }
 }
 
 /// A match page's timeline: where its shared playback is (a live match at live), how long it is,
@@ -402,7 +436,7 @@ fn open_room(s: &mut TcpStream, app: &App, sessions: &Sessions, m: &Arc<Session>
         m.prepare();
         return Ok(respond(s, "200 OK", JSON, b"{}")?);
     }
-    if sessions.running() + app.rooms.count() >= sessions.max {
+    if sessions.running() + app.rooms.shared_count() >= sessions.max {
         return Ok(respond(s, "503 Service Unavailable", TEXT, b"This server is watching all it can.")?);
     }
     let recording = match m.recording() {
@@ -920,6 +954,22 @@ mod tests {
         let m = sessions.open("192.0.2.1:27020 tv", None, None).unwrap();
         assert!(get(&app, &format!("/w/{}/timeline", m.id), "").contains(r#""live":true"#));
         sessions.stop_all();
+    }
+
+    #[test]
+    fn a_viewer_goes_back_on_their_own() {
+        let (app, _dir) = demo_app();
+        assert!(post(&app, "/w/demo/rewind", "", r#"{"at":0}"#).starts_with("HTTP/1.1 409"), "the timeline is not ready yet");
+        while !get(&app, "/w/demo/timeline", "").starts_with("HTTP/1.1 200") {
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        let back = post(&app, "/w/demo/rewind", "", r#"{"at":500,"speed":2,"paused":true}"#);
+        assert!(back.starts_with("HTTP/1.1 201") && back.contains("Set-Cookie: stvtf_guest="), "{back}");
+        let page = back.split(r#""page":""#).nth(1).unwrap().split('"').next().unwrap().to_string();
+        let cookie = back.split("Set-Cookie: ").nth(1).unwrap().split(';').next().unwrap().to_string();
+        assert!(get(&app, &format!("{page}me"), &cookie).contains(r#""admin":true"#), "theirs to control");
+        assert_eq!(app.rooms.shared_count(), 0, "not counted as a room");
+        assert!(post(&app, "/w/demo/rewind", "", r#"{"at":"soon"}"#).starts_with("HTTP/1.1 400"));
     }
 
     #[test]

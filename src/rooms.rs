@@ -25,7 +25,12 @@ pub(crate) struct Rooms {
     shared: Mutex<HashMap<String, Weak<Recording>>>,
     /// Live rooms keep their match watched.
     watching: Mutex<HashMap<String, Viewer>>,
+    /// Private playbacks: one viewer's own, from a match page; not saved.
+    private: Mutex<std::collections::HashSet<String>>,
 }
+
+/// Private playbacks at once, at most.
+pub(crate) const MAX_PRIVATE: usize = 200;
 
 /// What a room plays: a fixed match's recording, there again in the next process; a demos.tf
 /// demo's output, saved beside the rooms on it since its match is not; or a live match's
@@ -74,6 +79,33 @@ impl Rooms {
         self.watch(&room.id, from, &source);
         self.add(&room, source);
         Ok(room)
+    }
+
+    /// A private playback of match `from` for `owner`, from `at`: theirs alone, not saved.
+    pub(crate) fn open_private(
+        &self,
+        from: &Arc<Session>,
+        recording: Arc<Recording>,
+        owner: &str,
+        at: u64,
+        speed: f64,
+        paused: bool,
+    ) -> Result<Arc<Room>> {
+        if lock(&self.private).len() >= MAX_PRIVATE {
+            bail!("too many watching on their own");
+        }
+        let room = Room::start_at(crate::sessions::random_id(), owner, recording, at, speed, paused);
+        if from.demo_id().is_none() && !from.is_pinned() {
+            self.watch(&room.id, from, &Source::Live(from.id.clone()));
+        }
+        lock(&self.private).insert(room.id.clone());
+        lock(&self.map).insert(room.id.clone(), room.clone());
+        Ok(room)
+    }
+
+    /// Rooms that count towards the match limit: not private playbacks.
+    pub(crate) fn shared_count(&self) -> usize {
+        self.count() - lock(&self.private).len()
     }
 
     /// A room on a live match keeps it watched.
@@ -174,6 +206,7 @@ impl Rooms {
             let mut sources = lock(&self.sources);
             let source = sources.remove(&id);
             lock(&self.watching).remove(&id);
+            lock(&self.private).remove(&id);
             if let Some(store) = &self.store {
                 store.forget(&file(&id));
                 // A demo's file goes with the last room on it.
