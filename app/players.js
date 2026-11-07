@@ -4,6 +4,7 @@ import { toScreen, screenAngle, playerRad, drawText, label, crossPath } from "./
 import {
   drawChargeInside,
   drawResistBadge,
+  drawUberGlow,
   drawUberIcon,
   uberIconScale,
   uberShown,
@@ -272,6 +273,7 @@ function drawPointer({ p, x, y, rad, col, cloaked }) {
 /** @param {Dot} d */
 function drawDisc({ p, x, y, rad, col, cloaked }) {
   ctx.globalAlpha = cloaked ? 0.35 : 1;
+  if (p.ubered) drawUberGlow(p, x, y, rad);
   ctx.beginPath();
   ctx.arc(x, y, rad, 0, Math.PI * 2);
   ctx.fillStyle = col;
