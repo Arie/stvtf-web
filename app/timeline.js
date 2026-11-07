@@ -5,10 +5,10 @@ import { TEAM } from "./core.js";
 
 // A click on a mark lands this far before it.
 const BEFORE_MS = 3000;
-// Fight strip bins in pixels, and kills per bin for full colour; redrawn this often, in ms, as a
-// live match's strip stretches.
+// The fight strip is redrawn this often (ms) as a live match's grows.
 const HEAT_MS = 5000;
-const HEAT_PX = 4,
+// Its bins (ms), and kills in one for full colour.
+const HEAT_BIN_MS = 4000,
   HEAT_FULL = 3;
 const NAMES = /** @type {Record<string, string>} */ ({ blue: "BLU", red: "RED" });
 // A drop: a skull in the team's colour.
@@ -28,7 +28,9 @@ export function timeline(t) {
     rounds = el("rb-rounds"),
     heat = /** @type {HTMLCanvasElement} */ (el("rb-heat", "canvas"));
   t.track.prepend(rounds);
-  t.track.append(lane, heat);
+  const strip = el("rb-heat-wrap");
+  strip.append(heat);
+  t.track.append(lane, strip);
   /** @type {Mark[]} */
   const marks = [];
   /** @type {number[]} */
@@ -131,26 +133,25 @@ export function timeline(t) {
 // Kills binned across the strip, in the colour of the team with more.
 /** @param {HTMLCanvasElement} heat @param {Mark[]} marks @param {number} length */
 function drawHeat(heat, marks, length) {
-  // Drawn for `length`, and as wide as that is of the track's (--drawn): it stretches as it grows.
-  heat.style.setProperty("--drawn", String(Math.max(1, length)));
-  const w = Math.max(1, Math.round(heat.parentElement?.clientWidth ?? heat.clientWidth)),
-    bins = Math.ceil(w / HEAT_PX),
-    len = Math.max(1, length);
-  heat.width = w;
+  // Fixed bins of time, a pixel each, stretched over the part of the track they span (--drawn):
+  // a bin once counted stays put as a live match grows.
+  const bins = Math.max(1, Math.ceil(length / HEAT_BIN_MS));
+  heat.style.setProperty("--drawn", String(bins * HEAT_BIN_MS));
+  heat.width = bins;
   heat.height = 1;
   const g = heat.getContext("2d");
   if (!g) return;
   const count = Array.from({ length: bins }, () => ({ blue: 0, red: 0 }));
   for (const m of marks) {
-    const b = count[Math.min(bins - 1, Math.floor((m.at / len) * bins))];
+    const b = count[Math.min(bins - 1, Math.floor(m.at / HEAT_BIN_MS))];
     if (m.kind === "kill" && (m.team === "blue" || m.team === "red")) b[m.team]++;
   }
-  g.clearRect(0, 0, w, 1);
+  g.clearRect(0, 0, bins, 1);
   count.forEach((c, i) => {
     const all = c.blue + c.red;
     if (!all) return;
     g.globalAlpha = Math.min(1, all / HEAT_FULL);
     g.fillStyle = c.blue >= c.red ? TEAM.blue : TEAM.red;
-    g.fillRect(i * HEAT_PX, 0, HEAT_PX, 1);
+    g.fillRect(i, 0, 1, 1);
   });
 }
