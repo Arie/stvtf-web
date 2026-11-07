@@ -5,6 +5,7 @@
 use crate::cache::write_atomic;
 use crate::cli::{DEFAULT_TV_PASSWORD, parse_connect};
 use crate::hub::{SharedHub, Summary, watch_into};
+use crate::recording::Recording;
 use crate::{demostf, lock, token};
 use aes_gcm::aead::OsRng;
 use aes_gcm::aead::rand_core::RngCore;
@@ -15,7 +16,7 @@ use std::fmt::Write as _;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
@@ -51,6 +52,15 @@ pub struct Session {
     /// ended, so a save that started before the match ended cannot write its file back after
     /// `end` deleted it.
     saving: Mutex<Option<u64>>,
+    /// What a room on it plays, once known.
+    source: Mutex<Option<Source>>,
+    recording: OnceLock<Arc<Recording>>,
+}
+
+/// A recorded match: a saved file, or a demo's gzipped output.
+enum Source {
+    File(PathBuf),
+    Output(Arc<Vec<u8>>),
 }
 
 impl Session {
@@ -74,7 +84,41 @@ impl Session {
             idle_since: Mutex::new((!pinned).then(Instant::now)),
             thread: Mutex::new(None),
             saving: Mutex::new(None),
+            source: Mutex::new(None),
+            recording: OnceLock::new(),
         }
+    }
+
+    /// Rooms play `file`, the recording this session loops.
+    pub fn set_file(&self, file: PathBuf) {
+        *lock(&self.source) = Some(Source::File(file));
+    }
+
+    /// Whether a room can be opened on it now.
+    pub fn recordable(&self) -> bool {
+        self.recording.get().is_some() || lock(&self.source).is_some()
+    }
+
+    /// What a room on it plays: read once, then kept.
+    pub fn recording(&self) -> Result<Arc<Recording>> {
+        if let Some(r) = self.recording.get() {
+            return Ok(r.clone());
+        }
+        let name = self.label();
+        let read = match &*lock(&self.source) {
+            Some(Source::File(path)) => {
+                let file = std::fs::File::open(path)?;
+                if path.extension().is_some_and(|e| e == "gz") {
+                    Recording::read(flate2::read::GzDecoder::new(file), &name)?
+                } else {
+                    Recording::read(file, &name)?
+                }
+            }
+            Some(Source::Output(gz)) => Recording::read(flate2::read::GzDecoder::new(gz.as_slice()), &name)?,
+            None if self.demo.is_some() => bail!("the demo is still being fetched"),
+            None => bail!("a live match has no recording"),
+        };
+        Ok(self.recording.get_or_init(|| Arc::new(read)).clone())
     }
 
     pub fn reservation(&self) -> Option<u64> {
@@ -362,7 +406,9 @@ impl Sessions {
         let s = Arc::new(session);
         let (player, hz) = (s.clone(), self.hz);
         let thread = std::thread::spawn(move || {
-            if let Err(e) = demostf::play(&player.hub, demo, hz, &|| player.watched(), &player.stop) {
+            if let Err(e) = demostf::play(&player.hub, demo, hz, &|| player.watched(), &player.stop, &|gz| {
+                *lock(&player.source) = Some(Source::Output(gz));
+            }) {
                 eprintln!("stvtf-web: match {} (demo {demo}) gave up: {e:#}", player.label());
             }
             player.done.store(true, Ordering::Relaxed);
@@ -371,6 +417,11 @@ impl Sessions {
         map.insert(s.id.clone(), s.clone());
         eprintln!("stvtf-web: match {} started on demo {demo}, owner {}", s.label(), owner.unwrap_or("-"));
         Ok(s)
+    }
+
+    /// Matches that count towards `max`.
+    pub fn running(&self) -> usize {
+        self.lock().values().filter(|s| !s.pinned).count()
     }
 
     /// Whether another match may start: there must be fewer than `max`.
@@ -522,12 +573,12 @@ fn join(s: &Arc<Session>, owner: Option<&str>) -> Arc<Session> {
 }
 
 /// Whether `name` is a match id, as made by [`random_id`].
-fn is_id(name: &str) -> bool {
+pub(crate) fn is_id(name: &str) -> bool {
     name.len() == 2 * ID_BYTES && name.chars().all(|c| c.is_ascii_hexdigit())
 }
 
 /// Random bits from the OS as hex; the link to a match is all it takes to watch it.
-fn random_id() -> String {
+pub(crate) fn random_id() -> String {
     let mut id = [0u8; ID_BYTES];
     OsRng.fill_bytes(&mut id);
     id.iter().fold(String::with_capacity(2 * ID_BYTES), |mut hex, b| {
@@ -680,6 +731,30 @@ mod tests {
         assert!(demo.watched());
         drop(viewer);
         assert!(!demo.watched());
+    }
+
+    #[test]
+    fn a_pinned_demo_can_be_recorded() {
+        let dir = TempDir::new("recorded");
+        let path = dir.join("demo.jsonl");
+        std::fs::write(&path, "{\"type\":\"stalemate\",\"tick\":5}\n{\"type\":\"stalemate\",\"tick\":55}\n").unwrap();
+        let s = Sessions::new(false, 1, 20.0);
+        s.pin("demo", move |s| s.set_file(path));
+        let demo = s.get("demo").unwrap();
+        while !demo.recordable() {
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        assert_eq!(demo.recording().unwrap().length, 750);
+        assert!(Arc::ptr_eq(&demo.recording().unwrap(), &demo.recording().unwrap()), "read once");
+    }
+
+    #[test]
+    fn a_live_match_cannot_be_recorded() {
+        let s = Sessions::new(false, 1, 20.0);
+        let m = s.open("192.0.2.1:27020 tv", None, None).unwrap();
+        assert!(!m.recordable());
+        assert!(m.recording().is_err());
+        s.stop_all();
     }
 
     #[test]

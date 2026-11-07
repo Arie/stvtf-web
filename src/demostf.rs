@@ -11,8 +11,8 @@ use flate2::read::GzDecoder;
 use flate2::write::GzEncoder;
 use serde::Deserialize;
 use std::io::{BufWriter, Read, Write};
-use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::Instant;
 use stvtf::Line;
 use stvtf::output::{Stamped, Status};
@@ -99,10 +99,21 @@ fn decode(id: u64, demo: &[u8], snapshot_hz: f32) -> Result<Vec<u8>> {
 }
 
 /// Plays demos.tf demo `id` into `hub` once, holding still while `play` says nobody watches,
-/// until it ends or `stop`.
-pub(crate) fn play(hub: &SharedHub, id: u64, snapshot_hz: f32, play: &dyn Fn() -> bool, stop: &AtomicBool) -> Result<()> {
+/// until it ends or `stop`; `keep` gets the output once decoded.
+pub(crate) fn play(
+    hub: &SharedHub,
+    id: u64,
+    snapshot_hz: f32,
+    play: &dyn Fn() -> bool,
+    stop: &AtomicBool,
+    keep: &dyn Fn(Arc<Vec<u8>>),
+) -> Result<()> {
     let played = fetch(id, snapshot_hz, stop).and_then(|output| match output {
-        Some(output) => play_lines(hub, GzDecoder::new(output.as_slice()), &format!("demo {id}"), play, stop).map(drop),
+        Some(output) => {
+            let output = Arc::new(output);
+            keep(output.clone());
+            play_lines(hub, GzDecoder::new(output.as_slice()), &format!("demo {id}"), play, stop).map(drop)
+        }
         None => Ok(()),
     });
     tell_pages(hub, &played, stop);
@@ -156,7 +167,7 @@ mod tests {
     #[test]
     fn a_demo_stopped_before_its_turn_is_not_fetched_and_says_nothing() {
         let hub = SharedHub::default();
-        play(&hub, 1, 20.0, &|| true, &AtomicBool::new(true)).unwrap();
+        play(&hub, 1, 20.0, &|| true, &AtomicBool::new(true), &drop).unwrap();
         assert_eq!(crate::hub::subscribe(&hub, false).try_iter().count(), 0);
     }
 
