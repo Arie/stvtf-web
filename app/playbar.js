@@ -1,6 +1,6 @@
 // The playback bar: play and pause, the timeline with its marks, the time, speed and Live. A room
 // drives it with the room's playback; a match page with the shared playback, or a viewer's own.
-import { $, msPerTick, state } from "./core.js";
+import { $, msPerTick, setStatus, state } from "./core.js";
 import { env } from "./env.js";
 import { atTick } from "./roomview.js";
 import { timeline } from "./timeline.js";
@@ -29,9 +29,10 @@ export function clock(ms) {
 /**
  * @param {{
  *   home: URL; send: (c: Control) => unknown; live: (length: number) => void;
- *   liveLabel?: (p: PlaybackLine) => string | null;
+ *   liveLabel?: (p: PlaybackLine) => string | null; replay?: (behind: boolean, p: PlaybackLine) => boolean;
  * }} o `home`: where the marks are; `send`: a control; `live`: the Live button;
- * `liveLabel`: its text, or none to hide it (default: "● Live" for a live match).
+ * `liveLabel`: its text, or none to hide it (default: "● Live" for a live match); `replay`: whether
+ * the status says replay, from whether playback is behind a live match (default: that).
  */
 export function playbar(o) {
   const bar = $("roombar"),
@@ -77,7 +78,12 @@ export function playbar(o) {
     const label = liveLabel(last);
     live.hidden = !label;
     if (label && live.textContent !== label) live.textContent = label;
-    live.classList.toggle("at", Boolean(last.live) && !last.paused && length() - at() < LIVE_MS);
+    const behind = Boolean(last.live) && length() - at() >= LIVE_MS;
+    live.classList.toggle("at", Boolean(last.live) && !last.paused && !behind);
+    // Watching a moment that is not live says so.
+    const status = $("status").textContent ?? "";
+    const want = (o.replay ?? (b => b))(behind, last) ? "replay" : "live";
+    if (!last.paused && ["live", "replay"].includes(status) && status !== want) setStatus(want, true);
   };
   setInterval(show, 250);
   const marks = timeline({ track, home: o.home, clock, length, jump: null });

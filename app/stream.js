@@ -221,7 +221,8 @@ function onSnapshot(snap) {
   if (snap.tick < state.lastTick - TICK_RESET) resetMatch();
   state.lastTick = snap.tick;
   state.lastData = performance.now();
-  if ($("status").textContent !== "live") setStatus("live", true);
+  // A room's playback says paused or replay itself.
+  if (!["live", "paused", "replay"].includes($("status").textContent ?? "")) setStatus("live", true);
   observeTick(snap.tick);
   state.snaps.push(snap);
   if (state.snaps.length > SNAPS_KEPT) state.snaps.shift();

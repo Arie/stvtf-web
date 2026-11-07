@@ -463,8 +463,10 @@ test("a viewer of a match page goes back on their own, and returns", async () =>
     streams.some(s => s.startsWith("/r/")),
     streams.join(" "),
   );
+  await until(page, () => document.getElementById("status").textContent === "replay");
   await page.click("#rb-live");
   await until(page, () => document.getElementById("rb-live").hidden);
+  await until(page, () => document.getElementById("status").textContent === "live");
   assert.equal(streams.at(-1), "/w/demo/events", "back on the shared stream");
   assert.deepEqual(errors, []);
   await page.close();
