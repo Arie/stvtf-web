@@ -3,6 +3,7 @@
 import { $, OVERLAY, PAGE, canvas, state } from "./core.js";
 import { env } from "./env.js";
 import { playbackListeners } from "./stream.js";
+import { drawOwn } from "./telestrator.js";
 import { screenOffset } from "./view.js";
 /** @typedef {import("../types/stream").PlaybackLine} PlaybackLine */
 
@@ -178,7 +179,10 @@ function drawing(pen) {
     if (stroke.last && Math.hypot(x - stroke.last[0], y - stroke.last[1]) < MIN_STEP_PX) return;
     stroke.last = [x, y];
     const [dx, dy] = screenOffset(x - r.width / 2, y - r.height / 2, state.view.scale);
-    stroke.points.push([Math.round(state.view.cx + dx), Math.round(state.view.cy + dy)]);
+    /** @type {[number, number]} */
+    const point = [Math.round(state.view.cx + dx), Math.round(state.view.cy + dy)];
+    stroke.points.push(point);
+    drawOwn({ stroke: stroke.id, points: [point] });
   };
   canvas.addEventListener(
     "pointerdown",

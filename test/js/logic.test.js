@@ -15,6 +15,7 @@ import {
 import { command, steamid64 } from "../../app/embed.js";
 import { layerOn } from "../../app/layers.js";
 import { labelCorner } from "../../app/spawns.js";
+import { drawOwn, onDraw, pointsOf } from "../../app/telestrator.js";
 import { demostfAlias, sameLayout, screenOffset, teamsTurn, toScreen } from "../../app/view.js";
 
 test("players sort by class, then name whatever its case, then id", () => {
@@ -285,4 +286,20 @@ test("stream messages lose invisible characters but keep emoji joiners", () => {
   assert.deepEqual(parseMessage(raw), parseMessage(raw));
   assert.equal(parseMessage('{"name":"a\\u202Eb"}').name, "ab");
   assert.equal(parseMessage('{"name":"plain"}').name, "plain");
+});
+
+test("a stroke drawn here shows at once and its echo from the room is not drawn twice", () => {
+  drawOwn({ stroke: 1, points: [[0, 0]] });
+  drawOwn({ stroke: 1, points: [[5, 5]] });
+  onDraw({
+    type: "draw",
+    stroke: 1,
+    points: [
+      [0, 0],
+      [5, 5],
+    ],
+  });
+  assert.equal(pointsOf(1), 2);
+  onDraw({ type: "draw", stroke: 2, points: [[1, 1]] });
+  assert.equal(pointsOf(2), 1, "someone else's stroke");
 });

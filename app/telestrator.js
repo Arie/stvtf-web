@@ -12,9 +12,23 @@ const INK = "#ffd23f",
 
 /** @type {Map<number, { points: [number, number][]; last: number }>} */
 const strokes = new Map();
+// Strokes drawn on this page: shown as drawn, and their echo from the room skipped.
+/** @type {Set<number>} */
+const mine = new Set();
 
 /** @param {DrawLine} m */
 export function onDraw(m) {
+  if (!mine.has(m.stroke)) addPoints(m);
+}
+
+/** @param {{ stroke: number; points: [number, number][] }} m */
+export function drawOwn(m) {
+  mine.add(m.stroke);
+  addPoints(m);
+}
+
+/** @param {{ stroke: number; points: [number, number][] }} m */
+function addPoints(m) {
   const s = strokes.get(m.stroke) ?? { points: [], last: 0 };
   s.points.push(...m.points);
   s.last = performance.now();
@@ -30,6 +44,7 @@ export function drawStrokes(now = performance.now()) {
     const age = now - s.last;
     if (age > HOLD_MS + FADE_MS) {
       strokes.delete(id);
+      mine.delete(id);
       continue;
     }
     ctx.globalAlpha = Math.min(1, 1 - (age - HOLD_MS) / FADE_MS);
@@ -51,4 +66,5 @@ export function drawStrokes(now = performance.now()) {
   ctx.restore();
 }
 
-export const strokeCount = () => strokes.size;
+/** @param {number} id */
+export const pointsOf = id => strokes.get(id)?.points.length ?? 0;
