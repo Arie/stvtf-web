@@ -73,6 +73,11 @@ pub(crate) struct Rostered {
 }
 
 impl Hub {
+    /// Player `id`'s name and team, as last seen on this map.
+    pub(crate) fn seen(&self, id: PlayerId) -> Option<(&str, Team)> {
+        self.names.get(&id).map(|s| (s.name.as_str(), s.team))
+    }
+
     /// How long ago the latest snapshot came in.
     pub(crate) fn data_age(&self) -> Option<Duration> {
         self.snapshot_at.map(|t| t.elapsed())
@@ -374,7 +379,7 @@ pub(crate) fn announce(hub: &SharedHub, kind: &'static str, json: &Arc<str>) {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use crate::testing::{script, server};
     use serde_json::Value;
@@ -385,7 +390,7 @@ mod tests {
         rx.try_iter().map(|l| serde_json::from_str::<Value>(&l).unwrap()["type"].as_str().unwrap().to_string()).collect()
     }
 
-    fn player(id: u16, name: &str, team: Team) -> output::Player {
+    pub(crate) fn player(id: u16, name: &str, team: Team) -> output::Player {
         output::Player {
             id: PlayerId(id),
             ent: u32::from(id),
@@ -412,7 +417,7 @@ mod tests {
         }
     }
 
-    fn snapshot(tick: u32, round_time: Option<f64>, players: Vec<output::Player>) -> Line {
+    pub(crate) fn snapshot(tick: u32, round_time: Option<f64>, players: Vec<output::Player>) -> Line {
         Line::Snapshot(output::Snapshot {
             tick,
             players,

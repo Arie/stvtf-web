@@ -10,11 +10,12 @@ use anyhow::{Result, bail};
 use flate2::Compression;
 use flate2::read::GzDecoder;
 use flate2::write::GzEncoder;
+use serde::Serialize;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use stvtf::Line;
-use stvtf::output::Stamped;
+use stvtf::output::{Stamped, Team};
 
 /// Play time per chunk, in milliseconds.
 const CHUNK_MS: u64 = 10_000;
@@ -43,6 +44,27 @@ struct Inner {
     fresh: bool,
     /// Lines in all.
     count: usize,
+    /// What a timeline shows.
+    marks: Vec<Mark>,
+    /// The latest score, and when: a round won takes it if it came with it.
+    scores: Option<(u64, [u16; 2])>,
+}
+
+/// A score and a round won this close together, in play time, go together (either comes first).
+const SCORE_WITH_WIN_MS: u64 = 2000;
+
+/// A moment a timeline marks: a round won (with the score after), an uber, a drop (a medic dying
+/// with it ready), or a kill (for where the fights were), with the team and who, if anyone.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub(crate) struct Mark {
+    pub(crate) at: u64,
+    pub(crate) kind: &'static str,
+    pub(crate) team: Team,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) who: Option<String>,
+    /// After a round won: blue's and red's score.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) score: Option<[u16; 2]>,
 }
 
 struct Chunk {
@@ -58,6 +80,37 @@ struct Chunk {
 pub(crate) type Lines = Vec<(u64, Line)>;
 
 impl Inner {
+    /// Marks `line`, at play time `at`, if a timeline shows it.
+    fn mark(&mut self, at: u64, line: &Line) {
+        let mark = |kind, team, who: Option<&str>| Mark { at, kind, team, who: who.map(str::to_string), score: None };
+        let h = lock(&self.scratch);
+        let player = |id| h.seen(id);
+        let new = match line {
+            Line::RoundWin(w) => {
+                let score = self.scores.filter(|(t, _)| at - t <= SCORE_WITH_WIN_MS).map(|(_, s)| s);
+                Some(Mark { score, ..mark("win", w.team, None) })
+            }
+            Line::Uber(u) => player(u.medic).map(|(name, team)| mark("uber", team, Some(name))),
+            Line::MedicDeath(d) if d.drop => player(d.medic).map(|(name, team)| mark("drop", team, Some(name))),
+            Line::Kill(k) if k.attacker.is_some_and(|a| a != k.victim) => {
+                k.attacker.and_then(player).map(|(_, team)| mark("kill", team, None))
+            }
+            Line::Scores(s) => {
+                drop(h);
+                self.scores = Some((at, [s.blue, s.red]));
+                // The score after a round just won.
+                let win = self.marks.iter_mut().rev().find(|m| m.kind == "win");
+                if let Some(win) = win.filter(|m| m.score.is_none() && at - m.at <= SCORE_WITH_WIN_MS) {
+                    win.score = Some([s.blue, s.red]);
+                }
+                return;
+            }
+            _ => None,
+        };
+        drop(h);
+        self.marks.extend(new);
+    }
+
     /// Gzips the open chunk's lines; true if there were any.
     fn close(&mut self) -> Result<bool> {
         let Some(last) = self.chunks.last_mut() else { return Ok(false) };
@@ -88,6 +141,7 @@ impl Inner {
         }
         self.open.push(format!("{at}\t{text}"));
         self.count += 1;
+        self.mark(at, &stamped.line);
         publish(&self.scratch, &stamped.line);
         Ok(closed)
     }
@@ -177,6 +231,12 @@ impl Recording {
     /// Play times of the rounds' starts.
     pub(crate) fn rounds(&self) -> Vec<u64> {
         lock(&self.inner).rounds.clone()
+    }
+
+    /// What a timeline shows, from the `from`th on, and how many there are in all.
+    pub(crate) fn marks(&self, from: usize) -> (Vec<Mark>, usize) {
+        let inner = lock(&self.inner);
+        (inner.marks.get(from..).unwrap_or_default().to_vec(), inner.marks.len())
     }
 
     /// Lines in all: more of a live match's means more to play, even at the same play time.
@@ -330,6 +390,39 @@ mod tests {
         assert_eq!(hub.history.len(), 40 + 24, "every line once");
         let resumed = Recording::resume(lock(&saved).as_slice(), Box::new(|_: &[u8]| {})).unwrap();
         assert_eq!(resumed.chunks(), 3, "the chunks saved before, and the one closed after");
+    }
+
+    #[test]
+    fn a_recording_marks_rounds_won_ubers_drops_and_kills() {
+        use crate::hub::tests::{player, snapshot};
+        // Who the lines' players are: 3 and 5 blue (5 the medic), 4 red.
+        let who = vec![player(3, "scout", Team::Blue), player(4, "soldier", Team::Red), player(5, "medic", Team::Blue)];
+        let mut lines = serde_json::to_string(&snapshot(100, None, who)).unwrap() + "\n";
+        lines += include_str!("../testdata/lines.jsonl");
+        let r = Recording::read(lines.as_bytes(), "lines").unwrap();
+        let (marks, all) = r.marks(0);
+        assert_eq!(all, marks.len());
+        let win = marks.iter().find(|m| m.kind == "win").unwrap();
+        assert_eq!((win.team, win.score), (Team::Red, Some([2, 3])), "the score after it, blue's first");
+        let uber = marks.iter().find(|m| m.kind == "uber").unwrap();
+        assert_eq!((uber.team, uber.who.as_deref()), (Team::Blue, Some("medic")));
+        assert!(marks.iter().any(|m| m.kind == "drop" && m.team == Team::Blue));
+        assert!(marks.iter().any(|m| m.kind == "kill"));
+        assert_eq!(r.marks(all).0, [], "none new");
+    }
+
+    #[test]
+    fn a_score_just_before_a_round_won_is_its_score() {
+        let lines = r#"{"type":"scores","tick":5,"red":2,"blue":4,"game_over":false}
+{"type":"round_win","tick":5,"team":"red","reason":1,"round_time":532.4}
+{"type":"scores","tick":900,"red":3,"blue":4,"game_over":false}
+{"type":"stalemate","tick":1200}
+{"type":"stalemate","tick":1500}
+{"type":"stalemate","tick":1800}
+{"type":"round_win","tick":2000,"team":"red","reason":1,"round_time":9.0}
+"#;
+        let marks = Recording::read(lines.as_bytes(), "test").unwrap().marks(0).0;
+        assert_eq!(marks.iter().map(|m| m.score).collect::<Vec<_>>(), [Some([4, 2]), None], "a score long before is not");
     }
 
     #[test]

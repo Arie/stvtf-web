@@ -476,6 +476,11 @@ fn serve_room(
             });
             respond(&mut s, "200 OK", JSON, me.to_string().as_bytes())?;
         }
+        ("marks", "GET") => {
+            let from = param(&request.query, "from").and_then(|f| f.parse().ok()).unwrap_or(0);
+            let (marks, all) = room.marks(from);
+            respond(&mut s, "200 OK", JSON, serde_json::json!({ "marks": marks, "all": all }).to_string().as_bytes())?;
+        }
         ("claim", "POST") if user.as_ref().is_some_and(|u| u.streamer) => {
             room.make_admin(&guest);
             respond(&mut s, "204 No Content", TEXT, b"")?;
@@ -837,6 +842,7 @@ mod tests {
         let (page, cookie) = open_room(&app);
         assert!(page.starts_with("/r/") && page.ends_with('/'), "{page}");
         assert!(get(&app, &page, "").contains("<canvas"));
+        assert!(get(&app, &format!("{page}marks?from=0"), "").ends_with(r#"{"all":0,"marks":[]}"#), "what its timeline shows");
         assert!(
             get(&app, &format!("{page}me"), &cookie).ends_with(r#"{"admin":true,"id":1,"signed":false,"signin":false,"streamer":false}"#)
         );

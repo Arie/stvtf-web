@@ -316,6 +316,11 @@ impl Room {
         lock(&self.idle_since).map(|t| t.elapsed())
     }
 
+    /// The timeline's marks from the `from`th on, and how many there are.
+    pub(crate) fn marks(&self, from: usize) -> (Vec<crate::recording::Mark>, usize) {
+        self.recording.marks(from)
+    }
+
     pub(crate) fn stop(&self) {
         lock(&self.state).stop = true;
         self.wake.notify_all();
@@ -330,6 +335,8 @@ impl Room {
             "length": self.recording.length(),
             "rounds": self.recording.rounds(),
             "live": self.recording.is_live(),
+            // How many marks the timeline has: a page asks for the ones it does not.
+            "marks": self.recording.marks(usize::MAX).1,
         });
         announce(&self.hub, "playback", &line.to_string().into());
     }
