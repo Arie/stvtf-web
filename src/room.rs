@@ -137,6 +137,12 @@ impl Room {
         self.announce_people();
     }
 
+    pub(crate) fn set_ink(&self, guest: &str, ink: &str) -> Result<()> {
+        lock(&self.people).set_ink(guest, ink)?;
+        self.announce_people();
+        Ok(())
+    }
+
     pub(crate) fn set_admin(&self, by: &str, id: u32, admin: bool) -> Result<()> {
         lock(&self.people).set_admin(by, id, admin)?;
         self.announce_people();

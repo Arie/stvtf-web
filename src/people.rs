@@ -19,6 +19,8 @@ pub(crate) struct People {
 struct Person {
     id: u32,
     name: String,
+    /// Pen colour, as `#rrggbb`, once chosen.
+    ink: Option<String>,
     /// Open pages: someone with none has left.
     pages: usize,
 }
@@ -30,6 +32,8 @@ pub(crate) struct Shown {
     pub(crate) name: String,
     pub(crate) admin: bool,
     pub(crate) owner: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) ink: Option<String>,
 }
 
 impl People {
@@ -44,7 +48,7 @@ impl People {
         let next = &mut self.next;
         self.by_guest.entry(guest.to_string()).or_insert_with(|| {
             *next += 1;
-            Person { id: *next - 1, name: String::new(), pages: 0 }
+            Person { id: *next - 1, name: String::new(), ink: None, pages: 0 }
         })
     }
 
@@ -68,6 +72,18 @@ impl People {
 
     pub(crate) fn rename(&mut self, guest: &str, name: &str) {
         self.person(guest).name = clean(name);
+    }
+
+    /// An admin's pen colour, `#rrggbb`.
+    pub(crate) fn set_ink(&mut self, guest: &str, ink: &str) -> Result<()> {
+        if !self.is_admin(guest) {
+            bail!("only admins draw");
+        }
+        if !(ink.len() == 7 && ink.starts_with('#') && ink[1..].bytes().all(|b| b.is_ascii_hexdigit())) {
+            bail!("a colour is #rrggbb");
+        }
+        self.person(guest).ink = Some(ink.to_ascii_lowercase());
+        Ok(())
     }
 
     pub(crate) fn is_admin(&self, guest: &str) -> bool {
@@ -102,6 +118,7 @@ impl People {
                 name: if p.name.is_empty() { format!("Guest {}", p.id) } else { p.name.clone() },
                 admin: self.admins.contains(g),
                 owner: *g == self.owner,
+                ink: p.ink.clone(),
             })
             .collect();
         here.sort_by_key(|p| p.id);
@@ -124,8 +141,8 @@ mod tests {
         p.join("owner", Some("  coach\n"));
         p.join("viewer", None);
         let shown = p.shown();
-        assert_eq!(shown[0], Shown { id: 1, name: "coach".into(), admin: true, owner: true });
-        assert_eq!(shown[1], Shown { id: 2, name: "Guest 2".into(), admin: false, owner: false });
+        assert_eq!(shown[0], Shown { id: 1, name: "coach".into(), admin: true, owner: true, ink: None });
+        assert_eq!(shown[1], Shown { id: 2, name: "Guest 2".into(), admin: false, owner: false, ink: None });
         p.rename("viewer", &"x".repeat(40));
         assert_eq!(p.shown()[1].name.len(), MAX_NAME);
     }
@@ -141,6 +158,16 @@ mod tests {
         assert_eq!(p.shown(), []);
         p.join("viewer", None);
         assert_eq!(p.shown()[0].id, 2, "the owner is 1");
+    }
+
+    #[test]
+    fn admins_pick_their_pen_colour() {
+        let mut p = People::new("owner");
+        p.join("owner", None);
+        p.set_ink("owner", "#00FF7f").unwrap();
+        assert_eq!(p.shown()[0].ink.as_deref(), Some("#00ff7f"));
+        assert!(p.set_ink("owner", "red").is_err());
+        assert!(p.set_ink("viewer", "#000000").is_err(), "not an admin");
     }
 
     #[test]

@@ -324,6 +324,12 @@ struct Name {
     name: String,
 }
 
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Ink {
+    ink: String,
+}
+
 /// Person `person` made an admin, or not.
 #[derive(serde::Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -374,10 +380,11 @@ fn serve_room(
             let name = json_body::<Name>(reader, request).map(|n| room.rename(&guest, &n.name));
             done(&mut s, name)?;
         }
-        ("control" | "draw" | "admin" | "view", "POST") if !admin => {
+        ("control" | "draw" | "admin" | "view" | "ink", "POST") if !admin => {
             respond(&mut s, "403 Forbidden", TEXT, b"Only the room's admins do that.")?;
         }
         ("view", "POST") => done(&mut s, json_body::<ViewPost>(reader, request).and_then(|v| room.set_view(&v, &guest)))?,
+        ("ink", "POST") => done(&mut s, json_body::<Ink>(reader, request).and_then(|i| room.set_ink(&guest, &i.ink)))?,
         ("draw", "POST") => done(&mut s, json_body::<Draw>(reader, request).and_then(|d| room.draw(&d, &guest)))?,
         ("control", "POST") => done(&mut s, json_body::<Control>(reader, request).and_then(|c| room.control(&c)))?,
         ("admin", "POST") => done(&mut s, json_body::<Admin>(reader, request).and_then(|a| room.set_admin(&guest, a.person, a.admin)))?,
@@ -702,6 +709,7 @@ mod tests {
         assert!(post(&app, &format!("{page}control"), &viewer, pause).starts_with("HTTP/1.1 204"));
         assert!(post(&app, &format!("{page}view"), &viewer, r#"{"mode":"auto","take":true}"#).starts_with("HTTP/1.1 204"));
         assert!(post(&app, &format!("{page}view"), &viewer, r#"{"mode":"spin"}"#).starts_with("HTTP/1.1 400"));
+        assert!(post(&app, &format!("{page}ink"), &viewer, r##"{"ink":"#123abc"}"##).starts_with("HTTP/1.1 204"));
         let demote_owner = r#"{"person":1,"admin":false}"#;
         assert!(post(&app, &format!("{page}admin"), &viewer, demote_owner).starts_with("HTTP/1.1 400"));
     }
