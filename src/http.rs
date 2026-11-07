@@ -160,6 +160,9 @@ pub(crate) fn serve(mut s: TcpStream, app: &App) -> Result<()> {
     // A client that sends nothing, or stops reading `/events`, does not keep its thread forever.
     s.set_read_timeout(Some(READ_TIMEOUT))?;
     s.set_write_timeout(Some(WRITE_TIMEOUT))?;
+    // Every write is a whole response or a flushed batch of events: no waiting to fill a packet
+    // (with delayed acks, up to 40 ms an event).
+    s.set_nodelay(true)?;
     let mut reader = BufReader::new(s.try_clone()?.take(MAX_REQUEST));
     let request = read_request(&mut reader)?;
     let peer = s.peer_addr()?.ip();
