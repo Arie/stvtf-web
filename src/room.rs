@@ -339,7 +339,7 @@ impl Room {
     fn play(&self) {
         let rec = &self.recording;
         // Where playback is: the chunk, how many of its lines are played, and the lines after,
-        // as far as the recording had them when last looked at (`looked`: its length then).
+        // as far as the recording had them when last looked at (`looked`: how many it had then).
         let (mut chunk, mut done, mut looked) = (0, 0, None);
         let mut lines: VecDeque<(u64, Line)> = VecDeque::new();
         let mut st = lock(&self.state);
@@ -363,8 +363,8 @@ impl Room {
                 continue;
             }
             // More of this chunk (a live one grows), or on to the next.
-            if lines.is_empty() && looked != Some((rec.length(), rec.chunks())) {
-                looked = Some((rec.length(), rec.chunks()));
+            if lines.is_empty() && looked != Some(rec.count()) {
+                looked = Some(rec.count());
                 lines = rec.chunk(chunk).unwrap_or_default().into_iter().skip(done).collect();
                 while lines.is_empty() && chunk + 1 < rec.chunks() {
                     (chunk, done) = (chunk + 1, 0);

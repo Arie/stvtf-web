@@ -41,6 +41,8 @@ struct Inner {
     rounds: Vec<u64>,
     /// The next line starts a chunk: the last one was resumed, and is in its file already.
     fresh: bool,
+    /// Lines in all.
+    count: usize,
 }
 
 struct Chunk {
@@ -85,6 +87,7 @@ impl Inner {
             self.rounds.push(at);
         }
         self.open.push(format!("{at}\t{text}"));
+        self.count += 1;
         publish(&self.scratch, &stamped.line);
         Ok(closed)
     }
@@ -174,6 +177,11 @@ impl Recording {
     /// Play times of the rounds' starts.
     pub(crate) fn rounds(&self) -> Vec<u64> {
         lock(&self.inner).rounds.clone()
+    }
+
+    /// Lines in all: more of a live match's means more to play, even at the same play time.
+    pub(crate) fn count(&self) -> usize {
+        lock(&self.inner).count
     }
 
     pub(crate) fn chunks(&self) -> usize {
