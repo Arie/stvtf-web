@@ -5,7 +5,9 @@ import { TEAM } from "./core.js";
 
 // A click on a mark lands this far before it.
 const BEFORE_MS = 3000;
-// Fight strip bins in pixels, and kills per bin for full colour.
+// Fight strip bins in pixels, and kills per bin for full colour; redrawn this often, in ms, as a
+// live match's strip stretches.
+const HEAT_MS = 5000;
 const HEAT_PX = 4,
   HEAT_FULL = 3;
 const NAMES = /** @type {Record<string, string>} */ ({ blue: "BLU", red: "RED" });
@@ -46,11 +48,11 @@ export function timeline(t) {
     draw();
   };
 
-  /** @param {number} at */
-  const left = at => `${(100 * at) / Math.max(1, t.length())}%`;
+  // Positions are moments (--at, ms) on a track as long as --len, which the bar sets every frame:
+  // the browser places them, so a live match's timeline glides as it grows.
   /** @param {HTMLElement} e @param {Mark} m @param {string} what */
   const mark = (e, m, what) => {
-    e.style.left = left(m.at);
+    e.style.setProperty("--at", String(m.at));
     e.style.setProperty("--team", TEAM[m.team] ?? TEAM.none);
     e.title = `${what} · ${t.clock(m.at)}${t.jump ? " · click to watch it" : ""}`;
     const jump = t.jump;
@@ -76,7 +78,8 @@ export function timeline(t) {
 
   // Marks are made once (so clicks land) and only moved as a live match grows.
   let drawn = 0,
-    laid = "";
+    laid = "",
+    heated = 0;
   function draw(again = false) {
     if (again) {
       lane.replaceChildren();
@@ -85,25 +88,29 @@ export function timeline(t) {
     const before = drawn;
     for (; drawn < marks.length; drawn++) {
       const e = make(marks[drawn]);
-      if (e) lane.append(Object.assign(e, { at: marks[drawn].at }));
+      if (e) lane.append(e);
     }
-    const now = [Math.round(t.length()), starts.join()].join();
-    if (!again && now === laid && drawn === before) return;
-    laid = now;
-    for (const e of /** @type {HTMLCollectionOf<HTMLElement & { at: number }>} */ (lane.children))
-      e.style.left = left(e.at);
-    rounds.replaceChildren(
-      ...starts.map((s, i) => {
-        // The winner's colour; grey for a stalemate, none while unplayed.
-        const end = starts[i + 1] ?? Infinity,
-          won = marks.find(m => m.kind === "win" && m.at >= s && m.at < end);
-        const r = el(won ? `rb-round won ${won.team}` : "rb-round");
-        r.style.left = left(s);
-        r.style.width = left(Math.min(end, t.length()) - s);
-        return r;
-      }),
-    );
-    drawHeat(heat, marks, t.length());
+    // The rounds again when one starts or is won; the fight strip when there are new kills, or
+    // every HEAT_MS as it stretches.
+    const now = [starts.join(), drawn].join();
+    if (again || now !== laid) {
+      laid = now;
+      rounds.replaceChildren(
+        ...starts.map((s, i) => {
+          // The winner's colour; grey for a stalemate, none while unplayed.
+          const end = starts[i + 1],
+            won = marks.find(m => m.kind === "win" && m.at >= s && m.at < (end ?? Infinity));
+          const r = el(`rb-round${won ? ` won ${won.team}` : ""}${end == null ? " last" : ""}`);
+          r.style.setProperty("--at", String(s));
+          if (end != null) r.style.setProperty("--to", String(end));
+          return r;
+        }),
+      );
+    }
+    if (again || drawn !== before || performance.now() - heated > HEAT_MS) {
+      heated = performance.now();
+      drawHeat(heat, marks, t.length());
+    }
   }
 
   return {
@@ -124,7 +131,9 @@ export function timeline(t) {
 // Kills binned across the strip, in the colour of the team with more.
 /** @param {HTMLCanvasElement} heat @param {Mark[]} marks @param {number} length */
 function drawHeat(heat, marks, length) {
-  const w = Math.max(1, Math.round(heat.clientWidth)),
+  // Drawn for `length`, and as wide as that is of the track's (--drawn): it stretches as it grows.
+  heat.style.setProperty("--drawn", String(Math.max(1, length)));
+  const w = Math.max(1, Math.round(heat.parentElement?.clientWidth ?? heat.clientWidth)),
     bins = Math.ceil(w / HEAT_PX),
     len = Math.max(1, length);
   heat.width = w;

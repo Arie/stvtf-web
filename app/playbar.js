@@ -74,6 +74,7 @@ export function playbar(o) {
     const behind = Boolean(last.live) && length() - at() >= LIVE_MS,
       atLive = Boolean(last.live) && !last.paused && !behind;
     time.max = String(length());
+    track.style.setProperty("--len", String(Math.max(1, length())));
     // At live the timeline is all played and the playhead, which could only waver at its end, hides.
     const now = atLive ? length() : at();
     if (!dragging) time.value = String(now);
@@ -89,7 +90,12 @@ export function playbar(o) {
     const want = (o.replay ?? (b => b))(behind, last) ? "replay" : "live";
     if (!last.paused && ["live", "replay"].includes(status) && status !== want) setStatus(want, true);
   };
-  setInterval(show, 250);
+  // Every frame: a live match's timeline grows smoothly, and the playhead moves smoothly.
+  const frame = () => {
+    show();
+    requestAnimationFrame(frame);
+  };
+  requestAnimationFrame(frame);
   const marks = timeline({ track, home: o.home, clock, length, jump: null });
   play.onclick = () => last && control({ paused: !last.paused });
   live.onclick = () => o.live(Math.round(length()));
