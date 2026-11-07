@@ -143,6 +143,10 @@ fn respond_with(s: &mut TcpStream, status: &str, headers: &[(&str, &str)], body:
 }
 
 fn respond(s: &mut TcpStream, status: &str, ctype: &str, body: &[u8]) -> std::io::Result<()> {
+    // A page names the build's files: asked again each time, so a reload gets a new build's.
+    if ctype == HTML {
+        return respond_with(s, status, &[("Content-Type", ctype), ("Cache-Control", "no-cache")], body);
+    }
     respond_with(s, status, &[("Content-Type", ctype)], body)
 }
 
@@ -449,7 +453,7 @@ fn serve_room(
     match (rest, request.method.as_str()) {
         ("", _) if !path.ends_with('/') => app.redirect(&mut s, "308 Permanent Redirect", &format!("{}/", request.path))?,
         (rest, "GET") if is_page(rest) => {
-            let mut headers = vec![("Content-Type", HTML)];
+            let mut headers = vec![("Content-Type", HTML), ("Cache-Control", "no-cache")];
             if let Some(c) = &cookie {
                 headers.push(("Set-Cookie", c));
             }
@@ -841,7 +845,9 @@ mod tests {
         assert!(get(&app, "/w/demo/room", "").starts_with("HTTP/1.1 200"));
         let (page, cookie) = open_room(&app);
         assert!(page.starts_with("/r/") && page.ends_with('/'), "{page}");
+        assert!(get(&app, "/w/demo/", "").contains("Cache-Control: no-cache"), "a page is asked for again");
         assert!(get(&app, &page, "").contains("<canvas"));
+        assert!(get(&app, &page, "").contains("Cache-Control: no-cache"));
         assert!(get(&app, &format!("{page}marks?from=0"), "").ends_with(r#"{"all":0,"marks":[]}"#), "what its timeline shows");
         assert!(
             get(&app, &format!("{page}me"), &cookie).ends_with(r#"{"admin":true,"id":1,"signed":false,"signin":false,"streamer":false}"#)
