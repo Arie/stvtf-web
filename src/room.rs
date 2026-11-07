@@ -50,6 +50,20 @@ pub(crate) struct Control {
 /// Most points in one drawing request.
 const MAX_POINTS: usize = 256;
 
+/// How everyone in the room sees the map, as an admin sets it.
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(tag = "mode", rename_all = "lowercase")]
+pub(crate) enum View {
+    /// Each their own camera.
+    Free,
+    /// Everyone on auto zoom.
+    Auto,
+    /// Everyone following one player.
+    Follow { player: u16 },
+    /// Everyone seeing what the admin sees: the map area `w` by `h` round `cx`, `cy`, turned by `rot`.
+    Admin { cx: f64, cy: f64, w: f64, h: f64, rot: f64 },
+}
+
 /// A piece of a telestrator stroke, in map coordinates.
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -148,6 +162,20 @@ impl Room {
         line["type"] = "draw".into();
         line["by"] = lock(&self.people).id(guest).into();
         send(&self.hub, &line.to_string().into());
+        Ok(())
+    }
+
+    /// Admin `guest` sets how everyone sees the map.
+    pub(crate) fn set_view(&self, view: &View, guest: &str) -> Result<()> {
+        if let View::Admin { cx, cy, w, h, rot } = *view
+            && !([cx, cy, w, h, rot].iter().all(|v| v.is_finite() && v.abs() < 1e6) && w > 0.0 && h > 0.0)
+        {
+            bail!("a view must be on a map");
+        }
+        let mut line = serde_json::to_value(view)?;
+        line["type"] = "view".into();
+        line["by"] = lock(&self.people).id(guest).into();
+        announce(&self.hub, "view", &line.to_string().into());
         Ok(())
     }
 
@@ -384,6 +412,17 @@ mod tests {
         let people: Vec<_> = page.try_iter().filter(|l| l.contains(r#""type":"people""#)).collect();
         assert_eq!(&*people[people.len() - 1], r#"{"people":[{"admin":true,"id":2,"name":"Guest 2","owner":false}],"type":"people"}"#);
         assert!(r.is_admin("you"));
+        r.stop();
+    }
+
+    #[test]
+    fn the_view_reaches_pages_that_join_later() {
+        let r = room(1);
+        r.set_view(&View::Follow { player: 4 }, "me").unwrap();
+        let later: Vec<_> = subscribe(&r.hub, false).try_iter().filter(|l| l.contains(r#""type":"view""#)).collect();
+        assert_eq!(&*later[0], r#"{"by":1,"mode":"follow","player":4,"type":"view"}"#);
+        let flat = View::Admin { cx: 0.0, cy: 0.0, w: 0.0, h: 10.0, rot: 0.0 };
+        assert!(r.set_view(&flat, "me").is_err());
         r.stop();
     }
 

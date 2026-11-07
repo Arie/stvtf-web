@@ -1,7 +1,7 @@
 //! The HTTP side: pages, files, event streams and starting matches.
 
 use crate::hub::{SharedHub, subscribe};
-use crate::room::{Control, Draw};
+use crate::room::{Control, Draw, View};
 use crate::sessions::{Session, Sessions, Viewer};
 use crate::token::Source;
 use crate::{App, Matches, sessions, token};
@@ -373,7 +373,10 @@ fn serve_room(
             let name = json_body::<Name>(reader, request).map(|n| room.rename(&guest, &n.name));
             done(&mut s, name)?;
         }
-        ("control" | "draw" | "admin", "POST") if !admin => respond(&mut s, "403 Forbidden", TEXT, b"Only the room's admins do that.")?,
+        ("control" | "draw" | "admin" | "view", "POST") if !admin => {
+            respond(&mut s, "403 Forbidden", TEXT, b"Only the room's admins do that.")?;
+        }
+        ("view", "POST") => done(&mut s, json_body::<View>(reader, request).and_then(|v| room.set_view(&v, &guest)))?,
         ("draw", "POST") => done(&mut s, json_body::<Draw>(reader, request).and_then(|d| room.draw(&d, &guest)))?,
         ("control", "POST") => done(&mut s, json_body::<Control>(reader, request).and_then(|c| room.control(&c)))?,
         ("admin", "POST") => done(&mut s, json_body::<Admin>(reader, request).and_then(|a| room.set_admin(&guest, a.person, a.admin)))?,
@@ -696,6 +699,8 @@ mod tests {
         assert!(post(&app, &format!("{page}admin"), &viewer, promote).starts_with("HTTP/1.1 403"));
         assert!(post(&app, &format!("{page}admin"), &owner, promote).starts_with("HTTP/1.1 204"));
         assert!(post(&app, &format!("{page}control"), &viewer, pause).starts_with("HTTP/1.1 204"));
+        assert!(post(&app, &format!("{page}view"), &viewer, r#"{"mode":"auto"}"#).starts_with("HTTP/1.1 204"));
+        assert!(post(&app, &format!("{page}view"), &viewer, r#"{"mode":"spin"}"#).starts_with("HTTP/1.1 400"));
         let demote_owner = r#"{"person":1,"admin":false}"#;
         assert!(post(&app, &format!("{page}admin"), &viewer, demote_owner).starts_with("HTTP/1.1 400"));
     }
