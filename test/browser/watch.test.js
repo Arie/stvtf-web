@@ -195,6 +195,7 @@ test("the owner draws on the map and everyone in the room sees it", async () => 
   await until(viewer.page, m => document.getElementById("map").textContent === m, MAP);
   const clean = await ink(viewer.page);
   await page.keyboard.press("d");
+  assert.equal(await page.$eval("#c", el => getComputedStyle(el).cursor), "crosshair", "the pen shows as a crosshair");
   await page.mouse.move(300, 300);
   await page.mouse.down();
   for (let i = 1; i <= 20; i++) await page.mouse.move(300 + i * 10, 300 + i * 5);
