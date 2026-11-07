@@ -351,11 +351,12 @@ function applyView() {
   state.locked = view.mode !== "free" && !lead && !me.admin;
   if (state.locked) $("autozoom").hidden = true;
   if (lead || view.mode !== "admin") state.mirror = null;
-  if (lead) return;
+  // Auto zoom is everyone's, the admin who chose it too; the other views follow the leader.
   if (view.mode === "auto") {
     if (state.follow != null) setFollow(null);
     setAutoZoom(true);
-  } else if (view.mode === "follow") {
+  } else if (lead) return;
+  else if (view.mode === "follow") {
     if (state.follow !== view.player) setFollow(view.player);
   } else if (view.mode === "admin") {
     if (state.follow != null) setFollow(null);

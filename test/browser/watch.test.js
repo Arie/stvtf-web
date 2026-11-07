@@ -329,6 +329,7 @@ test("the leader switching from their view to auto zoom stays on auto zoom", asy
   const from = seen.indexOf("auto");
   assert.ok(from >= 0 && seen.slice(from).every(v => v === "auto"), seen.join(" "));
   assert.equal(await page.$eval("#rb-view", el => el.value), "auto");
+  await until(page, () => document.getElementById("autozoom").hidden);
   assert.deepEqual([...errors, ...viewer.errors], []);
   await viewer.page.close();
   await page.close();
