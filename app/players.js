@@ -1,7 +1,15 @@
 import { TEAM, CLASS, icon, OVERLAY, optOn, uiScale, ctx, context2d, state, teamColour, INK } from "./core.js";
 import { layerOn } from "./layers.js";
 import { toScreen, screenAngle, playerRad, drawText, label, crossPath } from "./view.js";
-import { drawChargeInside, drawResistBadge, drawStatusInside, drawStatus } from "./status.js";
+import {
+  drawChargeInside,
+  drawResistBadge,
+  drawUberIcon,
+  uberIconScale,
+  uberShown,
+  drawStatusInside,
+  drawStatus,
+} from "./status.js";
 /** @typedef {import("../types/stream").Player} Player */
 /** @typedef {import("../types/stream").LivePlayer} LivePlayer */
 /** @typedef {{ p: Player, x: number, y: number, rad: number, col: string, cloaked: boolean }} Dot */
@@ -306,9 +314,11 @@ function drawHealth(p, x, y, rad) {
 function drawIcon({ p, x, y, rad, cloaked }) {
   ctx.globalAlpha = cloaked ? 0.35 : 1;
   // The art's longer side, cropped of its padding: about 1.3x as big as before, still on the disc.
-  const s = rad * ICON_SIZE,
+  const s = rad * ICON_SIZE * uberIconScale(p),
     img = iconSprite(p.class, s);
-  if (img) {
+  if (img && uberShown(p)) {
+    drawUberIcon(img, p, x, y, s);
+  } else if (img) {
     ctx.drawImage(img, x - s / 2, y - s / 2, s, s);
   } else {
     label(CLASS[p.class] || "?", x, y, Math.max(9, rad * 0.9), { weight: "bold" });

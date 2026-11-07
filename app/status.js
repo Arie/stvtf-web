@@ -10,7 +10,7 @@ const TAU = Math.PI * 2;
 /** @param {Player} p @param {number} x @param {number} y @param {number} rad */
 export function drawChargeInside(p, x, y, rad) {
   const draw = p.ubered && (CHARGES.get(p.ubered) ?? (p.ubered.startsWith("vaccinator_") ? vaccinator : null));
-  if (!draw || uberFlickerOff(p)) return;
+  if (!draw || (p.ubered === "uber" && !uberShown(p))) return;
   ctx.save();
   ctx.beginPath();
   ctx.arc(x, y, rad, 0, TAU);
@@ -59,42 +59,116 @@ function uberFlickerOff(p) {
 }
 
 // Über like the game's invulnerable sheen: bands of reflection keep flowing across team-coloured
-// metal, with a bright rim light on the inside edge and a highlight to round it.
+// metal, with a bright rim light on the inside edge and a highlight to round it. The metal stays in
+// the darker half of the team colour so the class icon, chrome itself (drawUberIcon), stands out.
 const UBER_BANDS = /** @type {const} */ ([
-  [0, 0.8],
-  [0.18, 0.1],
+  [0, 0.05],
+  [0.18, -0.3],
   [0.33, -0.7],
-  [0.5, 0],
-  [0.68, 0.55],
-  [0.85, -0.35],
+  [0.5, -0.35],
+  [0.68, -0.08],
+  [0.85, -0.52],
 ]);
-/** @param {Charge} c */
-function uber({ base, id, x, y, rad, t }) {
+// The icon's bands: the same pattern, light.
+const ICON_BANDS = /** @type {const} */ ([
+  [0, 1],
+  [0.18, 0.8],
+  [0.33, 0.55],
+  [0.5, 0.85],
+  [0.68, 1],
+  [0.85, 0.62],
+]);
+// Bands flowing across a box of half-size r round (x, y), shifted per player.
+/** @typedef {{ base: string; id: number; t: number; x: number; y: number; r: number }} Bands */
+/** @param {CanvasRenderingContext2D} g @param {readonly (readonly [number, number])[]} bands @param {Bands} at */
+function metal(g, bands, { base, id, t, x, y, r }) {
   const o = (t * 1.3 + id * 0.2) % 1,
     a = -Math.PI / 3,
-    dx = Math.cos(a) * rad * 1.3,
-    dy = Math.sin(a) * rad * 1.3;
+    dx = Math.cos(a) * r * 1.3,
+    dy = Math.sin(a) * r * 1.3;
   // The band pattern repeats; three copies shifted by o cover the gradient while it scrolls.
   const stops = [];
   for (let k = -1; k <= 1; k++)
-    for (const [p, m] of UBER_BANDS) {
+    for (const [p, m] of bands) {
       const at = (p + k + o) / 1.6 + 0.2;
       if (at >= 0 && at <= 1) stops.push(/** @type {[number, string]} */ ([at, mix(base, m)]));
     }
   stops.sort((p, q) => p[0] - q[0]);
-  const metal = ctx.createLinearGradient(x - dx, y - dy, x + dx, y + dy);
-  for (const [at, col] of stops) metal.addColorStop(at, col);
-  fillDot(x, y, rad, metal);
+  const grad = g.createLinearGradient(x - dx, y - dy, x + dx, y + dy);
+  for (const [at, col] of stops) grad.addColorStop(at, col);
+  return grad;
+}
+/** @param {Charge} c */
+function uber({ base, id, x, y, rad, t }) {
+  fillDot(x, y, rad, metal(ctx, UBER_BANDS, { base, id, t, x, y, r: rad }));
   const rim = ctx.createRadialGradient(x, y, 0, x, y, rad);
   rim.addColorStop(0, "rgba(255,255,255,0)");
   rim.addColorStop(0.72, "rgba(255,255,255,0)");
-  rim.addColorStop(0.92, "rgba(255,255,255,0.6)");
+  rim.addColorStop(0.92, "rgba(255,255,255,0.7)");
   rim.addColorStop(1, "rgba(0,0,0,0.45)");
   fillDot(x, y, rad, rim);
   const ball = ctx.createRadialGradient(x - rad * 0.3, y - rad * 0.35, rad * 0.1, x, y, rad);
   ball.addColorStop(0, "rgba(255,255,255,0.35)");
   ball.addColorStop(0.5, "rgba(255,255,255,0)");
   fillDot(x, y, rad, ball);
+}
+
+/** Whether the über look is on for p in this frame (not in a wearing-off flicker). @param {Player} p */
+export const uberShown = p => p.ubered === "uber" && !uberFlickerOff(p);
+// The medic's cross fills the dot; on über it shrinks to leave the metal room to show.
+/** @param {Player} p */
+export const uberIconScale = p => (p.class === "medic" && uberShown(p) ? 0.75 : 1);
+
+/** @type {WeakMap<HTMLCanvasElement, HTMLCanvasElement>} */
+const darkIcons = new WeakMap();
+/** @type {HTMLCanvasElement | null} */
+let chromeScratch = null;
+/** @param {HTMLCanvasElement} img @param {(g: CanvasRenderingContext2D) => void} paint */
+function recolour(img, paint, into = document.createElement("canvas")) {
+  into.width = img.width;
+  into.height = img.height;
+  const g = /** @type {CanvasRenderingContext2D} */ (into.getContext("2d"));
+  g.drawImage(img, 0, 0);
+  g.globalCompositeOperation = "source-in";
+  paint(g);
+  return into;
+}
+// An übered player's class icon: chrome, the light bands flowing through it like the metal round
+// it, inside a thin dark outline that keeps it apart from the dot.
+/** @param {HTMLCanvasElement} img @param {Player} p @param {number} x @param {number} y @param {number} s */
+export function drawUberIcon(img, p, x, y, s) {
+  let dark = darkIcons.get(img);
+  if (!dark)
+    darkIcons.set(
+      img,
+      (dark = recolour(img, g => {
+        g.fillStyle = "#0b0c0e";
+        g.fillRect(0, 0, img.width, img.height);
+      })),
+    );
+  const w = Math.max(0.8, s * 0.04);
+  for (let i = 0; i < 8; i++) {
+    const a = (i / 8) * TAU;
+    ctx.drawImage(dark, x - s / 2 + Math.cos(a) * w, y - s / 2 + Math.sin(a) * w, s, s);
+  }
+  const n = img.width,
+    t = performance.now() / 1000;
+  chromeScratch = recolour(
+    img,
+    g => {
+      g.fillStyle = metal(g, ICON_BANDS, {
+        base: TEAM[p.team] ?? TEAM.none,
+        id: p.id,
+        t,
+        x: n / 2,
+        y: n / 2,
+        r: n / 2,
+      });
+      g.fillRect(0, 0, n, n);
+    },
+    chromeScratch ?? undefined,
+  );
+  ctx.drawImage(chromeScratch, x - s / 2, y - s / 2, s, s);
 }
 
 // Kritz like the patient's crackling weapon: two or three arcs of team-coloured lightning with a
