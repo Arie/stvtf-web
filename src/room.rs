@@ -369,14 +369,14 @@ impl Room {
                 self.announce(&st);
                 continue;
             }
-            // More of this chunk (a live one grows), or on to the next.
+            // More of this chunk, if a live one grew; else on to the next.
             if lines.is_empty() && looked != Some(rec.count()) {
                 looked = Some(rec.count());
                 lines = rec.chunk(chunk).unwrap_or_default().into_iter().skip(done).collect();
-                while lines.is_empty() && chunk + 1 < rec.chunks() {
-                    (chunk, done) = (chunk + 1, 0);
-                    lines = rec.chunk(chunk).unwrap_or_default().into();
-                }
+            }
+            while lines.is_empty() && chunk + 1 < rec.chunks() {
+                (chunk, done) = (chunk + 1, 0);
+                lines = rec.chunk(chunk).unwrap_or_default().into();
             }
             let Some(&(t, _)) = lines.front() else {
                 if rec.is_live() {
@@ -571,6 +571,23 @@ mod tests {
         r.set_view(&post(View::Auto, true, "a"), "me").unwrap();
         r.set_view(&post(mine(3.0), false, "c"), "you").unwrap();
         assert_eq!(&*latest().unwrap(), r#"{"by":1,"mode":"auto","page":"a","type":"view"}"#);
+        r.stop();
+    }
+
+    #[test]
+    fn a_room_plays_on_from_one_chunk_into_the_next() {
+        // 0 to 15 s of lines, 0.5 s apart: two chunks, the second from 10 s.
+        let mut lines = String::new();
+        for tick in (0..=1000).step_by(33) {
+            writeln!(lines, "{{\"type\":\"stalemate\",\"tick\":{}}}", tick + 1).unwrap();
+        }
+        let rec = Arc::new(Recording::read(lines.as_bytes(), "test").unwrap());
+        assert!(rec.chunks() > 1);
+        let r = Room::start("r".into(), "me", rec);
+        let _w = r.join("me", None, None, true);
+        r.control(&Control { seek: Some(9_600), speed: Some(4.0), ..Control::default() }).unwrap();
+        until("the next chunk", || lock(&r.state).at > 10_500);
+        assert!(!lock(&r.state).paused, "still playing");
         r.stop();
     }
 
