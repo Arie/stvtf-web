@@ -159,5 +159,8 @@ export type PlaybackLine = {
   rounds: number[];
 };
 
+/** A piece of a room's telestrator stroke, in map coordinates. */
+export type DrawLine = { type: "draw"; stroke: number; points: [number, number][] };
+
 export type StreamMessage =
   Snapshot | ServerLine | StatusLine | PlaybackLine | { type: "data_age"; ms: number } | { type: "seek" } | GameEvent;

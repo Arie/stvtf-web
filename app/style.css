@@ -163,6 +163,8 @@ aside h3 { margin: 0 0 6px; font-size: 11px; text-transform: uppercase; letter-s
 #roombar button, #roombar select { border: 0; border-radius: 4px; background: #ffffff1a; color: #fff; font: inherit; cursor: pointer; }
 #roombar button { width: 26px; height: 24px; font-size: 14px; line-height: 1; }
 #roombar select { padding: 3px 4px; }
+#roombar #rb-pen.on { background: #ffd23f; color: #0b0c0e; }
+.stvtf.drawing canvas { cursor: crosshair; touch-action: none; }
 #roombar :disabled { cursor: default; opacity: .6; }
 #rb-track { position: relative; flex: 1; display: flex; align-items: center; }
 #rb-track input { width: 100%; margin: 0; accent-color: #e0a040; }

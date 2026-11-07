@@ -164,7 +164,9 @@ A room is a demo watched together under control: the Room button on a demo's pag
 demo, or `--demo`/`--demos`) opens one at `/r/<id>/`, with its overlay at `/r/<id>/overlay`. The
 browser that opened it owns it (a random `stvtf_guest` cookie): it pauses (space), changes speed
 (¼× to 4×) and jumps anywhere on the timeline (← and → by 5 s), and everyone in the room sees the
-same. The demo's own page, its overlay and live matches never change.
+same. With the pen (✎ or `d`) dragging on the map draws a line instead, which everyone in the
+room (and the room's overlay) sees on the same spot of the map for a few seconds. The demo's own
+page, its overlay and live matches never change.
 
 A room keeps the demo in memory in 10-second chunks, each starting from the state a page joins
 with, so a jump replays at most one chunk. It counts towards `--max-matches` and ends a minute
@@ -176,8 +178,9 @@ after its last viewer left.
 | `POST /w/<id>/room` | opens one: `{"page": "/r/<id>/"}` |
 | `GET /r/<id>/me` | `{"admin": true}` for the owner |
 | `POST /r/<id>/control` | the owner's `{"paused", "speed", "seek"}` (any of them; `seek` in milliseconds) |
+| `POST /r/<id>/draw` | the owner's `{"stroke": <id>, "points": [[x, y], …]}`, up to 256 map points; a stroke's next points continue it |
 
-The room's event stream adds two lines: `playback` (`paused`, `speed`, `at` and `length` in
+The room's event stream adds three lines: `draw` (as posted), `playback` (`paused`, `speed`, `at` and `length` in
 milliseconds, and `rounds`, when each round started) on every change and every second while it
 plays, and `seek` before the state at the new position.
 

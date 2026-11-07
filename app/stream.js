@@ -19,6 +19,7 @@ import { hudNodes } from "./hud.js";
 import { setFollow } from "./input.js";
 import { detailNeeded } from "./layers.js";
 import { cartState } from "./payload.js";
+import { onDraw } from "./telestrator.js";
 import { loadMap } from "./view.js";
 /** @typedef {import("../types/stream").GameEvent} GameEvent */
 /** @typedef {import("../types/stream").StreamMessage} StreamMessage */
@@ -144,6 +145,9 @@ function handle(m) {
       $("feed").replaceChildren();
       $("chat").replaceChildren();
       resetMatch(true);
+      break;
+    case "draw":
+      onDraw(/** @type {import("../types/stream").DrawLine} */ (/** @type {unknown} */ (m)));
       break;
     case "playback":
       onPlayback(/** @type {import("../types/stream").PlaybackLine} */ (/** @type {unknown} */ (m)));

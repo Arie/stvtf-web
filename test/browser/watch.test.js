@@ -172,3 +172,37 @@ test("a room is driven by its owner and followed by everyone else", async () => 
   await viewer.page.close();
   await page.close();
 });
+
+// Pixels of the telestrator's yellow on the map's canvas.
+const ink = page =>
+  page.evaluate(() => {
+    const c = document.getElementById("c");
+    const d = c.getContext("2d").getImageData(0, 0, c.width, c.height).data;
+    let n = 0;
+    for (let i = 0; i < d.length; i += 4)
+      if (d[i] > 245 && Math.abs(d[i + 1] - 210) < 8 && Math.abs(d[i + 2] - 63) < 12) n++;
+    return n;
+  });
+
+test("the owner draws on the map and everyone in the room sees it", async () => {
+  const { page, errors } = await open();
+  await page.goto(base);
+  await page.click("#roomopen");
+  await page.waitForURL(/\/r\/[0-9a-f]{32}\/$/, { timeout: WAIT });
+  await until(page, () => !(/** @type {HTMLButtonElement} */ (document.getElementById("rb-pen")).disabled));
+  const viewer = await open();
+  await viewer.page.goto(page.url());
+  await until(viewer.page, m => document.getElementById("map").textContent === m, MAP);
+  const clean = await ink(viewer.page);
+  await page.keyboard.press("d");
+  await page.mouse.move(300, 300);
+  await page.mouse.down();
+  for (let i = 1; i <= 20; i++) await page.mouse.move(300 + i * 10, 300 + i * 5);
+  await page.mouse.up();
+  await viewer.page.waitForTimeout(500);
+  assert.ok((await ink(viewer.page)) > clean + 100, "the stroke shows for the viewer");
+  assert.equal(await page.$eval("#follow", el => el.hidden), true, "drawing follows nobody");
+  assert.deepEqual([...errors, ...viewer.errors], []);
+  await viewer.page.close();
+  await page.close();
+});

@@ -15,6 +15,7 @@ import { drawEffects } from "./effects.js";
 import { initRoom } from "./room.js";
 import { drawSpawnRooms } from "./spawns.js";
 import { openStream } from "./stream.js";
+import { drawStrokes } from "./telestrator.js";
 import { frameMap, drawBackground } from "./view.js";
 
 const SHOW_BUILDINGS = optOn("buildings", !OVERLAY),
@@ -116,6 +117,7 @@ function draw() {
   if (f) aim(f, tick);
   drawBackground(r);
   if (f) drawFrame(f, tick);
+  drawStrokes();
 }
 // Before the background: frame the map, follow the action or a player, and show the score.
 /** @param {Frame} f @param {number} tick */

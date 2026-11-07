@@ -1,11 +1,15 @@
 // A room (/r/<id>/): its playback bar, which its owner drives and everyone else watches; and
 // on a match's own page, the button that opens a room on it.
-import { $, OVERLAY, PAGE } from "./core.js";
+import { $, OVERLAY, PAGE, canvas, state } from "./core.js";
 import { env } from "./env.js";
 import { playbackListeners } from "./stream.js";
+import { screenOffset } from "./view.js";
 /** @typedef {import("../types/stream").PlaybackLine} PlaybackLine */
 
 const SPEEDS = [0.25, 0.5, 1, 2, 4];
+// How often a stroke being drawn is sent, in milliseconds, and the closest its points are, in pixels.
+const SEND_MS = 50,
+  MIN_STEP_PX = 3;
 // How far the arrow keys jump, in milliseconds.
 const STEP_MS = 5000;
 export const IN_ROOM = /\/r\/[0-9a-f]{32}\/$/.test(PAGE.replace(/overlay\/?$/, ""));
@@ -57,6 +61,7 @@ function roomBar() {
     time = /** @type {HTMLInputElement} */ ($("rb-time")),
     speed = /** @type {HTMLSelectElement} */ ($("rb-speed")),
     shown = $("rb-clock"),
+    pen = /** @type {HTMLButtonElement} */ ($("rb-pen")),
     track = $("rb-track");
   bar.hidden = false;
   speed.replaceChildren(...SPEEDS.map(s => new Option(`${s}×`, String(s))));
@@ -104,7 +109,7 @@ function roomBar() {
   /** @param {boolean} on */
   const allow = on => {
     admin = on;
-    for (const c of [play, time, speed]) c.disabled = !on;
+    for (const c of [play, time, speed, pen]) c.disabled = !on;
     bar.title = on ? "" : "The room's owner controls playback";
   };
   allow(false);
@@ -124,14 +129,76 @@ function roomBar() {
     dragging = false;
     control({ seek: Math.round(Number(time.value)) });
   };
+  drawing(pen);
   env.keys.addEventListener("keydown", e => {
     const target = /** @type {Element} */ (e.composedPath()[0]);
-    if (!admin || !last || e.ctrlKey || e.metaKey || e.altKey || target.closest?.("input, select, textarea, button"))
+    if (
+      !admin ||
+      !last ||
+      e.ctrlKey ||
+      e.metaKey ||
+      e.altKey ||
+      target.closest?.("input:not([type=range]), select, textarea")
+    )
       return;
-    if (e.key === " ") control({ paused: !last.paused });
+    // Space on a focused button presses that button instead.
+    if (e.key === " " && !target.closest?.("button")) control({ paused: !last.paused });
+    else if (e.key === "d") pen.click();
     else if (e.key === "ArrowLeft") control({ seek: Math.max(0, Math.round(at() - STEP_MS)) });
     else if (e.key === "ArrowRight") control({ seek: Math.round(at() + STEP_MS) });
     else return;
     e.preventDefault();
   });
+}
+
+// The pen: while on, dragging on the map draws (in map coordinates) instead of moving the view.
+/** @param {HTMLButtonElement} pen */
+function drawing(pen) {
+  /** @type {{ id: number; points: [number, number][]; last: [number, number] | null } | null} */
+  let stroke = null;
+  /** @type {Promise<unknown>} */
+  let sent = Promise.resolve();
+  pen.onclick = () => env.el.classList.toggle("drawing", pen.classList.toggle("on"));
+  const send = () => {
+    if (!stroke?.points.length) return;
+    const body = JSON.stringify({ stroke: stroke.id, points: stroke.points.splice(0, 256) });
+    // In order: a stroke's pieces join up end to end.
+    sent = sent
+      .then(() =>
+        fetch(new URL("draw", HOME), { method: "POST", headers: { "Content-Type": "application/json" }, body }),
+      )
+      .catch(() => {});
+  };
+  /** @param {PointerEvent} e */
+  const add = e => {
+    if (!stroke) return;
+    const r = canvas.getBoundingClientRect(),
+      x = e.clientX - r.left,
+      y = e.clientY - r.top;
+    if (stroke.last && Math.hypot(x - stroke.last[0], y - stroke.last[1]) < MIN_STEP_PX) return;
+    stroke.last = [x, y];
+    const [dx, dy] = screenOffset(x - r.width / 2, y - r.height / 2, state.view.scale);
+    stroke.points.push([Math.round(state.view.cx + dx), Math.round(state.view.cy + dy)]);
+  };
+  canvas.addEventListener(
+    "pointerdown",
+    e => {
+      if (!pen.classList.contains("on") || e.button !== 0) return;
+      // Before the view's own handlers: no panning, following or mouse events while drawing.
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      canvas.setPointerCapture(e.pointerId);
+      stroke = { id: Math.floor(Math.random() * 2 ** 31), points: [], last: null };
+      add(e);
+    },
+    { capture: true },
+  );
+  canvas.addEventListener("pointermove", add);
+  const end = () => {
+    send();
+    stroke = null;
+  };
+  canvas.addEventListener("pointerup", end);
+  canvas.addEventListener("pointercancel", end);
+  setInterval(send, SEND_MS);
 }
