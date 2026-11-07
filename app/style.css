@@ -211,6 +211,8 @@ aside h3 { margin: 0 0 6px; font-size: 11px; text-transform: uppercase; letter-s
   box-shadow: 0 0 0 1px #0b0c0ecc; }
 #rb-track input::-moz-range-thumb { width: 2px; height: 40px; border: 0; border-radius: 1px; background: #e0a040; box-shadow: 0 0 0 1px #0b0c0ecc; }
 #rb-track input:disabled { cursor: default; opacity: 1; }
+#rb-track.at-live input::-webkit-slider-thumb { opacity: 0; }
+#rb-track.at-live input::-moz-range-thumb { opacity: 0; }
 .rb-rounds::after { content: ""; position: absolute; left: var(--played, 0%); right: 0; top: 0; bottom: 0; background: #0b0c0eb3; }
 .rb-rounds { position: absolute; inset: 14px 0 auto; height: 12px; pointer-events: none; }
 .rb-round { position: absolute; top: 0; height: 100%; background: #ffffff0a; border-left: 1px solid #ffffff59; }

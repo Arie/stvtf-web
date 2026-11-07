@@ -71,15 +71,19 @@ export function playbar(o) {
   const liveLabel = o.liveLabel ?? (p => (p.live ? "● Live" : null));
   const show = () => {
     if (!last) return;
+    const behind = Boolean(last.live) && length() - at() >= LIVE_MS,
+      atLive = Boolean(last.live) && !last.paused && !behind;
     time.max = String(length());
-    if (!dragging) time.value = String(at());
+    // At live the timeline is all played and the playhead, which could only waver at its end, hides.
+    const now = atLive ? length() : at();
+    if (!dragging) time.value = String(now);
+    track.classList.toggle("at-live", atLive && !dragging);
     track.style.setProperty("--played", `${(100 * Number(time.value)) / Math.max(1, length())}%`);
-    shown.textContent = `${clock(dragging ? Number(time.value) : at())} / ${clock(length())}`;
+    shown.textContent = `${clock(dragging ? Number(time.value) : now)} / ${clock(length())}`;
     const label = liveLabel(last);
     live.hidden = !label;
     if (label && live.textContent !== label) live.textContent = label;
-    const behind = Boolean(last.live) && length() - at() >= LIVE_MS;
-    live.classList.toggle("at", Boolean(last.live) && !last.paused && !behind);
+    live.classList.toggle("at", atLive);
     // Watching a moment that is not live says so.
     const status = $("status").textContent ?? "";
     const want = (o.replay ?? (b => b))(behind, last) ? "replay" : "live";
