@@ -500,7 +500,7 @@ impl Sessions {
         }
         self.check_room(&map)?;
         let nowhere = SocketAddr::from((Ipv4Addr::UNSPECIFIED, 0));
-        let mut session = Session::new(random_id(), SharedHub::default(), nowhere, String::new(), owner.map(str::to_string), false);
+        let mut session = Session::new(demo_id(demo), SharedHub::default(), nowhere, String::new(), owner.map(str::to_string), false);
         session.demo = Some(demo);
         let s = Arc::new(session);
         let (player, hz) = (s.clone(), self.hz);
@@ -730,6 +730,16 @@ fn record(s: &Arc<Session>, store: Option<&Store>, resume: bool) {
 fn join(s: &Arc<Session>, owner: Option<&str>) -> Arc<Session> {
     eprintln!("stvtf-web: match {} opened, owner {}", s.label(), owner.unwrap_or("-"));
     s.clone()
+}
+
+/// Demo `demo`'s match id, the same each time it is opened: its page's link lasts.
+pub(crate) fn demo_id(demo: u64) -> String {
+    format!("d{demo}")
+}
+
+/// The demo whose match id `id` is, by [`demo_id`].
+pub(crate) fn id_demo(id: &str) -> Option<u64> {
+    id.strip_prefix('d').filter(|n| n.bytes().all(|b| b.is_ascii_digit())).and_then(|n| n.parse().ok())
 }
 
 /// Whether `name` is a match id, as made by [`random_id`].
@@ -1132,6 +1142,8 @@ mod tests {
     #[test]
     fn a_match_id_is_exactly_as_long_as_they_are_made_and_hex() {
         assert!(is_id(&random_id()));
+        assert_eq!(id_demo(&demo_id(1_531_482)), Some(1_531_482));
+        assert_eq!(id_demo("d"), None);
         for bad in ["", "abc", &"a".repeat(31), &"a".repeat(33), &"g".repeat(32), &format!("../{}", "a".repeat(29))] {
             assert!(!is_id(bad), "{bad}");
         }

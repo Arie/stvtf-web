@@ -269,6 +269,14 @@ fn serve_match(
 ) -> Result<()> {
     let (id, rest) = path.split_once('/').unwrap_or((path, ""));
     match (sessions.get(id), rest) {
+        // A demo not playing (now): the site plays it again.
+        (None, rest)
+            if is_page(rest)
+                && let (Some(demo), Some(home)) = (sessions::id_demo(id), &app.home) =>
+        {
+            let to = format!("{home}?connect=https%3A%2F%2Fdemos.tf%2F{demo}");
+            respond_with(&mut s, "303 See Other", &[("Location", &to)], b"")?;
+        }
         (None, _) if app.keys.is_some() => {
             respond(&mut s, "404 Not Found", TEXT, b"That match is no longer being watched; open it again from the site.")?;
         }
@@ -815,6 +823,18 @@ mod tests {
         let cookie = back.split("Set-Cookie: ").nth(1).unwrap().split(';').next().unwrap().to_string();
         assert!(back.contains("HttpOnly; SameSite=Lax; Secure"), "{back}");
         cookie
+    }
+
+    #[test]
+    fn a_demo_not_playing_is_played_again_by_the_site() {
+        let (app, _key, _dir) = site_app();
+        let out = get(&app, "/w/d1531482/", "");
+        assert!(
+            out.starts_with("HTTP/1.1 303") && out.contains("Location: https://serveme.tf/stv?connect=https%3A%2F%2Fdemos.tf%2F1531482"),
+            "{out}"
+        );
+        assert!(get(&app, "/w/d1531482/events", "").starts_with("HTTP/1.1 404"), "only the page");
+        assert!(get(&app, "/w/dx/", "").starts_with("HTTP/1.1 404"));
     }
 
     #[test]

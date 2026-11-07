@@ -41,7 +41,9 @@ instead: fetched from demos.tf, decoded once (one demo at a time) and kept in me
 gzipped stvtf output, it plays through once at game speed, holding still while nobody watches.
 Everyone who opens the same demo while it plays watches it together, from where it is. It ends
 like a live match, 3 minutes after its last viewer left, and it is not picked up again after a
-restart. `--max-matches` counts it like any other match. `--home URL` sends visitors of `/` to
+restart. Its page is `/w/d<id>/`, the same each time: once the demo has ended, that link sends
+the visitor to the site (`--home`) with the demo filled in, to play it again. `--max-matches`
+counts it like any other match. `--home URL` sends visitors of `/` to
 the site (each serveme.tf region uses its own `/stv` page); without it `/` answers 403.
 
 `--sessions DIR` keeps a file per running match there (encrypted with `STVTF_TOKEN_KEY` when
