@@ -445,7 +445,7 @@ test("an admin clicking an event's time watches from just before it", async () =
   await page.close();
 });
 
-test("a viewer of a match page goes back on their own, and returns", async () => {
+test("a viewer of a match page goes back on their own", async () => {
   const { page, errors } = await open();
   /** @type {string[]} */
   const streams = [];
@@ -461,21 +461,14 @@ test("a viewer of a match page goes back on their own, and returns", async () =>
     return [r.x, r.y, r.width];
   });
   await page.mouse.click(box[0] + box[2] * 0.1, box[1] + 20);
-  await until(
-    page,
-    () =>
-      document.getElementById("rb-live").textContent === "Back" && !document.getElementById("rb-live").style.visibility,
-  );
+  await until(page, () => document.getElementById("status").textContent === "replay");
+  await page.waitForTimeout(500);
   assert.ok(
     streams.some(s => s.startsWith("/r/")),
     streams.join(" "),
   );
-  await until(page, () => document.getElementById("status").textContent === "replay");
-  await page.click("#rb-live");
-  // Hidden, keeping its room.
-  await until(page, () => document.getElementById("rb-live").style.visibility === "hidden");
-  await until(page, () => document.getElementById("status").textContent === "replay");
-  assert.equal(streams.at(-1), "/w/demo/events", "back on the shared stream");
+  // A demo has no live to go back to.
+  assert.ok(await page.$eval("#rb-live", el => el.hidden));
   assert.deepEqual(errors, []);
   await page.close();
 });

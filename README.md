@@ -166,7 +166,7 @@ A match's page (not the overlay, nor in an iframe) has a timeline along the bott
 far with its rounds, ubers, drops and fights, a live match from when it was first watched. By
 default it follows what everyone sees, at live for a live match. Moving it, pausing or another
 speed gives that viewer a playback of their own from there (a private room: not listed, not saved,
-at most 200 at once, outside `--max-matches`); ● Live, or Back on a demo, returns to the shared one.
+at most 200 at once, outside `--max-matches`); on a live match, ● Live returns to the shared one.
 A live match's timeline shows rounds, results, marks and fights only as far as the viewer has
 watched, so going back spoils nothing; a demo's shows all of it. `?t=12:34` (from the map's start) opens the page in such a playback at that moment, and the link button by the map's name copies
 one for where the viewer is.

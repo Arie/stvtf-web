@@ -144,7 +144,7 @@ function roomBar() {
 }
 
 // A match page's timeline: by default the shared playback (live, for a live match); moving it,
-// pausing or a speed gives this viewer a playback of their own, which Live (or Back) leaves.
+// pausing or a speed gives this viewer a playback of their own, which a live match's Live leaves.
 function watchBar() {
   env.el.classList.add("room", "watch");
   /** @type {URL | null} */
@@ -188,8 +188,6 @@ function watchBar() {
     send,
     live: back,
     // Live for a live match; on a demo, back to the shared playback from one's own.
-    liveLabel: p => (p.live ? "● Live" : own && "Back"),
-    liveSpace: "Back",
     // One's own playback is a replay, unless at a live match's live.
     replay: (behind, p) => Boolean(own) && (behind || !p.live),
   });
