@@ -1,11 +1,11 @@
 //! A room: a recording played into its own hub, paused, sped up and sought by its owner, with
 //! everyone in it seeing the same.
 
-use crate::hub::{SharedHub, announce, publish, restore};
+use crate::hub::{SharedHub, announce, publish, restore, send};
 use crate::lock;
 use crate::recording::Recording;
 use anyhow::{Result, bail};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard};
@@ -45,6 +45,17 @@ pub(crate) struct Control {
     pub(crate) paused: Option<bool>,
     pub(crate) speed: Option<f64>,
     pub(crate) seek: Option<u64>,
+}
+
+/// Most points in one drawing request.
+const MAX_POINTS: usize = 256;
+
+/// A piece of a telestrator stroke, in map coordinates.
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct Draw {
+    pub(crate) stroke: u32,
+    pub(crate) points: Vec<[f64; 2]>,
 }
 
 /// Counts a page in the room until dropped.
@@ -98,6 +109,20 @@ impl Room {
         }
         self.announce(&st);
         self.wake.notify_all();
+        Ok(())
+    }
+
+    /// Passes a piece of a stroke on to every page.
+    pub(crate) fn draw(&self, d: &Draw) -> Result<()> {
+        if d.points.is_empty() || d.points.len() > MAX_POINTS {
+            bail!("1 to {MAX_POINTS} points");
+        }
+        if !d.points.iter().flatten().all(|v| v.is_finite() && v.abs() < 1e6) {
+            bail!("points must be on a map");
+        }
+        let mut line = serde_json::to_value(d)?;
+        line["type"] = "draw".into();
+        send(&self.hub, &line.to_string().into());
         Ok(())
     }
 
@@ -305,6 +330,19 @@ mod tests {
         rooms.reap(Duration::ZERO);
         assert_eq!(rooms.count(), 0);
         assert!(lock(&r.state).stop);
+    }
+
+    #[test]
+    fn strokes_reach_every_page_and_stay_on_the_map() {
+        let r = room(1);
+        let page = subscribe(&r.hub, false);
+        r.draw(&Draw { stroke: 7, points: vec![[1.0, 2.0], [3.5, -4.0]] }).unwrap();
+        let line = page.try_iter().find(|l| l.contains(r#""type":"draw""#)).unwrap();
+        assert_eq!(&*line, r#"{"points":[[1.0,2.0],[3.5,-4.0]],"stroke":7,"type":"draw"}"#);
+        assert!(r.draw(&Draw { stroke: 7, points: vec![] }).is_err());
+        assert!(r.draw(&Draw { stroke: 7, points: vec![[1e9, 0.0]] }).is_err());
+        assert!(r.draw(&Draw { stroke: 7, points: vec![[0.0, 0.0]; 257] }).is_err());
+        r.stop();
     }
 
     #[test]

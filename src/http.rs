@@ -1,7 +1,7 @@
 //! The HTTP side: pages, files, event streams and starting matches.
 
 use crate::hub::{SharedHub, subscribe};
-use crate::room::Control;
+use crate::room::{Control, Draw};
 use crate::sessions::{Session, Sessions, Viewer};
 use crate::token::Source;
 use crate::{App, Matches, sessions, token};
@@ -326,7 +326,14 @@ fn serve_room(
             None => too_many_streams(&mut s)?,
         },
         ("me", "GET") => respond(&mut s, "200 OK", JSON, serde_json::json!({ "admin": owner }).to_string().as_bytes())?,
-        ("control", "POST") if !owner => respond(&mut s, "403 Forbidden", TEXT, b"Only the room's owner controls it.")?,
+        ("control" | "draw", "POST") if !owner => respond(&mut s, "403 Forbidden", TEXT, b"Only the room's owner controls it.")?,
+        ("draw", "POST") => {
+            let draw = read_body(reader, request).and_then(|b| Ok(serde_json::from_slice::<Draw>(&b)?));
+            match draw.and_then(|d| room.draw(&d)) {
+                Ok(()) => respond(&mut s, "204 No Content", TEXT, b"")?,
+                Err(e) => respond(&mut s, "400 Bad Request", TEXT, format!("{e:#}").as_bytes())?,
+            }
+        }
         ("control", "POST") => {
             let control = read_body(reader, request).and_then(|b| Ok(serde_json::from_slice::<Control>(&b)?));
             match control.and_then(|c| room.control(&c)) {
@@ -631,6 +638,10 @@ mod tests {
         assert!(post(&app, &control, &cookie, pause).starts_with("HTTP/1.1 204"));
         assert!(post(&app, &control, &cookie, r#"{"speed":3}"#).starts_with("HTTP/1.1 400"));
         assert!(post(&app, &control, &cookie, r#"{"rewind":1}"#).starts_with("HTTP/1.1 400"));
+        let draw = format!("{page}draw");
+        let stroke = r#"{"stroke":1,"points":[[0,0],[10,10]]}"#;
+        assert!(post(&app, &draw, "", stroke).starts_with("HTTP/1.1 403"));
+        assert!(post(&app, &draw, &cookie, stroke).starts_with("HTTP/1.1 204"));
         assert!(get(&app, "/r/0123/", "").starts_with("HTTP/1.1 404"));
     }
 
