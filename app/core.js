@@ -101,14 +101,22 @@ export function overlayUnit() {
   return Math.max(9, Math.min(20, Math.min(r.width, r.height) / 33)) * (Number(OPT.get("ui")) || 1);
 }
 
-// 1080p is the design size; 4K gets the same layout at twice the size.
+// 1080p is the design size; 4K gets the same layout at twice the size. The page's height is asked
+// of the layout once a resize (applyScale), not every frame: after the bar's changes, that reflows.
+let height = 0;
 export function uiScale() {
-  return OVERLAY ? 1 : Math.max(0.75, Math.min(2.5, (env.el.clientHeight || innerHeight) / 1080));
+  return OVERLAY ? 1 : Math.max(0.75, Math.min(2.5, (height || innerHeight) / 1080));
 }
 export function applyScale() {
+  height = env.el.clientHeight;
   env.el.style.setProperty("--s", String(uiScale()));
 }
 applyScale();
+
+// What changes the page each frame, after the map is drawn: changed before, the map's text would
+// wait for the page's styles.
+/** @type {Set<() => void>} */
+export const afterDraw = new Set();
 
 // The viewer's elements are all in its page (or the component's template), so they are there.
 /** @param {string} id */

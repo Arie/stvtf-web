@@ -1,6 +1,6 @@
 import { drawBuildings } from "./buildings.js";
 import { followAction, mirror } from "./camera.js";
-import { OVERLAY, canvas, ctx, state, renderTick, canvasSize, optOn } from "./core.js";
+import { OVERLAY, afterDraw, canvas, ctx, state, renderTick, canvasSize, optOn } from "./core.js";
 import { EMBEDDED, embedState } from "./embed.js";
 import { fireEvents } from "./events.js";
 import { updatePanel, renderScoreboard, shownScore } from "./hud.js";
@@ -99,6 +99,7 @@ function frame(now) {
       console.error(e);
     }
   }
+  for (const f of afterDraw) f();
   requestAnimationFrame(frame);
 }
 

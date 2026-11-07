@@ -1,6 +1,6 @@
 // The playback bar: play and pause, the timeline with its marks, the time, speed and Live. A room
 // drives it with the room's playback; a match page with the shared playback, or a viewer's own.
-import { $, msPerTick, playbackStatus, setStatus, state } from "./core.js";
+import { $, afterDraw, msPerTick, playbackStatus, setStatus, state } from "./core.js";
 import { env } from "./env.js";
 import { atTick } from "./roomview.js";
 import { timeline } from "./timeline.js";
@@ -51,6 +51,7 @@ export function playbar(o) {
     live = /** @type {HTMLButtonElement} */ ($("rb-live")),
     track = $("rb-track");
   bar.hidden = false;
+  const width = widthOf(track);
   speed.replaceChildren(
     ...SPEEDS.map(s => Object.assign(document.createElement("option"), { value: String(s), textContent: `${s}×` })),
   );
@@ -88,7 +89,7 @@ export function playbar(o) {
     const len = Math.max(start() + 1, length());
     time.min = String(start());
     time.max = String(len);
-    marks.place(len, track.clientWidth);
+    marks.place(len, width());
     // A live match's timeline shows only as far as this viewer has watched; a demo's, all of it.
     if (last.live) seen = Math.max(seen, atLive ? len : at());
     marks.reveal(last.live ? seen : Infinity);
@@ -109,13 +110,10 @@ export function playbar(o) {
     live.classList.toggle("at", atLive);
     if (!last.paused) say(o.replay ?? (b => b), behind, last, length() - now);
   };
-  // Every frame: a live match's timeline grows smoothly, and the playhead moves smoothly.
+  // Every frame, once the map is drawn: a live match's timeline grows smoothly, and the playhead
+  // moves smoothly.
   const marks = timeline({ track, home: o.home, clock, length, jump: null });
-  const frame = () => {
-    show();
-    requestAnimationFrame(frame);
-  };
-  requestAnimationFrame(frame);
+  afterDraw.add(show);
   play.onclick = () => last && control({ paused: !last.paused });
   live.onclick = () => o.live(Math.round(length()));
   speed.onchange = () => control({ speed: Number(speed.value) });
@@ -156,6 +154,14 @@ export function playbar(o) {
       marks.allow(on ? ms => control({ seek: ms }) : null);
     },
   };
+}
+
+// `e`'s width, kept by an observer: read each frame after the bar's changes, it would reflow.
+/** @param {HTMLElement} e */
+function widthOf(e) {
+  let width = e.clientWidth;
+  new ResizeObserver(([r]) => (width = r.contentRect.width)).observe(e);
+  return () => width;
 }
 
 // Watching a moment that is not live says so: how far behind SourceTV, or a replay (a demo too).
