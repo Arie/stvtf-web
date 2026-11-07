@@ -1,130 +1,229 @@
-import { TEAM, OVERLAY, uiScale, ctx, INK } from "./core.js";
+import { TEAM, ctx } from "./core.js";
 /** @typedef {import("../types/stream").Player} Player */
 
-// Each charge looks different: über a candy-cane team ring with a dark edge and a soft pulse, kritz crackling, quick-fix
-// pulsing rings, vaccinator a shield with its resistance.
-/** @typedef {{ x: number; y: number; rad: number; col: string; t: number }} Ring */
-/** @param {Player} p @param {number} x @param {number} y @param {number} rad @param {string} col */
-export function drawUberRing(p, x, y, rad, col) {
-  if (!p.ubered) return;
-  const ring = { x, y, rad, col, t: performance.now() / 1000 };
+// Medigun charges are drawn inside the dot, so a charged player stays the same size and the class
+// icon goes on top: über flowing team-coloured liquid metal, kritz lightning, quick-fix ripples
+// and the vaccinator a team-coloured bubble, its resistance in a badge on the rim.
+const TAU = Math.PI * 2;
+/** @typedef {{ base: string; id: number; x: number; y: number; rad: number; t: number }} Charge */
+
+/** @param {Player} p @param {number} x @param {number} y @param {number} rad */
+export function drawChargeInside(p, x, y, rad) {
+  const draw = p.ubered && (CHARGES.get(p.ubered) ?? (p.ubered.startsWith("vaccinator_") ? vaccinator : null));
+  if (!draw || uberFlickerOff(p)) return;
   ctx.save();
-  (CHARGES.get(p.ubered) ?? vaccinatorRing)(p, ring);
+  ctx.beginPath();
+  ctx.arc(x, y, rad, 0, TAU);
+  ctx.clip();
+  draw({ base: TEAM[p.team] ?? TEAM.none, id: p.id, x, y, rad, t: performance.now() / 1000 });
   ctx.restore();
 }
 
-// A team colour halfway to white, for the über ring's stripes.
-/** @param {string} hex */
-const tinted = hex =>
-  "#" +
-  [1, 3, 5]
-    .map(i =>
-      Math.round(parseInt(hex.substr(i, 2), 16) * 0.5 + 128)
-        .toString(16)
-        .padStart(2, "0"),
-    )
-    .join("");
+// A team colour mixed a fraction k of the way to black (k < 0) or white (k > 0), or with alpha a.
+/** @param {string} hex @param {number} k @param {number} [a] */
+const mix = (hex, k, a = 1) => {
+  const c = [1, 3, 5].map(i => {
+    const v = parseInt(hex.substr(i, 2), 16);
+    return Math.round(k < 0 ? v * (1 + k) : v + (255 - v) * k);
+  });
+  return a < 1 ? `rgba(${c.join(",")},${a})` : "#" + c.map(v => v.toString(16).padStart(2, "0")).join("");
+};
+// A repeatable pseudo-random number in [0, 1) for n.
+/** @param {number} n */
+const hash = n => {
+  const s = Math.sin(n * 127.1 + 311.7) * 43758.5453;
+  return s - Math.floor(s);
+};
+/** @param {number} x @param {number} y @param {number} rad @param {CanvasGradient | string} fill */
+const fillDot = (x, y, rad, fill) => {
+  ctx.fillStyle = fill;
+  ctx.fillRect(x - rad, y - rad, rad * 2, rad * 2);
+};
 
-/** @param {Player} p @param {Ring} ring */
-function uberRing(p, { x, y, rad, t }) {
-  const base = TEAM[p.team],
-    pulse = 0.5 + 0.5 * Math.sin(t * 5);
-  const lw = OVERLAY ? Math.max(3, rad * 0.3) : 5,
-    r0 = rad + 3 + lw / 2,
-    ri = r0 - lw / 2,
-    ro = r0 + lw / 2;
-  ctx.beginPath();
-  ctx.arc(x, y, r0, 0, Math.PI * 2);
-  ctx.shadowColor = base;
-  ctx.shadowBlur = 10 + 8 * pulse;
-  ctx.strokeStyle = INK;
-  ctx.lineWidth = lw + 3;
+// When über leaves a player (the medic heals someone else, or the charge runs out) the game keeps
+// them invulnerable a moment longer, flickering, with InvulnerableWearingOff set beside it. Some
+// servers leave that flag on a medic for good, so it only counts once the über was seen without it.
+/** @type {Map<number, boolean>} */
+const cleanUber = new Map();
+/** Whether the über is off in this frame of the wearing-off flicker. @param {Player} p */
+function uberFlickerOff(p) {
+  if (p.ubered !== "uber") {
+    cleanUber.delete(p.id);
+    return false;
+  }
+  if (!p.conds?.includes("InvulnerableWearingOff")) {
+    cleanUber.set(p.id, true);
+    return false;
+  }
+  return Boolean(cleanUber.get(p.id)) && Math.floor(performance.now() / 90) % 2 === 1;
+}
+
+// Über like the game's invulnerable sheen: bands of reflection keep flowing across team-coloured
+// metal, with a bright rim light on the inside edge and a highlight to round it.
+const UBER_BANDS = /** @type {const} */ ([
+  [0, 0.8],
+  [0.18, 0.1],
+  [0.33, -0.7],
+  [0.5, 0],
+  [0.68, 0.55],
+  [0.85, -0.35],
+]);
+/** @param {Charge} c */
+function uber({ base, id, x, y, rad, t }) {
+  const o = (t * 1.3 + id * 0.2) % 1,
+    a = -Math.PI / 3,
+    dx = Math.cos(a) * rad * 1.3,
+    dy = Math.sin(a) * rad * 1.3;
+  // The band pattern repeats; three copies shifted by o cover the gradient while it scrolls.
+  const stops = [];
+  for (let k = -1; k <= 1; k++)
+    for (const [p, m] of UBER_BANDS) {
+      const at = (p + k + o) / 1.6 + 0.2;
+      if (at >= 0 && at <= 1) stops.push(/** @type {[number, string]} */ ([at, mix(base, m)]));
+    }
+  stops.sort((p, q) => p[0] - q[0]);
+  const metal = ctx.createLinearGradient(x - dx, y - dy, x + dx, y + dy);
+  for (const [at, col] of stops) metal.addColorStop(at, col);
+  fillDot(x, y, rad, metal);
+  const rim = ctx.createRadialGradient(x, y, 0, x, y, rad);
+  rim.addColorStop(0, "rgba(255,255,255,0)");
+  rim.addColorStop(0.72, "rgba(255,255,255,0)");
+  rim.addColorStop(0.92, "rgba(255,255,255,0.6)");
+  rim.addColorStop(1, "rgba(0,0,0,0.45)");
+  fillDot(x, y, rad, rim);
+  const ball = ctx.createRadialGradient(x - rad * 0.3, y - rad * 0.35, rad * 0.1, x, y, rad);
+  ball.addColorStop(0, "rgba(255,255,255,0.35)");
+  ball.addColorStop(0.5, "rgba(255,255,255,0)");
+  fillDot(x, y, rad, ball);
+}
+
+// Kritz like the patient's crackling weapon: two or three arcs of team-coloured lightning with a
+// white core flicker across a darkened dot, new ones 14 times a second.
+/** @param {Charge} c */
+function kritz({ base, id, x, y, rad, t }) {
+  fillDot(x, y, rad, mix(base, -0.35));
+  const f = Math.floor(t * 14),
+    glow = mix(base, 0.45);
+  ctx.lineJoin = "round";
+  for (let j = 0; j < 3; j++) if (hash(f + j * 31 + id) > 0.3) bolt(x, y, rad, f * 3 + j * 17 + id * 101, glow);
+}
+// A jagged arc from one point on the rim to another, picked by seed.
+/** @param {number} x @param {number} y @param {number} rad @param {number} seed @param {string} glow */
+function bolt(x, y, rad, seed, glow) {
+  const a0 = hash(seed) * TAU,
+    a1 = a0 + Math.PI * (0.6 + hash(seed + 1) * 0.8),
+    [x0, y0, x1, y1] = [x + Math.cos(a0) * rad, y + Math.sin(a0) * rad, x + Math.cos(a1) * rad, y + Math.sin(a1) * rad],
+    len = Math.hypot(x1 - x0, y1 - y0) || 1,
+    [nx, ny] = [(y0 - y1) / len, (x1 - x0) / len];
+  const path = () => {
+    ctx.beginPath();
+    ctx.moveTo(x0, y0);
+    for (let i = 1; i < 6; i++) {
+      const f = i / 6,
+        j = (hash(seed + i * 7) - 0.5) * rad * 0.7;
+      ctx.lineTo(x0 + (x1 - x0) * f + nx * j, y0 + (y1 - y0) * f + ny * j);
+    }
+    ctx.lineTo(x1, y1);
+  };
+  path();
+  ctx.shadowColor = glow;
+  ctx.shadowBlur = rad * 0.6;
+  ctx.strokeStyle = glow;
+  ctx.lineWidth = Math.max(1.5, rad * 0.16);
   ctx.stroke();
   ctx.shadowBlur = 0;
-  ctx.strokeStyle = base;
-  ctx.lineWidth = lw;
-  ctx.stroke();
-  candyStripes(x, y, [ri, ro], t, tinted(base));
-  ctx.beginPath();
-  ctx.arc(x, y, ri, 0, Math.PI * 2);
-  ctx.strokeStyle = "rgba(11,12,14,0.7)";
-  ctx.lineWidth = 1;
-  ctx.stroke();
-}
-
-// Candy cane like the HUD card: tint stripes between radii ri and ro, slanted by their outer edge,
-// turning three stripe pairs a second.
-/** @param {number} x @param {number} y @param {[number, number]} radii @param {number} t @param {string} tint */
-function candyStripes(x, y, [ri, ro], t, tint) {
-  const n = 12,
-    step = (Math.PI * 2) / n,
-    slant = step * 0.8,
-    rot = t * step * 3;
-  ctx.fillStyle = tint;
-  ctx.beginPath();
-  for (let i = 0; i < n; i++) {
-    const a = rot + i * step,
-      w = step / 2;
-    ctx.moveTo(x + Math.cos(a) * ri, y + Math.sin(a) * ri);
-    ctx.lineTo(x + Math.cos(a + w) * ri, y + Math.sin(a + w) * ri);
-    ctx.lineTo(x + Math.cos(a + w + slant) * ro, y + Math.sin(a + w + slant) * ro);
-    ctx.lineTo(x + Math.cos(a + slant) * ro, y + Math.sin(a + slant) * ro);
-    ctx.closePath();
-  }
-  ctx.fill();
-}
-
-/** @param {Player} p @param {Ring} ring */
-function kritzRing(p, { x, y, rad, col, t }) {
-  ctx.beginPath();
-  for (let i = 0; i <= 24; i++) {
-    const a = (i / 24) * Math.PI * 2 + t * 3,
-      r = rad + 6 + (i % 2 ? 4 : -1) + Math.sin(t * 20 + i) * 1.5;
-    (i ? ctx.lineTo : ctx.moveTo).call(ctx, x + Math.cos(a) * r, y + Math.sin(a) * r);
-  }
+  path();
   ctx.strokeStyle = "#fff";
-  ctx.shadowColor = col;
-  ctx.shadowBlur = 10;
-  ctx.lineWidth = 2;
+  ctx.lineWidth = Math.max(0.8, rad * 0.06);
   ctx.stroke();
 }
 
-/** @param {Player} p @param {Ring} ring */
-function quickfixRing(p, { x, y, rad, col, t }) {
-  for (let i = 0; i < 2; i++) {
-    const k = (t * 1.2 + i / 2) % 1;
+// Quick-fix's fast healing: white rings run from the centre out to the edge, three at a time.
+/** @param {Charge} c */
+function quickfix({ id, x, y, rad, t }) {
+  for (let i = 0; i < 3; i++) {
+    const k = (t * 1.5 + i / 3 + id * 0.1) % 1;
     ctx.beginPath();
-    ctx.arc(x, y, rad + 4 + k * 16, 0, Math.PI * 2);
-    ctx.strokeStyle = col;
-    ctx.globalAlpha = 1 - k;
-    ctx.lineWidth = 3;
+    ctx.arc(x, y, rad * (0.15 + k * 0.85), 0, TAU);
+    ctx.strokeStyle = `rgba(255,255,255,${0.85 * (1 - k)})`;
+    ctx.lineWidth = Math.max(1.2, rad * 0.14);
     ctx.stroke();
   }
 }
 
-// The vaccinator's charges (vaccinator_bullet, _blast, _fire): a shield arc with the resistance.
-/** @param {Player} p @param {Ring} ring */
-function vaccinatorRing(p, { x, y, rad, col }) {
+// The vaccinator's charges (vaccinator_bullet, _blast, _fire): like the game's shield, a glossy
+// bubble in the team's colour, its edge pulsing. The resistance is the badge (drawResistBadge).
+/** @param {Charge} c */
+function vaccinator({ base, id, x, y, rad, t }) {
+  const p = 0.5 + 0.5 * Math.sin(t * 3 + id),
+    edge = mix(base, 0.55);
+  const bubble = ctx.createRadialGradient(x, y, 0, x, y, rad);
+  bubble.addColorStop(0, mix(edge, 0, 0));
+  bubble.addColorStop(0.6, mix(edge, 0, 0.1));
+  bubble.addColorStop(0.88, mix(edge, 0, 0.55 + 0.25 * p));
+  bubble.addColorStop(1, mix(edge, 0, 0.9));
+  fillDot(x, y, rad, bubble);
   ctx.beginPath();
-  ctx.arc(x, y, rad + 7, -Math.PI * 0.8, -Math.PI * 0.2);
-  ctx.strokeStyle = "#fff";
-  ctx.lineWidth = 4;
-  ctx.shadowColor = col;
-  ctx.shadowBlur = 12;
+  ctx.arc(x, y, rad * 0.7, Math.PI * 1.1, Math.PI * 1.45);
+  ctx.strokeStyle = "rgba(255,255,255,0.85)";
+  ctx.lineWidth = Math.max(1.2, rad * 0.13);
+  ctx.lineCap = "round";
   ctx.stroke();
-  ctx.shadowBlur = 0;
-  ctx.font = `bold ${Math.round(10 * uiScale())}px system-ui`;
-  ctx.textAlign = "center";
-  ctx.textBaseline = "bottom";
-  ctx.fillStyle = "#fff";
-  ctx.fillText((p.ubered ?? "").split("_")[1].toUpperCase(), x, y - rad - 9);
 }
 
+/** @type {Map<string, (c: Charge) => void>} */
 const CHARGES = new Map([
-  ["uber", uberRing],
-  ["kritz", kritzRing],
-  ["quickfix", quickfixRing],
+  ["uber", uber],
+  ["kritz", kritz],
+  ["quickfix", quickfix],
 ]);
+
+// The vaccinator's resistance as the game shows it, by shape: a bullet, an explosion or a flame,
+// white in a dark badge on the dot's top-right rim, over the class icon.
+/** @param {Player} p @param {number} x @param {number} y @param {number} rad */
+export function drawResistBadge(p, x, y, rad) {
+  const kind = p.ubered?.startsWith("vaccinator_") && p.ubered.slice(11);
+  if (!kind) return;
+  // The glyph g is a little larger than the badge's radius s, filling most of it.
+  const s = Math.max(5, rad * 0.44),
+    g = s * 1.42,
+    bx = x + rad * 0.72,
+    by = y - rad * 0.72;
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(bx, by, s, 0, TAU);
+  ctx.fillStyle = "#111";
+  ctx.fill();
+  ctx.strokeStyle = mix(TEAM[p.team] ?? TEAM.none, 0.4);
+  ctx.lineWidth = Math.max(1, s * 0.18);
+  ctx.stroke();
+  ctx.fillStyle = "#fff";
+  ctx.beginPath();
+  if (kind === "bullet") {
+    ctx.moveTo(bx - g * 0.22, by + g * 0.55);
+    ctx.lineTo(bx - g * 0.22, by - g * 0.1);
+    ctx.quadraticCurveTo(bx, by - g * 0.8, bx + g * 0.22, by - g * 0.1);
+    ctx.lineTo(bx + g * 0.22, by + g * 0.55);
+    ctx.closePath();
+  } else if (kind === "blast") {
+    for (let i = 0; i < 16; i++) {
+      const a = (i / 16) * TAU,
+        r = g * (i % 2 ? 0.3 : 0.62);
+      ctx.lineTo(bx + Math.cos(a) * r, by + Math.sin(a) * r);
+    }
+    ctx.closePath();
+  } else {
+    // A flame: a tall tip leaning right, a smaller tongue on the left, a round base.
+    ctx.moveTo(bx, by + g * 0.62);
+    ctx.bezierCurveTo(bx - g * 0.55, by + g * 0.62, bx - g * 0.55, by + g * 0.05, bx - g * 0.28, by - g * 0.28);
+    ctx.quadraticCurveTo(bx - g * 0.2, by + g * 0.02, bx - g * 0.04, by + g * 0.08);
+    ctx.quadraticCurveTo(bx - g * 0.12, by - g * 0.4, bx + g * 0.14, by - g * 0.72);
+    ctx.bezierCurveTo(bx + g * 0.22, by - g * 0.35, bx + g * 0.62, by - g * 0.1, bx + g * 0.46, by + g * 0.26);
+    ctx.bezierCurveTo(bx + g * 0.38, by + g * 0.55, bx + g * 0.2, by + g * 0.62, bx, by + g * 0.62);
+  }
+  ctx.fill();
+  ctx.restore();
+}
 
 // Jarate, Mad Milk and bleeding fill the bottom of the dot like a liquid (side by side when there
 // are several) and burning licks up from it, under the class icon.

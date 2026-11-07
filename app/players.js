@@ -1,7 +1,7 @@
 import { TEAM, CLASS, icon, OVERLAY, optOn, uiScale, ctx, context2d, state, teamColour, INK } from "./core.js";
 import { layerOn } from "./layers.js";
 import { toScreen, screenAngle, playerRad, drawText, label, crossPath } from "./view.js";
-import { drawUberRing, drawStatusInside, drawStatus } from "./status.js";
+import { drawChargeInside, drawResistBadge, drawStatusInside, drawStatus } from "./status.js";
 /** @typedef {import("../types/stream").Player} Player */
 /** @typedef {import("../types/stream").LivePlayer} LivePlayer */
 /** @typedef {{ p: Player, x: number, y: number, rad: number, col: string, cloaked: boolean }} Dot */
@@ -264,11 +264,11 @@ function drawPointer({ p, x, y, rad, col, cloaked }) {
 /** @param {Dot} d */
 function drawDisc({ p, x, y, rad, col, cloaked }) {
   ctx.globalAlpha = cloaked ? 0.35 : 1;
-  if (p.ubered) drawUberRing(p, x, y, rad, col);
   ctx.beginPath();
   ctx.arc(x, y, rad, 0, Math.PI * 2);
   ctx.fillStyle = col;
   ctx.fill();
+  if (p.ubered) drawChargeInside(p, x, y, rad);
   if (layerOn("effects") && p.conds?.length) drawStatusInside(p.conds, p.id, x, y, rad);
   ctx.beginPath();
   ctx.arc(x, y, rad, 0, Math.PI * 2);
@@ -313,6 +313,7 @@ function drawIcon({ p, x, y, rad, cloaked }) {
   } else {
     label(CLASS[p.class] || "?", x, y, Math.max(9, rad * 0.9), { weight: "bold" });
   }
+  if (p.ubered) drawResistBadge(p, x, y, rad);
   if (SHOW_BUILDINGS && p.carrying) drawCarried(p, x, y, rad);
   if (p.id === state.follow) {
     ctx.beginPath();
