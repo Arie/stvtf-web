@@ -381,16 +381,32 @@ function roomView() {
   if (OVERLAY) streamParams.set("overlay", "1");
   const choose = /** @type {HTMLSelectElement} */ ($("rb-view"));
   let sent = "";
-  /** @type {Promise<unknown>} */
-  let queue = Promise.resolve();
+  // One request at a time; what waits is only the latest, a choice kept as one (`take`). The
+  // delay stays one round trip however slow requests are.
+  /** @type {{ v: object; take: boolean } | null} */
+  let pending = null,
+    busy = false;
+  const flush = () => {
+    if (busy || !pending) return;
+    const { v, take } = pending;
+    pending = null;
+    busy = true;
+    post("view", { ...v, take, page: PAGE_ID })
+      .catch(() => {})
+      .finally(() => {
+        busy = false;
+        flush();
+      });
+  };
   // `take`: chosen here, so this page leads from now on; otherwise its camera moved, which the
-  // room takes only while it leads that kind of view. One at a time, in order.
+  // room takes only while it leads that kind of view.
   /** @param {object} v @param {boolean} take */
   const send = (v, take) => {
     const body = JSON.stringify(v);
     if (!take && body === sent) return;
     sent = body;
-    queue = queue.then(() => post("view", { ...v, take, page: PAGE_ID })).catch(() => {});
+    pending = { v, take: take || (pending?.take ?? false) };
+    flush();
   };
   /** @param {{ mode: string; [k: string]: unknown }} v */
   const take = v => {
