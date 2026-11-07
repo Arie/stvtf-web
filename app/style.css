@@ -77,6 +77,11 @@ body {
 #title b {
   font-size: 15px;
 }
+/* After the map's name, one size on one baseline. */
+#status,
+#age {
+  font-size: 12px;
+}
 .hud,
 #scoreboard,
 #follow,
@@ -937,7 +942,6 @@ aside h3 {
 #roomlink,
 #roomopen {
   margin-left: auto;
-  align-self: center;
   padding: 2px 8px;
   border: 1px solid var(--line);
   border-radius: 6px;
