@@ -23,7 +23,8 @@ pub(crate) struct Room {
     pub(crate) hub: SharedHub,
     people: Mutex<People>,
     /// The number of the admin who set the view last by choosing it.
-    leader: Mutex<Option<u32>>,
+    /// The admin's number, page and the kind of view it chose, when one did.
+    leader: Mutex<Option<(u32, String, std::mem::Discriminant<View>)>>,
     recording: Arc<Recording>,
     state: Mutex<State>,
     wake: Condvar,
@@ -66,15 +67,21 @@ pub(crate) enum View {
     Admin { cx: f64, cy: f64, w: f64, h: f64, rot: f64 },
 }
 
-/// A view as an admin sends it: `take` when they chose it, and so lead from now on; otherwise
-/// it is their camera moving, which counts only while they lead.
+/// A view as an admin's page sends it: `take` when they chose it, and so that page leads from now
+/// on; otherwise it is its camera moving, which counts only while it leads. `page` tells an
+/// admin's pages apart (two tabs, say).
 #[derive(Debug, Deserialize)]
 pub(crate) struct ViewPost {
     #[serde(flatten)]
     pub(crate) view: View,
     #[serde(default)]
     pub(crate) take: bool,
+    #[serde(default)]
+    pub(crate) page: String,
 }
+
+/// The longest page name.
+const MAX_PAGE: usize = 32;
 
 /// A piece of a telestrator stroke: points in map coordinates, each with when it was drawn, in
 /// milliseconds into the stroke, so pages draw it as it was drawn.
@@ -198,17 +205,23 @@ impl Room {
         {
             bail!("a view must be on a map");
         }
+        if post.page.len() > MAX_PAGE {
+            bail!("a page name is at most {MAX_PAGE} bytes");
+        }
         let by = lock(&self.people).id(guest);
         let mut leader = lock(&self.leader);
+        let from = (by, post.page.clone(), std::mem::discriminant(view));
         if post.take {
-            *leader = Some(by);
-        } else if *leader != Some(by) {
-            // Sent before someone else took over: it no longer stands.
+            *leader = Some(from);
+        } else if leader.as_ref() != Some(&from) {
+            // Sent before another page took over, or before this one chose another kind of view:
+            // it no longer stands.
             return Ok(());
         }
         let mut line = serde_json::to_value(view)?;
         line["type"] = "view".into();
         line["by"] = by.into();
+        line["page"] = post.page.clone().into();
         announce(&self.hub, "view", &line.to_string().into());
         Ok(())
     }
@@ -456,26 +469,34 @@ mod tests {
     #[test]
     fn the_view_reaches_pages_that_join_later() {
         let r = room(1);
-        r.set_view(&ViewPost { view: View::Follow { player: 4 }, take: true }, "me").unwrap();
+        r.set_view(&ViewPost { view: View::Follow { player: 4 }, take: true, page: "a".into() }, "me").unwrap();
         let later: Vec<_> = subscribe(&r.hub, false).try_iter().filter(|l| l.contains(r#""type":"view""#)).collect();
-        assert_eq!(&*later[0], r#"{"by":1,"mode":"follow","player":4,"type":"view"}"#);
+        assert_eq!(&*later[0], r#"{"by":1,"mode":"follow","page":"a","player":4,"type":"view"}"#);
         let flat = View::Admin { cx: 0.0, cy: 0.0, w: 0.0, h: 10.0, rot: 0.0 };
-        assert!(r.set_view(&ViewPost { view: flat, take: true }, "me").is_err());
+        assert!(r.set_view(&ViewPost { view: flat, take: true, page: String::new() }, "me").is_err());
         r.stop();
     }
 
     #[test]
-    fn a_camera_moving_after_someone_else_took_the_view_over_is_refused() {
+    fn a_camera_moving_after_another_page_took_the_view_over_is_refused() {
         let r = room(1);
+        let post = |view, take, page: &str| ViewPost { view, take, page: page.into() };
         let mine = |x: f64| View::Admin { cx: x, cy: 0.0, w: 10.0, h: 10.0, rot: 0.0 };
-        r.set_view(&ViewPost { view: View::Auto, take: false }, "me").unwrap();
+        r.set_view(&post(View::Auto, false, "a"), "me").unwrap();
         assert!(subscribe(&r.hub, false).try_iter().all(|l| !l.contains(r#""type":"view""#)), "nobody took it yet");
-        r.set_view(&ViewPost { view: mine(1.0), take: true }, "me").unwrap();
-        r.set_view(&ViewPost { view: mine(2.0), take: false }, "me").unwrap();
-        r.set_view(&ViewPost { view: View::Free, take: true }, "you").unwrap();
-        r.set_view(&ViewPost { view: mine(3.0), take: false }, "me").unwrap();
+        r.set_view(&post(mine(1.0), true, "a"), "me").unwrap();
+        r.set_view(&post(mine(2.0), false, "a"), "me").unwrap();
+        // The same admin's other tab is not the one leading.
+        r.set_view(&post(mine(9.0), false, "b"), "me").unwrap();
+        // A camera move sent before the same page chose auto zoom does not bring its view back.
+        r.set_view(&post(View::Auto, true, "a"), "me").unwrap();
+        r.set_view(&post(mine(2.5), false, "a"), "me").unwrap();
         let latest = subscribe(&r.hub, false).try_iter().find(|l| l.contains(r#""type":"view""#)).unwrap();
-        assert_eq!(&*latest, r#"{"by":2,"mode":"free","type":"view"}"#);
+        assert!(latest.contains(r#""mode":"auto""#), "{latest}");
+        r.set_view(&post(View::Free, true, "c"), "you").unwrap();
+        r.set_view(&post(mine(3.0), false, "a"), "me").unwrap();
+        let latest = subscribe(&r.hub, false).try_iter().find(|l| l.contains(r#""type":"view""#)).unwrap();
+        assert_eq!(&*latest, r#"{"by":2,"mode":"free","page":"c","type":"view"}"#);
         r.stop();
     }
 
