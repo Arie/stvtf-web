@@ -94,6 +94,11 @@ impl Session {
         self.pinned
     }
 
+    /// The demos.tf demo it plays, if it plays one.
+    pub fn demo_id(&self) -> Option<u64> {
+        self.demo
+    }
+
     /// A demo's gzipped stvtf output, once fetched.
     pub fn output(&self) -> Option<Arc<Vec<u8>>> {
         match &*lock(&self.source) {
@@ -158,6 +163,11 @@ impl Session {
     /// Not the demo nor a demos.tf demo.
     fn watches_server(&self) -> bool {
         !self.pinned && self.demo.is_none()
+    }
+
+    /// Whether it watches a live match now: a room on it records it.
+    pub fn is_live(&self) -> bool {
+        self.watches_server() && !self.done.load(Ordering::Relaxed)
     }
 
     fn listed(&self) -> Listed {
@@ -336,6 +346,16 @@ impl Store {
         std::fs::create_dir_all(&self.dir)?;
         let data = self.keys.as_ref().map_or_else(|| plain.to_vec(), |k| k.seal(plain));
         Ok(write_atomic(&self.path(name), &data)?)
+    }
+
+    /// Whether there is a `name`.
+    pub(crate) fn has(&self, name: &str) -> bool {
+        self.path(name).exists()
+    }
+
+    /// Marks `name` as in use now, so a sweep of old files leaves it.
+    pub(crate) fn touch(&self, name: &str) {
+        let _ = std::fs::File::options().write(true).open(self.path(name)).and_then(|f| f.set_modified(std::time::SystemTime::now()));
     }
 
     /// What `put` wrote as `name`.
@@ -774,7 +794,7 @@ mod tests {
         while !demo.recordable() {
             std::thread::sleep(Duration::from_millis(1));
         }
-        assert_eq!(demo.recording().unwrap().length, 750);
+        assert_eq!(demo.recording().unwrap().length(), 750);
         assert!(Arc::ptr_eq(&demo.recording().unwrap(), &demo.recording().unwrap()), "read once");
     }
 
