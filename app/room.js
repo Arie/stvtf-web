@@ -70,7 +70,12 @@ function roomButton() {
     button.classList.add("busy");
     button.textContent = "Opening…";
     const r = await fetch(new URL("room", HOME), { method: "POST" }).catch(() => null);
-    if (r?.ok) return location.assign(new URL((await r.json()).page, location.origin));
+    if (r?.ok) {
+      const page = new URL((await r.json()).page, location.origin);
+      // Its link to send, if the browser still lets this click copy.
+      await navigator.clipboard?.writeText(page.href).catch(() => {});
+      return location.assign(page);
+    }
     button.disabled = false;
     button.classList.remove("busy");
     button.textContent = idle;
@@ -78,8 +83,25 @@ function roomButton() {
   };
 }
 
+// The link button: copies the link `url` makes (and says so).
+/** @param {() => URL} url */
+function copyLink(url) {
+  const link = $("rb-link");
+  link.onclick = () =>
+    navigator.clipboard?.writeText(url().href).then(
+      () => {
+        link.textContent = "Copied";
+        setTimeout(() => (link.textContent = "Link"), COPIED_MS);
+      },
+      () => {},
+    );
+}
+
 function roomBar() {
   env.el.classList.add("room");
+  // A room's link, to send.
+  $("rb-link").title = "Copy the room's link";
+  copyLink(() => new URL(location.pathname, location.origin));
   const pen = /** @type {HTMLButtonElement} */ ($("rb-pen"));
   const control = (/** @type {import("./playbar.js").Control} */ c) => post("control", c);
   const bar = playbar({ home: HOME, send: control, live: end => control({ seek: end, paused: false }) });
@@ -172,19 +194,12 @@ function watchBar() {
   playbackListeners.add(m => own && bar.heard(m));
   // A link to a moment (?t=12:34, from the map's start) watches from there.
   let wanted = moment(new URLSearchParams(location.search).get("t"));
-  const link = $("rb-link");
-  link.onclick = () => {
+  copyLink(() => {
     const url = new URL(location.href);
     url.search = `?t=${clock(Math.max(0, bar.since()))}`;
     history.replaceState(null, "", url);
-    navigator.clipboard?.writeText(url.href).then(
-      () => {
-        link.textContent = "Copied";
-        setTimeout(() => (link.textContent = "Link"), COPIED_MS);
-      },
-      () => {},
-    );
-  };
+    return url;
+  });
   // Where the shared playback is, while this viewer watches along.
   const shared = () =>
     !own &&

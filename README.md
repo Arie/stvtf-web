@@ -167,6 +167,8 @@ far with its rounds, ubers, drops and fights, a live match from when it was firs
 default it follows what everyone sees, at live for a live match. Moving it, pausing or another
 speed gives that viewer a playback of their own from there (a private room: not listed, not saved,
 at most 200 at once, outside `--max-matches`); ● Live, or Back on a demo, returns to the shared one.
+`?t=12:34` (from the map's start) opens the page in such a playback at that moment, and Link copies
+one for where the viewer is.
 
 | route | |
 |---|---|
@@ -176,9 +178,10 @@ at most 200 at once, outside `--max-matches`); ● Live, or Back on a demo, retu
 
 ## Rooms
 
-A room is a match watched together under control: the Room button on a match's page (live, a
+A room is a match watched together under control: Watch together on a match's page (live, a
 demos.tf demo, or `--demo`/`--demos`) opens one at `/r/<id>/`, with its overlay at
-`/r/<id>/overlay`. Anyone may open one; the match's own page never changes. The
+`/r/<id>/overlay`, and copies its link to send (as does Link in it). Anyone may open one; the
+match's own page never changes. The
 browser that opened it owns it and is its first admin. Admins pause (space), change speed
 (¼× to 4×) and jump anywhere on the timeline (← and → by 5 s), and everyone in the room sees the
 same. With the pen (✎ or `d`) dragging on the map draws a line instead, which everyone in the

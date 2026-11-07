@@ -1204,10 +1204,6 @@ aside h3 {
 .stvtf.watch #rb-lead {
   display: none;
 }
-/* A link to a moment: a match page's, which a room is not. */
-.stvtf:not(.watch) #rb-link {
-  display: none;
-}
 #bgtoggle {
   position: absolute;
   right: 12px;
