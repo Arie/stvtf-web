@@ -14,6 +14,10 @@ import { focusOf, screenOffset, viewArea } from "./view.js";
 const SPEEDS = [0.25, 0.5, 1, 2, 4];
 // The closest a stroke's points are, in pixels.
 const MIN_STEP_PX = 3;
+// A jump shows at once; the room's playback this close to it says it is there, and one not said
+// within JUMP_WAIT_MS did not happen. In milliseconds.
+const JUMP_MS = 1500,
+  JUMP_WAIT_MS = 3000;
 // A jump to an event in the feed or chat lands this long before it, in milliseconds.
 const LEAD_MS = 2000;
 // Playback this close to a live match's end is at live, in milliseconds.
@@ -100,13 +104,21 @@ function roomBar() {
   // Where playback is, and how long the recording is, by now: a live match's grows as it goes.
   // Between two playback lines, a second apart: no further, when a match sends little.
   const length = () => (last ? last.length + (last.live ? Math.min(performance.now() - heard, LIVE_MS / 2) : 0) : 0);
+  // A jump asked for here shows at once, until the room's playback says it is there (or does not
+  // within JUMP_WAIT_MS).
+  /** @type {{ at: number; since: number } | null} */
+  let jumped = null;
   const at = () => {
     if (!last) return 0;
-    const ran = last.paused ? 0 : (performance.now() - heard) * last.speed;
-    return Math.min(length(), last.at + ran);
+    const from = jumped ?? { at: last.at, since: heard };
+    const ran = last.paused ? 0 : (performance.now() - from.since) * last.speed;
+    return Math.min(length(), from.at + ran);
   };
   /** @param {{ paused?: boolean; speed?: number; seek?: number }} c */
-  const control = c => post("control", c);
+  const control = c => {
+    if (c.seek != null) jumped = { at: c.seek, since: performance.now() };
+    return post("control", c);
+  };
   const show = () => {
     if (!last) return;
     time.max = String(length());
@@ -119,6 +131,7 @@ function roomBar() {
   };
   playbackListeners.add(m => {
     [last, heard] = [m, performance.now()];
+    if (jumped && (Math.abs(m.at - jumped.at) < JUMP_MS || heard - jumped.since > JUMP_WAIT_MS)) jumped = null;
     play.textContent = m.paused ? "▶" : "⏸";
     play.title = m.paused ? "Play (space)" : "Pause (space)";
     speed.value = String(m.speed);
