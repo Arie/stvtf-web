@@ -161,10 +161,11 @@ export function playbar(o) {
  */
 function say(replay, behind, p, by) {
   const status = $("status").textContent ?? "";
-  let want = "live";
+  // Behind is short, "−1:23", and says what it is behind on hover.
+  let [want, why] = ["live", ""];
   if (!p.live) want = "replay";
-  else if (replay(behind, p)) want = behind ? `${clock(by)} behind STV` : "replay";
-  if (playbackStatus(status) && status !== "paused" && status !== want) setStatus(want, true);
+  else if (replay(behind, p)) [want, why] = behind ? [`−${clock(by)}`, `${clock(by)} behind SourceTV`] : ["replay", ""];
+  if (playbackStatus(status) && status !== "paused" && status !== want) setStatus(want, true, why);
 }
 
 // Clicking an event's or a chat line's time watches from a little before it.

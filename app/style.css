@@ -77,10 +77,20 @@ body {
 #title b {
   font-size: 15px;
 }
-/* After the map's name, one size on one baseline. */
+/* After the map's name, one size on one baseline; nothing wraps, a long name is cut short. */
 #status,
 #age {
   font-size: 12px;
+}
+#title > * {
+  flex: none;
+  white-space: nowrap;
+}
+#title #map {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .hud,
 #scoreboard,
