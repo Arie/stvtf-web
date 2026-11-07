@@ -46,6 +46,8 @@ export type State = {
   /** Everyone seen this map, by id, as last seen. */
   players: Map<number, Player>;
   tickOffset: number | null;
+  /** A room's playback is paused. */
+  paused: boolean;
   lastTick: number;
   /** When data last came in (performance.now()). */
   lastData?: number;

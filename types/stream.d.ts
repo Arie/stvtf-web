@@ -149,4 +149,15 @@ export type GameEvent = {
   [field: string]: any;
 };
 
-export type StreamMessage = Snapshot | ServerLine | StatusLine | { type: "data_age"; ms: number } | GameEvent;
+/** A room's playback: times in milliseconds of play. */
+export type PlaybackLine = {
+  type: "playback";
+  paused: boolean;
+  speed: number;
+  at: number;
+  length: number;
+  rounds: number[];
+};
+
+export type StreamMessage =
+  Snapshot | ServerLine | StatusLine | PlaybackLine | { type: "data_age"; ms: number } | { type: "seek" } | GameEvent;

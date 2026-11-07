@@ -138,6 +138,7 @@ export const state = {
   effects: [],
   players: new Map(),
   tickOffset: null,
+  paused: false,
   lastTick: 0,
   geometry: null,
   geoCanvas: null,
@@ -160,8 +161,16 @@ export const state = {
 };
 
 // ---------- tick clock: server tick at a local instant, smoothed over snapshot arrivals
+// Ticks per local tick's worth of time: a room's playback speed, 0 while paused.
+let rate = 1;
 function nowTick() {
-  return state.tickOffset == null ? 0 : performance.now() / msPerTick + state.tickOffset;
+  return state.tickOffset == null ? 0 : (performance.now() * rate) / msPerTick + state.tickOffset;
+}
+/** @param {number} r */
+export function setClockRate(r) {
+  if (state.tickOffset != null) state.tickOffset = nowTick() - (performance.now() * r) / msPerTick;
+  rate = r;
+  state.paused = r === 0;
 }
 // Ticks between snapshots, smoothed: stvtf's rate cap and the STV's tv_snapshotrate set it.
 /** @type {number | null} */
@@ -173,7 +182,12 @@ export function observeTick(tick) {
   const gap = lastSnapTick == null ? 0 : tick - lastSnapTick;
   if (gap > 0 && gap < CLOCK_JUMP_TICKS) snapGap = snapGap * 0.9 + gap * 0.1;
   lastSnapTick = tick;
-  const est = tick - performance.now() / msPerTick;
+  // Paused, a snapshot only comes from a seek: show it as it is.
+  if (rate === 0) {
+    state.tickOffset = tick + snapGap + JITTER_MS / msPerTick;
+    return;
+  }
+  const est = tick - (performance.now() * rate) / msPerTick;
   if (state.tickOffset == null || Math.abs(est - state.tickOffset) > CLOCK_JUMP_TICKS) state.tickOffset = est;
   else state.tickOffset = Math.max(state.tickOffset * 0.97 + est * 0.03, state.tickOffset - 0.5);
 }

@@ -7,6 +7,7 @@ import {
   optOn,
   parseMessage,
   renderTick,
+  setClockRate,
   setTickInterval,
   state,
   statusText,
@@ -130,6 +131,36 @@ test("the tick clock jumps on a stall and otherwise eases", () => {
   observeTick(5010);
   const eased = renderTick();
   assert.ok(eased > 4988 && eased < 4990, `${eased} moves a little, not ten ticks`);
+});
+
+/** @param {number} ms */
+const spin = ms => {
+  const until = performance.now() + ms;
+  while (performance.now() < until);
+};
+
+test("the tick clock runs at a room's playback rate, without a jump", () => {
+  observeTick(1000);
+  const before = renderTick();
+  setClockRate(2);
+  assert.ok(Math.abs(renderTick() - before) < 0.5, "no jump");
+  spin(60);
+  // 60 ms at twice 15 ms a tick.
+  assert.ok(Math.abs(renderTick() - before - 8) < 1, `${renderTick() - before}`);
+  setClockRate(1);
+  assert.equal(state.paused, false);
+});
+
+test("a paused clock stands still and shows a sought snapshot as it is", () => {
+  observeTick(2000);
+  setClockRate(0);
+  assert.equal(state.paused, true);
+  const still = renderTick();
+  spin(20);
+  assert.equal(renderTick(), still);
+  observeTick(9000);
+  assert.ok(Math.abs(renderTick() - 9000) < 1e-9, `${renderTick()}`);
+  setClockRate(1);
 });
 
 test("a tick interval comes only from a server that gives one", () => {

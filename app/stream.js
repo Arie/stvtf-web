@@ -7,6 +7,7 @@ import {
   parseMessage,
   state,
   observeTick,
+  setClockRate,
   setStatus,
   setTickInterval,
   statusText,
@@ -74,7 +75,7 @@ function ago(age) {
 setInterval(() => {
   const age = state.lastData == null ? 0 : (performance.now() - state.lastData) / 1000;
   $("age").textContent = age < 5 ? "" : `last data ${ago(age)} ago`;
-  if (age >= 5 && $("status").textContent === "live") setStatus("no data", false);
+  if (age >= 5 && !state.paused && $("status").textContent === "live") setStatus("no data", false);
 }, 1000);
 
 // Until the first snapshot shows, say what the page is actually waiting for. The first data only
@@ -138,6 +139,15 @@ function handle(m) {
       break;
     case "world":
       break;
+    case "seek":
+      // A room jumped: everything shown is from before it.
+      $("feed").replaceChildren();
+      $("chat").replaceChildren();
+      resetMatch(true);
+      break;
+    case "playback":
+      onPlayback(/** @type {import("../types/stream").PlaybackLine} */ (/** @type {unknown} */ (m)));
+      break;
     default:
       state.events.push(m);
   }
@@ -155,6 +165,19 @@ function onServer(m) {
   setTickInterval(m.tick_interval);
   // The same map again (a reconnect, a signon restart) keeps who you are following.
   resetMatch(sameMap);
+}
+
+// A room's controls hear its playback lines.
+/** @type {Set<(m: import("../types/stream").PlaybackLine) => void>} */
+export const playbackListeners = new Set();
+/** @param {import("../types/stream").PlaybackLine} m */
+function onPlayback(m) {
+  setClockRate(m.paused ? 0 : m.speed);
+  if (m.paused) {
+    state.lastData = performance.now();
+    setStatus("paused", true);
+  } else if ($("status").textContent === "paused") setStatus("live", true);
+  for (const f of playbackListeners) f(m);
 }
 
 /** @param {import("../types/stream").StatusLine} m */
