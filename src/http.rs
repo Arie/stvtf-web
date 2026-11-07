@@ -1,6 +1,7 @@
 //! The HTTP side: pages, files, event streams and starting matches.
 
 use crate::hub::{SharedHub, subscribe};
+use crate::room::Control;
 use crate::sessions::{Session, Sessions, Viewer};
 use crate::token::Source;
 use crate::{App, Matches, sessions, token};
@@ -66,6 +67,8 @@ struct Request {
     forwarded: Option<IpAddr>,
     /// An `Authorization: Bearer` token.
     bearer: Option<String>,
+    /// The `stvtf_guest` cookie: who the browser is, to the rooms.
+    guest: Option<String>,
 }
 
 /// The request line and headers.
@@ -76,8 +79,16 @@ fn read_request(reader: &mut impl BufRead) -> Result<Request> {
     let method = words.next().unwrap_or("GET").to_string();
     let target = words.next().unwrap_or("/");
     let (path, query) = target.split_once('?').unwrap_or((target, ""));
-    let mut request =
-        Request { method, path: path.to_string(), query: query.to_string(), length: 0, gzip: false, forwarded: None, bearer: None };
+    let mut request = Request {
+        method,
+        path: path.to_string(),
+        query: query.to_string(),
+        length: 0,
+        gzip: false,
+        forwarded: None,
+        bearer: None,
+        guest: None,
+    };
     loop {
         let mut header = String::new();
         if reader.read_line(&mut header)? == 0 {
@@ -94,6 +105,9 @@ fn read_request(reader: &mut impl BufRead) -> Result<Request> {
             request.forwarded = value.rsplit(',').next().and_then(|a| a.trim().parse::<IpAddr>().ok());
         } else if name.eq_ignore_ascii_case("authorization") {
             request.bearer = value.trim().strip_prefix("Bearer ").map(|t| t.trim().to_string());
+        } else if name.eq_ignore_ascii_case("cookie") {
+            let guest = value.split(';').find_map(|c| c.trim().strip_prefix("stvtf_guest="));
+            request.guest = guest.filter(|g| sessions::is_id(g)).map(str::to_string);
         } else if name.eq_ignore_ascii_case("accept-encoding") {
             request.gzip = value.split(',').any(|e| e.split(';').next().is_some_and(|e| e.trim().eq_ignore_ascii_case("gzip")));
         }
@@ -198,11 +212,7 @@ fn serve_many(
             respond(&mut s, "413 Content Too Large", TEXT, format!("over {MAX_REQUEST} bytes").as_bytes())?;
         }
         ("/watch", "POST") => {
-            // The body has an allowance of its own: the headers may have used up most of theirs.
-            let buffered = reader.buffer().len() as u64;
-            reader.get_mut().set_limit((request.length as u64).saturating_sub(buffered));
-            let mut body = vec![0; request.length];
-            reader.read_exact(&mut body)?;
+            let body = read_body(reader, request)?;
             let form = String::from_utf8_lossy(&body);
             let line = param(&form, "connect").map(form_decode).unwrap_or_default();
             match sessions.open(&line, None, None) {
@@ -211,6 +221,7 @@ fn serve_many(
             }
         }
         (p, _) if let Some(path) = p.strip_prefix("/w/") => serve_match(s, app, sessions, request, path, client)?,
+        (p, _) if let Some(path) = p.strip_prefix("/r/") => serve_room(s, reader, app, request, path, client)?,
         (path, _) => serve_file(&mut s, app, path, request.gzip)?,
     }
     Ok(())
@@ -231,6 +242,7 @@ fn serve_match(mut s: TcpStream, app: &App, sessions: &Sessions, request: &Reque
             app.redirect(&mut s, "308 Permanent Redirect", &format!("{}/", request.path))?;
         }
         (Some(_), rest) if is_page(rest) => respond(&mut s, "200 OK", HTML, &app.page(INDEX))?,
+        (Some(m), "room") => open_room(&mut s, app, sessions, &m, request)?,
         (Some(m), "events") => match app.stream_slot(client) {
             Some(_slot) => {
                 let _viewer = Viewer::new(m.clone());
@@ -238,6 +250,90 @@ fn serve_match(mut s: TcpStream, app: &App, sessions: &Sessions, request: &Reque
             }
             None => too_many_streams(&mut s)?,
         },
+        _ => not_found(&mut s)?,
+    }
+    Ok(())
+}
+
+/// The body of a request, up to [`MAX_REQUEST`] bytes.
+fn read_body(reader: &mut BufReader<Take<TcpStream>>, request: &Request) -> Result<Vec<u8>> {
+    if request.length as u64 > MAX_REQUEST {
+        bail!("over {MAX_REQUEST} bytes");
+    }
+    // The body has an allowance of its own: the headers may have used up most of theirs.
+    let buffered = reader.buffer().len() as u64;
+    reader.get_mut().set_limit((request.length as u64).saturating_sub(buffered));
+    let mut body = vec![0; request.length];
+    reader.read_exact(&mut body)?;
+    Ok(body)
+}
+
+/// `GET` says whether a room can be opened on match `m`; `POST` opens one, owned by the browser.
+fn open_room(s: &mut TcpStream, app: &App, sessions: &Sessions, m: &Session, request: &Request) -> Result<()> {
+    if !m.recordable() {
+        return Ok(respond(s, "409 Conflict", TEXT, b"Rooms play demos; this match has none (yet).")?);
+    }
+    if request.method != "POST" {
+        return Ok(respond(s, "200 OK", JSON, b"{}")?);
+    }
+    if sessions.running() + app.rooms.count() >= sessions.max {
+        return Ok(respond(s, "503 Service Unavailable", TEXT, b"This server is watching all it can.")?);
+    }
+    let recording = match m.recording() {
+        Ok(r) => r,
+        Err(e) => return Ok(respond(s, "409 Conflict", TEXT, format!("{e:#}").as_bytes())?),
+    };
+    let (guest, cookie) = if let Some(g) = &request.guest {
+        (g.clone(), None)
+    } else {
+        let g = sessions::random_id();
+        let secure = if app.keys.is_some() { "; Secure" } else { "" };
+        let cookie = format!("stvtf_guest={g}; Path={}/; Max-Age=31536000; HttpOnly; SameSite=Lax{secure}", app.base);
+        (g, Some(cookie))
+    };
+    let room = app.rooms.open(recording, &guest);
+    eprintln!("stvtf-web: room {} opened on match {}", &room.id[..8], &m.id[..m.id.len().min(8)]);
+    let body = serde_json::json!({ "page": format!("{}/r/{}/", app.base, room.id) }).to_string();
+    let mut headers = vec![("Content-Type", JSON)];
+    if let Some(c) = &cookie {
+        headers.push(("Set-Cookie", c));
+    }
+    Ok(respond_with(s, "201 Created", &headers, body.as_bytes())?)
+}
+
+/// A room's page, event stream and controls: `path` is what follows `/r/`.
+fn serve_room(
+    mut s: TcpStream,
+    reader: &mut BufReader<Take<TcpStream>>,
+    app: &App,
+    request: &Request,
+    path: &str,
+    client: IpAddr,
+) -> Result<()> {
+    let (id, rest) = path.split_once('/').unwrap_or((path, ""));
+    let Some(room) = app.rooms.get(id) else {
+        return Ok(respond(&mut s, "404 Not Found", TEXT, b"That room has closed.")?);
+    };
+    let owner = request.guest.as_deref().is_some_and(|g| room.is_owner(g));
+    match (rest, request.method.as_str()) {
+        ("", _) if !path.ends_with('/') => app.redirect(&mut s, "308 Permanent Redirect", &format!("{}/", request.path))?,
+        (rest, "GET") if is_page(rest) => respond(&mut s, "200 OK", HTML, &app.page(INDEX))?,
+        ("events", "GET") => match app.stream_slot(client) {
+            Some(_slot) => {
+                let _watching = room.watch();
+                stream(s, &room.hub, request.gzip, wants_detail(&request.query))?;
+            }
+            None => too_many_streams(&mut s)?,
+        },
+        ("me", "GET") => respond(&mut s, "200 OK", JSON, serde_json::json!({ "admin": owner }).to_string().as_bytes())?,
+        ("control", "POST") if !owner => respond(&mut s, "403 Forbidden", TEXT, b"Only the room's owner controls it.")?,
+        ("control", "POST") => {
+            let control = read_body(reader, request).and_then(|b| Ok(serde_json::from_slice::<Control>(&b)?));
+            match control.and_then(|c| room.control(&c)) {
+                Ok(()) => respond(&mut s, "204 No Content", TEXT, b"")?,
+                Err(e) => respond(&mut s, "400 Bad Request", TEXT, format!("{e:#}").as_bytes())?,
+            }
+        }
         _ => not_found(&mut s)?,
     }
     Ok(())
@@ -477,6 +573,75 @@ mod tests {
     fn other_sites_get_the_kill_icons_with_crits_under_a_version() {
         let css = request(b"GET /killicons/v1/killicons.css HTTP/1.1\r\n\r\n").1;
         assert!(css.starts_with("HTTP/1.1 200") && css.contains(".killicon-quake_rl") && css.contains(".killicon.crit"), "{css}");
+    }
+
+    /// A server with a pinned demo rooms can play, and the folder its recording is in.
+    fn demo_app() -> (App, TempDir) {
+        let dir = TempDir::new("rooms");
+        let path = dir.join("demo.jsonl");
+        std::fs::write(&path, "{\"type\":\"stalemate\",\"tick\":5}\n{\"type\":\"stalemate\",\"tick\":55}\n").unwrap();
+        let sessions = Sessions::new(false, 2, 20.0);
+        sessions.pin("demo", move |s| s.set_file(path));
+        while !sessions.get("demo").unwrap().recordable() {
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        (app(Matches::Many(sessions)), dir)
+    }
+
+    fn post(app: &App, path: &str, cookie: &str, body: &str) -> String {
+        let send = format!("POST {path} HTTP/1.1\r\nCookie: {cookie}\r\nContent-Length: {}\r\n\r\n{body}", body.len());
+        request_to(app, send.as_bytes()).1
+    }
+
+    fn get(app: &App, path: &str, cookie: &str) -> String {
+        request_to(app, format!("GET {path} HTTP/1.1\r\nCookie: {cookie}\r\n\r\n").as_bytes()).1
+    }
+
+    /// Opens a room on the demo: its page and the owner's cookie.
+    fn open_room(app: &App) -> (String, String) {
+        let opened = post(app, "/w/demo/room", "", "");
+        assert!(opened.starts_with("HTTP/1.1 201"), "{opened}");
+        let cookie = opened.split("Set-Cookie: ").nth(1).unwrap().split(';').next().unwrap().to_string();
+        assert!(opened.contains("HttpOnly; SameSite=Lax"), "{opened}");
+        let page = opened.split(r#""page":""#).nth(1).unwrap().split('"').next().unwrap().to_string();
+        (page, cookie)
+    }
+
+    #[test]
+    fn a_demo_opens_a_room_for_its_owner() {
+        let (app, _dir) = demo_app();
+        assert!(get(&app, "/w/demo/room", "").starts_with("HTTP/1.1 200"));
+        let (page, cookie) = open_room(&app);
+        assert!(page.starts_with("/r/") && page.ends_with('/'), "{page}");
+        assert!(get(&app, &page, "").contains("<canvas"));
+        assert!(get(&app, &format!("{page}me"), &cookie).ends_with(r#"{"admin":true}"#));
+        assert!(get(&app, &format!("{page}me"), "").ends_with(r#"{"admin":false}"#));
+        let again = post(&app, "/w/demo/room", &cookie, "");
+        assert!(!again.contains("Set-Cookie"), "a guest keeps their cookie: {again}");
+    }
+
+    #[test]
+    fn only_the_owner_controls_a_room() {
+        let (app, _dir) = demo_app();
+        let (page, cookie) = open_room(&app);
+        let control = format!("{page}control");
+        let pause = r#"{"paused":true}"#;
+        assert!(post(&app, &control, "", pause).starts_with("HTTP/1.1 403"));
+        assert!(post(&app, &control, &format!("stvtf_guest={}", "0".repeat(32)), pause).starts_with("HTTP/1.1 403"));
+        assert!(post(&app, &control, &cookie, pause).starts_with("HTTP/1.1 204"));
+        assert!(post(&app, &control, &cookie, r#"{"speed":3}"#).starts_with("HTTP/1.1 400"));
+        assert!(post(&app, &control, &cookie, r#"{"rewind":1}"#).starts_with("HTTP/1.1 400"));
+        assert!(get(&app, "/r/0123/", "").starts_with("HTTP/1.1 404"));
+    }
+
+    #[test]
+    fn a_live_match_offers_no_room() {
+        let app = app(Matches::Many(Sessions::new(false, 2, 20.0)));
+        let Matches::Many(sessions) = &app.matches else { unreachable!() };
+        let m = sessions.open("192.0.2.1:27020 tv", None, None).unwrap();
+        assert!(get(&app, &format!("/w/{}/room", m.id), "").starts_with("HTTP/1.1 409"));
+        assert!(post(&app, &format!("/w/{}/room", m.id), "", "").starts_with("HTTP/1.1 409"));
+        sessions.stop_all();
     }
 
     fn post_watch(app: &App, connect: &str) -> String {

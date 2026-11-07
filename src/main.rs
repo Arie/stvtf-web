@@ -10,7 +10,9 @@ mod cli;
 mod demostf;
 mod http;
 mod hub;
+mod recording;
 mod replay;
+mod room;
 mod sessions;
 mod token;
 
@@ -31,6 +33,8 @@ use stvtf::watch::{self};
 
 /// How long a match nobody watches keeps its `SourceTV` connection.
 const LINGER: Duration = Duration::from_secs(180);
+/// A room ends this long after its last viewer left: a reload does not end it.
+const ROOM_LINGER: Duration = Duration::from_secs(60);
 
 /// Open connections, browsers on `/events` included; more are closed straight away.
 const MAX_CONNECTIONS: usize = 512;
@@ -74,6 +78,7 @@ struct App {
     home: Option<String>,
     /// Open event streams by client address.
     streams: Mutex<HashMap<IpAddr, usize>>,
+    rooms: room::Rooms,
 }
 
 /// Counts an event stream against its client's limit until dropped.
@@ -196,6 +201,7 @@ fn many(options: &Options, keys: Option<&Arc<token::Keys>>) -> Result<Sessions> 
 fn pin_demo(sessions: &Sessions, id: &str, file: PathBuf) {
     let name = id.to_string();
     sessions.pin(id, move |s| {
+        s.set_file(file.clone());
         if let Err(e) = replay(&s.hub, &file, &|| s.watched()) {
             eprintln!("{name}: {e:#}");
         }
@@ -282,6 +288,7 @@ fn keep_house(app: Arc<App>, stop: &'static AtomicBool) {
                 std::process::exit(0);
             }
             sessions.reap(LINGER);
+            app.rooms.reap(ROOM_LINGER);
             // What a deploy's next container picks up, feed included.
             if round % PERSIST_ROUNDS == 0 {
                 sessions.persist();
@@ -327,6 +334,7 @@ fn main() -> Result<()> {
         keys,
         home: options.home.clone(),
         streams: Mutex::default(),
+        rooms: room::Rooms::default(),
     });
     if let Matches::Many(_) = app.matches {
         keep_house(app.clone(), &STOP);
@@ -450,6 +458,7 @@ mod testing {
             keys: None,
             home: None,
             streams: Mutex::default(),
+            rooms: room::Rooms::default(),
         }
     }
 
