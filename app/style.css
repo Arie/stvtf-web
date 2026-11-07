@@ -204,15 +204,33 @@ aside section {
 #peoplelist a.nm:hover {
   text-decoration: underline;
 }
+/* One's own name in the list, edited in place: text until hovered or focused. */
 #myname {
-  flex: 1;
-  min-width: 0;
-  padding: 4px 6px;
-  border: 1px solid var(--line);
-  border-radius: 4px;
-  background: var(--bg);
+  flex: 0 1 auto;
+  field-sizing: content;
+  min-width: 6ch;
+  max-width: 60%;
+  margin: -1px 0;
+  padding: 0 3px;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  background: transparent;
   color: var(--text);
   font: inherit;
+}
+#myname:hover {
+  border-color: var(--line);
+}
+#myname:focus {
+  border-color: var(--dim);
+  outline: none;
+  background: var(--bg);
+}
+#myname::placeholder {
+  color: var(--text);
+}
+#myname:focus::placeholder {
+  color: var(--dim);
 }
 #peoplelist {
   margin: 0;
@@ -254,10 +272,22 @@ aside section {
   border: 0;
   border-radius: 50%;
 }
+#peoplelist .you {
+  color: var(--dim);
+  font-size: 11px;
+}
 #peoplelist .tag {
   margin-right: auto;
   color: var(--dim);
-  font-size: 11px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+#peoplelist .tag:not(:empty) {
+  padding: 0 4px;
+  border: 1px solid var(--line);
+  border-radius: 3px;
 }
 #peoplelist button {
   flex: none;

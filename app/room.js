@@ -261,16 +261,25 @@ function people(allow) {
     names.clear();
     for (const p of m.people) names.set(p.id, p.name);
     showLead();
+    // One's own name is edited in place, unless signed in; a list redrawn while typing keeps it.
+    const typing = document.activeElement === name ? [name.selectionStart, name.selectionEnd] : null;
     list.replaceChildren(
       ...m.people.map(p => {
         const li = document.createElement("li"),
+          own = p.id === me.id && !p.signed,
           // Signed in with serveme: their name leads to their Steam profile.
           nm = /^\d+$/.test(p.steamid ?? "")
             ? steamLink(/** @type {string} */ (p.steamid))
-            : document.createElement("span"),
+            : document.createElement(own ? "input" : "span"),
           tag = document.createElement("span");
-        nm.className = "nm";
-        nm.textContent = p.name;
+        if (own) {
+          name.placeholder = p.name;
+          li.append(name);
+        } else {
+          nm.className = "nm";
+          nm.textContent = p.name;
+          li.append(nm);
+        }
         if (p.signed) {
           const mark = document.createElement("span");
           mark.className = "signed";
@@ -278,9 +287,12 @@ function people(allow) {
           mark.title = "Signed in with serveme";
           nm.append(" ", mark);
         }
+        // "Arie (you) OWNER": spaces between, so it copies as it reads.
+        const you = Object.assign(document.createElement("span"), { className: "you", textContent: "(you)" }),
+          role = (p.owner && "owner") || (p.admin && "admin") || "";
         tag.className = "tag";
-        tag.textContent = [p.id === me.id && "you", p.owner ? "owner" : p.admin && "admin"].filter(Boolean).join(", ");
-        li.append(nm, tag);
+        tag.textContent = role;
+        li.append(...(p.id === me.id ? [" ", you] : []), " ", tag);
         if (me.admin && !p.owner && p.id !== me.id) {
           const b = document.createElement("button");
           b.textContent = p.admin ? "Remove admin" : "Make admin";
@@ -306,6 +318,10 @@ function people(allow) {
         return li;
       }),
     );
+    if (typing) {
+      name.focus();
+      name.setSelectionRange(typing[0], typing[1]);
+    }
   }
 }
 

@@ -229,14 +229,19 @@ test("people in a room see each other and admins make others admin", async () =>
   await page.waitForURL(/\/r\/[0-9a-f]{32}\/$/, { timeout: WAIT });
   await page.fill("#myname", "coach");
   await page.press("#myname", "Enter");
-  await until(page, () => document.getElementById("peoplelist").textContent.includes("coach"));
+  // One's own name is the box in one's row, with the room's name for one as its placeholder.
+  await until(page, () => /** @type {HTMLInputElement} */ (document.getElementById("myname")).placeholder === "coach");
   const viewer = await open();
   await viewer.page.goto(page.url());
   await until(page, () => document.querySelectorAll("#peoplelist li").length === 2);
-  assert.match(await viewer.page.textContent("#peoplelist"), /coachowner.*Guest 2you/);
+  assert.match(await viewer.page.textContent("#peoplelist"), /coach owner.*\(you\)/);
+  assert.equal(
+    await viewer.page.$eval("#peoplelist #myname", e => /** @type {HTMLInputElement} */ (e).placeholder),
+    "Guest 2",
+  );
   await page.click("#peoplelist button");
   await until(viewer.page, () => !(/** @type {HTMLButtonElement} */ (document.getElementById("rb-play")).disabled));
-  assert.match(await viewer.page.textContent("#peoplelist"), /Guest 2you, admin/);
+  assert.match(await viewer.page.textContent("#peoplelist"), /\(you\) admin/);
   await page.$eval("#peoplelist input.ink", el => {
     el.value = "#00ff00";
     el.dispatchEvent(new Event("change"));
