@@ -13,6 +13,7 @@ import {
 } from "../../app/core.js";
 import { command, steamid64 } from "../../app/embed.js";
 import { layerOn } from "../../app/layers.js";
+import { labelCorner } from "../../app/spawns.js";
 import { demostfAlias, sameLayout, screenOffset, teamsTurn, toScreen } from "../../app/view.js";
 
 test("players sort by class, then name whatever its case, then id", () => {
@@ -85,6 +86,24 @@ test("the map turns so blue's spawns are on the left and red's on the right", ()
   }
   assert.equal(teamsTurn(spawns([-3000, 0], [3000, 0])), 0);
   assert.equal(teamsTurn([{ pos: [0, 0], team: "red" }]), null, "one team only");
+});
+
+test("a spawn room's label keeps its corner while the view pans", () => {
+  const r = { min: [-500, -300], max: [700, 400] };
+  for (const rot of [0, Math.PI / 2, Math.PI, -Math.PI / 2]) {
+    const picked = new Set();
+    for (let cx = -3000; cx < 3000; cx += 0.731) {
+      Object.assign(state.view, { cx, cy: 123.4, scale: 0.3, rot });
+      const corners = [
+        [r.min[0], r.min[1]],
+        [r.max[0], r.min[1]],
+        [r.max[0], r.max[1]],
+        [r.min[0], r.max[1]],
+      ].map(([x, y]) => toScreen(x, y));
+      picked.add(corners.indexOf(labelCorner(corners)));
+    }
+    assert.equal(picked.size, 1, `one corner at ${rot}`);
+  }
 });
 
 test("a screen offset is the same map offset whichever way the view is turned", () => {

@@ -75,6 +75,13 @@ function activeRooms(snap) {
   }
   return active;
 }
+// The corner a room's label hangs from: the topmost, the leftmost of a level top edge. Corners
+// within a pixel count as level: a turn by quarters leaves cos or sin at ~1e-16 rather than 0, so a
+// level edge's ends differ by rounding noise that changes as the view pans, and a strict
+// comparison makes the label jump between them.
+/** @param {number[][]} corners */
+export const labelCorner = corners =>
+  corners.reduce((a, b) => (b[1] < a[1] - 1 || (Math.abs(b[1] - a[1]) <= 1 && b[0] < a[0]) ? b : a));
 /** @param {Snapshot} snap */
 export function drawSpawnRooms(snap) {
   const rooms = state.spawns?.rooms;
@@ -99,7 +106,7 @@ export function drawSpawnRooms(snap) {
       ctx.strokeStyle = col;
       ctx.lineWidth = OVERLAY ? 1.5 : 2;
       ctx.stroke();
-      const top = corners.reduce((a, b) => (b[1] < a[1] || (b[1] === a[1] && b[0] < a[0]) ? b : a));
+      const top = labelCorner(corners);
       if (!OVERLAY && Math.hypot(corners[1][0] - corners[0][0], corners[1][1] - corners[0][1]) > 40) {
         const font = `800 ${Math.round(10 * uiScale())}px system-ui`;
         drawText("SPAWN", { font, fill: col, outline: null }, top[0] + 4, top[1] + 3, false);
