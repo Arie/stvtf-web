@@ -3,14 +3,16 @@
 //! AES-256-GCM encrypted, so the `SourceTV` password inside it is never readable in a URL:
 //! base64url(12-byte nonce | ciphertext | 16-byte tag) of `{"connect", "owner", "exp"}`, or of
 //! `{"demo", "owner", "exp"}` for a demos.tf demo, with an optional `"reservation"` (the site's
-//! reservation number). `{"list": true, "exp"}` lets the site read the list of matches instead.
+//! reservation number). `{"list": true, "exp"}` lets the site read the list of matches instead,
+//! and `{"signin": {"uid", "name", "streamer"}, "exp"}` signs its user in to the rooms: we keep
+//! that in a cookie sealed the same way (see [`User`]).
 
 use aes_gcm::aead::{Aead, AeadCore, KeyInit, OsRng};
 use aes_gcm::{Aes256Gcm, Nonce};
 use anyhow::{Result, anyhow, bail};
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 /// What a site's token says: the match to watch, for whom, and until when (Unix seconds).
 #[derive(Deserialize)]
@@ -24,8 +26,31 @@ struct Claims {
     /// A token to list the matches with, which starts none.
     #[serde(default)]
     list: bool,
+    /// A user of the site, signing in to the rooms.
+    signin: Option<User>,
     exp: u64,
 }
+
+/// A user of the site, signed in: their Steam id, name there, and whether they are a streamer
+/// or more (who may make themselves admin in any room).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct User {
+    pub uid: String,
+    pub name: String,
+    #[serde(default)]
+    pub streamer: bool,
+}
+
+/// A signed-in user as kept in their cookie, until `exp`.
+#[derive(Serialize, Deserialize)]
+struct Kept {
+    #[serde(flatten)]
+    user: User,
+    exp: u64,
+}
+
+/// How long a sign-in lasts, in seconds.
+pub const SIGNED_IN_FOR: u64 = 30 * 24 * 3600;
 
 /// A server's connect string, or a demos.tf demo to play.
 #[derive(Debug, PartialEq)]
@@ -92,9 +117,9 @@ impl Keys {
 
     pub fn open(&self, token: &str, now: u64) -> Result<Start> {
         let claims = self.claims(token, now)?;
-        let source = match (claims.connect, claims.demo, claims.list) {
-            (Some(connect), None, false) => Source::Connect(connect),
-            (None, Some(demo), false) => Source::Demo(demo),
+        let source = match (claims.connect, claims.demo, claims.list, claims.signin) {
+            (Some(connect), None, false, None) => Source::Connect(connect),
+            (None, Some(demo), false, None) => Source::Demo(demo),
             _ => bail!("invalid token"),
         };
         Ok(Start { source, owner: claims.owner, reservation: claims.reservation })
@@ -103,10 +128,32 @@ impl Keys {
     /// Whether `token` lets its holder list the matches.
     pub fn open_list(&self, token: &str, now: u64) -> Result<()> {
         let claims = self.claims(token, now)?;
-        if !claims.list || claims.connect.is_some() || claims.demo.is_some() {
+        if !claims.list || claims.connect.is_some() || claims.demo.is_some() || claims.signin.is_some() {
             bail!("invalid token");
         }
         Ok(())
+    }
+
+    /// The user a sign-in token signs in.
+    pub fn open_signin(&self, token: &str, now: u64) -> Result<User> {
+        let claims = self.claims(token, now)?;
+        match claims.signin {
+            Some(user) if !claims.list && claims.connect.is_none() && claims.demo.is_none() => Ok(user),
+            _ => bail!("invalid token"),
+        }
+    }
+
+    /// `user`'s cookie, good for [`SIGNED_IN_FOR`] from `now`.
+    pub fn keep(&self, user: &User, now: u64) -> String {
+        let kept = Kept { user: user.clone(), exp: now + SIGNED_IN_FOR };
+        URL_SAFE_NO_PAD.encode(self.seal(&serde_json::to_vec(&kept).expect("a user serializes")))
+    }
+
+    /// The user a cookie from [`Keys::keep`] keeps, while it lasts.
+    pub fn kept(&self, cookie: &str, now: u64) -> Option<User> {
+        let plain = self.unseal(&URL_SAFE_NO_PAD.decode(cookie).ok()?).ok()?;
+        let kept: Kept = serde_json::from_slice(&plain).ok()?;
+        (kept.exp >= now).then_some(kept.user)
     }
 }
 
@@ -155,6 +202,29 @@ mod tests {
             let t = seal(both, [13; 12]);
             assert!(keys.open(&t, 1000).is_err() && keys.open_list(&t, 1000).is_err(), "{both}");
         }
+    }
+
+    #[test]
+    fn sign_in_tokens_sign_in_and_start_nothing() {
+        let keys = Keys::from_hex(KEY).unwrap();
+        let t = seal(r#"{"signin":{"uid":"76561197960497430","name":"Arie","streamer":true},"exp":2000}"#, [14; 12]);
+        let user = keys.open_signin(&t, 1000).unwrap();
+        assert_eq!(user, User { uid: "76561197960497430".into(), name: "Arie".into(), streamer: true });
+        assert!(keys.open(&t, 1000).is_err() && keys.open_list(&t, 1000).is_err());
+        assert!(keys.open_signin(&t, 2001).is_err());
+        let start = seal(r#"{"connect":"1.2.3.4:27020","exp":2000}"#, [15; 12]);
+        assert!(keys.open_signin(&start, 1000).is_err());
+    }
+
+    #[test]
+    fn a_kept_user_lasts_its_time_and_only_with_this_key() {
+        let keys = Keys::from_hex(KEY).unwrap();
+        let user = User { uid: "7656".into(), name: "x".into(), streamer: false };
+        let cookie = keys.keep(&user, 1000);
+        assert_eq!(keys.kept(&cookie, 1000 + SIGNED_IN_FOR), Some(user));
+        assert_eq!(keys.kept(&cookie, 1001 + SIGNED_IN_FOR), None);
+        assert_eq!(Keys::from_hex(&"ee".repeat(32)).unwrap().kept(&cookie, 1000), None);
+        assert_eq!(keys.kept("not a cookie", 1000), None);
     }
 
     #[test]
