@@ -189,7 +189,7 @@ which signs them in there if need be and sends them back to `/signed_in?t=TOKEN&
 the token sealed like a start token, of `{"signin": {"uid", "name", "streamer"}, "exp"}`. We keep
 the user in a sealed `stvtf_user` cookie for 30 days (`/signout` drops it). In a room they are then
 their Steam id instead of the browser, so their admin rights go with them to any device, and
-their name is the site's, marked as such. A streamer (or more) on the site may make themselves
+their name is the site's, marked as such and linking to their Steam profile. A streamer (or more) on the site may make themselves
 admin in any room.
 
 A room keeps the match in memory in 10-second chunks, each starting from the state a page joins
@@ -221,7 +221,7 @@ hour is dropped.
 | `POST /r/<id>/control` | an admin's `{"paused", "speed", "seek"}` (any of them; `seek` in milliseconds) |
 | `POST /r/<id>/draw` | an admin's `{"stroke": <id>, "points": [[x, y, ms], …]}`, up to 256 map points, each with when it was drawn (milliseconds into the stroke); a stroke's next points continue it, and pages draw it at that pace, 40 ms behind |
 
-The room's event stream adds five lines (`playback` also says `live`, for a live match whose recording grows): `view` (as posted, with `by`), `people` (`id`, `name`, `admin`, `owner` and, once picked, `ink` each), `draw`
+The room's event stream adds five lines (`playback` also says `live`, for a live match whose recording grows): `view` (as posted, with `by`), `people` (`id`, `name`, `admin`, `owner`, `signed`, and when there is one, `ink` and `steamid` each), `draw`
 (as posted, with `by`, the drawer's number), `playback` (`paused`, `speed`, `at` and `length` in
 milliseconds, and `rounds`, when each round started) on every change and every second while it
 plays, and `seek` before the state at the new position.

@@ -41,6 +41,7 @@ aside section { padding: 8px 10px; border-bottom: 1px solid var(--line); }
 #claim { padding: 1px 6px; border: 1px solid var(--line); border-radius: 4px; background: transparent; color: var(--text);
   font: inherit; cursor: pointer; white-space: nowrap; }
 #peoplelist .signed { color: #7cc47f; font-size: 11px; }
+#peoplelist a.nm { color: inherit; text-decoration: none; } #peoplelist a.nm:hover { text-decoration: underline; }
 #myname { flex: 1; min-width: 0; padding: 4px 6px; border: 1px solid var(--line); border-radius: 4px;
   background: var(--bg); color: var(--text); font: inherit; }
 #peoplelist { margin: 0; padding: 0; list-style: none; }

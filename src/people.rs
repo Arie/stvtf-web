@@ -6,6 +6,9 @@ use anyhow::{Result, bail};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 
+/// How a user signed in with the site is known: this and their Steam id.
+pub(crate) const STEAM: &str = "steam:";
+
 /// The longest name, in characters.
 const MAX_NAME: usize = 32;
 
@@ -42,6 +45,9 @@ pub(crate) struct Shown {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) ink: Option<String>,
     pub(crate) signed: bool,
+    /// Signed in with the site: their Steam id, for their profile.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) steamid: Option<String>,
 }
 
 impl People {
@@ -142,6 +148,7 @@ impl People {
                 owner: *g == self.owner,
                 ink: p.ink.clone(),
                 signed: p.signed,
+                steamid: g.strip_prefix(STEAM).filter(|_| p.signed).map(str::to_string),
             })
             .collect();
         here.sort_by_key(|p| p.id);
@@ -164,8 +171,8 @@ mod tests {
         p.join("owner", Some("  coach\n"), None);
         p.join("viewer", None, None);
         let shown = p.shown();
-        assert_eq!(shown[0], Shown { id: 1, name: "coach".into(), admin: true, owner: true, ink: None, signed: false });
-        assert_eq!(shown[1], Shown { id: 2, name: "Guest 2".into(), admin: false, owner: false, ink: None, signed: false });
+        assert_eq!(shown[0], Shown { id: 1, name: "coach".into(), admin: true, owner: true, ink: None, signed: false, steamid: None });
+        assert_eq!(shown[1], Shown { id: 2, name: "Guest 2".into(), admin: false, owner: false, ink: None, signed: false, steamid: None });
         p.rename("viewer", &"x".repeat(40));
         assert_eq!(p.shown()[1].name.len(), MAX_NAME);
     }
@@ -191,6 +198,7 @@ mod tests {
         p.join("steam:7656", Some("again"), None);
         let shown = p.shown();
         assert_eq!((shown[0].name.as_str(), shown[0].signed, shown[0].admin), ("Arie", true, false));
+        assert_eq!(shown[0].steamid.as_deref(), Some("7656"));
         p.make_admin("steam:7656");
         assert!(p.is_admin("steam:7656"));
     }

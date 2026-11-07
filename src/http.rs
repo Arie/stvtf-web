@@ -312,7 +312,7 @@ struct Who {
 fn who(app: &App, request: &Request) -> Who {
     let user = app.keys.as_ref().zip(request.user.as_deref()).and_then(|(k, c)| k.kept(c, unix_now()));
     if let Some(user) = user {
-        return Who { key: format!("steam:{}", user.uid), cookie: None, user: Some(user) };
+        return Who { key: format!("{}{}", crate::people::STEAM, user.uid), cookie: None, user: Some(user) };
     }
     if let Some(g) = &request.guest {
         return Who { key: g.clone(), cookie: None, user: None };

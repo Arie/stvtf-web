@@ -273,7 +273,10 @@ function people(allow) {
     list.replaceChildren(
       ...m.people.map(p => {
         const li = document.createElement("li"),
-          nm = document.createElement("span"),
+          // Signed in with serveme: their name leads to their Steam profile.
+          nm = /^\d+$/.test(p.steamid ?? "")
+            ? steamLink(/** @type {string} */ (p.steamid))
+            : document.createElement("span"),
           tag = document.createElement("span");
         nm.className = "nm";
         nm.textContent = p.name;
@@ -392,6 +395,16 @@ function roomView() {
     if (!s.take) state.mirror = null;
     send(s);
   }, VIEW_MS);
+}
+
+/** @param {string} steamid */
+function steamLink(steamid) {
+  const a = document.createElement("a");
+  a.href = `https://steamcommunity.com/profiles/${steamid}/`;
+  a.target = "_blank";
+  a.rel = "noopener noreferrer";
+  a.title = "Steam profile";
+  return a;
 }
 
 // Signing in with serveme: the name is theirs there, and a streamer may make themselves admin.
