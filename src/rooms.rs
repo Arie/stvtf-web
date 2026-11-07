@@ -244,9 +244,10 @@ impl Rooms {
 fn record(recording: Recording, from: Arc<Session>, gone: Box<dyn FnOnce() + Send>) -> Arc<Recording> {
     let recording = Arc::new(recording);
     let filling = recording.clone();
+    // From now on, before the room's first page asks.
+    let (watching, lines) = (Viewer::new(from.clone()), subscribe(&from.hub, true));
     std::thread::spawn(move || {
-        let _watching = Viewer::new(from.clone());
-        let lines = subscribe(&from.hub, true);
+        let _watching = watching;
         // Held here and by the rooms playing it: the last of them going ends the recording.
         while from.is_live() && Arc::strong_count(&filling) > 1 {
             let json = match lines.recv_timeout(RECORD_POLL) {

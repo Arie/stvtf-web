@@ -900,7 +900,6 @@ mod tests {
         let _watching = room.join("me", None, None, true);
         assert!(m.watched(), "the room watches the match");
         // What happens in the match from now on plays in the room.
-        std::thread::sleep(Duration::from_millis(50));
         let kill = serde_json::from_str::<Line>(r#"{"type":"stalemate","tick":500}"#).unwrap();
         publish(&m.hub, &kill);
         let deadline = Instant::now() + Duration::from_secs(5);
