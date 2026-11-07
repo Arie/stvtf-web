@@ -22,6 +22,8 @@ pub(crate) struct Room {
     pub(crate) id: String,
     pub(crate) hub: SharedHub,
     people: Mutex<People>,
+    /// The number of the admin who set the view last by choosing it.
+    leader: Mutex<Option<u32>>,
     recording: Arc<Recording>,
     state: Mutex<State>,
     wake: Condvar,
@@ -64,13 +66,27 @@ pub(crate) enum View {
     Admin { cx: f64, cy: f64, w: f64, h: f64, rot: f64 },
 }
 
-/// A piece of a telestrator stroke, in map coordinates.
+/// A view as an admin sends it: `take` when they chose it, and so lead from now on; otherwise
+/// it is their camera moving, which counts only while they lead.
+#[derive(Debug, Deserialize)]
+pub(crate) struct ViewPost {
+    #[serde(flatten)]
+    pub(crate) view: View,
+    #[serde(default)]
+    pub(crate) take: bool,
+}
+
+/// A piece of a telestrator stroke: points in map coordinates, each with when it was drawn, in
+/// milliseconds into the stroke, so pages draw it as it was drawn.
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Draw {
     pub(crate) stroke: u32,
-    pub(crate) points: Vec<[f64; 2]>,
+    pub(crate) points: Vec<[f64; 3]>,
 }
+
+/// The longest a stroke's points can say it took, in milliseconds.
+const MAX_STROKE_MS: f64 = 600_000.0;
 
 /// A page in the room, by its guest cookie if it is listed, until dropped.
 pub(crate) struct Watching(Arc<Room>, Option<String>);
@@ -94,6 +110,7 @@ impl Room {
             id,
             hub: SharedHub::default(),
             people: Mutex::new(People::new(owner)),
+            leader: Mutex::new(None),
             recording,
             state: Mutex::new(State { paused: false, speed: 1.0, at: 0, seek: None, stop: false }),
             wake: Condvar::new(),
@@ -157,8 +174,8 @@ impl Room {
         if d.points.is_empty() || d.points.len() > MAX_POINTS {
             bail!("1 to {MAX_POINTS} points");
         }
-        if !d.points.iter().flatten().all(|v| v.is_finite() && v.abs() < 1e6) {
-            bail!("points must be on a map");
+        if !d.points.iter().all(|&[x, y, t]| [x, y].iter().all(|v| v.is_finite() && v.abs() < 1e6) && (0.0..=MAX_STROKE_MS).contains(&t)) {
+            bail!("points must be on a map, in a stroke's time");
         }
         let mut line = serde_json::to_value(d)?;
         line["type"] = "draw".into();
@@ -168,15 +185,24 @@ impl Room {
     }
 
     /// Admin `guest` sets how everyone sees the map.
-    pub(crate) fn set_view(&self, view: &View, guest: &str) -> Result<()> {
+    pub(crate) fn set_view(&self, post: &ViewPost, guest: &str) -> Result<()> {
+        let view = &post.view;
         if let View::Admin { cx, cy, w, h, rot } = *view
             && !([cx, cy, w, h, rot].iter().all(|v| v.is_finite() && v.abs() < 1e6) && w > 0.0 && h > 0.0)
         {
             bail!("a view must be on a map");
         }
+        let by = lock(&self.people).id(guest);
+        let mut leader = lock(&self.leader);
+        if post.take {
+            *leader = Some(by);
+        } else if *leader != Some(by) {
+            // Sent before someone else took over: it no longer stands.
+            return Ok(());
+        }
         let mut line = serde_json::to_value(view)?;
         line["type"] = "view".into();
-        line["by"] = lock(&self.people).id(guest).into();
+        line["by"] = by.into();
         announce(&self.hub, "view", &line.to_string().into());
         Ok(())
     }
@@ -396,12 +422,13 @@ mod tests {
     fn strokes_reach_every_page_and_stay_on_the_map() {
         let r = room(1);
         let page = subscribe(&r.hub, false);
-        r.draw(&Draw { stroke: 7, points: vec![[1.0, 2.0], [3.5, -4.0]] }, "me").unwrap();
+        r.draw(&Draw { stroke: 7, points: vec![[1.0, 2.0, 0.0], [3.5, -4.0, 16.0]] }, "me").unwrap();
         let line = page.try_iter().find(|l| l.contains(r#""type":"draw""#)).unwrap();
-        assert_eq!(&*line, r#"{"by":1,"points":[[1.0,2.0],[3.5,-4.0]],"stroke":7,"type":"draw"}"#);
+        assert_eq!(&*line, r#"{"by":1,"points":[[1.0,2.0,0.0],[3.5,-4.0,16.0]],"stroke":7,"type":"draw"}"#);
         assert!(r.draw(&Draw { stroke: 7, points: vec![] }, "me").is_err());
-        assert!(r.draw(&Draw { stroke: 7, points: vec![[1e9, 0.0]] }, "me").is_err());
-        assert!(r.draw(&Draw { stroke: 7, points: vec![[0.0, 0.0]; 257] }, "me").is_err());
+        assert!(r.draw(&Draw { stroke: 7, points: vec![[1e9, 0.0, 0.0]] }, "me").is_err());
+        assert!(r.draw(&Draw { stroke: 7, points: vec![[0.0, 0.0, -1.0]] }, "me").is_err());
+        assert!(r.draw(&Draw { stroke: 7, points: vec![[0.0, 0.0, 0.0]; 257] }, "me").is_err());
         r.stop();
     }
 
@@ -423,11 +450,26 @@ mod tests {
     #[test]
     fn the_view_reaches_pages_that_join_later() {
         let r = room(1);
-        r.set_view(&View::Follow { player: 4 }, "me").unwrap();
+        r.set_view(&ViewPost { view: View::Follow { player: 4 }, take: true }, "me").unwrap();
         let later: Vec<_> = subscribe(&r.hub, false).try_iter().filter(|l| l.contains(r#""type":"view""#)).collect();
         assert_eq!(&*later[0], r#"{"by":1,"mode":"follow","player":4,"type":"view"}"#);
         let flat = View::Admin { cx: 0.0, cy: 0.0, w: 0.0, h: 10.0, rot: 0.0 };
-        assert!(r.set_view(&flat, "me").is_err());
+        assert!(r.set_view(&ViewPost { view: flat, take: true }, "me").is_err());
+        r.stop();
+    }
+
+    #[test]
+    fn a_camera_moving_after_someone_else_took_the_view_over_is_refused() {
+        let r = room(1);
+        let mine = |x: f64| View::Admin { cx: x, cy: 0.0, w: 10.0, h: 10.0, rot: 0.0 };
+        r.set_view(&ViewPost { view: View::Auto, take: false }, "me").unwrap();
+        assert!(subscribe(&r.hub, false).try_iter().all(|l| !l.contains(r#""type":"view""#)), "nobody took it yet");
+        r.set_view(&ViewPost { view: mine(1.0), take: true }, "me").unwrap();
+        r.set_view(&ViewPost { view: mine(2.0), take: false }, "me").unwrap();
+        r.set_view(&ViewPost { view: View::Free, take: true }, "you").unwrap();
+        r.set_view(&ViewPost { view: mine(3.0), take: false }, "me").unwrap();
+        let latest = subscribe(&r.hub, false).try_iter().find(|l| l.contains(r#""type":"view""#)).unwrap();
+        assert_eq!(&*latest, r#"{"by":2,"mode":"free","type":"view"}"#);
         r.stop();
     }
 

@@ -289,17 +289,17 @@ test("stream messages lose invisible characters but keep emoji joiners", () => {
 });
 
 test("a stroke drawn here shows at once and its echo from the room is not drawn twice", () => {
-  drawOwn({ stroke: 1, points: [[0, 0]] });
-  drawOwn({ stroke: 1, points: [[5, 5]] });
+  drawOwn({ stroke: 1, points: [[0, 0, 0]] });
+  drawOwn({ stroke: 1, points: [[5, 5, 16]] });
   onDraw({
     type: "draw",
     stroke: 1,
     points: [
-      [0, 0],
-      [5, 5],
+      [0, 0, 0],
+      [5, 5, 16],
     ],
   });
   assert.equal(pointsOf(1), 2);
-  onDraw({ type: "draw", stroke: 2, points: [[1, 1]] });
+  onDraw({ type: "draw", stroke: 2, points: [[1, 1, 0]] });
   assert.equal(pointsOf(2), 1, "someone else's stroke");
 });

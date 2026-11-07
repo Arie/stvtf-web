@@ -13,7 +13,12 @@ const EDGE = "#0b0c0e";
 /** @param {number} by */
 export const inkOf = by => INKS[(Math.max(1, by) - 1) % INKS.length];
 
-/** @type {Map<number, { points: [number, number][]; last: number; ink: string }>} */
+// Others' strokes show this far behind, so their points come in time to be drawn at the pace
+// they were drawn instead of in jumps as each piece arrives.
+const BEHIND_MS = 100;
+
+// A stroke's points ([x, y, ms into the stroke]), and when its start shows here.
+/** @type {Map<number, { points: [number, number, number][]; start: number; ink: string }>} */
 const strokes = new Map();
 // Strokes drawn on this page: shown as drawn, and their echo from the room skipped.
 /** @type {Set<number>} */
@@ -21,20 +26,20 @@ const mine = new Set();
 
 /** @param {DrawLine} m */
 export function onDraw(m) {
-  if (!mine.has(m.stroke)) addPoints(m);
+  if (!mine.has(m.stroke)) addPoints(m, BEHIND_MS);
 }
 
-/** @param {{ stroke: number; points: [number, number][]; by?: number }} m */
+/** @param {{ stroke: number; points: [number, number, number][]; by?: number }} m */
 export function drawOwn(m) {
   mine.add(m.stroke);
-  addPoints(m);
+  addPoints(m, 0);
 }
 
-/** @param {{ stroke: number; points: [number, number][]; by?: number }} m */
-function addPoints(m) {
-  const s = strokes.get(m.stroke) ?? { points: [], last: 0, ink: inkOf(m.by ?? 1) };
+/** @param {{ stroke: number; points: [number, number, number][]; by?: number }} m @param {number} behind */
+function addPoints(m, behind) {
+  const first = m.points[0]?.[2] ?? 0;
+  const s = strokes.get(m.stroke) ?? { points: [], start: performance.now() + behind - first, ink: inkOf(m.by ?? 1) };
   s.points.push(...m.points);
-  s.last = performance.now();
   strokes.set(m.stroke, s);
 }
 
@@ -44,21 +49,24 @@ export function drawStrokes(now = performance.now()) {
   ctx.save();
   ctx.lineCap = ctx.lineJoin = "round";
   for (const [id, s] of strokes) {
-    const age = now - s.last;
-    if (age > HOLD_MS + FADE_MS) {
+    // Drawn up to now; it fades from when its last point showed.
+    const shown = s.points.filter(p => s.start + p[2] <= now);
+    if (!shown.length) continue;
+    const age = now - (s.start + shown[shown.length - 1][2]);
+    if (age > HOLD_MS + FADE_MS && shown.length === s.points.length) {
       strokes.delete(id);
       mine.delete(id);
       continue;
     }
-    ctx.globalAlpha = Math.min(1, 1 - (age - HOLD_MS) / FADE_MS);
+    ctx.globalAlpha = Math.max(0, Math.min(1, 1 - (age - HOLD_MS) / FADE_MS));
     ctx.beginPath();
-    for (const [i, [x, y]] of s.points.entries()) {
+    for (const [i, [x, y]] of shown.entries()) {
       const [sx, sy] = toScreen(x, y);
       if (i) ctx.lineTo(sx, sy);
       else ctx.moveTo(sx, sy);
     }
     // A lone point is a dot.
-    if (s.points.length === 1) ctx.lineTo(...toScreen(...s.points[0]));
+    if (shown.length === 1) ctx.lineTo(...toScreen(shown[0][0], shown[0][1]));
     ctx.strokeStyle = EDGE;
     ctx.lineWidth = w + 3;
     ctx.stroke();

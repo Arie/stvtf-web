@@ -255,3 +255,32 @@ test("an admin has everyone follow the player they follow", async () => {
   await viewer.page.close();
   await page.close();
 });
+
+test("another admin taking the view over keeps it", async () => {
+  const { page, errors } = await open();
+  await page.goto(base);
+  await page.click("#roomopen");
+  await page.waitForURL(/\/r\/[0-9a-f]{32}\/$/, { timeout: WAIT });
+  const other = await open();
+  await other.page.goto(page.url());
+  await until(page, () => document.querySelectorAll("#peoplelist button").length === 1);
+  await page.click("#peoplelist button");
+  await until(other.page, () => !(/** @type {HTMLSelectElement} */ (document.getElementById("rb-view")).disabled));
+  await page.selectOption("#rb-view", "admin");
+  await until(other.page, () => document.getElementById("rb-view").value === "admin");
+  // Slow requests, as in a browser whose connections are busy: the leading admin's camera moves
+  // still arrive after the other one took over.
+  await page.route("**/view", r => setTimeout(() => r.continue(), 300));
+  await page.mouse.move(400, 300);
+  await page.mouse.down();
+  const panning = page.mouse.move(700, 450, { steps: 60 });
+  await page.waitForTimeout(150);
+  await other.page.selectOption("#rb-view", "free");
+  await panning;
+  await page.mouse.up();
+  await page.waitForTimeout(1000);
+  for (const p of [page, other.page]) assert.equal(await p.$eval("#rb-view", el => el.value), "free");
+  assert.deepEqual([...errors, ...other.errors], []);
+  await other.page.close();
+  await page.close();
+});

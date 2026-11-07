@@ -10,7 +10,7 @@ import { focusOf, screenOffset, viewArea } from "./view.js";
 
 const SPEEDS = [0.25, 0.5, 1, 2, 4];
 // How often a stroke being drawn is sent, in milliseconds, and the closest its points are, in pixels.
-const SEND_MS = 50,
+const SEND_MS = 30,
   MIN_STEP_PX = 3;
 // How far the arrow keys jump, in milliseconds.
 const STEP_MS = 5000;
@@ -173,7 +173,7 @@ function roomBar() {
 // The pen: while on, dragging on the map draws (in map coordinates) instead of moving the view.
 /** @param {HTMLButtonElement} pen */
 function drawing(pen) {
-  /** @type {{ id: number; points: [number, number][]; last: [number, number] | null } | null} */
+  /** @type {{ id: number; points: [number, number, number][]; last: [number, number] | null; began: number } | null} */
   let stroke = null;
   /** @type {Promise<unknown>} */
   let sent = Promise.resolve();
@@ -197,8 +197,12 @@ function drawing(pen) {
     if (stroke.last && Math.hypot(x - stroke.last[0], y - stroke.last[1]) < MIN_STEP_PX) return;
     stroke.last = [x, y];
     const [dx, dy] = screenOffset(x - r.width / 2, y - r.height / 2, state.view.scale);
-    /** @type {[number, number]} */
-    const point = [Math.round(state.view.cx + dx), Math.round(state.view.cy + dy)];
+    /** @type {[number, number, number]} */
+    const point = [
+      Math.round(state.view.cx + dx),
+      Math.round(state.view.cy + dy),
+      Math.round(performance.now() - stroke.began),
+    ];
     stroke.points.push(point);
     drawOwn({ stroke: stroke.id, points: [point], by: me.id });
   };
@@ -210,7 +214,7 @@ function drawing(pen) {
       e.preventDefault();
       e.stopImmediatePropagation();
       canvas.setPointerCapture(e.pointerId);
-      stroke = { id: Math.floor(Math.random() * 2 ** 31), points: [], last: null };
+      stroke = { id: Math.floor(Math.random() * 2 ** 31), points: [], last: null, began: performance.now() };
       add(e);
     },
     { capture: true },
@@ -328,12 +332,16 @@ function roomView() {
   if (OVERLAY) streamParams.set("overlay", "1");
   const choose = /** @type {HTMLSelectElement} */ ($("rb-view"));
   let sent = "";
-  /** @param {object | null} v */
-  const send = v => {
+  /** @type {Promise<unknown>} */
+  let queue = Promise.resolve();
+  // `take`: chosen, so this admin leads from now on; otherwise their camera moved, which the
+  // room takes only while they lead. One at a time, in order.
+  /** @param {object | null} v @param {boolean} take */
+  const send = (v, take) => {
     const body = JSON.stringify(v);
-    if (!v || body === sent) return;
+    if (!v || (!take && body === sent)) return;
     sent = body;
-    post("view", v);
+    queue = queue.then(() => post("view", { ...v, take })).catch(() => {});
   };
   viewListeners.add(m => {
     view = m;
@@ -345,8 +353,8 @@ function roomView() {
   choose.onchange = () => {
     const v = viewOf(choose.value);
     choose.title = v ? "How everyone sees the map" : "Follow a player first, then pick this";
-    if (v) send(v);
+    if (v) send(v, true);
     else choose.value = view.mode;
   };
-  setInterval(() => leading() && send(viewOf(view.mode)), VIEW_MS);
+  setInterval(() => leading() && send(viewOf(view.mode), false), VIEW_MS);
 }
