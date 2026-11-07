@@ -438,3 +438,34 @@ test("an admin clicking an event's time watches from just before it", async () =
   assert.deepEqual(errors, []);
   await page.close();
 });
+
+test("a viewer of a match page goes back on their own, and returns", async () => {
+  const { page, errors } = await open();
+  /** @type {string[]} */
+  const streams = [];
+  page.on("request", r => r.url().includes("/events") && streams.push(new URL(r.url()).pathname));
+  await page.goto(base);
+  await until(
+    page,
+    () => !document.getElementById("roombar").hidden && document.getElementById("rb-clock").textContent,
+  );
+  assert.equal(await page.$eval("#rb-pen", el => getComputedStyle(el).display), "none", "no room controls");
+  const box = await page.$eval("#rb-track", e => {
+    const r = e.getBoundingClientRect();
+    return [r.x, r.y, r.width];
+  });
+  await page.mouse.click(box[0] + box[2] * 0.1, box[1] + 20);
+  await until(
+    page,
+    () => document.getElementById("rb-live").textContent === "Back" && !document.getElementById("rb-live").hidden,
+  );
+  assert.ok(
+    streams.some(s => s.startsWith("/r/")),
+    streams.join(" "),
+  );
+  await page.click("#rb-live");
+  await until(page, () => document.getElementById("rb-live").hidden);
+  assert.equal(streams.at(-1), "/w/demo/events", "back on the shared stream");
+  assert.deepEqual(errors, []);
+  await page.close();
+});

@@ -6,7 +6,7 @@ use crate::{App, is_name, lock};
 use std::net::TcpStream;
 
 /// The page's stylesheet and modules, served at `/app/<version>/`: `main.js` imports the rest.
-pub(super) const APP: [(&str, &str, &[u8]); 31] = [
+pub(super) const APP: [(&str, &str, &[u8]); 32] = [
     ("style.css", CSS, include_bytes!("../../app/style.css")),
     ("env.js", JS, include_bytes!("../../app/env.js")),
     ("core.js", JS, include_bytes!("../../app/core.js")),
@@ -24,6 +24,7 @@ pub(super) const APP: [(&str, &str, &[u8]); 31] = [
     ("flags.js", JS, include_bytes!("../../app/flags.js")),
     ("objectives.js", JS, include_bytes!("../../app/objectives.js")),
     ("buildings.js", JS, include_bytes!("../../app/buildings.js")),
+    ("playbar.js", JS, include_bytes!("../../app/playbar.js")),
     ("room.js", JS, include_bytes!("../../app/room.js")),
     ("roomview.js", JS, include_bytes!("../../app/roomview.js")),
     ("telestrator.js", JS, include_bytes!("../../app/telestrator.js")),

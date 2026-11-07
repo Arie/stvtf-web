@@ -32,7 +32,7 @@ const SNAPS_KEPT = 60;
 
 // ---------- incoming stream
 // Next to the page, so a match at /w/<id>/ (and its /w/<id>/overlay) reads its own events.
-const EVENTS_URL = asset(PAGE.replace(/(overlay\/?|index\.html)?$/, "") + "events");
+export const EVENTS_URL = asset(PAGE.replace(/(overlay\/?|index\.html)?$/, "") + "events");
 // With a delay, everything from the stream is handled that much later, in the order it came
 // (timers with the same delay run in order): map changes and the feed so far as well as snapshots.
 /** @param {() => void} fn */
@@ -44,9 +44,13 @@ let opened = false;
 export const streamParams = new URLSearchParams();
 /** @type {EventSource | null} */
 let es = null;
-export function openStream() {
+let eventsUrl = EVENTS_URL;
+// Opens the page's stream, or with `from`, switches it there (a viewer's own playback, and back).
+/** @param {string} [from] */
+export function openStream(from) {
   es?.close();
-  const url = new URL(EVENTS_URL);
+  if (from) eventsUrl = from;
+  const url = new URL(eventsUrl);
   if (detailNeeded()) url.searchParams.set("detail", "1");
   for (const [k, v] of streamParams) url.searchParams.set(k, v);
   const s = (es = new EventSource(url));

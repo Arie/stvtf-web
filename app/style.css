@@ -232,6 +232,8 @@ aside h3 { margin: 0 0 6px; font-size: 11px; text-transform: uppercase; letter-s
 .stvtf.room #autozoom { bottom: 110px; }
 #rb-clock { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .stvtf.room #follow { bottom: 70px; }
+/* A match page's own timeline: playback only, no room controls. */
+.stvtf.watch #rb-pen, .stvtf.watch #rb-view, .stvtf.watch #rb-lead { display: none; }
 #bgtoggle { position: absolute; right: 12px; bottom: 12px; z-index: 3; display: flex; padding: 2px; border-radius: 6px; background: #0b0c0ee6; }
 #bgtoggle button { padding: 4px 10px; border-radius: 4px; background: transparent; color: var(--dim); font-size: 12px; }
 #bgtoggle button.on { background: #ffffff1f; color: #fff; }

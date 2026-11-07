@@ -1,28 +1,21 @@
 // A room (/r/<id>/): its playback bar, which its owner drives and everyone else watches; and
 // on a match's own page, the button that opens a room on it.
-import { $, OVERLAY, PAGE, canvas, msPerTick, state } from "./core.js";
+import { $, OVERLAY, PAGE, canvas, setClockRate, state } from "./core.js";
+import { EMBEDDED } from "./embed.js";
+import { playbar } from "./playbar.js";
 import { env } from "./env.js";
 import { setAutoZoom, setFollow } from "./input.js";
-import { peopleListeners, playbackListeners, streamParams, viewListeners } from "./stream.js";
+import { EVENTS_URL, openStream, peopleListeners, playbackListeners, streamParams, viewListeners } from "./stream.js";
 import { drawOwn, inkOf, setInks } from "./telestrator.js";
-import { timeline } from "./timeline.js";
 import { pushMirror } from "./camera.js";
-import { RoomView, atTick, latestView, morePoints, sender } from "./roomview.js";
+import { RoomView, latestView, morePoints, sender } from "./roomview.js";
 import { focusOf, screenOffset, viewArea } from "./view.js";
 /** @typedef {import("../types/stream").PlaybackLine} PlaybackLine */
 
-const SPEEDS = [0.25, 0.5, 1, 2, 4];
 // The closest a stroke's points are, in pixels.
 const MIN_STEP_PX = 3;
-// A local jump is confirmed by playback within JUMP_MS of it, or dropped after JUMP_WAIT_MS.
-const JUMP_MS = 1500,
-  JUMP_WAIT_MS = 3000;
-// A jump to an event in the feed or chat lands this long before it, in milliseconds.
-const LEAD_MS = 2000;
-// Playback this close to a live match's end is at live, in milliseconds.
-const LIVE_MS = 2500;
-// How far the arrow keys jump, in milliseconds.
-const STEP_MS = 5000;
+// How often a match page looks where its shared playback is, in milliseconds.
+const SHARED_MS = 1000;
 export const IN_ROOM = /\/r\/[0-9a-f]{32}\/$/.test(PAGE.replace(/overlay\/?$/, ""));
 // The room's or match's own address, which its routes are under.
 const HOME = new URL(PAGE.replace(/(overlay\/?|index\.html)?$/, ""), env.base);
@@ -43,21 +36,17 @@ const post = (path, body) =>
     body: JSON.stringify(body),
   });
 
-/** @param {number} ms */
-export function clock(ms) {
-  const s = Math.floor(ms / 1000),
-    pad = (/** @type {number} */ n) => String(n).padStart(2, "0");
-  if (s < 3600) return `${Math.floor(s / 60)}:${pad(s % 60)}`;
-  return `${Math.floor(s / 3600)}:${pad(Math.floor(s / 60) % 60)}:${pad(s % 60)}`;
-}
-
-// The playback bar in a room, the Room button elsewhere; neither on the overlay or another site.
+// The playback bar in a room, the Room button and a viewer's own timeline on a match's page;
+// neither on the overlay or another site.
 export function initRoom() {
   if (env.component) return;
   if (IN_ROOM) roomView();
   if (OVERLAY) return;
   if (IN_ROOM) roomBar();
-  else roomButton();
+  else {
+    roomButton();
+    if (!EMBEDDED) watchBar();
+  }
 }
 
 // Offered once the match has a recording to play (a demo); a demo still being fetched asks again.
@@ -89,69 +78,18 @@ function roomButton() {
 
 function roomBar() {
   env.el.classList.add("room");
-  const bar = $("roombar"),
-    play = /** @type {HTMLButtonElement} */ ($("rb-play")),
-    time = /** @type {HTMLInputElement} */ ($("rb-time")),
-    speed = /** @type {HTMLSelectElement} */ ($("rb-speed")),
-    shown = $("rb-clock"),
-    live = /** @type {HTMLButtonElement} */ ($("rb-live")),
-    pen = /** @type {HTMLButtonElement} */ ($("rb-pen")),
-    track = $("rb-track");
-  bar.hidden = false;
-  speed.replaceChildren(...SPEEDS.map(s => new Option(`${s}×`, String(s))));
-  /** @type {PlaybackLine | null} */
-  let last = null;
-  let heard = 0,
-    dragging = false,
-    admin = false;
-  // Where playback is, and how long the recording is, by now: a live match's grows as it goes.
-  // Between two playback lines, a second apart: no further, when a match sends little.
-  const length = () => (last ? last.length + (last.live ? Math.min(performance.now() - heard, LIVE_MS / 2) : 0) : 0);
-  // A jump made here, shown until the room confirms it.
-  /** @type {{ at: number; since: number } | null} */
-  let jumped = null;
-  const at = () => {
-    if (!last) return 0;
-    const from = jumped ?? { at: last.at, since: heard };
-    const ran = last.paused ? 0 : (performance.now() - from.since) * last.speed;
-    return Math.min(length(), from.at + ran);
-  };
-  /** @param {{ paused?: boolean; speed?: number; seek?: number }} c */
-  const control = c => {
-    if (c.seek != null) jumped = { at: c.seek, since: performance.now() };
-    return post("control", c);
-  };
-  const show = () => {
-    if (!last) return;
-    time.max = String(length());
-    if (!dragging) time.value = String(at());
-    track.style.setProperty("--played", `${(100 * Number(time.value)) / Math.max(1, length())}%`);
-    shown.textContent = `${clock(dragging ? Number(time.value) : at())} / ${clock(length())}`;
-    // At live: within a couple of seconds of its end, and playing.
-    live.hidden = !last.live;
-    live.classList.toggle("at", !last.paused && length() - at() < LIVE_MS);
-  };
-  playbackListeners.add(m => {
-    [last, heard] = [m, performance.now()];
-    if (jumped && (Math.abs(m.at - jumped.at) < JUMP_MS || heard - jumped.since > JUMP_WAIT_MS)) jumped = null;
-    play.textContent = m.paused ? "▶" : "⏸";
-    play.title = m.paused ? "Play (space)" : "Pause (space)";
-    speed.value = String(m.speed);
-    time.max = String(m.length);
-    marks.heard(m);
-    show();
-  });
-  setInterval(show, 250);
-  const marks = timeline({ track, home: HOME, clock, length, jump: null });
+  const pen = /** @type {HTMLButtonElement} */ ($("rb-pen"));
+  const control = (/** @type {import("./playbar.js").Control} */ c) => post("control", c);
+  const bar = playbar({ home: HOME, send: control, live: end => control({ seek: end, paused: false }) });
+  playbackListeners.add(m => bar.heard(m));
   /** @param {boolean} on */
   const allow = on => {
-    admin = me.admin = on;
-    for (const c of [play, time, speed, pen, live, $("rb-view")]) /** @type {HTMLButtonElement} */ (c).disabled = !on;
-    bar.title = on ? "" : "The room's admins control playback";
+    me.admin = on;
+    bar.allow(on);
+    for (const c of [pen, $("rb-view")]) /** @type {HTMLButtonElement} */ (c).disabled = !on;
+    $("roombar").title = on ? "" : "The room's admins control playback";
     if (!on && pen.classList.contains("on")) pen.click();
     if (on) $("claim").hidden = true;
-    env.el.classList.toggle("seekable", on);
-    marks.allow(on ? ms => control({ seek: ms }) : null);
     setViewAdmin(on);
   };
   allow(false);
@@ -167,53 +105,77 @@ function roomBar() {
       () => {},
     );
   const showPeople = people(allow);
-  play.onclick = () => last && control({ paused: !last.paused });
-  live.onclick = () => control({ seek: Math.round(length()), paused: false });
-  speed.onchange = () => control({ speed: Number(speed.value) });
-  time.oninput = () => {
-    dragging = true;
-    show();
-  };
-  time.onchange = () => {
-    dragging = false;
-    control({ seek: Math.round(Number(time.value)) });
-  };
   drawing(pen);
-  shortcuts(() => (admin ? last : null), control, at, pen);
-  timesJump(() => admin, control, at);
-}
-
-// An admin clicking an event's or a chat line's time watches from a little before it.
-/** @param {() => boolean} admin @param {(c: { seek: number }) => void} control @param {() => number} at */
-function timesJump(admin, control, at) {
-  for (const id of ["feed", "chat"])
-    $(id).addEventListener("click", e => {
-      const time = /** @type {HTMLElement | null} */ (/** @type {Element} */ (e.target).closest?.("time[data-tick]"));
-      if (!admin() || !time) return;
-      const when = atTick(Number(time.dataset.tick), { at: at(), now: state.lastTick }, msPerTick);
-      control({ seek: Math.max(0, when - LEAD_MS) });
-    });
-}
-
-// Space pauses, d takes the pen, the arrow keys jump: an admin's, while playback is known.
-/**
- * @param {() => PlaybackLine | null} playing @param {(c: { paused?: boolean; seek?: number }) => void} control
- * @param {() => number} at @param {HTMLButtonElement} pen
- */
-function shortcuts(playing, control, at, pen) {
+  // d takes the pen.
   env.keys.addEventListener("keydown", e => {
-    const last = playing();
     const target = /** @type {Element} */ (e.composedPath()[0]);
-    if (!last || e.ctrlKey || e.metaKey || e.altKey || target.closest?.("input:not([type=range]), select, textarea"))
+    if (e.key !== "d" || !me.admin || e.ctrlKey || e.metaKey || e.altKey || target.closest?.("input, select, textarea"))
       return;
-    // Space on a focused button presses that button instead.
-    if (e.key === " " && !target.closest?.("button")) control({ paused: !last.paused });
-    else if (e.key === "d") pen.click();
-    else if (e.key === "ArrowLeft") control({ seek: Math.max(0, Math.round(at() - STEP_MS)) });
-    else if (e.key === "ArrowRight") control({ seek: Math.round(at() + STEP_MS) });
-    else return;
+    pen.click();
     e.preventDefault();
   });
+}
+
+// A match page's timeline: by default the shared playback (live, for a live match); moving it,
+// pausing or a speed gives this viewer a playback of their own, which Live (or Back) leaves.
+function watchBar() {
+  env.el.classList.add("room", "watch");
+  /** @type {URL | null} */
+  let own = null;
+  /** @type {Promise<unknown> | null} */
+  let starting = null;
+  const back = () => {
+    own = null;
+    setClockRate(1);
+    openStream(EVENTS_URL);
+    shared();
+  };
+  /** @param {import("./playbar.js").Control} c */
+  const send = async c => {
+    if (starting) await starting;
+    if (own)
+      return fetch(new URL("control", own), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(c),
+      });
+    const now = bar.state();
+    const body = { at: c.seek ?? Math.round(bar.at()), speed: c.speed ?? now.speed, paused: c.paused ?? now.paused };
+    starting = fetch(new URL("rewind", HOME), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    })
+      .then(r => (r.ok ? r.json() : null))
+      .then(r => {
+        if (!r) return;
+        own = new URL(r.page, location.origin);
+        openStream(new URL("events?overlay=1", own).href);
+      })
+      .catch(() => {})
+      .finally(() => (starting = null));
+    return starting;
+  };
+  const bar = playbar({
+    home: HOME,
+    send,
+    live: back,
+    // Live for a live match; on a demo, back to the shared playback from one's own.
+    liveLabel: p => (p.live ? "● Live" : own && "Back"),
+  });
+  bar.allow(true);
+  playbackListeners.add(m => own && bar.heard(m));
+  // Where the shared playback is, while this viewer watches along.
+  const shared = () =>
+    !own &&
+    fetch(new URL("timeline", HOME))
+      .then(r => (r.status === 200 ? r.json() : null))
+      .then(
+        t => t && !own && bar.heard({ type: "playback", paused: false, speed: 1, ...t }),
+        () => {},
+      );
+  shared();
+  setInterval(shared, SHARED_MS);
 }
 
 // The pen: while on, dragging on the map draws (in map coordinates) instead of moving the view.

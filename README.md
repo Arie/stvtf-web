@@ -158,6 +158,20 @@ stream of it (Twitch runs a few seconds behind SourceTV): `/w/<id>/5`, `/w/<id>/
 or `/5` and `/overlay/5` for a single server, up to 60. The page handles everything from the
 server that much later, so it also starts that much later; `o` keeps the delay.
 
+## Timeline
+
+A match's page (not the overlay, nor in an iframe) has a timeline along the bottom: the match so
+far with its rounds, ubers, drops and fights, a live match from when it was first watched. By
+default it follows what everyone sees, at live for a live match. Moving it, pausing or another
+speed gives that viewer a playback of their own from there (a private room: not listed, not saved,
+at most 200 at once, outside `--max-matches`); ● Live, or Back on a demo, returns to the shared one.
+
+| route | |
+|---|---|
+| `GET /w/<id>/timeline` | `{"at", "length", "live", "rounds", "marks"}`: where the shared playback is, the length and rounds so far, how many marks; `202 {}` while a demo is still being read |
+| `GET /w/<id>/marks?from=N` | `{"marks", "all"}`: the timeline's marks from the Nth on |
+| `POST /w/<id>/rewind` | `{"at", "speed", "paused"}`: a playback of the viewer's own from `at`, as `{"page": "/r/<id>/"}`; its events at `events?overlay=1` and controls at `control`, as a room's owner |
+
 ## Rooms
 
 A room is a match watched together under control: the Room button on a match's page (live, a
@@ -194,18 +208,18 @@ admin in any room.
 
 A room keeps the match in memory in 10-second chunks, each starting from the state a page joins
 with, so a jump replays at most one chunk. Rooms on the same match share it. A live match is
-recorded from when its first room opened, for as long as a room plays it (the room counts as one
-of the match's viewers): a room starts at live, the ● Live button goes back there, and playback
-waits at live rather than going past it; a room opened later can go back to when the first one
-opened. A room counts towards `--max-matches` and ends a minute after its last viewer left.
+recorded from when it is first watched: a room on it starts at live and can go back to the start,
+the ● Live button goes back to live, and playback waits there rather than going past it (the room
+counts as one of the match's viewers). A room counts towards `--max-matches` and ends a minute
+after its last viewer left.
 
 With `--sessions DIR` each room is saved there too, once a second (sealed like the matches; a
 demos.tf demo's output beside the rooms on it, as `demo-<number>.gz`), and the process that
 replaces this one picks it up when its pages reconnect: where it was, paused or not, at the
 same speed, with the same people, admins and view. A live match's recording goes there too, as
-`live-<match>.gz` (each 10-second chunk added as it closes), so its rooms pick up with it and
-go on recording: only the last few seconds before the restart are missing. The file goes with
-the last room on the match. A saved room nobody comes back to within an
+`live-<match>.gz` (each 10-second chunk added as it closes), so the match picks up with it and
+goes on recording: only the last few seconds before the restart are missing. The file goes when
+the match ends. A saved room nobody comes back to within an
 hour is dropped.
 
 | route | |
