@@ -63,8 +63,14 @@ pub(crate) enum View {
     Free,
     /// Everyone on auto zoom.
     Auto,
-    /// Everyone following one player.
-    Follow { player: u16 },
+    /// Everyone following one player, seeing as much of the map round them as the admin: `w` by `h`.
+    Follow {
+        player: u16,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        w: Option<f64>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        h: Option<f64>,
+    },
     /// Everyone seeing what the admin sees: the map area `w` by `h` round `cx`, `cy`, turned by `rot`.
     Admin { cx: f64, cy: f64, w: f64, h: f64, rot: f64 },
 }
@@ -260,9 +266,14 @@ impl Room {
     /// Admin `guest` sets how everyone sees the map.
     pub(crate) fn set_view(&self, post: &ViewPost, guest: &str) -> Result<()> {
         let view = &post.view;
-        if let View::Admin { cx, cy, w, h, rot } = *view
-            && !([cx, cy, w, h, rot].iter().all(|v| v.is_finite() && v.abs() < 1e6) && w > 0.0 && h > 0.0)
-        {
+        let on_map = |vs: &[f64], w: f64, h: f64| vs.iter().all(|v| v.is_finite() && v.abs() < 1e6) && w > 0.0 && h > 0.0;
+        let fits = match *view {
+            View::Admin { cx, cy, w, h, rot } => on_map(&[cx, cy, w, h, rot], w, h),
+            View::Follow { w: Some(w), h: Some(h), .. } => on_map(&[w, h], w, h),
+            View::Follow { w: None, h: None, .. } | View::Free | View::Auto => true,
+            View::Follow { .. } => false,
+        };
+        if !fits {
             bail!("a view must be on a map");
         }
         if post.page.len() > MAX_PAGE {
@@ -495,9 +506,15 @@ mod tests {
     #[test]
     fn the_view_reaches_pages_that_join_later() {
         let r = room(1);
-        r.set_view(&ViewPost { view: View::Follow { player: 4 }, take: true, page: "a".into() }, "me").unwrap();
+        r.set_view(&ViewPost { view: View::Follow { player: 4, w: None, h: None }, take: true, page: "a".into() }, "me").unwrap();
         let later: Vec<_> = subscribe(&r.hub, false).try_iter().filter(|l| l.contains(r#""type":"view""#)).collect();
         assert_eq!(&*later[0], r#"{"by":1,"mode":"follow","page":"a","player":4,"type":"view"}"#);
+        let zoomed = View::Follow { player: 4, w: Some(3000.0), h: Some(2000.0) };
+        r.set_view(&ViewPost { view: zoomed, take: false, page: "a".into() }, "me").unwrap();
+        let later: Vec<_> = subscribe(&r.hub, false).try_iter().filter(|l| l.contains(r#""type":"view""#)).collect();
+        assert_eq!(&*later[0], r#"{"by":1,"h":2000.0,"mode":"follow","page":"a","player":4,"type":"view","w":3000.0}"#);
+        let half = View::Follow { player: 4, w: Some(3000.0), h: None };
+        assert!(r.set_view(&ViewPost { view: half, take: true, page: String::new() }, "me").is_err());
         let flat = View::Admin { cx: 0.0, cy: 0.0, w: 0.0, h: 10.0, rot: 0.0 };
         assert!(r.set_view(&ViewPost { view: flat, take: true, page: String::new() }, "me").is_err());
         r.stop();
