@@ -97,22 +97,23 @@ export function timeline(t) {
       placed = [];
       drawn = 0;
     }
-    const before = drawn;
+    const before = drawn,
+      all = joined(starts, marks, start);
     for (; drawn < marks.length; drawn++) {
       const m = marks[drawn],
-        e = m.at >= start ? make(m, starts, mark) : null;
+        e = m.at >= start ? make(m, all, mark) : null;
       if (e) lane.append(e);
     }
     // The rounds again when one starts or is won; the fight strip when there are new kills, or
     // every HEAT_MS as it stretches.
     const len = Math.max(start + 1, t.length()),
-      now = [starts.join(), drawn].join();
+      now = [all.join(), drawn].join();
     if (again || now !== laid) {
       laid = now;
       spanTo = len;
       span.style.setProperty("--from", String(start));
       span.style.setProperty("--len", String(len - start));
-      drawRounds(span, starts, marks);
+      drawRounds(span, all, marks);
     }
     if (again || drawn !== before || performance.now() - heated > HEAT_MS) {
       heated = performance.now();
@@ -160,6 +161,16 @@ function make(m, starts, mark) {
   return Object.assign(mark(el("rb-win"), m, `${what}${score && `,${score} (BLU–RED)`}`), {
     textContent: score.trim(),
   });
+}
+
+// The rounds' starts, and the timeline's start when it was in a round (one joined live) that has
+// been won before the first start.
+/** @param {number[]} starts @param {Mark[]} marks @param {number} start */
+function joined(starts, marks, start) {
+  const first = starts[0] ?? Infinity;
+  return first > start && marks.some(m => m.kind === "win" && m.at >= start && m.at < first)
+    ? [start, ...starts]
+    : starts;
 }
 
 // The rounds in their winner's colour; grey for a stalemate, none while unplayed.
