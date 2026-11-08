@@ -82,6 +82,11 @@ impl Hub {
         self.names.get(&id).map(|s| (s.name.as_str(), s.team))
     }
 
+    /// Seconds a server tick.
+    pub(crate) fn tick_interval(&self) -> f64 {
+        self.tick_interval.unwrap_or_else(default_tick_interval)
+    }
+
     /// The latest snapshot's tick: where a room that played up to here is.
     pub(crate) fn tick(&self) -> Option<u32> {
         self.tick

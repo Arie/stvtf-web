@@ -22,6 +22,8 @@ const IDLE_POLL: Duration = Duration::from_millis(250);
 const LIVE_POLL: Duration = Duration::from_millis(20);
 /// A relay that could not start is tried again after this long.
 const RELAY_RETRY: Duration = Duration::from_secs(5);
+/// A relay is told again when off by more than this (it jumps at a second).
+const RELAY_DRIFT: Duration = Duration::from_millis(250);
 
 pub(crate) struct Room {
     pub(crate) id: String,
@@ -43,6 +45,8 @@ pub(crate) struct Room {
     relay: Mutex<Option<RoomRelay>>,
     /// What its pages were last told of the relay.
     relay_said: Mutex<Option<String>>,
+    /// What its relay was last told.
+    relay_sent: Mutex<Option<stvtf::relay::Want>>,
     /// Its relay's port and password, for one started again.
     relay_was: Mutex<Option<Was>>,
     /// The last relay that could not start: when, and why, so it is tried again and logged at a
@@ -147,6 +151,20 @@ fn kept_line(marker: &[Kept]) -> Option<Arc<str>> {
     (!marker.is_empty()).then(|| serde_json::json!({ "type": "marker", "strokes": marker }).to_string().into())
 }
 
+/// Whether a relay told `sent` is where `now` is without being told again: same course, within
+/// [`RELAY_DRIFT`], on a server ticking every `interval` seconds.
+fn on_course(sent: &stvtf::relay::Want, now: &stvtf::relay::Want, interval: f64) -> bool {
+    let same = sent.demo == now.demo
+        && sent.paused == now.paused
+        // One of a few set values.
+        && sent.speed.to_bits() == now.speed.to_bits()
+        && sent.from_start == now.from_start
+        && sent.camera == now.camera;
+    let gone = if sent.paused { 0.0 } else { now.at.saturating_duration_since(sent.at).as_secs_f64() * sent.speed };
+    let expected = f64::from(sent.tick) + gone / interval.max(1e-3);
+    same && (f64::from(now.tick) - expected).abs() * interval <= RELAY_DRIFT.as_secs_f64()
+}
+
 /// What a room is, saved for the next process: where playback is, who is in it, and the view.
 #[derive(Debug, Serialize, Deserialize)]
 pub(crate) struct Saved {
@@ -232,6 +250,7 @@ impl Room {
             offer: OnceLock::new(),
             relay: Mutex::new(None),
             relay_said: Mutex::new(None),
+            relay_sent: Mutex::new(None),
             relay_was: Mutex::new(None),
             relay_failed: Mutex::new(None),
             camera: Mutex::new(None),
@@ -437,7 +456,7 @@ impl Room {
         }
         let Some(want) = self.want(&lock(&self.state), offer, true) else { return };
         let was = lock(&self.relay_was).clone();
-        match offer.relays.start(&self.id, want, was.as_ref()) {
+        match offer.relays.start(&self.id, want.clone(), was.as_ref()) {
             Ok(Some(r)) => {
                 *lock(&self.relay_failed) = None;
                 let mut relay = lock(&self.relay);
@@ -446,6 +465,7 @@ impl Room {
                     if let Some(was) = r.was() {
                         *lock(&self.relay_was) = Some(was);
                     }
+                    *lock(&self.relay_sent) = Some(want);
                     *relay = Some(r);
                 }
             }
@@ -477,14 +497,19 @@ impl Room {
         })
     }
 
-    /// Points the relay at where playback is.
+    /// Points the relay at where playback is, when it changed course: the relay plays on by itself.
     fn follow(&self, st: &State) {
         let Some(offer) = self.offer.get() else { return };
-        if let Some(r) = &*lock(&self.relay)
-            && let Some(want) = self.want(st, offer, false)
-        {
-            r.follow(want);
+        let interval = lock(&self.hub).tick_interval();
+        let relay = lock(&self.relay);
+        let Some(r) = &*relay else { return };
+        let Some(want) = self.want(st, offer, false) else { return };
+        let mut sent = lock(&self.relay_sent);
+        if sent.as_ref().is_some_and(|s| on_course(s, &want, interval)) {
+            return;
         }
+        r.follow(want.clone());
+        *sent = Some(want);
     }
 
     fn relay_clients(&self) -> usize {
@@ -509,6 +534,7 @@ impl Room {
         let stopped = lock(&self.relay).as_ref().is_some_and(RoomRelay::stopped);
         if stopped && let Some(r) = lock(&self.relay).take() {
             r.end();
+            *lock(&self.relay_sent) = None;
         }
         let missing = lock(&self.relay).is_none();
         if missing && lock(&self.people).listed() > 0 {
@@ -885,6 +911,25 @@ mod tests {
         r.control(&Control { paused: Some(false), ..Control::default() }).unwrap();
         until("the new map", || r.hub.lock().unwrap().map.as_deref() == Some("cp_two"));
         r.stop();
+    }
+
+    #[test]
+    fn a_relay_is_told_again_only_when_the_room_changes_course() {
+        use stvtf::relay::{Camera, Want};
+        let t0 = Instant::now();
+        let at = |ms: u64| t0 + Duration::from_millis(ms);
+        let sent = Want { demo: "a.dem".into(), tick: 1000, at: t0, paused: false, speed: 2.0, from_start: false, camera: None };
+        // A second on at 2x, 15 ms a tick: 133 ticks on.
+        let now = |tick, ms| Want { tick, at: at(ms), ..sent.clone() };
+        assert!(on_course(&sent, &now(1133, 1000), 0.015));
+        assert!(on_course(&sent, &now(1140, 1000), 0.015), "a snapshot off");
+        assert!(!on_course(&sent, &now(1000, 1000), 0.015), "held still (a live match waiting)");
+        assert!(!on_course(&sent, &now(5000, 1000), 0.015), "a seek");
+        assert!(!on_course(&sent, &Want { paused: true, ..now(1133, 1000) }, 0.015));
+        assert!(!on_course(&sent, &Want { camera: Some(Camera::Follow { player: 3 }), ..now(1133, 1000) }, 0.015));
+        assert!(!on_course(&sent, &Want { demo: "b.dem".into(), ..now(1133, 1000) }, 0.015));
+        let paused = Want { paused: true, ..sent.clone() };
+        assert!(on_course(&paused, &Want { at: at(5000), ..paused.clone() }, 0.015));
     }
 
     /// A paused room plays no snapshots: the tick its relay follows comes from where it went.

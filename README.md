@@ -84,7 +84,9 @@ client in a room stays connected through it, and the app picks its rooms' relays
 `/data/relay.sock` (`--relay-socket`). `bin/relays [REGION...]` restarts them at the version
 `bin/build` pushed (booting them the first time), only when the relays themselves changed: their
 TF2 clients drop then, and `retry` gets them back in: a room's relay starts again on its port
-with its password. A relay the app no longer asks about (a room gone with a process that
+with its password. The app never waits on the relay process: it tells a relay where its room is
+only when that changes course (seek, pause, speed, camera) or drifts by a quarter second, and
+leaves a relay process that does not answer alone for two seconds. A relay the app no longer asks about (a room gone with a process that
 crashed) stops after two minutes.
 
 `Dockerfile` builds that server, with the directory holding both repositories as context:

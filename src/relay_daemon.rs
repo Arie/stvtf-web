@@ -15,6 +15,9 @@
 //! A `want` is a [`stvtf::relay::Want`] with `age_ms` (how long ago `tick` was wanted) for its
 //! instant. A relay nobody asked about for [`LEASE`] (its room gone with an stv.tf that crashed)
 //! is stopped.
+//!
+//! stv.tf never waits on it: a thread per relay talks to it, and one that does not answer is left
+//! alone for [`AWAY`].
 
 use crate::lock;
 use crate::relays::{LocalRelay, Relays, Was};
@@ -25,7 +28,7 @@ use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Condvar, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 use stvtf::relay::Want;
 
@@ -33,8 +36,10 @@ use stvtf::relay::Want;
 pub(crate) const LEASE: Duration = Duration::from_mins(2);
 /// How long stv.tf waits for an answer.
 const ANSWER: Duration = Duration::from_millis(500);
-/// How often stv.tf asks how a relay is, at most.
+/// How often stv.tf asks how a relay is.
 const STATUS_EVERY: Duration = Duration::from_millis(500);
+/// How long a relay process that did not answer is left alone.
+const AWAY: Duration = Duration::from_secs(2);
 
 /// A [`Want`] on the wire.
 #[derive(Serialize, Deserialize)]
@@ -198,16 +203,36 @@ fn handle(r: Request, rooms: &Rooms, relays: &Arc<Relays>) -> Value {
 pub(crate) struct Remote {
     socket: PathBuf,
     conn: Mutex<Option<(UnixStream, BufReader<UnixStream>)>>,
+    /// Not asked until then: it did not answer.
+    away: Mutex<Option<Instant>>,
 }
 
 impl Remote {
     pub(crate) fn new(socket: &Path) -> Arc<Remote> {
-        Arc::new(Remote { socket: socket.to_owned(), conn: Mutex::new(None) })
+        Arc::new(Remote { socket: socket.to_owned(), conn: Mutex::new(None), away: Mutex::new(None) })
     }
 
-    /// One request and its answer; a broken connection is opened again once.
+    /// One request and its answer; after one with no answer, calls fail at once for [`AWAY`].
     fn call(&self, request: &Value) -> Result<Value> {
         let mut conn = lock(&self.conn);
+        if lock(&self.away).is_some_and(|until| Instant::now() < until) {
+            bail!("the relays at {} did not answer", self.socket.display());
+        }
+        let answer = match self.exchange(&mut conn, request) {
+            Ok(a) => a,
+            Err(e) => {
+                *lock(&self.away) = Some(Instant::now() + AWAY);
+                return Err(e);
+            }
+        };
+        if let Some(e) = answer.get("error").and_then(Value::as_str) {
+            bail!("{e}");
+        }
+        Ok(answer)
+    }
+
+    /// A broken connection is opened again once.
+    fn exchange(&self, conn: &mut Option<(UnixStream, BufReader<UnixStream>)>, request: &Value) -> Result<Value> {
         let mut tried = None;
         for _ in 0..2 {
             if conn.is_none() {
@@ -220,13 +245,7 @@ impl Remote {
             let mut line = String::new();
             let sent = writeln!(w, "{request}").map_err(anyhow::Error::from).and_then(|()| Ok(r.read_line(&mut line)?));
             match sent {
-                Ok(n) if n > 0 => {
-                    let answer: Value = serde_json::from_str(&line)?;
-                    if let Some(e) = answer.get("error").and_then(Value::as_str) {
-                        bail!("{e}");
-                    }
-                    return Ok(answer);
-                }
+                Ok(n) if n > 0 => return Ok(serde_json::from_str(&line)?),
                 Ok(_) => tried = Some(anyhow::anyhow!("the relays hung up")),
                 Err(e) => tried = Some(e),
             }
@@ -243,70 +262,132 @@ impl Remote {
         if line.is_null() {
             return Ok(None);
         }
-        let status = Status { clients: 0, stopped: false, line, asked: Instant::now() };
-        Ok(Some(RemoteRelay { remote: self.clone(), room: room.to_string(), status: Mutex::new(status) }))
+        let shared = Arc::new(Shared {
+            remote: self.clone(),
+            room: room.to_string(),
+            inner: Mutex::new(Inner { clients: 0, stopped: false, line, want: None, done: None }),
+            wake: Condvar::new(),
+        });
+        let tending = shared.clone();
+        std::thread::spawn(move || tending.tend());
+        Ok(Some(RemoteRelay(shared)))
     }
 }
 
-struct Status {
+/// How a relay's thread stops.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Done {
+    /// The relay plays on, for the next stv.tf.
+    LetGo,
+    /// So does the relay: the room ended.
+    End,
+}
+
+struct Inner {
     clients: usize,
     stopped: bool,
     line: Value,
-    asked: Instant,
+    /// Not sent yet.
+    want: Option<Want>,
+    done: Option<Done>,
 }
 
-/// A room's relay in the relay process. Dropped, it keeps playing (stv.tf going away for a deploy
-/// leaves it be): [`RemoteRelay::end`] stops it.
-pub(crate) struct RemoteRelay {
+struct Shared {
     remote: Arc<Remote>,
     room: String,
-    status: Mutex<Status>,
+    inner: Mutex<Inner>,
+    wake: Condvar,
 }
 
-impl RemoteRelay {
-    pub(crate) fn follow(&self, want: &Want) {
-        let answer = self.remote.call(&json!({ "op": "follow", "room": self.room, "want": WantLine::of(want) }));
-        if answer.is_ok_and(|a| a.get("gone").is_some()) {
-            lock(&self.status).stopped = true;
-        }
-    }
-
-    /// How it is, asked of the relay process at most every [`STATUS_EVERY`].
-    fn status<T>(&self, read: impl FnOnce(&Status) -> T) -> T {
-        let mut st = lock(&self.status);
-        if st.asked.elapsed() >= STATUS_EVERY {
-            st.asked = Instant::now();
-            match self.remote.call(&json!({ "op": "status", "room": self.room })) {
-                Ok(a) if a.get("gone").is_some() => st.stopped = true,
-                Ok(a) => {
-                    st.clients = a.get("clients").and_then(Value::as_u64).unwrap_or(0) as usize;
-                    st.stopped = a.get("stopped").and_then(Value::as_bool).unwrap_or(false);
-                    if let Some(line) = a.get("line") {
-                        st.line = line.clone();
+impl Shared {
+    /// Sends where the room is, and asks how the relay is, until let go of or ended.
+    fn tend(&self) {
+        let mut asked = Instant::now();
+        loop {
+            let (want, done) = {
+                let mut i = lock(&self.inner);
+                while i.want.is_none() && i.done.is_none() {
+                    let left = STATUS_EVERY.saturating_sub(asked.elapsed());
+                    if left.is_zero() {
+                        break;
                     }
+                    i = self.wake.wait_timeout(i, left).unwrap_or_else(PoisonError::into_inner).0;
                 }
-                // The relay process is away (restarting): as it was.
-                Err(_) => {}
+                (i.want.take(), i.done)
+            };
+            match done {
+                Some(Done::End) => {
+                    let _ = self.remote.call(&json!({ "op": "stop", "room": self.room }));
+                    return;
+                }
+                Some(Done::LetGo) => return,
+                None => {}
+            }
+            if let Some(want) = want {
+                let answer = self.remote.call(&json!({ "op": "follow", "room": self.room, "want": WantLine::of(&want) }));
+                if answer.is_ok_and(|a| a.get("gone").is_some()) {
+                    lock(&self.inner).stopped = true;
+                }
+            }
+            if asked.elapsed() >= STATUS_EVERY {
+                asked = Instant::now();
+                let answer = self.remote.call(&json!({ "op": "status", "room": self.room }));
+                let mut i = lock(&self.inner);
+                match answer {
+                    Ok(a) if a.get("gone").is_some() => i.stopped = true,
+                    Ok(a) => {
+                        i.clients = a.get("clients").and_then(Value::as_u64).unwrap_or(0) as usize;
+                        i.stopped = a.get("stopped").and_then(Value::as_bool).unwrap_or(false);
+                        if let Some(line) = a.get("line") {
+                            i.line = line.clone();
+                        }
+                    }
+                    // The relay process is away (restarting): as it was.
+                    Err(_) => {}
+                }
             }
         }
-        read(&st)
     }
 
+    fn finish(&self, done: Done) {
+        lock(&self.inner).done.get_or_insert(done);
+        self.wake.notify_all();
+    }
+}
+
+/// A room's relay in the relay process, tended by a thread of its own. Dropped, it plays on (for
+/// the next stv.tf); [`RemoteRelay::end`] stops it.
+pub(crate) struct RemoteRelay(Arc<Shared>);
+
+impl RemoteRelay {
+    /// Where the room is now; only the latest is sent.
+    pub(crate) fn follow(&self, want: &Want) {
+        lock(&self.0.inner).want = Some(want.clone());
+        self.0.wake.notify_all();
+    }
+
+    /// As last asked.
     pub(crate) fn clients(&self) -> usize {
-        self.status(|s| s.clients)
+        lock(&self.0.inner).clients
     }
 
     pub(crate) fn stopped(&self) -> bool {
-        self.status(|s| s.stopped)
+        lock(&self.0.inner).stopped
     }
 
     pub(crate) fn line(&self) -> Value {
-        self.status(|s| s.line.clone())
+        lock(&self.0.inner).line.clone()
     }
 
     /// The room ended: so does its relay.
     pub(crate) fn end(&self) {
-        let _ = self.remote.call(&json!({ "op": "stop", "room": self.room }));
+        self.0.finish(Done::End);
+    }
+}
+
+impl Drop for RemoteRelay {
+    fn drop(&mut self) {
+        self.0.finish(Done::LetGo);
     }
 }
 
@@ -314,6 +395,52 @@ impl RemoteRelay {
 mod tests {
     use super::*;
     use crate::testing::TempDir;
+
+    #[test]
+    fn a_relay_process_that_does_not_answer_is_left_alone_a_while() {
+        let dir = TempDir::new("relay-away");
+        let socket = dir.join("relay.sock");
+        // Never answers.
+        let listener = UnixListener::bind(&socket).unwrap();
+        std::thread::spawn(move || {
+            let held: Vec<UnixStream> = listener.incoming().flatten().collect();
+            drop(held);
+        });
+        let remote = Remote::new(&socket);
+        let first = Instant::now();
+        assert!(remote.start("r", &want(), None).is_err());
+        assert!(first.elapsed() >= ANSWER, "waited for it once");
+        let again = Instant::now();
+        assert!(remote.start("r", &want(), None).is_err());
+        assert!(again.elapsed() < Duration::from_millis(50), "not again: {:?}", again.elapsed());
+    }
+
+    #[test]
+    fn nothing_waits_on_a_relay_in_the_relay_process() {
+        let dir = TempDir::new("relay-nowait");
+        let socket = dir.join("relay.sock");
+        let port = std::net::UdpSocket::bind("0.0.0.0:0").unwrap().local_addr().unwrap().port();
+        let s = socket.clone();
+        let relays = Relays::new("127.0.0.1", [port]);
+        std::thread::spawn(move || serve(&s, &relays, LEASE));
+        let until = Instant::now() + Duration::from_secs(5);
+        while !socket.exists() {
+            assert!(Instant::now() < until, "no socket");
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        let remote = Remote::new(&socket);
+        let r = remote.start("room", &want(), None).unwrap().unwrap();
+        // As a hung relay process would.
+        let held = lock(&remote.conn);
+        let t = Instant::now();
+        for _ in 0..1000 {
+            r.follow(&want());
+            let _ = (r.clients(), r.stopped(), r.line());
+        }
+        assert!(t.elapsed() < Duration::from_millis(200), "{:?}", t.elapsed());
+        drop(held);
+        r.end();
+    }
 
     fn want() -> Want {
         Want { demo: "nowhere.dem".into(), tick: 0, at: Instant::now(), paused: false, speed: 1.0, from_start: false, camera: None }
