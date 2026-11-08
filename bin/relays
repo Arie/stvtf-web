@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+# Restarts the rooms' SourceTV relays (the `relay` accessory) at the version bin/build pushed, in
+# the given region(s), or all four. TF2 clients in rooms drop and reconnect; deploys of stv.tf
+# itself (bin/deploy) leave the relays be. The first time on a host, it boots them.
+#
+# Usage:
+#   bin/relays            # all four regions
+#   bin/relays eu na      # a subset
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+if [[ -z "${VERSION:-}" ]] && [[ -n "$(git status --porcelain)$(git -C ../stvtf status --porcelain)" ]]; then
+  echo "Uncommitted changes in stvtf-web or stvtf: set VERSION to the tag bin/build pushed." >&2
+  exit 1
+fi
+
+regions=("$@")
+[[ ${#regions[@]} -eq 0 ]] && regions=(eu na au sea)
+
+status=0
+for d in "${regions[@]}"; do
+  if kamal accessory details relay -d "$d" 2>/dev/null | grep -q "Up "; then
+    kamal accessory reboot relay -d "$d" || status=1
+  else
+    kamal accessory boot relay -d "$d" || status=1
+  fi
+done
+exit $status

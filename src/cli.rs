@@ -20,8 +20,10 @@ stvtf-web: live top-down viewer of a TF2 match in the browser
      --home URL then sends visitors of / to that site.
      --relay-ports 27100-27199 --relay-host HOST: each room is also a SourceTV address for TF2 clients,
      HOST:PORT on a port of the range (needs --sessions, where live matches record their demos).
+     --relay-socket SOCKET: the relays run in a process of their own instead (deploys leave them be):
+  stvtf-web --relay-daemon SOCKET --relay-ports 27100-27199 --relay-host HOST   (that process)
   stvtf-web --replay FILE.jsonl [--listen 127.0.0.1:8080]   (stvtf output, at game speed)";
-const FLAGS: [&str; 14] = [
+const FLAGS: [&str; 16] = [
     "password",
     "listen",
     "hz",
@@ -36,6 +38,8 @@ const FLAGS: [&str; 14] = [
     "home",
     "relay-ports",
     "relay-host",
+    "relay-socket",
+    "relay-daemon",
 ];
 const SWITCHES: [&str; 2] = ["public", "no-warm"];
 const DEFAULT_LISTEN: &str = "127.0.0.1:8080";
@@ -65,6 +69,10 @@ pub(crate) struct Options {
     pub(crate) no_warm: bool,
     /// Rooms relayed to TF2 clients: on these ports, at this host.
     pub(crate) relays: Option<(String, RangeInclusive<u16>)>,
+    /// The relay process to ask for rooms' relays, instead of running them here.
+    pub(crate) relay_socket: Option<PathBuf>,
+    /// Be that process, on this socket.
+    pub(crate) relay_daemon: Option<PathBuf>,
 }
 
 impl Options {
@@ -78,6 +86,13 @@ impl Options {
             (None, None) => None,
             _ => bail!("--relay-ports and --relay-host go together"),
         };
+        let (relay_socket, relay_daemon) = (take("relay-socket").map(PathBuf::from), take("relay-daemon").map(PathBuf::from));
+        if relay_daemon.is_some() && relays.is_none() {
+            bail!("--relay-daemon needs --relay-ports and --relay-host");
+        }
+        if relay_socket.is_some() && relays.is_some() {
+            bail!("--relay-socket: the relay process has the ports, not this one");
+        }
         if !base_path.is_empty() && !base_path.starts_with('/') {
             bail!("--base-path {base_path}: must start with /");
         }
@@ -101,6 +116,8 @@ impl Options {
             public: take("public").is_some(),
             no_warm: take("no-warm").is_some(),
             relays,
+            relay_socket,
+            relay_daemon,
         }))
     }
 }
@@ -217,6 +234,9 @@ mod tests {
         let relayed = options(&["--relay-ports", "27100-27109", "--relay-host", "stv.tf"]).unwrap().unwrap();
         assert_eq!(relayed.relays, Some(("stv.tf".to_string(), 27100..=27109)));
         assert!(defaults.relays.is_none());
+        let daemon = options(&["--relay-daemon", "/data/r.sock", "--relay-ports", "28100-28101", "--relay-host", "h"]).unwrap().unwrap();
+        assert_eq!(daemon.relay_daemon, Some(PathBuf::from("/data/r.sock")));
+        assert_eq!(options(&["--relay-socket", "/data/r.sock"]).unwrap().unwrap().relay_socket, Some(PathBuf::from("/data/r.sock")));
     }
 
     #[test]
@@ -228,6 +248,8 @@ mod tests {
         assert!(options(&["--public=yes"]).is_err());
         assert!(options(&["--base-path", "live"]).is_err());
         assert!(options(&["--relay-ports", "27100-27109"]).is_err(), "without a host");
+        assert!(options(&["--relay-daemon", "/r.sock"]).is_err(), "a relay process without ports");
+        assert!(options(&["--relay-socket", "/r.sock", "--relay-ports", "1-2", "--relay-host", "h"]).is_err(), "both");
         for bad in ["27109-27100", "27100", "a-b", "0-5", "1-70000"] {
             assert!(options(&["--relay-ports", bad, "--relay-host", "h"]).is_err(), "{bad}");
         }

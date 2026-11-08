@@ -20,6 +20,8 @@ const ANNOUNCE_EVERY: Duration = Duration::from_secs(1);
 /// How often a room nobody watches looks again, and one at a live match's end for more of it.
 const IDLE_POLL: Duration = Duration::from_millis(250);
 const LIVE_POLL: Duration = Duration::from_millis(20);
+/// A relay that could not start is tried again after this long.
+const RELAY_RETRY: Duration = Duration::from_secs(5);
 
 pub(crate) struct Room {
     pub(crate) id: String,
@@ -41,6 +43,9 @@ pub(crate) struct Room {
     relay: Mutex<Option<RoomRelay>>,
     /// What its pages were last told of the relay.
     relay_said: Mutex<Option<String>>,
+    /// The last relay that could not start: when, and why, so it is tried again and logged at a
+    /// pace (the relay process may be away for a while).
+    relay_failed: Mutex<Option<(Instant, String)>>,
 }
 
 struct State {
@@ -193,6 +198,7 @@ impl Room {
             offer: OnceLock::new(),
             relay: Mutex::new(None),
             relay_said: Mutex::new(None),
+            relay_failed: Mutex::new(None),
         });
         let player = room.clone();
         std::thread::spawn(move || player.play());
@@ -356,9 +362,13 @@ impl Room {
         if lock(&self.relay).is_some() {
             return;
         }
+        if lock(&self.relay_failed).as_ref().is_some_and(|(t, _)| t.elapsed() < RELAY_RETRY) {
+            return;
+        }
         let Some(want) = Self::want(&lock(&self.state), offer, true) else { return };
-        match offer.relays.start(want) {
+        match offer.relays.start(&self.id, want) {
             Ok(Some(r)) => {
+                *lock(&self.relay_failed) = None;
                 let mut relay = lock(&self.relay);
                 // Another page started one meanwhile: this one goes.
                 if relay.is_none() {
@@ -366,7 +376,14 @@ impl Room {
                 }
             }
             Ok(None) => {}
-            Err(e) => eprintln!("stvtf-web: room {}: {e:#}", &self.id[..8.min(self.id.len())]),
+            Err(e) => {
+                let why = format!("{e:#}");
+                let mut failed = lock(&self.relay_failed);
+                if failed.as_ref().is_none_or(|(_, before)| *before != why) {
+                    eprintln!("stvtf-web: room {}: {why}", &self.id[..8.min(self.id.len())]);
+                }
+                *failed = Some((Instant::now(), why));
+            }
         }
         self.tell_relay();
     }
@@ -415,8 +432,8 @@ impl Room {
     /// tried again, and the pages hear why it cannot play as soon as that is known.
     pub(crate) fn tend_relay(&self) {
         let stopped = lock(&self.relay).as_ref().is_some_and(RoomRelay::stopped);
-        if stopped {
-            *lock(&self.relay) = None;
+        if stopped && let Some(r) = lock(&self.relay).take() {
+            r.end();
         }
         let missing = lock(&self.relay).is_none();
         if missing && lock(&self.people).listed() > 0 {
@@ -437,7 +454,9 @@ impl Room {
     pub(crate) fn stop(&self) {
         lock(&self.state).stop = true;
         self.wake.notify_all();
-        *lock(&self.relay) = None;
+        if let Some(r) = lock(&self.relay).take() {
+            r.end();
+        }
     }
 
     fn announce(&self, st: &State) {

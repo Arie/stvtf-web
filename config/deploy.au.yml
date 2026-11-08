@@ -2,13 +2,24 @@ servers:
   web:
     hosts: [direct.au.serveme.tf]
     # The AU web host is a 3.8 GB VPS that has frozen under memory pressure before.
-    cmd: "--public --max-matches 5 --demo /data/demo.jsonl.gz --sessions /data/sessions --home https://au.serveme.tf/stv --relay-ports 28100-28103 --relay-host direct.au.serveme.tf"
+    cmd: "--public --max-matches 5 --demo /data/demo.jsonl.gz --sessions /data/sessions --home https://au.serveme.tf/stv --relay-socket /data/relay.sock"
     options:
-      # Rooms as SourceTV relays for TF2 clients, on the host's own name: stv.tf names go through
-      # Cloudflare, which carries no UDP.
-      publish: ["28100-28103:28100-28103/udp"]
       memory: 256m
 
 proxy:
   hosts:
     - au.stv.tf
+
+# The rooms' SourceTV relays, a process of their own that deploys leave be, so TF2 clients in a
+# room stay connected (`bin/relays` restarts it, at the version just built). On the host's own
+# name: stv.tf names go through Cloudflare, which carries no UDP.
+accessories:
+  relay:
+    image: ghcr.io/arie/stvtf:<%= ENV["VERSION"] %>
+    host: direct.au.serveme.tf
+    cmd: "--relay-daemon /data/relay.sock --relay-ports 28100-28103 --relay-host direct.au.serveme.tf"
+    volumes:
+      - stvtf-cache:/data
+    options:
+      publish: ["28100-28103:28100-28103/udp"]
+      memory: 256m

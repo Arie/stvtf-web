@@ -13,6 +13,7 @@ mod hub;
 mod live_demos;
 mod people;
 mod recording;
+mod relay_daemon;
 mod relays;
 mod replay;
 mod room;
@@ -189,7 +190,7 @@ fn many(options: &Options, keys: Option<&Arc<token::Keys>>) -> Result<Sessions> 
     if let Some(dir) = &options.sessions {
         sessions.store = Some(sessions::Store { dir: dir.clone(), keys: keys.cloned() });
         // Before matches are picked up, so they record as the new ones do.
-        sessions.demos = options.relays.is_some();
+        sessions.demos = options.relays.is_some() || options.relay_socket.is_some();
         let restored = sessions.restore();
         if restored > 0 {
             eprintln!("stvtf-web: picked up {restored} running matches");
@@ -340,14 +341,19 @@ fn main() -> Result<()> {
         return Ok(());
     };
     watch::stop_on_ctrl_c(&STOP)?;
+    // The relay process: only the relays (the rest of the options are the image's for the web).
+    if let (Some(socket), Some((host, ports))) = (&options.relay_daemon, &options.relays) {
+        return relay_daemon::serve(socket, &relays::Relays::new(host, ports.clone()), relay_daemon::LEASE);
+    }
     let keys = std::env::var("STVTF_TOKEN_KEY").ok().map(|k| token::Keys::from_hex(&k).map(Arc::new)).transpose()?;
     let console_prompt = keys.is_none() && std::io::IsTerminal::is_terminal(&std::io::stdin());
     let matches = matches(&options, keys.as_ref(), &STOP)?;
     let store = if let Matches::Many(sessions) = &matches { sessions.store.clone() } else { None };
-    let relays = match &options.relays {
-        Some(_) if store.is_none() => bail!("--relay-ports needs --sessions"),
-        Some((host, ports)) => Some(relays::Relays::new(host, ports.clone())),
-        None => None,
+    let relays = match (&options.relays, &options.relay_socket) {
+        (Some(_), _) | (_, Some(_)) if store.is_none() => bail!("relays need --sessions"),
+        (Some((host, ports)), _) => Some(Arc::new(relays::Pool::Local(relays::Relays::new(host, ports.clone())))),
+        (None, Some(socket)) => Some(Arc::new(relays::Pool::Remote(relay_daemon::Remote::new(socket)))),
+        (None, None) => None,
     };
     let app = Arc::new(App {
         matches,

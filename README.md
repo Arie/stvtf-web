@@ -73,6 +73,14 @@ with serveme.tf). `bin/build` builds and pushes the one image all regions run, a
 the classic token in `~/.config/stvtf/ghcr.token`, which has only the `write:packages` scope,
 because Kamal leaves the registry login on every host.
 
+The rooms' TF2 relays run apart from the app, as the Kamal accessory `relay` on each host
+(`stvtf-web --relay-daemon /data/relay.sock …`, the same image), which a deploy leaves be: a TF2
+client in a room stays connected through it, and the app picks its rooms' relays up again over
+`/data/relay.sock` (`--relay-socket`). `bin/relays [REGION...]` restarts them at the version
+`bin/build` pushed (booting them the first time), only when the relays themselves changed: their
+TF2 clients drop then. A relay the app no longer asks about (a room gone with a process that
+crashed) stops after two minutes.
+
 `Dockerfile` builds that server, with the directory holding both repositories as context:
 `docker build -f stvtf-web/Dockerfile .` (`Dockerfile.dockerignore` keeps the context to the
 two crates). It listens on 8080, keeps the map cache in `/data` and answers `/up` for health checks.
@@ -240,7 +248,8 @@ as a SourceTV spectator with its own free camera: the room's moment, paused when
 jumping when it jumps, at its speed.
 
 A room gets a port from the range and a random password once someone opens its page (not its
-overlay), and keeps it until the room ends; the room stays open while someone is in TF2 too. A
+overlay), and keeps it until the room ends, through deploys when the relays run apart
+(`--relay-socket`, see above); the room stays open while someone is in TF2 too. A
 relay that cannot start (every port taken, the demo not there yet) is tried again, and one that
 stops is replaced. It plays the match's `.dem` (see stvtf's README, "Playing a demo"): a
 demos.tf demo's file, kept beside its output as `demo-<number>.dem`, or a live match's, recorded

@@ -3,7 +3,7 @@
 
 use crate::lock;
 use crate::recording::Recording;
-use crate::relays::{DemoOf, Offer, Relays};
+use crate::relays::{DemoOf, Offer, Pool};
 use crate::room::{Room, Saved};
 use crate::sessions::{Session, Sessions, Store, Viewer, demo_dem};
 use anyhow::{Result, bail};
@@ -31,7 +31,7 @@ pub(crate) struct Rooms {
     /// Private playbacks: one viewer's own, from a match page; not saved.
     private: Mutex<std::collections::HashSet<String>>,
     /// The ports rooms are relayed on, if they are (`--relay-ports`).
-    relays: Option<Arc<Relays>>,
+    relays: Option<Arc<Pool>>,
 }
 
 /// Private playbacks at once, at most.
@@ -62,7 +62,7 @@ fn demo_file(demo: u64) -> String {
 }
 
 impl Rooms {
-    pub(crate) fn new(store: Option<Store>, relays: Option<Arc<Relays>>) -> Rooms {
+    pub(crate) fn new(store: Option<Store>, relays: Option<Arc<Pool>>) -> Rooms {
         Rooms { store, relays, ..Rooms::default() }
     }
 

@@ -1,8 +1,11 @@
 //! Rooms as `SourceTV` addresses: each room someone is in gets a port from the range
 //! (`--relay-ports`) and a password, and plays its demo there as the room plays (see
-//! `stvtf::relay::Playback`). TF2 clients connect with `connect HOST:PORT; password PW`.
+//! `stvtf::relay::Playback`). TF2 clients connect with `connect HOST:PORT; password PW`. The
+//! relays run in this process, or in one of their own that outlives deploys (see
+//! `relay_daemon`).
 
 use crate::lock;
+use crate::relay_daemon::{Remote, RemoteRelay};
 use anyhow::{Context, Result};
 use std::collections::VecDeque;
 use std::path::PathBuf;
@@ -55,7 +58,7 @@ impl Relays {
     }
 
     /// A relay on a free port, playing as `want` says until dropped; None when every port is taken.
-    pub(crate) fn start(self: &Arc<Self>, want: Want) -> Result<Option<RoomRelay>> {
+    pub(crate) fn start(self: &Arc<Self>, want: Want) -> Result<Option<LocalRelay>> {
         let Some(port) = lock(&self.free).pop_front() else { return Ok(None) };
         let config =
             RelayConfig { password: stvtf::relay::random_password(), slots: SLOTS, ..RelayConfig::new(&format!("0.0.0.0:{port}")) };
@@ -75,12 +78,13 @@ impl Relays {
                 eprintln!("stvtf-web: relay on port {port}: {e:#}");
             }
         });
-        Ok(Some(RoomRelay { bound: Some(bound), password: config.password, playback, stop, thread }))
+        Ok(Some(LocalRelay { bound: Some(bound), password: config.password, playback, stop, thread }))
     }
 }
 
-/// A room's relay; dropping it stops it, and its port is free again once the thread is done.
-pub(crate) struct RoomRelay {
+/// A relay in this process; dropping it stops it, and its port is free again once the thread is
+/// done.
+pub(crate) struct LocalRelay {
     bound: Option<Arc<Bound>>,
     password: String,
     playback: Arc<Playback>,
@@ -88,7 +92,7 @@ pub(crate) struct RoomRelay {
     thread: JoinHandle<()>,
 }
 
-impl RoomRelay {
+impl LocalRelay {
     fn bound(&self) -> &Bound {
         self.bound.as_ref().expect("bound until dropped")
     }
@@ -121,11 +125,78 @@ impl RoomRelay {
     }
 }
 
-impl Drop for RoomRelay {
+impl Drop for LocalRelay {
     fn drop(&mut self) {
         // Let go of the socket first: the thread holds the last of it, and frees the port.
         drop(self.bound.take());
         self.stop.store(true, Ordering::Relaxed);
+    }
+}
+
+/// Where rooms' relays run.
+pub(crate) enum Pool {
+    /// In this process, on these ports.
+    Local(Arc<Relays>),
+    /// In the relay process (`--relay-socket`).
+    Remote(Arc<Remote>),
+}
+
+impl Pool {
+    /// Room `room`'s relay, playing as `want` says; None when every port is taken. In the relay
+    /// process, the one it had if it had one.
+    pub(crate) fn start(&self, room: &str, want: Want) -> Result<Option<RoomRelay>> {
+        Ok(match self {
+            Pool::Local(r) => r.start(want)?.map(RoomRelay::Local),
+            Pool::Remote(r) => r.start(room, &want)?.map(RoomRelay::Remote),
+        })
+    }
+}
+
+/// A room's relay, wherever it runs.
+pub(crate) enum RoomRelay {
+    Local(LocalRelay),
+    Remote(RemoteRelay),
+}
+
+impl RoomRelay {
+    /// Where the room is now.
+    pub(crate) fn follow(&self, want: Want) {
+        match self {
+            RoomRelay::Local(r) => r.follow(want),
+            RoomRelay::Remote(r) => r.follow(&want),
+        }
+    }
+
+    /// TF2 clients in.
+    pub(crate) fn clients(&self) -> usize {
+        match self {
+            RoomRelay::Local(r) => r.clients(),
+            RoomRelay::Remote(r) => r.clients(),
+        }
+    }
+
+    /// Whether it stopped on its own, so the room should start another.
+    pub(crate) fn stopped(&self) -> bool {
+        match self {
+            RoomRelay::Local(r) => r.stopped(),
+            RoomRelay::Remote(r) => r.stopped(),
+        }
+    }
+
+    /// What pages show (see [`LocalRelay::line`]).
+    pub(crate) fn line(&self) -> serde_json::Value {
+        match self {
+            RoomRelay::Local(r) => r.line(),
+            RoomRelay::Remote(r) => r.line(),
+        }
+    }
+
+    /// The room ended: so does its relay. (Only dropped, one in the relay process plays on, for the
+    /// next stv.tf to find.)
+    pub(crate) fn end(self) {
+        if let RoomRelay::Remote(r) = &self {
+            r.end();
+        }
     }
 }
 
@@ -135,7 +206,7 @@ pub(crate) type DemoOf = Arc<dyn Fn(u32) -> Option<PathBuf> + Send + Sync>;
 /// A room's relays, and where its demos are.
 #[derive(Clone)]
 pub(crate) struct Offer {
-    pub(crate) relays: Arc<Relays>,
+    pub(crate) relays: Arc<Pool>,
     pub(crate) demo_of: DemoOf,
 }
 
