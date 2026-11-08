@@ -454,7 +454,7 @@ function camera() {
 
 /** What the view has this page do. @param {Partial<import("./roomview.js").Effects>} fx */
 function act(fx) {
-  if (fx.locked !== undefined) state.locked = fx.locked;
+  if (fx.locked !== undefined) env.el.classList.toggle("locked", (state.locked = fx.locked));
   if (state.locked) $("autozoom").hidden = true;
   if (fx.mirror === false) state.mirror = null;
   if (fx.zoom !== undefined) state.followZoom = fx.zoom;

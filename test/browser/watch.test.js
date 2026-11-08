@@ -211,6 +211,12 @@ test("the owner draws on the map and everyone in the room sees it", async () => 
   await viewer.page.goto(page.url());
   await until(viewer.page, m => document.getElementById("map").textContent === m, MAP);
   const clean = await ink(viewer.page);
+  // A drag that slips off the map selects no text; what a viewer cannot use shows no hand.
+  assert.equal(await viewer.page.$eval("#app", el => getComputedStyle(el).userSelect), "none");
+  assert.equal(await viewer.page.$eval("#myname", el => getComputedStyle(el).userSelect), "text");
+  for (const id of ["#chat", "#feed"])
+    assert.equal(await viewer.page.$eval(id, el => getComputedStyle(el).userSelect), "text", `${id} copies`);
+  assert.equal(await viewer.page.$eval("#app", el => el.classList.contains("seekable")), false);
   await page.keyboard.press("d");
   assert.equal(await page.$eval("#c", el => getComputedStyle(el).cursor), "crosshair", "the pen shows as a crosshair");
   await page.mouse.move(300, 300);

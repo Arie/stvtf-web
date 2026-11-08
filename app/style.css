@@ -52,6 +52,9 @@ body {
 .stvtf {
   position: relative;
   height: 100%;
+  /* A drag that slips off the map selects nothing. */
+  user-select: none;
+  -webkit-user-select: none;
   display: grid;
   grid-template-rows: 1fr;
   container-type: inline-size;
@@ -221,6 +224,7 @@ aside section {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 11px;
   user-select: all;
+  -webkit-user-select: all;
 }
 #tf2copy {
   flex: none;
@@ -1744,4 +1748,28 @@ aside h3 {
 #feed .chip.s4 {
   background: var(--streak);
   color: #111;
+}
+
+.stvtf input,
+.stvtf textarea,
+#chat,
+#feed {
+  user-select: text;
+  -webkit-user-select: text;
+}
+/* No hand on what this viewer cannot use: marks without a timeline to jump, the camera and
+   players while an admin's view holds it. */
+.stvtf:not(.seekable) .rb-uber,
+.stvtf:not(.seekable) .rb-drop,
+.stvtf:not(.seekable) .rb-win,
+.stvtf.locked canvas#c,
+.stvtf.locked canvas#c:active,
+.stvtf.locked .card,
+.stvtf.locked #feed .who[data-id] {
+  cursor: default;
+}
+.stvtf.locked .card:hover,
+.stvtf.locked #feed .who[data-id]:hover {
+  filter: none;
+  text-decoration: none;
 }
