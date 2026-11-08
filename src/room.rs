@@ -5,7 +5,7 @@ use crate::hub::{SharedHub, announce, publish, restore, send, send_keeping};
 use crate::lock;
 use crate::people::People;
 use crate::recording::Recording;
-use crate::relays::{Offer, RoomRelay};
+use crate::relays::{Offer, RoomRelay, Was};
 use anyhow::{Result, bail};
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
@@ -43,6 +43,8 @@ pub(crate) struct Room {
     relay: Mutex<Option<RoomRelay>>,
     /// What its pages were last told of the relay.
     relay_said: Mutex<Option<String>>,
+    /// Its relay's port and password, for one started again.
+    relay_was: Mutex<Option<Was>>,
     /// The last relay that could not start: when, and why, so it is tried again and logged at a
     /// pace (the relay process may be away for a while).
     relay_failed: Mutex<Option<(Instant, String)>>,
@@ -156,6 +158,8 @@ pub(crate) struct Saved {
     view: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     marker: Vec<Kept>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    relay: Option<Was>,
 }
 
 /// A page in the room, by its guest cookie if it is listed, until dropped.
@@ -197,6 +201,7 @@ impl Room {
         if let Some(view) = lock(&room.view).clone() {
             announce(&room.hub, "view", &view);
         }
+        *lock(&room.relay_was) = saved.relay;
         *lock(&room.marker) = saved.marker;
         if let Some(kept) = kept_line(&lock(&room.marker)) {
             announce(&room.hub, "marker", &kept);
@@ -227,6 +232,7 @@ impl Room {
             offer: OnceLock::new(),
             relay: Mutex::new(None),
             relay_said: Mutex::new(None),
+            relay_was: Mutex::new(None),
             relay_failed: Mutex::new(None),
             camera: Mutex::new(None),
             marker: Mutex::new(Vec::new()),
@@ -247,6 +253,7 @@ impl Room {
             leader: lock(&self.leader).clone(),
             view: lock(&self.view).as_deref().map(str::to_string),
             marker: lock(&self.marker).clone(),
+            relay: lock(&self.relay_was).clone(),
         }
     }
 
@@ -429,12 +436,16 @@ impl Room {
             return;
         }
         let Some(want) = self.want(&lock(&self.state), offer, true) else { return };
-        match offer.relays.start(&self.id, want) {
+        let was = lock(&self.relay_was).clone();
+        match offer.relays.start(&self.id, want, was.as_ref()) {
             Ok(Some(r)) => {
                 *lock(&self.relay_failed) = None;
                 let mut relay = lock(&self.relay);
                 // Another page started one meanwhile: this one goes.
                 if relay.is_none() {
+                    if let Some(was) = r.was() {
+                        *lock(&self.relay_was) = Some(was);
+                    }
                     *relay = Some(r);
                 }
             }

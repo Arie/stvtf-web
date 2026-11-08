@@ -83,7 +83,8 @@ The rooms' TF2 relays run apart from the app, as the Kamal accessory `relay` on 
 client in a room stays connected through it, and the app picks its rooms' relays up again over
 `/data/relay.sock` (`--relay-socket`). `bin/relays [REGION...]` restarts them at the version
 `bin/build` pushed (booting them the first time), only when the relays themselves changed: their
-TF2 clients drop then. A relay the app no longer asks about (a room gone with a process that
+TF2 clients drop then, and `retry` gets them back in: a room's relay starts again on its port
+with its password. A relay the app no longer asks about (a room gone with a process that
 crashed) stops after two minutes.
 
 `Dockerfile` builds that server, with the directory holding both repositories as context:
@@ -254,7 +255,7 @@ jumping when it jumps, at its speed.
 
 A room gets a port from the range and a random password once someone opens its page (not its
 overlay), and keeps it until the room ends, through deploys when the relays run apart
-(`--relay-socket`, see above); the room stays open while someone is in TF2 too. A
+(`--relay-socket`, see above) and restarts (on that port while it is free); the room stays open while someone is in TF2 too. A
 relay that cannot start (every port taken, the demo not there yet) is tried again, and one that
 stops is replaced. It plays the match's `.dem` (see stvtf's README, "Playing a demo"): a
 demos.tf demo's file, kept beside its output as `demo-<number>.dem`, or a live match's, recorded
@@ -280,7 +281,7 @@ the same name (`demo.dem` for `demo.jsonl.gz`); without one they have no relay.
 | `POST /r/<id>/control` | an admin's `{"paused", "speed", "seek"}` (any of them; `seek` in milliseconds) |
 | `POST /r/<id>/draw` | an admin's `{"stroke": <id>, "points": [[x, y, ms], …]}`, up to 256 map points, each with when it was drawn (milliseconds into the stroke); a stroke's next points continue it, and pages draw it at that pace, 40 ms behind |
 
-The room's event stream adds six lines (`playback` also says `live`, for a live match whose recording grows): `relay` (`connect` and `password` while it has one, and `problem`: why it cannot play), `view` (as posted, with `by`), `people` (`id`, `name`, `admin`, `owner`, `signed`, and when there is one, `ink` and `steamid` each), `draw`
+The room's event stream adds six lines (`playback` also says `live`, for a live match whose recording grows): `relay` (`connect`, `port` and `password` while it has one, and `problem`: why it cannot play), `view` (as posted, with `by`), `people` (`id`, `name`, `admin`, `owner`, `signed`, and when there is one, `ink` and `steamid` each), `draw`
 (as posted, with `by`, the drawer's number), `playback` (`paused`, `speed`, `at` and `length` in
 milliseconds, `start`, the first moment kept, and `origin`, where the map began, and
 `rounds`, when each round started) on every change and every second while it

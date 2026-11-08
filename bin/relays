@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Restarts the rooms' SourceTV relays (the `relay` accessory) at the version bin/build pushed, in
-# the given region(s), or all four. TF2 clients in rooms drop and reconnect; deploys of stv.tf
-# itself (bin/deploy) leave the relays be. The first time on a host, it boots them.
+# the given region(s), or all four. TF2 clients in rooms drop; `retry` gets them back in (same port
+# and password). Deploys of stv.tf itself (bin/deploy) leave the relays be. The first time on a host, it boots them.
 #
 # Usage:
 #   bin/relays            # all four regions

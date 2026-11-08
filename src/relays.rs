@@ -7,6 +7,7 @@
 use crate::lock;
 use crate::relay_daemon::{Remote, RemoteRelay};
 use anyhow::{Context, Result};
+use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -16,6 +17,26 @@ use stvtf::relay::{Playback, Relay, RelayConfig, Want};
 
 /// TF2 clients a room takes at once.
 const SLOTS: usize = 24;
+
+/// A relay's port and password: started again on them, TF2's `retry` gets back in.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct Was {
+    pub(crate) port: u16,
+    pub(crate) password: String,
+}
+
+impl Was {
+    /// From a relay's page line.
+    pub(crate) fn of_line(line: &serde_json::Value) -> Option<Was> {
+        let port = u16::try_from(line.get("port")?.as_u64()?).ok()?;
+        Some(Was { port, password: line.get("password")?.as_str()?.to_string() })
+    }
+
+    /// Safe in a console line.
+    fn password_ok(&self) -> bool {
+        (1..=32).contains(&self.password.len()) && self.password.bytes().all(|b| b.is_ascii_alphanumeric())
+    }
+}
 
 /// The ports rooms may take, and the address clients are told.
 pub(crate) struct Relays {
@@ -58,10 +79,18 @@ impl Relays {
     }
 
     /// A relay on a free port, playing as `want` says until dropped; None when every port is taken.
-    pub(crate) fn start(self: &Arc<Self>, want: Want) -> Result<Option<LocalRelay>> {
-        let Some(port) = lock(&self.free).pop_front() else { return Ok(None) };
-        let config =
-            RelayConfig { password: stvtf::relay::random_password(), slots: SLOTS, ..RelayConfig::new(&format!("0.0.0.0:{port}")) };
+    /// On what it `was` on, if that port is free.
+    pub(crate) fn start(self: &Arc<Self>, want: Want, was: Option<&Was>) -> Result<Option<LocalRelay>> {
+        let port = {
+            let mut free = lock(&self.free);
+            match was.and_then(|w| free.iter().position(|&p| p == w.port)) {
+                Some(i) => free.remove(i),
+                None => free.pop_front(),
+            }
+        };
+        let Some(port) = port else { return Ok(None) };
+        let password = was.filter(|w| w.password_ok()).map_or_else(stvtf::relay::random_password, |w| w.password.clone());
+        let config = RelayConfig { password, slots: SLOTS, ..RelayConfig::new(&format!("0.0.0.0:{port}")) };
         let relay = match Relay::bind(&config) {
             Ok(r) => r,
             Err(e) => {
@@ -117,6 +146,7 @@ impl LocalRelay {
         serde_json::json!({
             "type": "relay",
             "connect": format!("{}:{}", self.bound().pool.host, self.bound().port),
+            "port": self.bound().port,
             // For the steam:// link, which takes an address and no name.
             "address": self.bound().pool.ip.as_ref().map(|ip| format!("{ip}:{}", self.bound().port)),
             "password": self.password,
@@ -142,12 +172,12 @@ pub(crate) enum Pool {
 }
 
 impl Pool {
-    /// Room `room`'s relay, playing as `want` says; None when every port is taken. In the relay
-    /// process, the one it had if it had one.
-    pub(crate) fn start(&self, room: &str, want: Want) -> Result<Option<RoomRelay>> {
+    /// Room `room`'s relay, playing as `want` says, on what it `was` on if it can; None when
+    /// every port is taken. In the relay process, the one it had if it had one.
+    pub(crate) fn start(&self, room: &str, want: Want, was: Option<&Was>) -> Result<Option<RoomRelay>> {
         Ok(match self {
-            Pool::Local(r) => r.start(want)?.map(RoomRelay::Local),
-            Pool::Remote(r) => r.start(room, &want)?.map(RoomRelay::Remote),
+            Pool::Local(r) => r.start(want, was)?.map(RoomRelay::Local),
+            Pool::Remote(r) => r.start(room, &want, was)?.map(RoomRelay::Remote),
         })
     }
 }
@@ -191,6 +221,10 @@ impl RoomRelay {
         }
     }
 
+    pub(crate) fn was(&self) -> Option<Was> {
+        Was::of_line(&self.line())
+    }
+
     /// The room ended: so does its relay. (Only dropped, one in the relay process plays on, for the
     /// next stv.tf to find.)
     pub(crate) fn end(self) {
@@ -227,8 +261,8 @@ mod tests {
         let taken = std::net::UdpSocket::bind("0.0.0.0:0").unwrap();
         let [free, _] = free_ports();
         let relays = Relays::new("h", [taken.local_addr().unwrap().port(), free]);
-        assert!(relays.start(want()).is_err());
-        let r = relays.start(want()).unwrap().unwrap();
+        assert!(relays.start(want(), None).is_err());
+        let r = relays.start(want(), None).unwrap().unwrap();
         assert_eq!(r.bound().port, free, "the free one, not the taken one again");
     }
 
@@ -240,16 +274,16 @@ mod tests {
     fn rooms_take_ports_from_the_range_and_give_them_back() {
         let ports = free_ports();
         let relays = Relays::new("127.0.0.1", ports);
-        let a = relays.start(want()).unwrap().unwrap();
-        let b = relays.start(want()).unwrap().unwrap();
-        assert!(relays.start(want()).unwrap().is_none(), "all taken");
+        let a = relays.start(want(), None).unwrap().unwrap();
+        let b = relays.start(want(), None).unwrap().unwrap();
+        assert!(relays.start(want(), None).unwrap().is_none(), "all taken");
         assert_eq!(a.line()["connect"], format!("127.0.0.1:{}", ports[0]));
         assert_eq!(a.line()["address"], format!("127.0.0.1:{}", ports[0]));
         assert_ne!(a.password, b.password);
         drop(a);
         let until = Instant::now() + std::time::Duration::from_secs(5);
         let c = loop {
-            if let Some(c) = relays.start(want()).unwrap() {
+            if let Some(c) = relays.start(want(), None).unwrap() {
                 break c;
             }
             assert!(Instant::now() < until, "the port never came back");
@@ -257,5 +291,16 @@ mod tests {
         };
         assert_eq!(c.bound().port, ports[0]);
         drop(b);
+    }
+
+    #[test]
+    fn a_relay_started_again_gets_the_port_and_password_it_had() {
+        let ports = free_ports();
+        let relays = Relays::new("127.0.0.1", ports);
+        let was = Was { port: ports[1], password: "again2".into() };
+        let r = relays.start(want(), Some(&was)).unwrap().unwrap();
+        assert_eq!(Was::of_line(&r.line()), Some(was));
+        let odd = Was { port: ports[0], password: "a\";quit".into() };
+        assert_ne!(relays.start(want(), Some(&odd)).unwrap().unwrap().password, odd.password, "not in a console line");
     }
 }
