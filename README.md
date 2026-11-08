@@ -237,7 +237,7 @@ With `--relay-ports 27100-27199 --relay-host HOST` (and `--sessions`), each room
 SourceTV address: the room's sidebar shows "In TF2" with `connect HOST:PORT; password "PW"` to
 paste in the console (and a `steam://connect` link). A TF2 client there sees what the room shows,
 as a SourceTV spectator with its own free camera: the room's moment, paused when it pauses,
-jumping when it jumps (a few seconds for a long one), at its speed.
+jumping when it jumps, at its speed.
 
 A room gets a port from the range and a random password once someone opens its page (not its
 overlay), and keeps it until the room ends; the room stays open while someone is in TF2 too. A
