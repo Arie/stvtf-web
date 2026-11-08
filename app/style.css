@@ -874,7 +874,6 @@ aside h3 {
   display: none;
 }
 .stvtf.nohud .hud,
-.stvtf.nohud #scoreboard,
 .stvtf.noscore #scoreboard {
   display: none;
 }

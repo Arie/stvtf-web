@@ -97,10 +97,9 @@ export async function loadMap(map) {
 }
 
 // ---------- view
-// Whether the main view shows the player HUD or the scoreboard (h and s hide them).
-/** @param {string} what */
-const shown = what =>
-  !OVERLAY && !env.el.classList.contains("nohud") && !(what === "score" && env.el.classList.contains("noscore"));
+// Whether the main view shows the player HUD or the scoreboard: h hides the one, s the other.
+/** @param {"hud" | "score"} what */
+const shown = what => !OVERLAY && !env.el.classList.contains(what === "score" ? "noscore" : "nohud");
 
 /** @param {Point} min @param {Point} max */
 function fitTo(min, max) {

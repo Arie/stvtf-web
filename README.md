@@ -398,7 +398,7 @@ All play the demo match:
   their dot.
 - Click a player on the map or their card in the HUD to keep them centred; drag the
   map, press Esc or click them again to stop.
-- Keys: `h` hides the player HUD and scoreboard, `s` just the scoreboard, `e` the events and
+- Keys: `h` hides the player HUD, `s` the scoreboard (each on its own), `e` the events and
   chat, and `g` switches between the demos.tf overview and the map geometry. The map takes
   the space they leave. `o` switches to the broadcast overlay and back. `?`, or the ? button,
   lists them. `k` (or the gear button) opens the overkill layer settings, `x` switches all of them

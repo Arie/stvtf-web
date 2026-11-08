@@ -484,3 +484,23 @@ test("a link to a moment watches from there", async () => {
   assert.deepEqual(errors, []);
   await page.close();
 });
+
+test("h hides the player HUD and s the scores, each on its own", async () => {
+  const { page, errors } = await open();
+  await page.goto(base);
+  await until(page, () => !(/** @type {HTMLElement} */ (document.getElementById("scoreboard")).hidden));
+  const shown = () =>
+    page.evaluate(() =>
+      ["hud-blue", "scoreboard"].map(
+        id => getComputedStyle(/** @type {HTMLElement} */ (document.getElementById(id))).display !== "none",
+      ),
+    );
+  await page.keyboard.press("h");
+  assert.deepEqual(await shown(), [false, true], "h: no HUD, the scores still");
+  await page.keyboard.press("h");
+  await page.keyboard.press("s");
+  assert.deepEqual(await shown(), [true, false], "s: no scores, the HUD still");
+  await page.keyboard.press("s");
+  assert.deepEqual(errors, []);
+  await page.close();
+});
