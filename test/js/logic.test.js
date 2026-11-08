@@ -15,7 +15,7 @@ import {
 import { command, steamid64 } from "../../app/embed.js";
 import { layerOn } from "../../app/layers.js";
 import { labelCorner } from "../../app/spawns.js";
-import { drawOwn, onDraw, pointsOf } from "../../app/telestrator.js";
+import { drawOwn, onClear, onDraw, onMarker, pointsOf } from "../../app/telestrator.js";
 import { demostfAlias, sameLayout, screenOffset, teamsTurn, toScreen } from "../../app/view.js";
 
 test("players sort by class, then name whatever its case, then id", () => {
@@ -302,4 +302,19 @@ test("a stroke drawn here shows at once and its echo from the room is not drawn 
   assert.equal(pointsOf(1), 2);
   onDraw({ type: "draw", stroke: 2, points: [[1, 1, 0]] });
   assert.equal(pointsOf(2), 1, "someone else's stroke");
+});
+
+test("a page that comes back has the marker as the room has it", () => {
+  onClear();
+  /** @type {[number, number, number][]} */
+  const pts = [
+    [0, 0, 0],
+    [1, 1, 8],
+  ];
+  onDraw({ type: "draw", stroke: 10, by: 2, points: [pts[0]], keep: true });
+  onDraw({ type: "draw", stroke: 11, by: 2, points: pts, keep: true });
+  onMarker({ type: "marker", strokes: [{ stroke: 10, by: 2, points: pts }] });
+  assert.equal(pointsOf(10), 2, "the whole stroke");
+  assert.equal(pointsOf(11), 0, "cleared meanwhile");
+  onClear();
 });

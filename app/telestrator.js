@@ -56,11 +56,14 @@ function addPoints(m, behind) {
   strokes.set(m.stroke, s);
 }
 
-// The marker as a page joins, shown whole.
+// The marker as the room has it, on join or reconnect: in place of the page's, but for strokes
+// drawn here.
 /** @param {import("../types/stream").MarkerLine} m */
 export function onMarker(m) {
+  const kept = new Set(m.strokes.map(k => k.stroke));
+  for (const [id, s] of strokes) if (s.keep && !kept.has(id) && !mine.has(id)) strokes.delete(id);
   for (const k of m.strokes)
-    if (!strokes.has(k.stroke))
+    if (!mine.has(k.stroke))
       strokes.set(k.stroke, { points: k.points, start: -Infinity, ink: inkOf(k.by), keep: true });
 }
 

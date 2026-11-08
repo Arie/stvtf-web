@@ -146,9 +146,9 @@ const MAX_STROKE_MS: f64 = 600_000.0;
 
 type Leader = (u32, String, String);
 
-/// The marker for joiners; none if empty.
-fn kept_line(marker: &[Kept]) -> Option<Arc<str>> {
-    (!marker.is_empty()).then(|| serde_json::json!({ "type": "marker", "strokes": marker }).to_string().into())
+/// The marker for joiners, empty too: a page back after a clear it missed drops its own.
+fn kept_line(marker: &[Kept]) -> Arc<str> {
+    serde_json::json!({ "type": "marker", "strokes": marker }).to_string().into()
 }
 
 /// Whether a relay told `sent` is where `now` is without being told again: same course, within
@@ -221,9 +221,7 @@ impl Room {
         }
         *lock(&room.relay_was) = saved.relay;
         *lock(&room.marker) = saved.marker;
-        if let Some(kept) = kept_line(&lock(&room.marker)) {
-            announce(&room.hub, "marker", &kept);
-        }
+        announce(&room.hub, "marker", &kept_line(&lock(&room.marker)));
         room.announce_people();
         room
     }
@@ -256,6 +254,7 @@ impl Room {
             camera: Mutex::new(None),
             marker: Mutex::new(Vec::new()),
         });
+        announce(&room.hub, "marker", &kept_line(&[]));
         let player = room.clone();
         std::thread::spawn(move || player.play());
         room
@@ -370,7 +369,7 @@ impl Room {
         let mut marker = lock(&self.marker);
         marker.clear();
         let line = serde_json::json!({ "type": "clear", "by": by }).to_string().into();
-        send_keeping(&self.hub, &line, "marker", None);
+        send_keeping(&self.hub, &line, "marker", kept_line(&marker));
     }
 
     /// Admin `guest` sets how everyone sees the map.
@@ -791,7 +790,7 @@ mod tests {
         let page = subscribe(&r.hub, false);
         r.clear("me");
         assert!(page.try_iter().any(|l| &*l == r#"{"by":1,"type":"clear"}"#));
-        assert_eq!(joined(&r).len(), 0, "nothing kept");
+        assert_eq!(&*joined(&r)[0], r#"{"strokes":[],"type":"marker"}"#, "nothing kept, said so");
         assert_eq!(r.saved().marker.len(), 0);
         let full = Draw { stroke: 3, points: vec![[0.0, 0.0, 0.0]; 200], keep: true };
         let mut drawn = 0;

@@ -283,7 +283,7 @@ the same name (`demo.dem` for `demo.jsonl.gz`); without one they have no relay.
 | `POST /r/<id>/control` | an admin's `{"paused", "speed", "seek"}` (any of them; `seek` in milliseconds) |
 | `POST /r/<id>/draw` | an admin's `{"stroke": <id>, "points": [[x, y, ms], …]}`, up to 256 map points, each with when it was drawn (milliseconds into the stroke); a stroke's next points continue it, and pages draw it at that pace, 40 ms behind |
 
-The room's event stream adds six lines (`playback` also says `live`, for a live match whose recording grows): `relay` (`connect`, `port` and `password` while it has one, and `problem`: why it cannot play), `view` (as posted, with `by`), `people` (`id`, `name`, `admin`, `owner`, `signed`, and when there is one, `ink` and `steamid` each), `draw`
+The room's event stream adds eight lines (`playback` also says `live`, for a live match whose recording grows): `relay` (`connect`, `port` and `password` while it has one, and `problem`: why it cannot play), `marker` (the permanent marker's `strokes`, each `stroke`, `by` and `points`; on join, empty too), `clear`, `view` (as posted, with `by`), `people` (`id`, `name`, `admin`, `owner`, `signed`, and when there is one, `ink` and `steamid` each), `draw`
 (as posted, with `by`, the drawer's number), `playback` (`paused`, `speed`, `at` and `length` in
 milliseconds, `start`, the first moment kept, and `origin`, where the map began, and
 `rounds`, when each round started) on every change and every second while it
