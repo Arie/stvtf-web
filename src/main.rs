@@ -10,8 +10,10 @@ mod cli;
 mod demostf;
 mod http;
 mod hub;
+mod live_demos;
 mod people;
 mod recording;
+mod relays;
 mod replay;
 mod room;
 mod rooms;
@@ -24,7 +26,7 @@ use crate::http::{MAX_STREAMS_PER_CLIENT, app_version, serve};
 use crate::hub::{SharedHub, watch_into};
 use crate::replay::replay;
 use crate::sessions::Sessions;
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
 use std::collections::HashMap;
 use std::net::{IpAddr, TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
@@ -265,7 +267,7 @@ fn matches(options: &Options, keys: Option<&Arc<token::Keys>>, stop: &'static At
         let password = options.password.clone().or(password).unwrap_or_else(|| DEFAULT_TV_PASSWORD.to_string());
         let hz = options.hz;
         std::thread::spawn(move || {
-            if let Err(e) = watch_into(&fed, &target, &password, hz, stop) {
+            if let Err(e) = watch_into(&fed, &target, &password, hz, None, stop) {
                 eprintln!("stvtf-web: {e}");
             }
             if stop.load(Ordering::Relaxed) {
@@ -334,6 +336,11 @@ fn main() -> Result<()> {
     let console_prompt = keys.is_none() && std::io::IsTerminal::is_terminal(&std::io::stdin());
     let matches = matches(&options, keys.as_ref(), &STOP)?;
     let store = if let Matches::Many(sessions) = &matches { sessions.store.clone() } else { None };
+    let relays = match &options.relays {
+        Some(_) if store.is_none() => bail!("--relay-ports needs --sessions"),
+        Some((host, ports)) => Some(relays::Relays::new(host, ports.clone())),
+        None => None,
+    };
     let app = Arc::new(App {
         matches,
         cache: options.cache.clone(),
@@ -344,7 +351,7 @@ fn main() -> Result<()> {
         keys,
         home: options.home.clone(),
         streams: Mutex::default(),
-        rooms: rooms::Rooms::new(store),
+        rooms: rooms::Rooms::new(store, relays),
     });
     app.rooms.sweep();
     if let Matches::Many(_) = app.matches {

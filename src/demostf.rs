@@ -52,8 +52,8 @@ fn file_url(id: u64, body: &str) -> Result<String> {
 }
 
 /// Demo `id` as gzipped stvtf output, with `snapshot_hz` snapshots a second; None when told to
-/// `stop` while other demos were fetched first.
-fn fetch(id: u64, snapshot_hz: f32, stop: &AtomicBool) -> Result<Option<Vec<u8>>> {
+/// `stop` while other demos were fetched first. `keep` gets the demo file.
+fn fetch(id: u64, snapshot_hz: f32, stop: &AtomicBool, keep: &dyn Fn(&[u8])) -> Result<Option<Vec<u8>>> {
     let _one_at_a_time = lock(&FETCHING);
     if stop.load(Ordering::Relaxed) {
         return Ok(None);
@@ -61,6 +61,7 @@ fn fetch(id: u64, snapshot_hz: f32, stop: &AtomicBool) -> Result<Option<Vec<u8>>
     let started = Instant::now();
     let demo = download(&demo_url(id)?, id, MAX_DEMO)?;
     let fetched = started.elapsed();
+    keep(&demo);
     let output = decode(id, &demo, snapshot_hz)?;
     eprintln!(
         "stvtf-web: demo {id}: {} MiB fetched in {:.1} s, decoded to {} MiB in {:.1} s",
@@ -99,16 +100,19 @@ fn decode(id: u64, demo: &[u8], snapshot_hz: f32) -> Result<Vec<u8>> {
 }
 
 /// Plays demos.tf demo `id` into `hub` once, holding still while `play` says nobody watches,
-/// until it ends or `stop`; `keep` gets the output once decoded.
+/// until it ends or `stop`; `keep_demo` gets the demo file once fetched, `keep` the output once
+/// decoded.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn play(
     hub: &SharedHub,
     id: u64,
     snapshot_hz: f32,
     play: &dyn Fn() -> bool,
     stop: &AtomicBool,
+    keep_demo: &dyn Fn(&[u8]),
     keep: &dyn Fn(Arc<Vec<u8>>),
 ) -> Result<()> {
-    let played = fetch(id, snapshot_hz, stop).and_then(|output| match output {
+    let played = fetch(id, snapshot_hz, stop, keep_demo).and_then(|output| match output {
         Some(output) => {
             let output = Arc::new(output);
             keep(output.clone());
@@ -167,7 +171,7 @@ mod tests {
     #[test]
     fn a_demo_stopped_before_its_turn_is_not_fetched_and_says_nothing() {
         let hub = SharedHub::default();
-        play(&hub, 1, 20.0, &|| true, &AtomicBool::new(true), &drop).unwrap();
+        play(&hub, 1, 20.0, &|| true, &AtomicBool::new(true), &|_| {}, &drop).unwrap();
         assert_eq!(crate::hub::subscribe(&hub, false).try_iter().count(), 0);
     }
 

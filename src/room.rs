@@ -5,11 +5,12 @@ use crate::hub::{SharedHub, announce, publish, restore, send};
 use crate::lock;
 use crate::people::People;
 use crate::recording::Recording;
+use crate::relays::{Offer, RoomRelay};
 use anyhow::{Result, bail};
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Condvar, Mutex, MutexGuard};
+use std::sync::{Arc, Condvar, Mutex, MutexGuard, OnceLock};
 use std::time::{Duration, Instant};
 use stvtf::Line;
 
@@ -34,6 +35,13 @@ pub(crate) struct Room {
     wake: Condvar,
     viewers: AtomicUsize,
     idle_since: Mutex<Option<Instant>>,
+    /// Where its relay would play from, if it can have one.
+    offer: OnceLock<Offer>,
+    /// Its relay, while someone is in (on a page or in TF2), and since when nobody is.
+    relay: Mutex<Option<RoomRelay>>,
+    relay_idle: Mutex<Option<Instant>>,
+    /// What its pages were last told of the relay.
+    relay_said: Mutex<Option<String>>,
 }
 
 struct State {
@@ -43,6 +51,8 @@ struct State {
     at: u64,
     seek: Option<u64>,
     stop: bool,
+    /// The server tick of the last snapshot played, since the last seek.
+    tick: Option<u32>,
 }
 
 /// What an owner changes; unset fields stay.
@@ -138,7 +148,7 @@ impl Room {
     /// A room playing `recording` from the start, at 1×; a live match's from where it is now.
     pub(crate) fn start(id: String, owner: &str, recording: Arc<Recording>) -> Arc<Room> {
         let at = if recording.is_live() { recording.length() } else { 0 };
-        let state = State { paused: false, speed: 1.0, at, seek: (at > 0).then_some(at), stop: false };
+        let state = State { paused: false, speed: 1.0, at, seek: (at > 0).then_some(at), stop: false, tick: None };
         Room::run(id, People::new(owner), None, None, state, recording)
     }
 
@@ -146,14 +156,14 @@ impl Room {
     pub(crate) fn start_at(id: String, owner: &str, recording: Arc<Recording>, at: u64, speed: f64, paused: bool) -> Arc<Room> {
         let at = at.clamp(recording.start(), recording.length());
         let speed = if SPEEDS.contains(&speed) { speed } else { 1.0 };
-        let state = State { paused, speed, at, seek: Some(at), stop: false };
+        let state = State { paused, speed, at, seek: Some(at), stop: false, tick: None };
         Room::run(id, People::new(owner), None, None, state, recording)
     }
 
     /// The room `saved` was, back where it was.
     pub(crate) fn restore(id: String, saved: Saved, recording: Arc<Recording>) -> Arc<Room> {
         let at = saved.at.clamp(recording.start(), recording.length());
-        let state = State { paused: saved.paused, speed: saved.speed, at, seek: Some(at), stop: false };
+        let state = State { paused: saved.paused, speed: saved.speed, at, seek: Some(at), stop: false, tick: None };
         let room = Room::run(id, saved.people, saved.leader, saved.view.map(Into::into), state, recording);
         if let Some(view) = lock(&room.view).clone() {
             announce(&room.hub, "view", &view);
@@ -181,6 +191,10 @@ impl Room {
             wake: Condvar::new(),
             viewers: AtomicUsize::new(0),
             idle_since: Mutex::new(Some(Instant::now())),
+            offer: OnceLock::new(),
+            relay: Mutex::new(None),
+            relay_idle: Mutex::new(None),
+            relay_said: Mutex::new(None),
         });
         let player = room.clone();
         std::thread::spawn(move || player.play());
@@ -312,6 +326,7 @@ impl Room {
     pub(crate) fn join(self: &Arc<Self>, guest: &str, name: Option<&str>, site: Option<&str>, listed: bool) -> Watching {
         self.viewers.fetch_add(1, Ordering::Relaxed);
         *lock(&self.idle_since) = None;
+        self.ensure_relay();
         if listed {
             lock(&self.people).join(guest, name, site);
             self.announce_people();
@@ -319,9 +334,98 @@ impl Room {
         Watching(self.clone(), listed.then(|| guest.to_string()))
     }
 
-    /// How long nobody has watched, if nobody does.
+    /// How long nobody has watched, if nobody does (on a page, or in TF2).
     pub(crate) fn idle_for(&self) -> Option<Duration> {
+        if self.relay_clients() > 0 {
+            return None;
+        }
         lock(&self.idle_since).map(|t| t.elapsed())
+    }
+
+    /// The room can be relayed to TF2 clients, from the demos `offer` says.
+    pub(crate) fn offer_relay(&self, offer: Offer) {
+        let _ = self.offer.set(offer);
+        if self.viewers.load(Ordering::Relaxed) > 0 {
+            self.ensure_relay();
+        }
+    }
+
+    /// Starts its relay if it can have one and has none. Takes the state's lock and the relay's
+    /// one at a time: the player holds the state's while it points the relay.
+    fn ensure_relay(&self) {
+        let Some(offer) = self.offer.get() else { return };
+        *lock(&self.relay_idle) = None;
+        if lock(&self.relay).is_some() {
+            return;
+        }
+        let Some(want) = Self::want(&lock(&self.state), offer, true) else { return };
+        match offer.relays.start(want) {
+            Ok(Some(r)) => {
+                let mut relay = lock(&self.relay);
+                // Another page started one meanwhile: this one goes.
+                if relay.is_none() {
+                    *relay = Some(r);
+                }
+            }
+            Ok(None) => {}
+            Err(e) => eprintln!("stvtf-web: room {}: {e:#}", &self.id[..8.min(self.id.len())]),
+        }
+        self.tell_relay();
+    }
+
+    /// Where its relay should be, as playback is in `st`: at the tick last played, or the first of
+    /// the demo before any (`any`).
+    fn want(st: &State, offer: &Offer, any: bool) -> Option<stvtf::relay::Want> {
+        let tick = st.tick.or(any.then_some(0))?;
+        Some(stvtf::relay::Want {
+            demo: (offer.demo_of)(tick)?,
+            tick,
+            at: Instant::now(),
+            paused: st.paused,
+            speed: st.speed,
+            from_start: false,
+        })
+    }
+
+    /// Points the relay at where playback is.
+    fn follow(&self, st: &State) {
+        let Some(offer) = self.offer.get() else { return };
+        if let Some(r) = &*lock(&self.relay)
+            && let Some(want) = Self::want(st, offer, false)
+        {
+            r.follow(want);
+        }
+    }
+
+    fn relay_clients(&self) -> usize {
+        lock(&self.relay).as_ref().map_or(0, RoomRelay::clients)
+    }
+
+    /// Tells the pages how to connect in TF2, when that changed.
+    fn tell_relay(&self) {
+        let line = lock(&self.relay).as_ref().map_or_else(|| serde_json::json!({ "type": "relay" }), RoomRelay::line);
+        let line = line.to_string();
+        let mut said = lock(&self.relay_said);
+        if said.as_deref() != Some(line.as_str()) {
+            announce(&self.hub, "relay", &line.clone().into());
+            *said = Some(line);
+        }
+    }
+
+    /// Stops its relay once nobody has been in for `linger`, freeing the port.
+    pub(crate) fn reap_relay(&self, linger: Duration) {
+        let in_room = self.viewers.load(Ordering::Relaxed) > 0 || self.relay_clients() > 0;
+        let mut idle = lock(&self.relay_idle);
+        if in_room || lock(&self.relay).is_none() {
+            *idle = None;
+            return;
+        }
+        if idle.get_or_insert_with(Instant::now).elapsed() >= linger {
+            *idle = None;
+            drop(idle);
+            *lock(&self.relay) = None;
+            self.tell_relay();
+        }
     }
 
     /// The timeline's marks from the `from`th on, and how many there are.
@@ -336,6 +440,7 @@ impl Room {
     pub(crate) fn stop(&self) {
         lock(&self.state).stop = true;
         self.wake.notify_all();
+        *lock(&self.relay) = None;
     }
 
     fn announce(&self, st: &State) {
@@ -354,6 +459,7 @@ impl Room {
             "marks": self.recording.marks(usize::MAX).1,
         });
         announce(&self.hub, "playback", &line.to_string().into());
+        self.follow(st);
     }
 
     /// The player: until stopped, plays the lines in time, seeking and pausing when told. At the
@@ -374,6 +480,7 @@ impl Room {
             // A live match goes on, paused or not: pages hear how long it is now.
             if rec.is_live() && announced.elapsed() >= ANNOUNCE_EVERY {
                 self.announce(&st);
+                self.tell_relay();
                 announced = Instant::now();
             }
             // What is played was dropped (a new map): on from what is kept.
@@ -381,6 +488,7 @@ impl Room {
                 st.seek = Some(rec.start());
             }
             if let Some(target) = st.seek.take() {
+                st.tick = None;
                 let (hub, i, played) = rec.seek(target);
                 restore(&self.hub, hub);
                 (chunk, done, looked, st.at) = (i, played, None, target.max(rec.start()));
@@ -417,7 +525,7 @@ impl Room {
                 }
                 continue;
             };
-            if st.paused || self.viewers.load(Ordering::Relaxed) == 0 {
+            if st.paused || (self.viewers.load(Ordering::Relaxed) == 0 && self.relay_clients() == 0) {
                 st = self.sleep(st, IDLE_POLL);
                 continue;
             }
@@ -429,6 +537,7 @@ impl Room {
                 st.at = (st.at + played).min(t);
                 if announced.elapsed() >= ANNOUNCE_EVERY {
                     self.announce(&st);
+                    self.tell_relay();
                     announced = Instant::now();
                 }
                 continue;
@@ -436,6 +545,10 @@ impl Room {
             let (_, line) = lines.pop_front().expect("a front line");
             done += 1;
             publish(&self.hub, &line);
+            if let Line::Snapshot(snap) = &line {
+                st.tick = Some(snap.tick);
+                self.follow(&st);
+            }
         }
     }
 

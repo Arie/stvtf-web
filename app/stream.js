@@ -172,6 +172,10 @@ function handle(m) {
       for (const f of peopleListeners)
         f(/** @type {import("../types/stream").PeopleLine} */ (/** @type {unknown} */ (m)));
       break;
+    case "relay":
+      for (const f of relayListeners)
+        f(/** @type {import("../types/stream").RelayLine} */ (/** @type {unknown} */ (m)));
+      break;
     case "playback":
       onPlayback(/** @type {import("../types/stream").PlaybackLine} */ (/** @type {unknown} */ (m)));
       break;
@@ -205,6 +209,8 @@ export const playbackListeners = new Set();
 export const peopleListeners = new Set();
 /** @type {Set<(m: import("../types/stream").ViewLine) => void>} */
 export const viewListeners = new Set();
+/** @type {Set<(m: import("../types/stream").RelayLine) => void>} */
+export const relayListeners = new Set();
 /** @param {import("../types/stream").PlaybackLine} m */
 function onPlayback(m) {
   setClockRate(m.paused ? 0 : m.speed);

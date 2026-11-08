@@ -3,8 +3,9 @@
 
 use crate::lock;
 use crate::recording::Recording;
+use crate::relays::{DemoOf, Offer, Relays};
 use crate::room::{Room, Saved};
-use crate::sessions::{Session, Sessions, Store, Viewer};
+use crate::sessions::{Session, Sessions, Store, Viewer, demo_dem};
 use anyhow::{Result, bail};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -13,6 +14,8 @@ use std::time::{Duration, SystemTime};
 
 /// A saved room nobody came back for is dropped after this long.
 const STALE: Duration = Duration::from_hours(1);
+/// A room's relay is given up after this long with nobody in.
+const RELAY_LINGER: Duration = Duration::from_mins(10);
 
 #[derive(Default)]
 pub(crate) struct Rooms {
@@ -27,6 +30,8 @@ pub(crate) struct Rooms {
     watching: Mutex<HashMap<String, Viewer>>,
     /// Private playbacks: one viewer's own, from a match page; not saved.
     private: Mutex<std::collections::HashSet<String>>,
+    /// The ports rooms are relayed on, if they are (`--relay-ports`).
+    relays: Option<Arc<Relays>>,
 }
 
 /// Private playbacks at once, at most.
@@ -57,8 +62,27 @@ fn demo_file(demo: u64) -> String {
 }
 
 impl Rooms {
-    pub(crate) fn new(store: Option<Store>) -> Rooms {
-        Rooms { store, ..Rooms::default() }
+    pub(crate) fn new(store: Option<Store>, relays: Option<Arc<Relays>>) -> Rooms {
+        Rooms { store, relays, ..Rooms::default() }
+    }
+
+    /// Lets `room` be relayed to TF2 clients, from where `demo_of` says its demos are.
+    fn offer(&self, room: &Room, demo_of: Option<DemoOf>) {
+        if let (Some(relays), Some(demo_of)) = (&self.relays, demo_of) {
+            room.offer_relay(Offer { relays: relays.clone(), demo_of });
+        }
+    }
+
+    /// Where the demos of what `source` plays are.
+    fn demo_of(&self, source: &Source, sessions: &Sessions) -> Option<DemoOf> {
+        match source {
+            Source::Pinned(_) => None,
+            Source::Live(id) => sessions.get(id)?.demo_of(self.store.as_ref()),
+            Source::Demo(demo) => {
+                let path = self.store.as_ref()?.dir.join(demo_dem(*demo));
+                Some(Arc::new(move |_| path.exists().then(|| path.clone())))
+            }
+        }
     }
 
     /// The room `owner` opened on match `from` and still has, if any (not a private playback).
@@ -92,6 +116,7 @@ impl Rooms {
         }
         let room = Room::start(id, owner, recording);
         self.watch(&room.id, from, &source);
+        self.offer(&room, from.demo_of(self.store.as_ref()));
         self.add(&room, source);
         Ok(room)
     }
@@ -171,6 +196,7 @@ impl Rooms {
             return Some(room.clone());
         }
         let room = Room::restore(id.to_string(), saved.room, recording);
+        self.offer(&room, self.demo_of(&saved.source, sessions));
         if let Source::Live(match_id) = &saved.source
             && let Some(m) = sessions.get(match_id)
         {
@@ -191,6 +217,7 @@ impl Rooms {
         let Some(source) = lock(&self.sources).get(&room.id).cloned() else { return };
         if let Source::Demo(demo) = source {
             store.touch(&demo_file(demo));
+            store.touch(&demo_dem(demo));
         }
         let saved = SavedRoom { source, room: room.saved() };
         if let Err(e) = serde_json::to_vec(&saved).map_err(Into::into).and_then(|plain| store.put(&file(&room.id), &plain)) {
@@ -208,6 +235,10 @@ impl Rooms {
 
     /// Ends the rooms nobody has watched for `linger`, and forgets them.
     pub(crate) fn reap(&self, linger: Duration) {
+        let rooms: Vec<Arc<Room>> = lock(&self.map).values().cloned().collect();
+        for room in rooms {
+            room.reap_relay(RELAY_LINGER);
+        }
         let mut ended = Vec::new();
         lock(&self.map).retain(|id, room| {
             let keep = room.idle_for().is_none_or(|t| t < linger);
@@ -229,6 +260,7 @@ impl Rooms {
                     && !sources.values().any(|s| *s == Source::Demo(demo))
                 {
                     store.forget(&demo_file(demo));
+                    store.forget(&demo_dem(demo));
                 }
             }
             eprintln!("stvtf-web: room {} ended", &id[..8]);
@@ -280,7 +312,7 @@ mod tests {
     #[test]
     fn an_unwatched_room_ends_and_is_forgotten() {
         let (sessions, dir) = demo();
-        let rooms = Rooms::new(Some(store(&dir)));
+        let rooms = Rooms::new(Some(store(&dir)), None);
         let m = sessions.get("demo").unwrap();
         let r = rooms.open(&m, m.recording().unwrap(), "me").unwrap();
         let w = r.join("me", None, None, true);
@@ -296,7 +328,7 @@ mod tests {
     #[test]
     fn the_next_process_picks_a_room_up_where_it_was() {
         let (sessions, dir) = demo();
-        let rooms = Rooms::new(Some(store(&dir)));
+        let rooms = Rooms::new(Some(store(&dir)), None);
         let m = sessions.get("demo").unwrap();
         let r = rooms.open(&m, m.recording().unwrap(), "me").unwrap();
         let _w = r.join("me", Some("coach"), None, true);
@@ -304,7 +336,7 @@ mod tests {
         rooms.persist();
         r.stop();
 
-        let next = Rooms::new(Some(store(&dir)));
+        let next = Rooms::new(Some(store(&dir)), None);
         let again = next.get(&r.id, &sessions).expect("picked up");
         let saved = again.saved();
         assert_eq!((saved_at(&saved), again.me("me")), (600, (1, true)));
@@ -341,7 +373,7 @@ mod tests {
         let (sessions, dir) = demo();
         let store = store(&dir);
         store.put(&demo_file(7), b"gz").unwrap();
-        let rooms = Rooms::new(Some(store.clone()));
+        let rooms = Rooms::new(Some(store.clone()), None);
         let recording = sessions.get("demo").unwrap().recording().unwrap();
         let (a, b) = (Room::start("a".repeat(32), "me", recording.clone()), Room::start("b".repeat(32), "me", recording));
         rooms.add(&a, Source::Demo(7));

@@ -5,7 +5,15 @@ import { EMBEDDED } from "./embed.js";
 import { clock, moment, playbar } from "./playbar.js";
 import { env } from "./env.js";
 import { setAutoZoom, setFollow } from "./input.js";
-import { EVENTS_URL, openStream, peopleListeners, playbackListeners, streamParams, viewListeners } from "./stream.js";
+import {
+  EVENTS_URL,
+  openStream,
+  peopleListeners,
+  playbackListeners,
+  relayListeners,
+  streamParams,
+  viewListeners,
+} from "./stream.js";
 import { drawOwn, inkOf, setInks } from "./telestrator.js";
 import { pushMirror } from "./camera.js";
 import { RoomView, latestView, morePoints, sender } from "./roomview.js";
@@ -132,6 +140,7 @@ function roomBar() {
       () => {},
     );
   const showPeople = people(allow);
+  inTf2();
   drawing(pen);
   // d takes the pen.
   env.keys.addEventListener("keydown", e => {
@@ -263,6 +272,30 @@ function drawing(pen) {
   const end = () => (stroke = null);
   canvas.addEventListener("pointerup", end);
   canvas.addEventListener("pointercancel", end);
+}
+
+// How to watch the room in TF2, when it is relayed: the console line to paste, and a link that
+// has Steam connect.
+function inTf2() {
+  const cmd = $("tf2cmd"),
+    copy = $("tf2copy"),
+    why = $("tf2why");
+  relayListeners.add(m => {
+    $("intf2").hidden = !m.connect;
+    if (!m.connect) return;
+    cmd.textContent = `connect ${m.connect}; password "${m.password}"`;
+    /** @type {HTMLAnchorElement} */ ($("tf2open")).href = `steam://connect/${m.connect}/${m.password}`;
+    why.hidden = !m.problem;
+    why.textContent = m.problem ? `Cannot be played in TF2: ${m.problem}` : "";
+  });
+  copy.onclick = () =>
+    navigator.clipboard?.writeText(cmd.textContent ?? "").then(
+      () => {
+        copy.classList.add("copied");
+        setTimeout(() => copy.classList.remove("copied"), COPIED_MS);
+      },
+      () => {},
+    );
 }
 
 // Who is in the room, with the viewer's own name to set; admins make others admin or not.

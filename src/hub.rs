@@ -322,16 +322,19 @@ pub(crate) fn publish(hub: &SharedHub, line: &Line) {
     });
 }
 
-/// Watches a `SourceTV` server into `hub` until `stop`; a watch that gives up says so to the pages.
+/// Watches a `SourceTV` server into `hub` until `stop`, recording it as `demos` if given; a watch
+/// that gives up says so to the pages.
 pub(crate) fn watch_into(
     hub: &SharedHub,
     target: &str,
     password: &str,
     hz: f32,
+    demos: Option<Arc<dyn stvtf::demo::Files>>,
     stop: &AtomicBool,
 ) -> Result<(), stvtf::watch::WatchError> {
     let mut w = Watch::new(target, password);
     w.snapshot_hz = hz;
+    w.demos = demos;
     let result = watch(&w, stop, &mut |line| publish(hub, &line));
     if let Err(e) = &result {
         publish(hub, &Line::Status(Status::GaveUp { reason: e.to_string() }));
@@ -590,7 +593,7 @@ pub(crate) mod tests {
         let hub = SharedHub::default();
         let page = subscribe(&hub, false);
         script("hub-gives-up", vec![server("cp_process_f12")], Some("wrong password"));
-        let result = watch_into(&hub, "hub-gives-up", "tv", 20.0, &AtomicBool::new(false));
+        let result = watch_into(&hub, "hub-gives-up", "tv", 20.0, None, &AtomicBool::new(false));
         assert_eq!(result.unwrap_err().to_string(), "wrong password");
         let lines: Vec<Value> = page.try_iter().map(|l| serde_json::from_str(&l).unwrap()).collect();
         assert_eq!(lines.len(), 2, "{lines:?}");
@@ -603,7 +606,7 @@ pub(crate) mod tests {
     fn a_watch_that_was_stopped_tells_the_pages_nothing() {
         let hub = SharedHub::default();
         let page = subscribe(&hub, false);
-        assert!(watch_into(&hub, "hub-stopped", "tv", 20.0, &AtomicBool::new(true)).is_ok());
+        assert!(watch_into(&hub, "hub-stopped", "tv", 20.0, None, &AtomicBool::new(true)).is_ok());
         assert_eq!(types(&page), Vec::<String>::new());
     }
 

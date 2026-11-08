@@ -8,6 +8,7 @@ out to any number of browsers over Server-Sent Events.
 cargo build --release
 ./target/release/stvtf-web [--public] [--max-matches 20] [--base-path /live] [--home URL] [--sessions DIR]
                            [--demo MATCH.jsonl[.gz]] [--demos DIR] [--listen 127.0.0.1:8080] [--hz 20] [--cache DIR] [--backpack DIR]
+                           [--relay-ports 27100-27199 --relay-host HOST]   (rooms in TF2, see Rooms)
 ./target/release/stvtf-web HOST:TVPORT [--password tv] [--listen 127.0.0.1:8080] [--hz 20] [--cache DIR] [--backpack DIR]
 ./target/release/stvtf-web --replay FILE.jsonl [--listen 127.0.0.1:8080]
 ```
@@ -230,6 +231,23 @@ goes on recording: only the last few seconds before the restart are missing. The
 the match ends. A saved room nobody comes back to within an
 hour is dropped.
 
+### In TF2
+
+With `--relay-ports 27100-27199 --relay-host HOST` (and `--sessions`), each room is also a
+SourceTV address: the room's sidebar shows "In TF2" with `connect HOST:PORT; password "PW"` to
+paste in the console (and a `steam://connect` link). A TF2 client there sees what the room shows,
+as a SourceTV spectator with its own free camera: the room's moment, paused when it pauses,
+jumping when it jumps (a jump back signs it on again: a short loading screen), at its speed.
+
+A room gets a port from the range and a random password while someone is in it (on its page,
+or in TF2), and gives it back 10 minutes after nobody is. It plays the match's `.dem`
+(see stvtf's README, "Playing a demo"): a demos.tf demo's file, kept beside its output as
+`demo-<number>.dem`, or a live match's, recorded as it is watched as `live-<match>-<tick>.dem`,
+one per connection to the server (a new map drops the old map's, as the recording does; they go
+with the match, or an hour after they were last written). A demo of an older TF2 build, whose
+class tables are not the current ones, cannot be played to a game client: the sidebar says so.
+Rooms on `--demo`/`--demos` recordings have no `.dem`, and no relay.
+
 | route | |
 |---|---|
 | `GET /w/<id>/room` | 200 when a room can be opened on the match, 409 when not (a demo still being fetched) |
@@ -243,7 +261,7 @@ hour is dropped.
 | `POST /r/<id>/control` | an admin's `{"paused", "speed", "seek"}` (any of them; `seek` in milliseconds) |
 | `POST /r/<id>/draw` | an admin's `{"stroke": <id>, "points": [[x, y, ms], …]}`, up to 256 map points, each with when it was drawn (milliseconds into the stroke); a stroke's next points continue it, and pages draw it at that pace, 40 ms behind |
 
-The room's event stream adds five lines (`playback` also says `live`, for a live match whose recording grows): `view` (as posted, with `by`), `people` (`id`, `name`, `admin`, `owner`, `signed`, and when there is one, `ink` and `steamid` each), `draw`
+The room's event stream adds six lines (`playback` also says `live`, for a live match whose recording grows): `relay` (`connect` and `password` while it has one, and `problem`: why it cannot play), `view` (as posted, with `by`), `people` (`id`, `name`, `admin`, `owner`, `signed`, and when there is one, `ink` and `steamid` each), `draw`
 (as posted, with `by`, the drawer's number), `playback` (`paused`, `speed`, `at` and `length` in
 milliseconds, `start`, the first moment kept, and `origin`, where the map began, and
 `rounds`, when each round started) on every change and every second while it

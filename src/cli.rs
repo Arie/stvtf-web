@@ -2,6 +2,7 @@
 
 use anyhow::{Context, Result, anyhow, bail};
 use std::collections::HashMap;
+use std::ops::RangeInclusive;
 use std::path::PathBuf;
 
 /// The `tv_password` tried when a connect string has none.
@@ -17,9 +18,25 @@ stvtf-web: live top-down viewer of a TF2 match in the browser
   stvtf-web [--public] [--max-matches 20] [--base-path /live] [--demo MATCH.jsonl[.gz]] [--demos DIR] [--sessions DIR] [--no-warm]   (watch any server: paste a connect string on the page; --no-warm: no maps built in advance)
      With STVTF_TOKEN_KEY (64 hex digits) set, matches start only from a site's encrypted /start?t= links;
      --home URL then sends visitors of / to that site.
+     --relay-ports 27100-27199 --relay-host HOST: each room is also a SourceTV address for TF2 clients,
+     HOST:PORT on a port of the range (needs --sessions, where live matches record their demos).
   stvtf-web --replay FILE.jsonl [--listen 127.0.0.1:8080]   (stvtf output, at game speed)";
-const FLAGS: [&str; 12] =
-    ["password", "listen", "hz", "cache", "backpack", "replay", "max-matches", "base-path", "demo", "demos", "sessions", "home"];
+const FLAGS: [&str; 14] = [
+    "password",
+    "listen",
+    "hz",
+    "cache",
+    "backpack",
+    "replay",
+    "max-matches",
+    "base-path",
+    "demo",
+    "demos",
+    "sessions",
+    "home",
+    "relay-ports",
+    "relay-host",
+];
 const SWITCHES: [&str; 2] = ["public", "no-warm"];
 const DEFAULT_LISTEN: &str = "127.0.0.1:8080";
 const DEFAULT_MAX_MATCHES: usize = 20;
@@ -46,6 +63,8 @@ pub(crate) struct Options {
     pub(crate) public: bool,
     /// Leave building the most played maps to their first viewers.
     pub(crate) no_warm: bool,
+    /// Rooms relayed to TF2 clients: on these ports, at this host.
+    pub(crate) relays: Option<(String, RangeInclusive<u16>)>,
 }
 
 impl Options {
@@ -54,6 +73,11 @@ impl Options {
         let Some(Args { positional, mut flags }) = parse_args(args)? else { return Ok(None) };
         let mut take = |name: &str| flags.remove(name);
         let base_path = take("base-path").unwrap_or_default().trim_end_matches('/').to_string();
+        let relays = match (take("relay-host"), take("relay-ports")) {
+            (Some(host), Some(ports)) => Some((host, port_range(&ports)?)),
+            (None, None) => None,
+            _ => bail!("--relay-ports and --relay-host go together"),
+        };
         if !base_path.is_empty() && !base_path.starts_with('/') {
             bail!("--base-path {base_path}: must start with /");
         }
@@ -76,8 +100,20 @@ impl Options {
             home: take("home"),
             public: take("public").is_some(),
             no_warm: take("no-warm").is_some(),
+            relays,
         }))
     }
+}
+
+/// `A-B`: ports A to B.
+fn port_range(s: &str) -> Result<RangeInclusive<u16>> {
+    let bad = || anyhow!("--relay-ports {s}: not a range of ports like 27100-27199");
+    let (a, b) = s.split_once('-').ok_or_else(bad)?;
+    let (a, b): (u16, u16) = (a.trim().parse().map_err(|_| bad())?, b.trim().parse().map_err(|_| bad())?);
+    if a == 0 || a > b {
+        return Err(bad());
+    }
+    Ok(a..=b)
 }
 
 /// The command line as given: positional arguments and options by name.
@@ -178,6 +214,9 @@ mod tests {
         assert_eq!(options(&["--base-path", "/live/"]).unwrap().unwrap().base_path, "/live");
         assert!(options(&["--help"]).unwrap().is_none());
         assert!(!defaults.no_warm && options(&["--no-warm"]).unwrap().unwrap().no_warm);
+        let relayed = options(&["--relay-ports", "27100-27109", "--relay-host", "stv.tf"]).unwrap().unwrap();
+        assert_eq!(relayed.relays, Some(("stv.tf".to_string(), 27100..=27109)));
+        assert!(defaults.relays.is_none());
     }
 
     #[test]
@@ -188,6 +227,10 @@ mod tests {
         assert!(options(&["--hz", "-1"]).is_err());
         assert!(options(&["--public=yes"]).is_err());
         assert!(options(&["--base-path", "live"]).is_err());
+        assert!(options(&["--relay-ports", "27100-27109"]).is_err(), "without a host");
+        for bad in ["27109-27100", "27100", "a-b", "0-5", "1-70000"] {
+            assert!(options(&["--relay-ports", bad, "--relay-host", "h"]).is_err(), "{bad}");
+        }
     }
 
     #[test]

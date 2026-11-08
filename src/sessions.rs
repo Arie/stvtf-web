@@ -5,7 +5,9 @@
 use crate::cache::write_atomic;
 use crate::cli::{DEFAULT_TV_PASSWORD, parse_connect};
 use crate::hub::{SharedHub, Summary, subscribe, watch_into};
+use crate::live_demos::LiveDemos;
 use crate::recording::{Recording, Save, Sink};
+use crate::relays::DemoOf;
 use crate::{demostf, lock, token};
 use aes_gcm::aead::OsRng;
 use aes_gcm::aead::rand_core::RngCore;
@@ -59,6 +61,8 @@ pub struct Session {
     live: OnceLock<Arc<Recording>>,
     /// Whether `prepare` started.
     preparing: AtomicBool,
+    /// A live match's demos, when there is a store to keep them in.
+    demos: OnceLock<Arc<LiveDemos>>,
 }
 
 /// A recorded match: a saved file, or a demo's gzipped output.
@@ -92,6 +96,7 @@ impl Session {
             recording: OnceLock::new(),
             live: OnceLock::new(),
             preparing: AtomicBool::new(false),
+            demos: OnceLock::new(),
         }
     }
 
@@ -111,6 +116,17 @@ impl Session {
             Some(Source::Output(gz)) => Some(gz.clone()),
             _ => None,
         }
+    }
+
+    /// Where the `.dem` files of what it plays are, by server tick, so rooms on it can be relayed:
+    /// a live match's as it records them, or a demos.tf demo's, kept in `store`.
+    pub(crate) fn demo_of(&self, store: Option<&Store>) -> Option<DemoOf> {
+        if let Some(d) = self.demos.get() {
+            let d = d.clone();
+            return Some(Arc::new(move |tick| d.at(tick)));
+        }
+        let path = store?.dir.join(demo_dem(self.demo?));
+        Some(Arc::new(move |_| path.exists().then(|| path.clone())))
     }
 
     /// Rooms play `file`, the recording this session loops.
@@ -503,9 +519,16 @@ impl Sessions {
         let mut session = Session::new(demo_id(demo), SharedHub::default(), nowhere, String::new(), owner.map(str::to_string), false);
         session.demo = Some(demo);
         let s = Arc::new(session);
-        let (player, hz) = (s.clone(), self.hz);
+        let (player, hz, store) = (s.clone(), self.hz, self.store.clone());
         let thread = std::thread::spawn(move || {
-            if let Err(e) = demostf::play(&player.hub, demo, hz, &|| player.watched(), &player.stop, &|gz| {
+            let keep_demo = |dem: &[u8]| {
+                if let Some(store) = &store
+                    && let Err(e) = store.replace(&demo_dem(demo), dem)
+                {
+                    eprintln!("stvtf-web: keeping demo {demo}: {e:#}");
+                }
+            };
+            if let Err(e) = demostf::play(&player.hub, demo, hz, &|| player.watched(), &player.stop, &keep_demo, &|gz| {
                 *lock(&player.source) = Some(Source::Output(gz));
             }) {
                 eprintln!("stvtf-web: match {} (demo {demo}) gave up: {e:#}", player.label());
@@ -542,9 +565,14 @@ impl Sessions {
         hub: SharedHub,
     ) -> Arc<Session> {
         let s = Arc::new(Session::new(id, hub, server, password, owner, false));
+        let demos = self.store.as_ref().map(|store| LiveDemos::new(&store.dir, &s.id));
+        if let Some(d) = &demos {
+            let _ = s.demos.set(d.clone());
+        }
         let (watcher, hz) = (s.clone(), self.hz);
         let thread = std::thread::spawn(move || {
-            if let Err(e) = watch_into(&watcher.hub, &server.to_string(), &watcher.password, hz, &watcher.stop) {
+            let demos = demos.map(|d| d as Arc<dyn stvtf::demo::Files>);
+            if let Err(e) = watch_into(&watcher.hub, &server.to_string(), &watcher.password, hz, demos, &watcher.stop) {
                 eprintln!("stvtf-web: match {} gave up: {e}", watcher.label());
             }
             watcher.done.store(true, Ordering::Relaxed);
@@ -649,6 +677,9 @@ impl Sessions {
             store.forget(&s.id);
             store.forget(&live_file(&s.id));
         }
+        if let Some(d) = s.demos.get() {
+            d.forget();
+        }
     }
 
     /// Disconnects every watcher cleanly, so the servers free their `SourceTV` slots. Their saved
@@ -664,6 +695,11 @@ impl Sessions {
             }
         }
     }
+}
+
+/// A demos.tf demo's file in the store, kept while a match or room plays it.
+pub(crate) fn demo_dem(demo: u64) -> String {
+    format!("demo-{demo}.dem")
 }
 
 /// A live match's recording beside its file.

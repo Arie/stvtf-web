@@ -208,6 +208,64 @@ aside section {
   cursor: pointer;
   white-space: nowrap;
 }
+/* The console line to watch the room in TF2, with a copy button. */
+#tf2 {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+#tf2cmd {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  user-select: all;
+}
+#tf2copy {
+  flex: none;
+  padding: 3px 5px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--dim);
+  line-height: 0;
+  cursor: pointer;
+}
+#tf2copy:hover {
+  color: var(--text);
+}
+#tf2copy svg {
+  width: 13px;
+  height: 13px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+#tf2copy .check,
+#tf2copy.copied .copy {
+  display: none;
+}
+#tf2copy.copied .check {
+  display: block;
+  color: #7cc47f;
+}
+#tf2open {
+  display: inline-block;
+  margin-top: 4px;
+  color: var(--dim);
+  font-size: 12px;
+}
+#tf2open:hover {
+  color: var(--text);
+}
+#tf2why {
+  margin: 4px 0 0;
+  color: var(--dim);
+  font-size: 12px;
+}
 #peoplelist .signed {
   color: #7cc47f;
   font-size: 11px;

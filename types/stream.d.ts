@@ -188,6 +188,9 @@ export type ViewLine = { type: "view"; by: number; page: string } & (
   | { mode: "admin"; cx: number; cy: number; w: number; h: number; rot: number }
 );
 
+/** How to watch a room in TF2: its relay's address and password, and why it cannot play, if it cannot. No address: none. */
+export type RelayLine = { type: "relay"; connect?: string; password?: string; problem?: string | null };
+
 export type StreamMessage =
   | Snapshot
   | ServerLine
@@ -196,6 +199,7 @@ export type StreamMessage =
   | DrawLine
   | PeopleLine
   | ViewLine
+  | RelayLine
   | { type: "data_age"; ms: number }
   | { type: "seek" }
   | GameEvent;
