@@ -4,6 +4,8 @@ The server behind [stv.tf](https://stv.tf): a live top-down view of a TF2 match 
 browser. It links [stvtf](../stvtf) as a library: one SourceTV connection per match, fanned
 out to any number of browsers over Server-Sent Events.
 
+To run it yourself on a LAN, with no serveme.tf, see [RUNNING-LOCALLY.md](RUNNING-LOCALLY.md).
+
 ```
 cargo build --release
 ./target/release/stvtf-web [--public] [--max-matches 20] [--base-path /live] [--home URL] [--sessions DIR]
