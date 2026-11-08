@@ -188,8 +188,15 @@ export type ViewLine = { type: "view"; by: number; page: string } & (
   | { mode: "admin"; cx: number; cy: number; w: number; h: number; rot: number }
 );
 
-/** How to watch a room in TF2: its relay's address and password, and why it cannot play, if it cannot. No address: none. */
-export type RelayLine = { type: "relay"; connect?: string; password?: string; problem?: string | null };
+/** How to watch a room in TF2: its relay's host:port (`connect`, for the console) and IP:port (`address`, for a
+ * steam:// link, which takes no names), its password, and why it cannot play, if it cannot. No `connect`: none. */
+export type RelayLine = {
+  type: "relay";
+  connect?: string;
+  address?: string | null;
+  password?: string;
+  problem?: string | null;
+};
 
 export type StreamMessage =
   | Snapshot

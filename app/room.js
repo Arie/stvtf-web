@@ -306,7 +306,10 @@ function inTf2() {
     $("intf2").hidden = !m.connect;
     if (!m.connect) return;
     cmd.textContent = `connect ${m.connect}; password "${m.password}"`;
-    /** @type {HTMLAnchorElement} */ ($("tf2open")).href = `steam://connect/${m.connect}/${m.password}`;
+    // Steam's link takes an IP address, not a name: none without one.
+    const open = /** @type {HTMLAnchorElement} */ ($("tf2open"));
+    open.hidden = !m.address;
+    if (m.address) open.href = `steam://connect/${m.address}/${m.password}`;
     why.hidden = !m.problem;
     why.textContent = m.problem ? `Cannot be played in TF2: ${m.problem}` : "";
   });

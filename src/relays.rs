@@ -17,6 +17,8 @@ const SLOTS: usize = 24;
 /// The ports rooms may take, and the address clients are told.
 pub(crate) struct Relays {
     host: String,
+    /// The host's IPv4 address, for `steam://connect` links, which take no names; looked up once.
+    ip: Option<String>,
     /// Taken from the front; one that would not bind goes to the back.
     free: Mutex<VecDeque<u16>>,
 }
@@ -44,7 +46,12 @@ impl Bound {
 
 impl Relays {
     pub(crate) fn new(host: &str, ports: impl IntoIterator<Item = u16>) -> Arc<Relays> {
-        Arc::new(Relays { host: host.to_string(), free: Mutex::new(ports.into_iter().collect()) })
+        use std::net::ToSocketAddrs;
+        let ip = (host, 0).to_socket_addrs().ok().and_then(|mut a| a.find(std::net::SocketAddr::is_ipv4)).map(|a| a.ip().to_string());
+        if ip.is_none() {
+            eprintln!("stvtf-web: --relay-host {host} has no IPv4 address: rooms get no Open in TF2 link");
+        }
+        Arc::new(Relays { host: host.to_string(), ip, free: Mutex::new(ports.into_iter().collect()) })
     }
 
     /// A relay on a free port, playing as `want` says until dropped; None when every port is taken.
@@ -106,6 +113,8 @@ impl RoomRelay {
         serde_json::json!({
             "type": "relay",
             "connect": format!("{}:{}", self.bound().pool.host, self.bound().port),
+            // For the steam:// link, which takes an address and no name.
+            "address": self.bound().pool.ip.as_ref().map(|ip| format!("{ip}:{}", self.bound().port)),
             "password": self.password,
             "problem": self.playback.problem(),
         })
@@ -159,11 +168,12 @@ mod tests {
     #[test]
     fn rooms_take_ports_from_the_range_and_give_them_back() {
         let ports = free_ports();
-        let relays = Relays::new("stv.example", ports);
+        let relays = Relays::new("127.0.0.1", ports);
         let a = relays.start(want()).unwrap().unwrap();
         let b = relays.start(want()).unwrap().unwrap();
         assert!(relays.start(want()).unwrap().is_none(), "all taken");
-        assert_eq!(a.line()["connect"], format!("stv.example:{}", ports[0]));
+        assert_eq!(a.line()["connect"], format!("127.0.0.1:{}", ports[0]));
+        assert_eq!(a.line()["address"], format!("127.0.0.1:{}", ports[0]));
         assert_ne!(a.password, b.password);
         drop(a);
         let until = Instant::now() + std::time::Duration::from_secs(5);
