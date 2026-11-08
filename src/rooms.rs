@@ -14,6 +14,8 @@ use std::time::{Duration, SystemTime};
 
 /// A saved room nobody came back for is dropped after this long.
 const STALE: Duration = Duration::from_hours(1);
+/// A room file not saved or touched for this long has no process playing it (they do every second).
+const QUIET: Duration = Duration::from_secs(5);
 /// A live match's `.dem` file not written for this long is past what its recording keeps.
 const LIVE_DEMO_KEPT: Duration = Duration::from_hours(3);
 
@@ -34,6 +36,8 @@ pub(crate) struct Rooms {
     relays: Option<Arc<Pool>>,
     /// A hash of each room file as last written here: one the same again is only touched.
     written: Mutex<HashMap<String, u64>>,
+    /// Quiet room files found to have no relay.
+    unrelayed: Mutex<std::collections::HashSet<String>>,
 }
 
 /// Private playbacks at once, at most.
@@ -251,6 +255,28 @@ impl Rooms {
         Ok(())
     }
 
+    /// Picks up the saved rooms with a relay that no process plays any more: the one a deploy
+    /// replaced kept them till it went, and TF2 clients may be in them with no page to ask.
+    pub(crate) fn pick_up_relayed(&self, sessions: &Sessions) {
+        let (Some(store), Some(_)) = (&self.store, &self.relays) else { return };
+        let Ok(entries) = std::fs::read_dir(&store.dir) else { return };
+        for entry in entries.flatten() {
+            let name = entry.file_name().to_string_lossy().into_owned();
+            let Some(id) = name.strip_prefix("room-").filter(|id| crate::sessions::is_id(id)) else { continue };
+            let age = entry.metadata().and_then(|m| m.modified()).map(|t| SystemTime::now().duration_since(t).unwrap_or_default());
+            if !age.is_ok_and(|a| a > QUIET && a < STALE) || lock(&self.map).contains_key(id) || lock(&self.unrelayed).contains(id) {
+                continue;
+            }
+            let relayed =
+                store.take(&name).ok().and_then(|d| serde_json::from_slice::<SavedRoom>(&d).ok()).is_some_and(|s| Room::relayed(&s.room));
+            if relayed {
+                self.get(id, sessions);
+            } else {
+                lock(&self.unrelayed).insert(id.to_string());
+            }
+        }
+    }
+
     /// Saves every room as it is now.
     pub(crate) fn persist(&self) {
         let rooms: Vec<Arc<Room>> = lock(&self.map).values().cloned().collect();
@@ -408,6 +434,37 @@ mod tests {
 
         let next = Rooms::new(Some(store(&dir)), None);
         assert_eq!(next.get(&r.id, &sessions).expect("picked up").saved().marker.len(), 2, "the marker came along");
+    }
+
+    #[test]
+    fn a_relayed_room_is_picked_up_once_no_process_plays_it() {
+        let (sessions, dir) = demo();
+        let rooms = Rooms::new(Some(store(&dir)), None);
+        let m = sessions.get("demo").unwrap();
+        let (relayed, plain) =
+            (rooms.open(&m, m.recording().unwrap(), "me").unwrap(), rooms.open(&m, m.recording().unwrap(), "me").unwrap());
+        rooms.persist();
+        let path = |id: &str| dir.join("store").join(file(id));
+        let mut v: serde_json::Value = serde_json::from_slice(&std::fs::read(path(&relayed.id)).unwrap()).unwrap();
+        v["room"]["relay"] = serde_json::json!({ "port": 28100, "password": "pw" });
+        std::fs::write(path(&relayed.id), v.to_string()).unwrap();
+        relayed.stop();
+        plain.stop();
+        let port = std::net::UdpSocket::bind("0.0.0.0:0").unwrap().local_addr().unwrap().port();
+        let pool = Some(Arc::new(Pool::Local(crate::relays::Relays::new("127.0.0.1", [port]))));
+        let next = Rooms::new(Some(store(&dir)), pool);
+        next.pick_up_relayed(&sessions);
+        assert_eq!(next.count(), 0, "still played by the process before");
+        let quiet = SystemTime::now() - Duration::from_secs(10);
+        for id in [&relayed.id, &plain.id] {
+            std::fs::File::options().write(true).open(path(id)).unwrap().set_modified(quiet).unwrap();
+        }
+        next.pick_up_relayed(&sessions);
+        assert_eq!(next.count(), 1, "the relayed one only");
+        assert!(lock(&next.map).contains_key(&relayed.id));
+        for r in lock(&next.map).values() {
+            r.stop();
+        }
     }
 
     #[test]

@@ -439,9 +439,19 @@ impl Room {
     /// The room can be relayed to TF2 clients, from the demos `offer` says.
     pub(crate) fn offer_relay(&self, offer: Offer) {
         let _ = self.offer.set(offer);
-        if lock(&self.people).listed() > 0 {
+        if self.wants_relay() {
             self.ensure_relay();
         }
+    }
+
+    /// Someone is on a page, or it had a relay (TF2 clients may be in it).
+    fn wants_relay(&self) -> bool {
+        lock(&self.people).listed() > 0 || lock(&self.relay_was).is_some()
+    }
+
+    /// Whether `saved` had a relay.
+    pub(crate) fn relayed(saved: &Saved) -> bool {
+        saved.relay.is_some()
     }
 
     /// Starts its relay if it can have one and has none. Takes the state's lock and the relay's
@@ -537,7 +547,7 @@ impl Room {
             *lock(&self.relay_sent) = None;
         }
         let missing = lock(&self.relay).is_none();
-        if missing && lock(&self.people).listed() > 0 {
+        if missing && self.wants_relay() {
             self.ensure_relay();
         }
         self.tell_relay();

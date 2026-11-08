@@ -304,9 +304,10 @@ fn keep_house(app: Arc<App>, stop: &'static AtomicBool) {
             if round % PERSIST_ROUNDS == 0 {
                 sessions.persist();
             }
-            // Where each room is, to the second.
+            // Where each room is, to the second; relayed rooms the process before let go of.
             if round % ROOM_PERSIST_ROUNDS == 0 {
                 app.rooms.persist();
+                app.rooms.pick_up_relayed(sessions);
             }
             // Old files of rooms, demos and live matches.
             if round % SWEEP_ROUNDS == 0 {
