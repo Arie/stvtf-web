@@ -5,8 +5,9 @@
 //! stv.tf talks to it over a unix socket (`--relay-socket`, on a volume both see), a JSON line per
 //! request and per answer:
 //!
-//! - `{"op": "start", "room", "want", "was"}`: the room's relay, started if it has none (on the
-//!   port and password it `was` on, if it can); its page line, null when every port is taken.
+//! - `{"op": "start", "room", "want", "was"}`: the room's relay, started if it has none or its
+//!   own stopped (on the port and password it `was` on, if it can); its page line, null when
+//!   every port is taken.
 //! - `{"op": "follow", "room", "want"}`: where the room is now.
 //! - `{"op": "status", "room"}`: TF2 clients in, whether it stopped, and its page line.
 //! - `{"op": "stop", "room"}`: the room ended.
@@ -149,12 +150,17 @@ fn answer(conn: UnixStream, rooms: &Rooms, relays: &Arc<Relays>) -> Result<()> {
 
 fn handle(r: Request, rooms: &Rooms, relays: &Arc<Relays>) -> Value {
     match r {
-        Request::Start { room, want, was } => {
+        Request::Start { room, want, mut was } => {
             let mut all = lock(rooms);
             if let Some(l) = all.get_mut(&room) {
-                l.seen = Instant::now();
-                l.relay.follow(want.want());
-                return json!({ "line": l.relay.line() });
+                if !l.relay.stopped() {
+                    l.seen = Instant::now();
+                    l.relay.follow(want.want());
+                    return json!({ "line": l.relay.line() });
+                }
+                // Stopped: a new one on its port.
+                was = was.or_else(|| Some(l.relay.was()));
+                all.remove(&room);
             }
             match relays.start(want.want(), was.as_ref()) {
                 Ok(Some(relay)) => {

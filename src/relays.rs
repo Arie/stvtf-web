@@ -141,6 +141,10 @@ impl LocalRelay {
         self.thread.is_finished()
     }
 
+    pub(crate) fn was(&self) -> Was {
+        Was { port: self.bound().port, password: self.password.clone() }
+    }
+
     /// What pages show: the console line to connect, and why it cannot play, if it cannot.
     pub(crate) fn line(&self) -> serde_json::Value {
         serde_json::json!({
