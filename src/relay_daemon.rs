@@ -44,6 +44,9 @@ pub(crate) struct WantLine {
     paused: bool,
     speed: f64,
     from_start: bool,
+    /// The player (user id) the camera follows.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    follow: Option<u16>,
 }
 
 impl WantLine {
@@ -55,12 +58,21 @@ impl WantLine {
             paused: w.paused,
             speed: w.speed,
             from_start: w.from_start,
+            follow: w.camera.map(|stvtf::relay::Camera::Follow { player }| player),
         }
     }
 
     fn want(self) -> Want {
         let at = Instant::now().checked_sub(Duration::from_millis(self.age_ms)).unwrap_or_else(Instant::now);
-        Want { demo: self.demo, tick: self.tick, at, paused: self.paused, speed: self.speed, from_start: self.from_start }
+        Want {
+            demo: self.demo,
+            tick: self.tick,
+            at,
+            paused: self.paused,
+            speed: self.speed,
+            from_start: self.from_start,
+            camera: self.follow.map(|player| stvtf::relay::Camera::Follow { player }),
+        }
     }
 }
 
@@ -286,7 +298,7 @@ mod tests {
     use crate::testing::TempDir;
 
     fn want() -> Want {
-        Want { demo: "nowhere.dem".into(), tick: 0, at: Instant::now(), paused: false, speed: 1.0, from_start: false }
+        Want { demo: "nowhere.dem".into(), tick: 0, at: Instant::now(), paused: false, speed: 1.0, from_start: false, camera: None }
     }
 
     #[test]

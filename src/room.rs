@@ -46,6 +46,8 @@ pub(crate) struct Room {
     /// The last relay that could not start: when, and why, so it is tried again and logged at a
     /// pace (the relay process may be away for a while).
     relay_failed: Mutex<Option<(Instant, String)>>,
+    /// The user id the view follows; the relay's camera does too.
+    camera: Mutex<Option<u16>>,
 }
 
 struct State {
@@ -199,6 +201,7 @@ impl Room {
             relay: Mutex::new(None),
             relay_said: Mutex::new(None),
             relay_failed: Mutex::new(None),
+            camera: Mutex::new(None),
         });
         let player = room.clone();
         std::thread::spawn(move || player.play());
@@ -322,6 +325,14 @@ impl Room {
         let line: Arc<str> = line.to_string().into();
         *lock(&self.view) = Some(line.clone());
         announce(&self.hub, "view", &line);
+        drop(leader);
+        let camera = match *view {
+            View::Follow { player, .. } => Some(player),
+            _ => None,
+        };
+        if std::mem::replace(&mut *lock(&self.camera), camera) != camera {
+            self.follow(&lock(&self.state));
+        }
         Ok(())
     }
 
@@ -365,7 +376,7 @@ impl Room {
         if lock(&self.relay_failed).as_ref().is_some_and(|(t, _)| t.elapsed() < RELAY_RETRY) {
             return;
         }
-        let Some(want) = Self::want(&lock(&self.state), offer, true) else { return };
+        let Some(want) = self.want(&lock(&self.state), offer, true) else { return };
         match offer.relays.start(&self.id, want) {
             Ok(Some(r)) => {
                 *lock(&self.relay_failed) = None;
@@ -390,7 +401,7 @@ impl Room {
 
     /// Where its relay should be, as playback is in `st`: at the tick last played, or the first of
     /// the demo before any (`any`).
-    fn want(st: &State, offer: &Offer, any: bool) -> Option<stvtf::relay::Want> {
+    fn want(&self, st: &State, offer: &Offer, any: bool) -> Option<stvtf::relay::Want> {
         let tick = st.tick.or(any.then_some(0))?;
         Some(stvtf::relay::Want {
             demo: (offer.demo_of)(tick)?,
@@ -399,6 +410,7 @@ impl Room {
             paused: st.paused,
             speed: st.speed,
             from_start: false,
+            camera: lock(&self.camera).map(|player| stvtf::relay::Camera::Follow { player }),
         })
     }
 
@@ -406,7 +418,7 @@ impl Room {
     fn follow(&self, st: &State) {
         let Some(offer) = self.offer.get() else { return };
         if let Some(r) = &*lock(&self.relay)
-            && let Some(want) = Self::want(st, offer, false)
+            && let Some(want) = self.want(st, offer, false)
         {
             r.follow(want);
         }

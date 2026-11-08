@@ -233,7 +233,7 @@ mod tests {
     }
 
     fn want() -> Want {
-        Want { demo: "nowhere.dem".into(), tick: 0, at: Instant::now(), paused: false, speed: 1.0, from_start: false }
+        Want { demo: "nowhere.dem".into(), tick: 0, at: Instant::now(), paused: false, speed: 1.0, from_start: false, camera: None }
     }
 
     #[test]
