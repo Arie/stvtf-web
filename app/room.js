@@ -81,7 +81,7 @@ function roomButton() {
     if (r?.ok) {
       const page = new URL((await r.json()).page, location.origin);
       // Its link to send, if the browser still lets this click copy.
-      await navigator.clipboard?.writeText(page.href).catch(() => {});
+      await copyText(page.href);
       return location.assign(page);
     }
     button.disabled = false;
@@ -98,14 +98,36 @@ function copyLink(what, url) {
   const link = $("copylink");
   Object.assign(link, { hidden: false, title: what });
   link.setAttribute("aria-label", what);
-  link.onclick = () =>
-    navigator.clipboard?.writeText(url().href).then(
-      () => {
-        link.classList.add("copied");
-        setTimeout(() => link.classList.remove("copied"), COPIED_MS);
-      },
-      () => {},
-    );
+  link.onclick = () => copyText(url().href).then(ok => ok && copied(link));
+}
+
+// Copies `text`: through the clipboard API where the page may use it (HTTPS, localhost), else by
+// copying a selection, the old way, which a page over plain HTTP (on a LAN) may still do.
+/** @param {string} text @returns {Promise<boolean>} whether it did */
+async function copyText(text) {
+  try {
+    if (navigator.clipboard) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch {}
+  const area = Object.assign(document.createElement("textarea"), { value: text, readOnly: true });
+  area.style.cssText = "position: fixed; top: 0; left: 0; opacity: 0";
+  document.body.append(area);
+  area.select();
+  let ok = false;
+  try {
+    ok = document.execCommand("copy");
+  } catch {}
+  area.remove();
+  return ok;
+}
+
+// A copy button shows a check for a moment.
+/** @param {HTMLElement} button */
+function copied(button) {
+  button.classList.add("copied");
+  setTimeout(() => button.classList.remove("copied"), COPIED_MS);
 }
 
 function roomBar() {
@@ -288,14 +310,7 @@ function inTf2() {
     why.hidden = !m.problem;
     why.textContent = m.problem ? `Cannot be played in TF2: ${m.problem}` : "";
   });
-  copy.onclick = () =>
-    navigator.clipboard?.writeText(cmd.textContent ?? "").then(
-      () => {
-        copy.classList.add("copied");
-        setTimeout(() => copy.classList.remove("copied"), COPIED_MS);
-      },
-      () => {},
-    );
+  copy.onclick = () => copyText(cmd.textContent ?? "").then(ok => ok && copied(copy));
 }
 
 // Who is in the room, with the viewer's own name to set; admins make others admin or not.
