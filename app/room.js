@@ -135,7 +135,9 @@ function roomBar() {
   // A room's link, to send.
   // The room's link, to send, by its name.
   copyLink("Copy the room's link, to send", () => new URL(location.pathname, location.origin));
-  const pen = /** @type {HTMLButtonElement} */ ($("rb-pen"));
+  const pen = /** @type {HTMLButtonElement} */ ($("rb-pen")),
+    marker = /** @type {HTMLButtonElement} */ ($("rb-marker")),
+    clear = /** @type {HTMLButtonElement} */ ($("rb-clear"));
   const control = (/** @type {import("./playbar.js").Control} */ c) => post("control", c);
   const bar = playbar({ home: HOME, send: control, live: end => control({ seek: end, paused: false }) });
   playbackListeners.add(m => bar.heard(m));
@@ -143,9 +145,9 @@ function roomBar() {
   const allow = on => {
     me.admin = on;
     bar.allow(on);
-    for (const c of [pen, $("rb-view")]) /** @type {HTMLButtonElement} */ (c).disabled = !on;
+    for (const c of [pen, marker, clear, $("rb-view")]) /** @type {HTMLButtonElement} */ (c).disabled = !on;
     $("roombar").title = on ? "" : "The room's admins control playback";
-    if (!on && pen.classList.contains("on")) pen.click();
+    for (const t of [pen, marker]) if (!on && t.classList.contains("on")) t.click();
     if (on) $("claim").hidden = true;
     setViewAdmin(on);
   };
@@ -163,13 +165,16 @@ function roomBar() {
     );
   const showPeople = people(allow);
   inTf2();
-  drawing(pen);
-  // d takes the pen.
+  drawing(pen, marker);
+  clear.onclick = () => post("clear", {});
+  // d takes the pen, m the marker.
+  /** @type {Record<string, HTMLButtonElement>} */
+  const tools = { d: pen, m: marker };
   env.keys.addEventListener("keydown", e => {
     const target = /** @type {Element} */ (e.composedPath()[0]);
-    if (e.key !== "d" || !me.admin || e.ctrlKey || e.metaKey || e.altKey || target.closest?.("input, select, textarea"))
-      return;
-    pen.click();
+    const tool = tools[e.key];
+    if (!tool || !me.admin || e.ctrlKey || e.metaKey || e.altKey || target.closest?.("input, select, textarea")) return;
+    tool.click();
     e.preventDefault();
   });
 }
@@ -252,12 +257,19 @@ function watchBar() {
   setInterval(shared, SHARED_MS);
 }
 
-// The pen: while on, dragging on the map draws (in map coordinates) instead of moving the view.
-/** @param {HTMLButtonElement} pen */
-function drawing(pen) {
-  /** @type {{ id: number; last: [number, number] | null; began: number } | null} */
+// Pen and marker: while one is on, dragging draws instead of panning. Pen fades; marker stays.
+/** @param {HTMLButtonElement} pen @param {HTMLButtonElement} marker */
+function drawing(pen, marker) {
+  /** @type {{ id: number; last: [number, number] | null; began: number; keep: boolean } | null} */
   let stroke = null;
-  pen.onclick = () => env.el.classList.toggle("drawing", pen.classList.toggle("on"));
+  for (const [tool, other] of [
+    [pen, marker],
+    [marker, pen],
+  ])
+    tool.onclick = () => {
+      other.classList.remove("on");
+      env.el.classList.toggle("drawing", tool.classList.toggle("on"));
+    };
   const send = sender((/** @type {import("./roomview.js").Strokes} */ s) => post("draw", s), morePoints);
   /** @param {PointerEvent} e */
   const add = e => {
@@ -274,18 +286,20 @@ function drawing(pen) {
       Math.round(state.view.cy + dy),
       Math.round(performance.now() - stroke.began),
     ];
-    drawOwn({ stroke: stroke.id, points: [point], by: me.id });
-    send({ stroke: stroke.id, points: [point] });
+    const keep = stroke.keep || undefined;
+    drawOwn({ stroke: stroke.id, points: [point], by: me.id, keep });
+    send({ stroke: stroke.id, points: [point], keep });
   };
   canvas.addEventListener(
     "pointerdown",
     e => {
-      if (!pen.classList.contains("on") || e.button !== 0) return;
+      const keep = marker.classList.contains("on");
+      if (!(keep || pen.classList.contains("on")) || e.button !== 0) return;
       // Before the view's own handlers: no panning, following or mouse events while drawing.
       e.preventDefault();
       e.stopImmediatePropagation();
       canvas.setPointerCapture(e.pointerId);
-      stroke = { id: Math.floor(Math.random() * 2 ** 31), last: null, began: performance.now() };
+      stroke = { id: Math.floor(Math.random() * 2 ** 31), last: null, began: performance.now(), keep };
       add(e);
     },
     { capture: true },

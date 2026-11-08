@@ -41,7 +41,7 @@
         <tr><td><kbd>s</kbd></td><td>Hide or show the scores</td></tr>
         <tr><td><kbd>e</kbd></td><td>Hide or show events and chat</td></tr>
         <tr><td><kbd>g</kbd></td><td>Switch between overview and geometry</td></tr>
-        <tr><td><kbd>k</kbd></td><td>Open or close the layer settings</td></tr>
+        <tr><td><kbd>k</kbd></td><td>Open or close the layer settings</td></tr><tr><td><kbd>d</kbd></td><td>Draw on the map, in a room you are admin of</td></tr><tr><td><kbd>m</kbd></td><td>Permanent marker, in a room you are admin of</td></tr>
         <tr><td><kbd>x</kbd></td><td>Switch all overkill layers on or off</td></tr>
         <tr><td><kbd>j</kbd></td><td>Jump trails</td></tr>
         <tr><td><kbd>l</kbd></td><td>Loadouts</td></tr>
@@ -50,7 +50,7 @@
         <tr><td><kbd>?</kbd></td><td>Show or hide this list</td></tr>
       </table>
     </div>
-    <div id="roombar" hidden><button id="rb-play">⏸</button><div id="rb-track"><input id="rb-time" type="range" min="0" max="0" step="100" value="0" aria-label="Position"></div><span id="rb-clock"></span><button id="rb-live" hidden title="Back to live">● Live</button><select id="rb-speed" aria-label="Speed"></select><button id="rb-pen" title="Draw on the map (d)">✎</button><select id="rb-view" aria-label="How everyone sees the map" title="How everyone sees the map"><option value="free" title="Everyone moves their own camera">Free</option><option value="auto">Auto zoom</option><option value="follow" id="rb-follow" hidden disabled>Following</option><option value="admin">Admin's view</option></select><span id="rb-lead" hidden></span></div>
+    <div id="roombar" hidden><button id="rb-play">⏸</button><div id="rb-track"><input id="rb-time" type="range" min="0" max="0" step="100" value="0" aria-label="Position"></div><span id="rb-clock"></span><button id="rb-live" hidden title="Back to live">● Live</button><select id="rb-speed" aria-label="Speed"></select><button id="rb-pen" title="Draw on the map (d)">✎</button><button id="rb-marker" title="Permanent marker: stays until cleared (m)">✒︎</button><button id="rb-clear" title="Clear all drawings">⌫</button><select id="rb-view" aria-label="How everyone sees the map" title="How everyone sees the map"><option value="free" title="Everyone moves their own camera">Free</option><option value="auto">Auto zoom</option><option value="follow" id="rb-follow" hidden disabled>Following</option><option value="admin">Admin's view</option></select><span id="rb-lead" hidden></span></div>
     <div id="bgtoggle" hidden title="g"><button data-bg="overview" class="on">Overview</button><button data-bg="geometry">Geometry</button></div>
   </div>
   <aside>

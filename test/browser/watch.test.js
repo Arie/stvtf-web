@@ -223,6 +223,33 @@ test("the owner draws on the map and everyone in the room sees it", async () => 
   await page.close();
 });
 
+test("the marker stays, for those who come later too, until an admin clears it", async () => {
+  const { page, errors } = await open();
+  await page.goto(base);
+  await page.click("#roomopen");
+  await page.waitForURL(/\/r\/[0-9a-f]{32}\/$/, { timeout: WAIT });
+  await until(page, () => !(/** @type {HTMLButtonElement} */ (document.getElementById("rb-marker")).disabled));
+  const clean = await ink(page);
+  await page.keyboard.press("m");
+  await page.mouse.move(300, 300);
+  await page.mouse.down();
+  for (let i = 1; i <= 20; i++) await page.mouse.move(300 + i * 10, 300 + i * 5);
+  await page.mouse.up();
+  // Past when a pen's stroke has faded.
+  await page.waitForTimeout(4500);
+  assert.ok((await ink(page)) > clean + 100, "the marker stays");
+  const later = await open();
+  await later.page.goto(page.url());
+  await until(later.page, m => document.getElementById("map").textContent === m, MAP);
+  const marked = await ink(later.page);
+  await page.click("#rb-clear");
+  await later.page.waitForTimeout(500);
+  assert.ok(marked > (await ink(later.page)) + 100, "one who came later saw it, until it was cleared");
+  assert.deepEqual([...errors, ...later.errors], []);
+  await later.page.close();
+  await page.close();
+});
+
 test("people in a room see each other and admins make others admin", async () => {
   const { page, errors } = await open();
   await page.goto(base);

@@ -391,6 +391,16 @@ pub(crate) fn send(hub: &SharedHub, json: &Arc<str>) {
     lock(hub).clients.retain(|c| c.tx.try_send(json.clone()).is_ok());
 }
 
+/// A line to every page now; joiners get `kept` as the room's `kind` line instead.
+pub(crate) fn send_keeping(hub: &SharedHub, json: &Arc<str>, kind: &'static str, kept: Option<Arc<str>>) {
+    let mut h = lock(hub);
+    match kept {
+        Some(k) => h.room.insert(kind, k),
+        None => h.room.remove(kind),
+    };
+    h.clients.retain(|c| c.tx.try_send(json.clone()).is_ok());
+}
+
 /// A room's line of type `kind`, to every page now and (the latest of each kind) on join.
 pub(crate) fn announce(hub: &SharedHub, kind: &'static str, json: &Arc<str>) {
     let mut h = lock(hub);

@@ -549,12 +549,16 @@ fn serve_room(
             let name = json_body::<Name>(reader, request).map(|n| room.rename(&guest, &n.name));
             done(&mut s, name)?;
         }
-        ("control" | "draw" | "admin" | "view" | "ink", "POST") if !admin => {
+        ("control" | "draw" | "clear" | "admin" | "view" | "ink", "POST") if !admin => {
             respond(&mut s, "403 Forbidden", TEXT, b"Only the room's admins do that.")?;
         }
         ("view", "POST") => done(&mut s, json_body::<ViewPost>(reader, request).and_then(|v| room.set_view(&v, &guest)))?,
         ("ink", "POST") => done(&mut s, json_body::<Ink>(reader, request).and_then(|i| room.set_ink(&guest, &i.ink)))?,
         ("draw", "POST") => done(&mut s, json_body::<Draw>(reader, request).and_then(|d| room.draw(&d, &guest)))?,
+        ("clear", "POST") => {
+            room.clear(&guest);
+            respond(&mut s, "204 No Content", TEXT, b"")?;
+        }
         ("control", "POST") => done(&mut s, json_body::<Control>(reader, request).and_then(|c| room.control(&c)))?,
         ("admin", "POST") => done(&mut s, json_body::<Admin>(reader, request).and_then(|a| room.set_admin(&guest, a.person, a.admin)))?,
         _ => not_found(&mut s)?,

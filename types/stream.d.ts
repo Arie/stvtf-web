@@ -165,7 +165,23 @@ export type PlaybackLine = {
 };
 
 /** A piece of a room's telestrator stroke: map points with when they were drawn, in ms into the stroke. */
-export type DrawLine = { type: "draw"; stroke: number; points: [number, number, number][]; by?: number };
+export type DrawLine = {
+  type: "draw";
+  stroke: number;
+  points: [number, number, number][];
+  by?: number;
+  /** Permanent marker: stays until cleared. */
+  keep?: boolean;
+};
+
+/** The permanent marker on a room's map, as a page joins. */
+export type MarkerLine = {
+  type: "marker";
+  strokes: { stroke: number; by: number; points: [number, number, number][] }[];
+};
+
+/** An admin wiped the room's map. */
+export type ClearLine = { type: "clear"; by: number };
 
 /** Who is in a room, in the order they came; `id` is their number in it. */
 export type PeopleLine = {
@@ -204,6 +220,8 @@ export type StreamMessage =
   | StatusLine
   | PlaybackLine
   | DrawLine
+  | MarkerLine
+  | ClearLine
   | PeopleLine
   | ViewLine
   | RelayLine

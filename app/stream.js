@@ -20,7 +20,7 @@ import { hudNodes } from "./hud.js";
 import { setFollow } from "./input.js";
 import { detailNeeded } from "./layers.js";
 import { cartState } from "./payload.js";
-import { onDraw } from "./telestrator.js";
+import { onClear, onDraw, onMarker } from "./telestrator.js";
 import { loadMap } from "./view.js";
 /** @typedef {import("../types/stream").GameEvent} GameEvent */
 /** @typedef {import("../types/stream").StreamMessage} StreamMessage */
@@ -164,6 +164,12 @@ function handle(m) {
       break;
     case "draw":
       onDraw(/** @type {import("../types/stream").DrawLine} */ (/** @type {unknown} */ (m)));
+      break;
+    case "marker":
+      onMarker(/** @type {import("../types/stream").MarkerLine} */ (/** @type {unknown} */ (m)));
+      break;
+    case "clear":
+      onClear();
       break;
     case "view":
       for (const f of viewListeners) f(/** @type {import("../types/stream").ViewLine} */ (/** @type {unknown} */ (m)));

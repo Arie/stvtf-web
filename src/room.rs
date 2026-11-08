@@ -1,7 +1,7 @@
 //! A room: a recording played into its own hub, paused, sped up and sought by its owner, with
 //! everyone in it seeing the same.
 
-use crate::hub::{SharedHub, announce, publish, restore, send};
+use crate::hub::{SharedHub, announce, publish, restore, send, send_keeping};
 use crate::lock;
 use crate::people::People;
 use crate::recording::Recording;
@@ -48,6 +48,8 @@ pub(crate) struct Room {
     relay_failed: Mutex<Option<(Instant, String)>>,
     /// The user id the view follows; the relay's camera does too.
     camera: Mutex<Option<u16>>,
+    /// The permanent marker strokes on the map.
+    marker: Mutex<Vec<Kept>>,
 }
 
 struct State {
@@ -117,12 +119,31 @@ const MAX_PAGE: usize = 32;
 pub(crate) struct Draw {
     pub(crate) stroke: u32,
     pub(crate) points: Vec<[f64; 3]>,
+    /// Permanent marker: stays until cleared.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub(crate) keep: bool,
 }
+
+/// A permanent marker stroke, as drawn so far.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct Kept {
+    stroke: u32,
+    by: u32,
+    points: Vec<[f64; 3]>,
+}
+
+/// Most permanent marker points on a room's map.
+const MAX_KEPT_POINTS: usize = 8000;
 
 /// The longest a stroke's points can say it took, in milliseconds.
 const MAX_STROKE_MS: f64 = 600_000.0;
 
 type Leader = (u32, String, String);
+
+/// The marker for joiners; none if empty.
+fn kept_line(marker: &[Kept]) -> Option<Arc<str>> {
+    (!marker.is_empty()).then(|| serde_json::json!({ "type": "marker", "strokes": marker }).to_string().into())
+}
 
 /// What a room is, saved for the next process: where playback is, who is in it, and the view.
 #[derive(Debug, Serialize, Deserialize)]
@@ -133,6 +154,8 @@ pub(crate) struct Saved {
     people: People,
     leader: Option<Leader>,
     view: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    marker: Vec<Kept>,
 }
 
 /// A page in the room, by its guest cookie if it is listed, until dropped.
@@ -174,6 +197,10 @@ impl Room {
         if let Some(view) = lock(&room.view).clone() {
             announce(&room.hub, "view", &view);
         }
+        *lock(&room.marker) = saved.marker;
+        if let Some(kept) = kept_line(&lock(&room.marker)) {
+            announce(&room.hub, "marker", &kept);
+        }
         room.announce_people();
         room
     }
@@ -202,6 +229,7 @@ impl Room {
             relay_said: Mutex::new(None),
             relay_failed: Mutex::new(None),
             camera: Mutex::new(None),
+            marker: Mutex::new(Vec::new()),
         });
         let player = room.clone();
         std::thread::spawn(move || player.play());
@@ -218,6 +246,7 @@ impl Room {
             people: lock(&self.people).clone(),
             leader: lock(&self.leader).clone(),
             view: lock(&self.view).as_deref().map(str::to_string),
+            marker: lock(&self.marker).clone(),
         }
     }
 
@@ -288,11 +317,34 @@ impl Room {
         if !d.points.iter().all(|&[x, y, t]| [x, y].iter().all(|v| v.is_finite() && v.abs() < 1e6) && (0.0..=MAX_STROKE_MS).contains(&t)) {
             bail!("points must be on a map, in a stroke's time");
         }
+        let by = lock(&self.people).id(guest);
         let mut line = serde_json::to_value(d)?;
         line["type"] = "draw".into();
-        line["by"] = lock(&self.people).id(guest).into();
-        send(&self.hub, &line.to_string().into());
+        line["by"] = by.into();
+        let line: Arc<str> = line.to_string().into();
+        if !d.keep {
+            send(&self.hub, &line);
+            return Ok(());
+        }
+        let mut marker = lock(&self.marker);
+        if marker.iter().map(|k| k.points.len()).sum::<usize>() + d.points.len() > MAX_KEPT_POINTS {
+            bail!("the map is full of marker: clear it first");
+        }
+        match marker.iter_mut().find(|k| k.stroke == d.stroke && k.by == by) {
+            Some(k) => k.points.extend(&d.points),
+            None => marker.push(Kept { stroke: d.stroke, by, points: d.points.clone() }),
+        }
+        send_keeping(&self.hub, &line, "marker", kept_line(&marker));
         Ok(())
+    }
+
+    /// Admin `guest` wipes every stroke, marker too.
+    pub(crate) fn clear(&self, guest: &str) {
+        let by = lock(&self.people).id(guest);
+        let mut marker = lock(&self.marker);
+        marker.clear();
+        let line = serde_json::json!({ "type": "clear", "by": by }).to_string().into();
+        send_keeping(&self.hub, &line, "marker", None);
     }
 
     /// Admin `guest` sets how everyone sees the map.
@@ -675,14 +727,43 @@ mod tests {
     fn strokes_reach_every_page_and_stay_on_the_map() {
         let r = room(1);
         let page = subscribe(&r.hub, false);
-        r.draw(&Draw { stroke: 7, points: vec![[1.0, 2.0, 0.0], [3.5, -4.0, 16.0]] }, "me").unwrap();
+        r.draw(&Draw { stroke: 7, points: vec![[1.0, 2.0, 0.0], [3.5, -4.0, 16.0]], keep: false }, "me").unwrap();
         let line = page.try_iter().find(|l| l.contains(r#""type":"draw""#)).unwrap();
         assert_eq!(&*line, r#"{"by":1,"points":[[1.0,2.0,0.0],[3.5,-4.0,16.0]],"stroke":7,"type":"draw"}"#);
-        assert!(r.draw(&Draw { stroke: 7, points: vec![] }, "me").is_err());
-        assert!(r.draw(&Draw { stroke: 7, points: vec![[1e9, 0.0, 0.0]] }, "me").is_err());
-        assert!(r.draw(&Draw { stroke: 7, points: vec![[0.0, 0.0, -1.0]] }, "me").is_err());
-        assert!(r.draw(&Draw { stroke: 7, points: vec![[0.0, 0.0, 0.0]; 257] }, "me").is_err());
+        assert!(r.draw(&Draw { stroke: 7, points: vec![], keep: false }, "me").is_err());
+        assert!(r.draw(&Draw { stroke: 7, points: vec![[1e9, 0.0, 0.0]], keep: false }, "me").is_err());
+        assert!(r.draw(&Draw { stroke: 7, points: vec![[0.0, 0.0, -1.0]], keep: false }, "me").is_err());
+        assert!(r.draw(&Draw { stroke: 7, points: vec![[0.0, 0.0, 0.0]; 257], keep: false }, "me").is_err());
         r.stop();
+    }
+
+    #[test]
+    fn marker_stays_for_pages_that_join_until_cleared() {
+        let r = room(1);
+        let marker = |stroke, x| Draw { stroke, points: vec![[x, 0.0, 0.0]], keep: true };
+        r.draw(&marker(1, 1.0), "me").unwrap();
+        r.draw(&marker(1, 2.0), "me").unwrap();
+        r.draw(&Draw { stroke: 2, points: vec![[9.0, 9.0, 0.0]], keep: false }, "me").unwrap();
+        let joined = |r: &Room| subscribe(&r.hub, false).try_iter().filter(|l| l.contains(r#""type":"marker""#)).collect::<Vec<_>>();
+        let kept = joined(&r);
+        assert_eq!(&*kept[0], r#"{"strokes":[{"by":1,"points":[[1.0,0.0,0.0],[2.0,0.0,0.0]],"stroke":1}],"type":"marker"}"#);
+        // Picked up again after a restart.
+        let saved: Saved = serde_json::from_str(&serde_json::to_string(&r.saved()).unwrap()).unwrap();
+        let again = Room::restore("r2".into(), saved, r.recording.clone());
+        assert_eq!(joined(&again), kept);
+        let page = subscribe(&r.hub, false);
+        r.clear("me");
+        assert!(page.try_iter().any(|l| &*l == r#"{"by":1,"type":"clear"}"#));
+        assert_eq!(joined(&r).len(), 0, "nothing kept");
+        assert_eq!(r.saved().marker.len(), 0);
+        let full = Draw { stroke: 3, points: vec![[0.0, 0.0, 0.0]; 200], keep: true };
+        let mut drawn = 0;
+        while r.draw(&full, "me").is_ok() {
+            drawn += 200;
+        }
+        assert_eq!(drawn, MAX_KEPT_POINTS);
+        r.stop();
+        again.stop();
     }
 
     #[test]

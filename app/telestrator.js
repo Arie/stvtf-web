@@ -1,8 +1,9 @@
-// A room's telestrator: strokes its owner draws, in map coordinates, shown to everyone in the
-// room for a few seconds and then faded out.
+// A room's telestrator: admins' strokes in map coordinates. Pen fades after a few seconds;
+// marker stays until cleared.
 import { ctx, uiScale } from "./core.js";
 import { toScreen } from "./view.js";
 /** @typedef {import("../types/stream").DrawLine} DrawLine */
+/** @typedef {{ stroke: number; points: [number, number, number][]; by?: number; keep?: boolean }} Piece */
 
 // A stroke shows this long after its last point, then fades out over FADE_MS.
 const HOLD_MS = 3000,
@@ -25,7 +26,7 @@ export const inkOf = by => picked.get(by) ?? INKS[(Math.max(1, by) - 1) % INKS.l
 const BEHIND_MS = 40;
 
 // A stroke's points ([x, y, ms into the stroke]), and when its start shows here.
-/** @type {Map<number, { points: [number, number, number][]; start: number; ink: string }>} */
+/** @type {Map<number, { points: [number, number, number][]; start: number; ink: string; keep: boolean }>} */
 const strokes = new Map();
 // Strokes drawn on this page: shown as drawn, and their echo from the room skipped.
 /** @type {Set<number>} */
@@ -36,18 +37,37 @@ export function onDraw(m) {
   if (!mine.has(m.stroke)) addPoints(m, BEHIND_MS);
 }
 
-/** @param {{ stroke: number; points: [number, number, number][]; by?: number }} m */
+/** @param {Piece} m */
 export function drawOwn(m) {
   mine.add(m.stroke);
   addPoints(m, 0);
 }
 
-/** @param {{ stroke: number; points: [number, number, number][]; by?: number }} m @param {number} behind */
+/** @param {Piece} m @param {number} behind */
 function addPoints(m, behind) {
   const first = m.points[0]?.[2] ?? 0;
-  const s = strokes.get(m.stroke) ?? { points: [], start: performance.now() + behind - first, ink: inkOf(m.by ?? 1) };
+  const s = strokes.get(m.stroke) ?? {
+    points: [],
+    start: performance.now() + behind - first,
+    ink: inkOf(m.by ?? 1),
+    keep: m.keep === true,
+  };
   s.points.push(...m.points);
   strokes.set(m.stroke, s);
+}
+
+// The marker as a page joins, shown whole.
+/** @param {import("../types/stream").MarkerLine} m */
+export function onMarker(m) {
+  for (const k of m.strokes)
+    if (!strokes.has(k.stroke))
+      strokes.set(k.stroke, { points: k.points, start: -Infinity, ink: inkOf(k.by), keep: true });
+}
+
+// An admin wiped the map.
+export function onClear() {
+  strokes.clear();
+  mine.clear();
 }
 
 export function drawStrokes(now = performance.now()) {
@@ -60,12 +80,12 @@ export function drawStrokes(now = performance.now()) {
     const shown = s.points.filter(p => s.start + p[2] <= now);
     if (!shown.length) continue;
     const age = now - (s.start + shown[shown.length - 1][2]);
-    if (age > HOLD_MS + FADE_MS && shown.length === s.points.length) {
+    if (!s.keep && age > HOLD_MS + FADE_MS && shown.length === s.points.length) {
       strokes.delete(id);
       mine.delete(id);
       continue;
     }
-    ctx.globalAlpha = Math.max(0, Math.min(1, 1 - (age - HOLD_MS) / FADE_MS));
+    ctx.globalAlpha = s.keep ? 1 : Math.max(0, Math.min(1, 1 - (age - HOLD_MS) / FADE_MS));
     ctx.beginPath();
     for (const [i, [x, y]] of shown.entries()) {
       const [sx, sy] = toScreen(x, y);

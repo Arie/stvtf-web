@@ -1088,7 +1088,8 @@ aside h3 {
 #roombar select {
   padding: 0 6px;
 }
-#roombar #rb-pen.on {
+#roombar #rb-pen.on,
+#roombar #rb-marker.on {
   background: #ffd23f;
   color: #0b0c0e;
 }
@@ -1311,6 +1312,8 @@ aside h3 {
 }
 /* A match page's own timeline: playback only, no room controls. */
 .stvtf.watch #rb-pen,
+.stvtf.watch #rb-marker,
+.stvtf.watch #rb-clear,
 .stvtf.watch #rb-view,
 .stvtf.watch #rb-lead {
   display: none;
