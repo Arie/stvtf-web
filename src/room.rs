@@ -174,8 +174,9 @@ pub(crate) struct Saved {
     people: People,
     leader: Option<Leader>,
     view: Option<String>,
+    /// Saved in a file of its own (see `Rooms::save`); here in older files.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    marker: Vec<Kept>,
+    pub(crate) marker: Vec<Kept>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     relay: Option<Was>,
 }

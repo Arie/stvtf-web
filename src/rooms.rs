@@ -32,6 +32,8 @@ pub(crate) struct Rooms {
     private: Mutex<std::collections::HashSet<String>>,
     /// The ports rooms are relayed on, if they are (`--relay-ports`).
     relays: Option<Arc<Pool>>,
+    /// A hash of each room file as last written here: one the same again is only touched.
+    written: Mutex<HashMap<String, u64>>,
 }
 
 /// Private playbacks at once, at most.
@@ -53,9 +55,12 @@ struct SavedRoom {
     room: Saved,
 }
 
-/// A room's file in the store, and a demo's beside the rooms on it.
+/// A room's file in the store, its marker's, and a demo's beside the rooms on it.
 fn file(id: &str) -> String {
     format!("room-{id}")
+}
+fn marker_file(id: &str) -> String {
+    format!("room-{id}-marker")
 }
 fn demo_file(demo: u64) -> String {
     format!("demo-{demo}.gz")
@@ -181,7 +186,10 @@ impl Rooms {
         if !crate::sessions::is_id(id) {
             return None;
         }
-        let saved: SavedRoom = serde_json::from_slice(&store.take(&file(id)).ok()?).ok()?;
+        let mut saved: SavedRoom = serde_json::from_slice(&store.take(&file(id)).ok()?).ok()?;
+        if let Some(marker) = store.take(&marker_file(id)).ok().and_then(|m| serde_json::from_slice(&m).ok()) {
+            saved.room.marker = marker;
+        }
         let recording = match &saved.source {
             Source::Pinned(match_id) | Source::Live(match_id) => sessions.get(match_id)?.recording().ok()?,
             Source::Demo(demo) => self.shared(&format!("demo:{demo}"), || {
@@ -218,10 +226,29 @@ impl Rooms {
             store.touch(&demo_file(demo));
             store.touch(&demo_dem(demo));
         }
-        let saved = SavedRoom { source, room: room.saved() };
-        if let Err(e) = serde_json::to_vec(&saved).map_err(Into::into).and_then(|plain| store.put(&file(&room.id), &plain)) {
+        let mut saved = SavedRoom { source, room: room.saved() };
+        // Apart: not rewritten with where playback is every second.
+        let marker = std::mem::take(&mut saved.room.marker);
+        let written = serde_json::to_vec(&saved)
+            .map_err(Into::into)
+            .and_then(|plain| self.put_changed(store, &file(&room.id), &plain))
+            .and_then(|()| self.put_changed(store, &marker_file(&room.id), &serde_json::to_vec(&marker)?));
+        if let Err(e) = written {
             eprintln!("stvtf-web: saving room {}: {e:#}", &room.id[..8]);
         }
+    }
+
+    /// Writes `plain` as `name`, or only touches it (for the sweep) if it holds that already.
+    fn put_changed(&self, store: &Store, name: &str, plain: &[u8]) -> Result<()> {
+        use std::hash::{BuildHasher, BuildHasherDefault};
+        let hash = BuildHasherDefault::<std::collections::hash_map::DefaultHasher>::default().hash_one(plain);
+        if lock(&self.written).get(name) == Some(&hash) && store.has(name) {
+            store.touch(name);
+            return Ok(());
+        }
+        store.put(name, plain)?;
+        lock(&self.written).insert(name.to_string(), hash);
+        Ok(())
     }
 
     /// Saves every room as it is now.
@@ -252,8 +279,10 @@ impl Rooms {
             let source = sources.remove(&id);
             lock(&self.watching).remove(&id);
             lock(&self.private).remove(&id);
+            lock(&self.written).retain(|name, _| !name.starts_with(&file(&id)));
             if let Some(store) = &self.store {
                 store.forget(&file(&id));
+                store.forget(&marker_file(&id));
                 // A demo's file goes with the last room on it.
                 if let Some(Source::Demo(demo)) = source
                     && !sources.values().any(|s| *s == Source::Demo(demo))
@@ -347,6 +376,38 @@ mod tests {
         assert!(serde_json::to_string(&saved).unwrap().contains(r#""name":"coach""#));
         assert!(next.get(&"0".repeat(32), &sessions).is_none());
         again.stop();
+    }
+
+    #[test]
+    fn a_room_s_files_are_written_only_as_they_change_and_its_marker_apart() {
+        use std::os::unix::fs::MetadataExt;
+        let (sessions, dir) = demo();
+        let rooms = Rooms::new(Some(store(&dir)), None);
+        let m = sessions.get("demo").unwrap();
+        let r = rooms.open(&m, m.recording().unwrap(), "me").unwrap();
+        r.control(&crate::room::Control { paused: Some(true), ..Default::default() }).unwrap();
+        r.draw(&crate::room::Draw { stroke: 1, points: vec![[5.0, 5.0, 0.0]; 100], keep: true }, "me").unwrap();
+        rooms.persist();
+        let file_of = |name: String| dir.join("store").join(name);
+        let inode = |name: String| std::fs::metadata(file_of(name)).unwrap().ino();
+        let (room, marker) = (inode(file(&r.id)), inode(marker_file(&r.id)));
+        assert!(!std::fs::read_to_string(file_of(file(&r.id))).unwrap().contains("points"), "the marker is apart");
+        // Nothing changed: only touched.
+        let old = SystemTime::now() - Duration::from_secs(600);
+        std::fs::File::options().write(true).open(file_of(file(&r.id))).unwrap().set_modified(old).unwrap();
+        rooms.persist();
+        assert_eq!((inode(file(&r.id)), inode(marker_file(&r.id))), (room, marker));
+        let touched = std::fs::metadata(file_of(file(&r.id))).unwrap().modified().unwrap();
+        assert!(touched > old + Duration::from_secs(60));
+        // More marker: its file only.
+        r.draw(&crate::room::Draw { stroke: 2, points: vec![[6.0, 6.0, 0.0]], keep: true }, "me").unwrap();
+        rooms.persist();
+        assert_eq!(inode(file(&r.id)), room);
+        assert_ne!(inode(marker_file(&r.id)), marker);
+        r.stop();
+
+        let next = Rooms::new(Some(store(&dir)), None);
+        assert_eq!(next.get(&r.id, &sessions).expect("picked up").saved().marker.len(), 2, "the marker came along");
     }
 
     #[test]
