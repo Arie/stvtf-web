@@ -24,6 +24,15 @@ use std::time::{Duration, Instant};
 
 /// A match id: this many random bytes, as hex in links and file names.
 const ID_BYTES: usize = 16;
+/// A live match in play stays watched with nobody watching it for this long, at most.
+const UNWATCHED_PLAY: Duration = Duration::from_hours(6);
+/// In play: at least this many players on the teams…
+const IN_PLAY_PLAYERS: usize = 2;
+/// …and data no older than this.
+const IN_PLAY_DATA: Duration = Duration::from_secs(60);
+/// A match nobody has watched for this long makes room for a new one when there are as many as
+/// there may be (one just started has no viewer yet either).
+const MAKES_ROOM: Duration = Duration::from_mins(3);
 /// How much of the id the log shows.
 const LABEL_ID_LEN: usize = 8;
 
@@ -197,6 +206,21 @@ impl Session {
         if let Some(r) = reservation {
             self.reservation.store(r, Ordering::Relaxed);
         }
+    }
+
+    /// Whether a live match is being played: players on the teams, and data coming in. Nobody
+    /// watching such a match does not end it (see [`Sessions::reap`]).
+    fn in_play(&self) -> bool {
+        if self.pinned || self.demo.is_some() {
+            return false;
+        }
+        let h = lock(&self.hub);
+        let fresh = h.data_age().is_some_and(|age| age < IN_PLAY_DATA);
+        let players = h
+            .summary()
+            .snapshot
+            .map_or(0, |s| s.players.iter().filter(|p| matches!(p.team, stvtf::output::Team::Red | stvtf::output::Team::Blue)).count());
+        fresh && players >= IN_PLAY_PLAYERS
     }
 
     /// Whether any browser has its event stream open.
@@ -501,7 +525,7 @@ impl Sessions {
             s.link(reservation);
             return Ok(join(s, owner));
         }
-        self.check_room(&map)?;
+        self.check_room(&mut map)?;
         let s = self.start(&mut map, random_id(), server, password, owner.map(str::to_string), SharedHub::default());
         record(&s, self.store.as_ref(), false);
         s.link(reservation);
@@ -522,7 +546,7 @@ impl Sessions {
         if let Some(s) = map.values().find(|s| s.demo == Some(demo) && !s.done.load(Ordering::Relaxed)) {
             return Ok(join(s, owner));
         }
-        self.check_room(&map)?;
+        self.check_room(&mut map)?;
         let nowhere = SocketAddr::from((Ipv4Addr::UNSPECIFIED, 0));
         let mut session = Session::new(demo_id(demo), SharedHub::default(), nowhere, String::new(), owner.map(str::to_string), false);
         session.demo = Some(demo);
@@ -554,12 +578,26 @@ impl Sessions {
         self.lock().values().filter(|s| !s.pinned).count()
     }
 
-    /// Whether another match may start: there must be fewer than `max`.
-    fn check_room(&self, map: &HashMap<String, Arc<Session>>) -> Result<()> {
-        if map.values().filter(|s| !s.pinned).count() >= self.max {
-            bail!("already watching {} matches, the most this server does", self.max);
+    /// Whether another match may start: there must be fewer than `max`. When there are not, the
+    /// one nobody has watched the longest, for [`MAKES_ROOM`] at least (kept on for its players,
+    /// see [`Sessions::reap`]), makes room.
+    fn check_room(&self, map: &mut HashMap<String, Arc<Session>>) -> Result<()> {
+        if map.values().filter(|s| !s.pinned).count() < self.max {
+            return Ok(());
         }
-        Ok(())
+        let unwatched = map
+            .values()
+            .filter(|s| !s.pinned)
+            .filter_map(|s| lock(&s.idle_since).filter(|t| t.elapsed() >= MAKES_ROOM).map(|t| (t, s.id.clone())))
+            .min_by_key(|(t, _)| *t)
+            .and_then(|(_, id)| map.remove(&id));
+        match unwatched {
+            Some(s) => {
+                self.end(&s, "making room");
+                Ok(())
+            }
+            None => bail!("already watching {} matches, the most this server does", self.max),
+        }
     }
 
     /// Watches `server` as session `id`.
@@ -655,15 +693,22 @@ impl Sessions {
         self.lock().insert(id.to_string(), s);
     }
 
-    /// Stops and forgets the sessions nobody has watched for `linger`. Their watchers disconnect
-    /// on their own; nothing waits for them.
+    /// Stops and forgets the sessions nobody has watched for `linger`, but for a live match still
+    /// in play (see [`Session::in_play`]), which goes on being watched (and recorded, for those
+    /// who come back to it) for up to [`UNWATCHED_PLAY`]. Their watchers disconnect on their own;
+    /// nothing waits for them.
     pub fn reap(&self, linger: Duration) {
         let idle: Vec<Arc<Session>> = {
             let mut map = self.lock();
             let idle: Vec<String> = map
                 .values()
                 .filter(|s| !s.pinned)
-                .filter(|s| lock(&s.idle_since).is_some_and(|t| t.elapsed() >= linger))
+                .filter(|s| {
+                    lock(&s.idle_since).is_some_and(|t| {
+                        let idle = t.elapsed();
+                        idle >= linger && (idle >= UNWATCHED_PLAY || !s.in_play())
+                    })
+                })
                 .map(|s| s.id.clone())
                 .collect();
             idle.iter().filter_map(|id| map.remove(id)).collect()
@@ -1175,6 +1220,35 @@ mod tests {
         assert!(s.get(&m.id).is_some(), "it lingers");
         s.reap(Duration::ZERO);
         assert!(s.get(&m.id).is_none());
+    }
+
+    #[test]
+    fn a_match_in_play_stays_watched_with_nobody_watching() {
+        use crate::hub::tests::{player, snapshot};
+        use stvtf::output::Team;
+        let s = Sessions::new(false, 8, 20.0);
+        let m = s.open("192.0.2.51:27020 tv", None, None).unwrap();
+        drop(Viewer::new(m.clone()));
+        let players = (1..=4).map(|i| player(i, "p", if i % 2 == 0 { Team::Red } else { Team::Blue })).collect();
+        crate::hub::publish(&m.hub, &snapshot(100, None, players));
+        s.reap(Duration::ZERO);
+        assert!(s.get(&m.id).is_some(), "players on it: it stays");
+        // Everyone gone to spectate, or left: it ends as any unwatched match.
+        crate::hub::publish(&m.hub, &snapshot(200, None, vec![player(1, "p", Team::Spectator)]));
+        s.reap(Duration::ZERO);
+        assert!(s.get(&m.id).is_none());
+    }
+
+    #[test]
+    fn a_full_server_makes_room_by_the_longest_unwatched_match() {
+        let s = Sessions::new(false, 1, 20.0);
+        let a = s.open("192.0.2.52:27020 tv", None, None).unwrap();
+        // Just started, its page not in yet: it keeps its place.
+        assert!(s.open("192.0.2.53:27020 tv", None, None).is_err());
+        *lock(&a.idle_since) = Instant::now().checked_sub(MAKES_ROOM);
+        let b = s.open("192.0.2.53:27020 tv", None, None).unwrap();
+        assert!(s.get(&a.id).is_none() && s.get(&b.id).is_some());
+        s.stop_all();
     }
 
     #[test]

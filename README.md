@@ -19,8 +19,11 @@ is an error rather than quietly falling back to its default; `--help` lists them
 Without a server, open `http://127.0.0.1:8080/` and paste a SourceTV connect string (or paste
 it into the terminal). Each match gets its own link, `/w/<id>/` with its overlay at
 `/w/<id>/overlay`; the same server asked for again joins the match already being watched.
-A match nobody has watched for 3 minutes is disconnected. `--max-matches` caps how many are
-watched at once, and `--public`, for a server that strangers can use, refuses private and
+A match nobody has watched for 3 minutes is disconnected, unless it is being played (two players
+or more on the teams, and data in the last minute): that one stays connected, and recorded, for up
+to 6 hours with nobody watching, for those who come back to it. `--max-matches` caps how many are
+watched at once; when that many are, the one nobody has watched the longest (3 minutes at least)
+makes room for a new one, and `--public`, for a server that strangers can use, refuses private and
 internal addresses.
 
 Behind a site such as serveme.tf, which signs users in and decides what they may watch, run
