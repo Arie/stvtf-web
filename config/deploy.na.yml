@@ -1,9 +1,12 @@
 servers:
   web:
     hosts: [direct.na.serveme.tf]
-    cmd: "--public --demo /data/demo.jsonl.gz --sessions /data/sessions --home https://na.serveme.tf/stv"
-    # Caps the damage of a runaway map build, so it cannot take serveme.tf down with it.
+    cmd: "--public --demo /data/demo.jsonl.gz --sessions /data/sessions --home https://na.serveme.tf/stv --relay-ports 28100-28119 --relay-host direct.na.serveme.tf"
     options:
+      # Rooms as SourceTV relays for TF2 clients, on the host's own name: stv.tf names go through
+      # Cloudflare, which carries no UDP.
+      publish: ["28100-28119:28100-28119/udp"]
+      # Caps the damage of a runaway map build, so it cannot take serveme.tf down with it.
       memory: 1g
 
 proxy:

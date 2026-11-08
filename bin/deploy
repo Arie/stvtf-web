@@ -21,7 +21,9 @@ regions=("$@")
 
 pids=()
 for d in "${regions[@]}"; do
-  kamal deploy --skip-push -d "$d" &
+  # The old container goes first: it publishes the relays' UDP ports, which the new one cannot
+  # while it runs. stv.tf is down for the seconds the new one takes to start; pages reconnect.
+  (kamal app stop -d "$d" || true; kamal deploy --skip-push -d "$d") &
   pids+=($!)
 done
 status=0
