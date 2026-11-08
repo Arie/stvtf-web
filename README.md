@@ -250,7 +250,8 @@ match's go when it ends; a sweep every five minutes drops a demo's an hour after
 played it, and a live match's three hours after it was last written. A demo of an older TF2
 build, whose class tables are not the current ones, cannot be played to a game client: the
 sidebar says so, as it says any other reason the relay cannot play.
-Rooms on `--demo`/`--demos` recordings have no `.dem`, and no relay.
+Rooms on `--demo`/`--demos` recordings are relayed if the `.dem` they were made from is beside them under
+the same name (`demo.dem` for `demo.jsonl.gz`); without one they have no relay.
 
 | route | |
 |---|---|

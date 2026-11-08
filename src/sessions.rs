@@ -119,11 +119,16 @@ impl Session {
     }
 
     /// Where the `.dem` files of what it plays are, by server tick, so rooms on it can be relayed:
-    /// a live match's as it records them, or a demos.tf demo's, kept in `store`.
+    /// a live match's as it records them, a demos.tf demo's, kept in `store`, or a fixed match's,
+    /// beside its recording under the same name (`demo.dem` for `demo.jsonl.gz`).
     pub(crate) fn demo_of(&self, store: Option<&Store>) -> Option<DemoOf> {
         if let Some(d) = self.demos.get() {
             let d = d.clone();
             return Some(Arc::new(move |tick| d.at(tick)));
+        }
+        if let Some(Source::File(file)) = &*lock(&self.source) {
+            let path = dem_beside(file);
+            return Some(Arc::new(move |_| path.exists().then(|| path.clone())));
         }
         let path = store?.dir.join(demo_dem(self.demo?));
         Some(Arc::new(move |_| path.exists().then(|| path.clone())))
@@ -700,6 +705,15 @@ impl Sessions {
     }
 }
 
+/// The `.dem` a recorded match's file was made from, if it was put beside it: `x.dem` for
+/// `x.jsonl.gz` or `x.jsonl`.
+fn dem_beside(file: &std::path::Path) -> PathBuf {
+    let name = file.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    let stem = name.strip_suffix(".gz").unwrap_or(&name);
+    let stem = stem.strip_suffix(".jsonl").unwrap_or(stem);
+    file.with_file_name(format!("{stem}.dem"))
+}
+
 /// A demos.tf demo's file in the store, kept while a match or room plays it.
 pub(crate) fn demo_dem(demo: u64) -> String {
     format!("demo-{demo}.dem")
@@ -832,6 +846,12 @@ pub fn is_public(ip: IpAddr) -> bool {
 mod tests {
     use super::*;
     use crate::testing::{TempDir, script, server};
+
+    #[test]
+    fn a_fixed_matchs_demo_is_beside_its_recording() {
+        assert_eq!(dem_beside(std::path::Path::new("/data/demo.jsonl.gz")), PathBuf::from("/data/demo.dem"));
+        assert_eq!(dem_beside(std::path::Path::new("demos/gully.jsonl")), PathBuf::from("demos/gully.dem"));
+    }
 
     #[test]
     fn only_public_addresses_pass() {

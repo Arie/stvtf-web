@@ -76,8 +76,7 @@ impl Rooms {
     /// Where the demos of what `source` plays are.
     fn demo_of(&self, source: &Source, sessions: &Sessions) -> Option<DemoOf> {
         match source {
-            Source::Pinned(_) => None,
-            Source::Live(id) => sessions.get(id)?.demo_of(self.store.as_ref()),
+            Source::Pinned(id) | Source::Live(id) => sessions.get(id)?.demo_of(self.store.as_ref()),
             Source::Demo(demo) => {
                 let path = self.store.as_ref()?.dir.join(demo_dem(*demo));
                 Some(Arc::new(move |_| path.exists().then(|| path.clone())))
