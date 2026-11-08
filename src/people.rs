@@ -83,6 +83,11 @@ impl People {
         }
     }
 
+    /// How many are in, on a page.
+    pub(crate) fn listed(&self) -> usize {
+        self.by_guest.values().filter(|p| p.pages > 0).count()
+    }
+
     pub(crate) fn leave(&mut self, guest: &str) {
         let p = self.person(guest);
         p.pages = p.pages.saturating_sub(1);

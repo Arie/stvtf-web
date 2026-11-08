@@ -301,6 +301,9 @@ pub struct Sessions {
     pub max: usize,
     pub hz: f32,
     pub store: Option<Store>,
+    /// Keep `.dem` files in the store for rooms' relays (`--relay-ports`): live matches recorded,
+    /// demos.tf demos kept.
+    pub demos: bool,
     /// This process's mark in the store, once it took the folder over.
     claim: String,
 }
@@ -442,7 +445,7 @@ impl Store {
 
 impl Sessions {
     pub fn new(public: bool, max: usize, hz: f32) -> Self {
-        Sessions { map: Mutex::default(), public, max, hz, store: None, claim: random_id() }
+        Sessions { map: Mutex::default(), public, max, hz, store: None, demos: false, claim: random_id() }
     }
 
     fn lock(&self) -> std::sync::MutexGuard<'_, HashMap<String, Arc<Session>>> {
@@ -519,7 +522,7 @@ impl Sessions {
         let mut session = Session::new(demo_id(demo), SharedHub::default(), nowhere, String::new(), owner.map(str::to_string), false);
         session.demo = Some(demo);
         let s = Arc::new(session);
-        let (player, hz, store) = (s.clone(), self.hz, self.store.clone());
+        let (player, hz, store) = (s.clone(), self.hz, self.store.clone().filter(|_| self.demos));
         let thread = std::thread::spawn(move || {
             let keep_demo = |dem: &[u8]| {
                 if let Some(store) = &store
@@ -565,7 +568,7 @@ impl Sessions {
         hub: SharedHub,
     ) -> Arc<Session> {
         let s = Arc::new(Session::new(id, hub, server, password, owner, false));
-        let demos = self.store.as_ref().map(|store| LiveDemos::new(&store.dir, &s.id));
+        let demos = self.store.as_ref().filter(|_| self.demos).map(|store| LiveDemos::new(&store.dir, &s.id));
         if let Some(d) = &demos {
             let _ = s.demos.set(d.clone());
         }

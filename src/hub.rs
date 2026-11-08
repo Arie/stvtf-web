@@ -30,6 +30,8 @@ pub(crate) struct Hub {
     pub(crate) changes: u64,
     /// Tick and round time of the latest snapshot, to stamp events with time into the round.
     round_clock: Option<(u32, f64)>,
+    /// The latest snapshot's tick.
+    tick: Option<u32>,
     /// When the latest snapshot came in, so a page opened after the stream stopped can say so.
     snapshot_at: Option<Instant>,
     /// Name and team of everyone seen on this map: the feed keeps them for players who left.
@@ -80,6 +82,11 @@ impl Hub {
         self.names.get(&id).map(|s| (s.name.as_str(), s.team))
     }
 
+    /// The latest snapshot's tick: where a room that played up to here is.
+    pub(crate) fn tick(&self) -> Option<u32> {
+        self.tick
+    }
+
     /// How long ago the latest snapshot came in.
     pub(crate) fn data_age(&self) -> Option<Duration> {
         self.snapshot_at.map(|t| t.elapsed())
@@ -97,6 +104,7 @@ impl Hub {
             history: self.history.clone(),
             changes: self.changes,
             round_clock: self.round_clock,
+            tick: self.tick,
             snapshot_at: self.snapshot_at,
             names: self.names.clone(),
             tick_interval: self.tick_interval,
@@ -284,12 +292,13 @@ pub(crate) fn publish(hub: &SharedHub, line: &Line) {
                 h.map = Some(server.map.clone());
                 h.changes += 1;
             }
-            (h.server, h.snapshot, h.round_clock) = (Some(json.clone()), None, None);
+            (h.server, h.snapshot, h.round_clock, h.tick) = (Some(json.clone()), None, None, None);
             h.tick_interval = Some(server.tick_interval).filter(|i| *i > 0.0);
         }
         Line::World(_) => h.world = Some(json.clone()),
         Line::Snapshot(snapshot) => {
             h.round_clock = snapshot.round_time.map(|t| (snapshot.tick, t));
+            h.tick = Some(snapshot.tick);
             h.snapshot = Some(json.clone());
             h.snapshot_at = Some(Instant::now());
             for p in &snapshot.players {

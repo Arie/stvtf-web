@@ -229,7 +229,7 @@ same speed, with the same people, admins and view. A live match's recording goes
 `live-<match>.gz` (each 10-second chunk added as it closes), so the match picks up with it and
 goes on recording: only the last few seconds before the restart are missing. The file goes when
 the match ends. A saved room nobody comes back to within an
-hour is dropped.
+hour is dropped (the sweep looks every five minutes).
 
 ### In TF2
 
@@ -239,13 +239,17 @@ paste in the console (and a `steam://connect` link). A TF2 client there sees wha
 as a SourceTV spectator with its own free camera: the room's moment, paused when it pauses,
 jumping when it jumps (a few seconds for a long one), at its speed.
 
-A room gets a port from the range and a random password while someone is in it (on its page,
-or in TF2), and gives it back 10 minutes after nobody is. It plays the match's `.dem`
-(see stvtf's README, "Playing a demo"): a demos.tf demo's file, kept beside its output as
-`demo-<number>.dem`, or a live match's, recorded as it is watched as `live-<match>-<tick>.dem`,
-one per connection to the server (a new map drops the old map's, as the recording does; they go
-with the match, or an hour after they were last written). A demo of an older TF2 build, whose
-class tables are not the current ones, cannot be played to a game client: the sidebar says so.
+A room gets a port from the range and a random password once someone opens its page (not its
+overlay), and keeps it until the room ends; the room stays open while someone is in TF2 too. A
+relay that cannot start (every port taken, the demo not there yet) is tried again, and one that
+stops is replaced. It plays the match's `.dem` (see stvtf's README, "Playing a demo"): a
+demos.tf demo's file, kept beside its output as `demo-<number>.dem`, or a live match's, recorded
+as it is watched as `live-<match>-<tick>.dem`, one per connection to the server (a new map drops
+the old map's, as the recording does). These are only written with `--relay-ports`. A live
+match's go when it ends; a sweep every five minutes drops a demo's an hour after a room last
+played it, and a live match's three hours after it was last written. A demo of an older TF2
+build, whose class tables are not the current ones, cannot be played to a game client: the
+sidebar says so, as it says any other reason the relay cannot play.
 Rooms on `--demo`/`--demos` recordings have no `.dem`, and no relay.
 
 | route | |

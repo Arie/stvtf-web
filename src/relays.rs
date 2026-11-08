@@ -4,11 +4,11 @@
 
 use crate::lock;
 use anyhow::{Context, Result};
-use std::collections::BTreeSet;
-use std::ops::RangeInclusive;
+use std::collections::VecDeque;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
+use std::thread::JoinHandle;
 use stvtf::relay::{Playback, Relay, RelayConfig, Want};
 
 /// TF2 clients a room takes at once.
@@ -17,51 +17,75 @@ const SLOTS: usize = 24;
 /// The ports rooms may take, and the address clients are told.
 pub(crate) struct Relays {
     host: String,
-    free: Mutex<BTreeSet<u16>>,
+    /// Taken from the front; one that would not bind goes to the back.
+    free: Mutex<VecDeque<u16>>,
+}
+
+/// A relay's socket with its port: the port goes back to the pool only once the socket is closed,
+/// which is when the last holder (the room, or the thread playing) lets go.
+struct Bound {
+    relay: Option<Relay>,
+    port: u16,
+    pool: Arc<Relays>,
+}
+
+impl Drop for Bound {
+    fn drop(&mut self) {
+        drop(self.relay.take());
+        lock(&self.pool.free).push_back(self.port);
+    }
+}
+
+impl Bound {
+    fn relay(&self) -> &Relay {
+        self.relay.as_ref().expect("a relay until dropped")
+    }
 }
 
 impl Relays {
-    pub(crate) fn new(host: &str, ports: RangeInclusive<u16>) -> Arc<Relays> {
-        Arc::new(Relays { host: host.to_string(), free: Mutex::new(ports.collect()) })
+    pub(crate) fn new(host: &str, ports: impl IntoIterator<Item = u16>) -> Arc<Relays> {
+        Arc::new(Relays { host: host.to_string(), free: Mutex::new(ports.into_iter().collect()) })
     }
 
     /// A relay on a free port, playing as `want` says until dropped; None when every port is taken.
     pub(crate) fn start(self: &Arc<Self>, want: Want) -> Result<Option<RoomRelay>> {
-        let Some(port) = lock(&self.free).pop_first() else { return Ok(None) };
+        let Some(port) = lock(&self.free).pop_front() else { return Ok(None) };
         let config =
             RelayConfig { password: stvtf::relay::random_password(), slots: SLOTS, ..RelayConfig::new(&format!("0.0.0.0:{port}")) };
         let relay = match Relay::bind(&config) {
-            Ok(r) => Arc::new(r),
+            Ok(r) => r,
             Err(e) => {
-                lock(&self.free).insert(port);
+                // Something else has it: the others first, next time.
+                lock(&self.free).push_back(port);
                 return Err(e).with_context(|| format!("relay port {port}"));
             }
         };
+        let bound = Arc::new(Bound { relay: Some(relay), port, pool: self.clone() });
         let (playback, stop) = (Arc::new(Playback::new(want)), Arc::new(AtomicBool::new(false)));
-        let (r, p, s, pool) = (relay.clone(), playback.clone(), stop.clone(), self.clone());
-        std::thread::spawn(move || {
-            if let Err(e) = r.play(&p, &s, &mut |_| {}) {
+        let (b, p, s) = (bound.clone(), playback.clone(), stop.clone());
+        let thread = std::thread::spawn(move || {
+            if let Err(e) = b.relay().play(&p, &s, &mut |_| {}) {
                 eprintln!("stvtf-web: relay on port {port}: {e:#}");
             }
-            // Free once the socket is closed, so the next room can bind it.
-            drop(r);
-            lock(&pool.free).insert(port);
         });
-        Ok(Some(RoomRelay { pool: self.clone(), port, password: config.password, relay, playback, stop }))
+        Ok(Some(RoomRelay { bound: Some(bound), password: config.password, playback, stop, thread }))
     }
 }
 
-/// A room's relay; dropping it stops it, which frees its port.
+/// A room's relay; dropping it stops it, and its port is free again once the thread is done.
 pub(crate) struct RoomRelay {
-    pool: Arc<Relays>,
-    port: u16,
+    bound: Option<Arc<Bound>>,
     password: String,
-    relay: Arc<Relay>,
     playback: Arc<Playback>,
     stop: Arc<AtomicBool>,
+    thread: JoinHandle<()>,
 }
 
 impl RoomRelay {
+    fn bound(&self) -> &Bound {
+        self.bound.as_ref().expect("bound until dropped")
+    }
+
     /// Where the room is now.
     pub(crate) fn follow(&self, want: Want) {
         self.playback.set(want);
@@ -69,14 +93,19 @@ impl RoomRelay {
 
     /// TF2 clients in.
     pub(crate) fn clients(&self) -> usize {
-        self.relay.clients()
+        self.bound().relay().clients()
+    }
+
+    /// Whether it stopped on its own (it could not even start), so the room should start another.
+    pub(crate) fn stopped(&self) -> bool {
+        self.thread.is_finished()
     }
 
     /// What pages show: the console line to connect, and why it cannot play, if it cannot.
     pub(crate) fn line(&self) -> serde_json::Value {
         serde_json::json!({
             "type": "relay",
-            "connect": format!("{}:{}", self.pool.host, self.port),
+            "connect": format!("{}:{}", self.bound().pool.host, self.bound().port),
             "password": self.password,
             "problem": self.playback.problem(),
         })
@@ -85,6 +114,8 @@ impl RoomRelay {
 
 impl Drop for RoomRelay {
     fn drop(&mut self) {
+        // Let go of the socket first: the thread holds the last of it, and frees the port.
+        drop(self.bound.take());
         self.stop.store(true, Ordering::Relaxed);
     }
 }
@@ -104,17 +135,35 @@ mod tests {
     use super::*;
     use std::time::Instant;
 
+    /// Two UDP ports nothing has just now.
+    fn free_ports() -> [u16; 2] {
+        let a = std::net::UdpSocket::bind("0.0.0.0:0").unwrap();
+        let b = std::net::UdpSocket::bind("0.0.0.0:0").unwrap();
+        [a.local_addr().unwrap().port(), b.local_addr().unwrap().port()]
+    }
+
+    #[test]
+    fn a_port_something_else_has_goes_to_the_back() {
+        let taken = std::net::UdpSocket::bind("0.0.0.0:0").unwrap();
+        let [free, _] = free_ports();
+        let relays = Relays::new("h", [taken.local_addr().unwrap().port(), free]);
+        assert!(relays.start(want()).is_err());
+        let r = relays.start(want()).unwrap().unwrap();
+        assert_eq!(r.bound().port, free, "the free one, not the taken one again");
+    }
+
     fn want() -> Want {
         Want { demo: "nowhere.dem".into(), tick: 0, at: Instant::now(), paused: false, speed: 1.0, from_start: false }
     }
 
     #[test]
     fn rooms_take_ports_from_the_range_and_give_them_back() {
-        let relays = Relays::new("stv.example", 47_901..=47_902);
+        let ports = free_ports();
+        let relays = Relays::new("stv.example", ports);
         let a = relays.start(want()).unwrap().unwrap();
         let b = relays.start(want()).unwrap().unwrap();
         assert!(relays.start(want()).unwrap().is_none(), "all taken");
-        assert_eq!(a.line()["connect"], "stv.example:47901");
+        assert_eq!(a.line()["connect"], format!("stv.example:{}", ports[0]));
         assert_ne!(a.password, b.password);
         drop(a);
         let until = Instant::now() + std::time::Duration::from_secs(5);
@@ -125,6 +174,7 @@ mod tests {
             assert!(Instant::now() < until, "the port never came back");
             std::thread::sleep(std::time::Duration::from_millis(10));
         };
-        assert_eq!(c.port, 47_901);
+        assert_eq!(c.bound().port, ports[0]);
+        drop(b);
     }
 }

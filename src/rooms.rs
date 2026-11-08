@@ -14,8 +14,8 @@ use std::time::{Duration, SystemTime};
 
 /// A saved room nobody came back for is dropped after this long.
 const STALE: Duration = Duration::from_hours(1);
-/// A room's relay is given up after this long with nobody in.
-const RELAY_LINGER: Duration = Duration::from_mins(10);
+/// A live match's `.dem` file not written for this long is past what its recording keeps.
+const LIVE_DEMO_KEPT: Duration = Duration::from_hours(3);
 
 #[derive(Default)]
 pub(crate) struct Rooms {
@@ -237,7 +237,7 @@ impl Rooms {
     pub(crate) fn reap(&self, linger: Duration) {
         let rooms: Vec<Arc<Room>> = lock(&self.map).values().cloned().collect();
         for room in rooms {
-            room.reap_relay(RELAY_LINGER);
+            room.tend_relay();
         }
         let mut ended = Vec::new();
         lock(&self.map).retain(|id, room| {
@@ -260,22 +260,27 @@ impl Rooms {
                     && !sources.values().any(|s| *s == Source::Demo(demo))
                 {
                     store.forget(&demo_file(demo));
-                    store.forget(&demo_dem(demo));
                 }
             }
             eprintln!("stvtf-web: room {} ended", &id[..8]);
         }
     }
 
-    /// Drops saved rooms nobody came back for, and demos no room plays.
+    /// Drops saved rooms nobody came back for, demos no room plays, and the files of live matches
+    /// gone: those not written or used for an hour. A live match's `.dem` files go after the
+    /// recording's three hours (one on a long map is written to all along; an earlier one, from
+    /// before a reconnect, still holds part of what the recording keeps). Run at start and from
+    /// time to time.
     pub(crate) fn sweep(&self) {
         let Some(store) = &self.store else { return };
         let Ok(entries) = std::fs::read_dir(&store.dir) else { return };
         for entry in entries.flatten() {
             let name = entry.file_name().to_string_lossy().into_owned();
-            let old =
-                entry.metadata().and_then(|m| m.modified()).is_ok_and(|t| SystemTime::now().duration_since(t).unwrap_or_default() > STALE);
-            if (name.starts_with("room-") || name.starts_with("demo-") || name.starts_with("live-")) && old {
+            let age = entry.metadata().and_then(|m| m.modified()).map(|t| SystemTime::now().duration_since(t).unwrap_or_default());
+            let dem = std::path::Path::new(&name).extension().is_some_and(|e| e == "dem");
+            let keep = if name.starts_with("live-") && dem { LIVE_DEMO_KEPT } else { STALE };
+            let ours = name.starts_with("room-") || name.starts_with("demo-") || name.starts_with("live-");
+            if ours && age.is_ok_and(|a| a > keep) {
                 store.forget(&name);
             }
         }

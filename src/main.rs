@@ -58,6 +58,8 @@ fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
 
 /// How often the sessions are reaped, and every how many rounds of that they are saved (5 s).
 const HOUSEKEEPING: Duration = Duration::from_millis(250);
+/// Housekeeping rounds between sweeps of old files: five minutes.
+const SWEEP_ROUNDS: u64 = 1200;
 const PERSIST_ROUNDS: u64 = 20;
 const ROOM_PERSIST_ROUNDS: u64 = 4;
 
@@ -186,6 +188,8 @@ fn many(options: &Options, keys: Option<&Arc<token::Keys>>) -> Result<Sessions> 
     let mut sessions = Sessions::new(options.public, options.max_matches, options.hz);
     if let Some(dir) = &options.sessions {
         sessions.store = Some(sessions::Store { dir: dir.clone(), keys: keys.cloned() });
+        // Before matches are picked up, so they record as the new ones do.
+        sessions.demos = options.relays.is_some();
         let restored = sessions.restore();
         if restored > 0 {
             eprintln!("stvtf-web: picked up {restored} running matches");
@@ -302,6 +306,10 @@ fn keep_house(app: Arc<App>, stop: &'static AtomicBool) {
             // Where each room is, to the second.
             if round % ROOM_PERSIST_ROUNDS == 0 {
                 app.rooms.persist();
+            }
+            // Old files of rooms, demos and live matches.
+            if round % SWEEP_ROUNDS == 0 {
+                app.rooms.sweep();
             }
             std::thread::sleep(HOUSEKEEPING);
         }

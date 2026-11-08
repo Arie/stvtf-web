@@ -37,9 +37,8 @@ pub(crate) struct Room {
     idle_since: Mutex<Option<Instant>>,
     /// Where its relay would play from, if it can have one.
     offer: OnceLock<Offer>,
-    /// Its relay, while someone is in (on a page or in TF2), and since when nobody is.
+    /// Its relay, while the room is open and someone has been on a page of it.
     relay: Mutex<Option<RoomRelay>>,
-    relay_idle: Mutex<Option<Instant>>,
     /// What its pages were last told of the relay.
     relay_said: Mutex<Option<String>>,
 }
@@ -193,7 +192,6 @@ impl Room {
             idle_since: Mutex::new(Some(Instant::now())),
             offer: OnceLock::new(),
             relay: Mutex::new(None),
-            relay_idle: Mutex::new(None),
             relay_said: Mutex::new(None),
         });
         let player = room.clone();
@@ -326,8 +324,9 @@ impl Room {
     pub(crate) fn join(self: &Arc<Self>, guest: &str, name: Option<&str>, site: Option<&str>, listed: bool) -> Watching {
         self.viewers.fetch_add(1, Ordering::Relaxed);
         *lock(&self.idle_since) = None;
-        self.ensure_relay();
         if listed {
+            // A page, not an overlay: an overlay alone needs no TF2 address.
+            self.ensure_relay();
             lock(&self.people).join(guest, name, site);
             self.announce_people();
         }
@@ -345,7 +344,7 @@ impl Room {
     /// The room can be relayed to TF2 clients, from the demos `offer` says.
     pub(crate) fn offer_relay(&self, offer: Offer) {
         let _ = self.offer.set(offer);
-        if self.viewers.load(Ordering::Relaxed) > 0 {
+        if lock(&self.people).listed() > 0 {
             self.ensure_relay();
         }
     }
@@ -354,7 +353,6 @@ impl Room {
     /// one at a time: the player holds the state's while it points the relay.
     fn ensure_relay(&self) {
         let Some(offer) = self.offer.get() else { return };
-        *lock(&self.relay_idle) = None;
         if lock(&self.relay).is_some() {
             return;
         }
@@ -412,20 +410,19 @@ impl Room {
         }
     }
 
-    /// Stops its relay once nobody has been in for `linger`, freeing the port.
-    pub(crate) fn reap_relay(&self, linger: Duration) {
-        let in_room = self.viewers.load(Ordering::Relaxed) > 0 || self.relay_clients() > 0;
-        let mut idle = lock(&self.relay_idle);
-        if in_room || lock(&self.relay).is_none() {
-            *idle = None;
-            return;
-        }
-        if idle.get_or_insert_with(Instant::now).elapsed() >= linger {
-            *idle = None;
-            drop(idle);
+    /// Looks after its relay, as the rooms are looked after: one that stopped (its demo cannot be
+    /// read, say) goes, one wanted and missing (the demo not written yet, every port taken) is
+    /// tried again, and the pages hear why it cannot play as soon as that is known.
+    pub(crate) fn tend_relay(&self) {
+        let stopped = lock(&self.relay).as_ref().is_some_and(RoomRelay::stopped);
+        if stopped {
             *lock(&self.relay) = None;
-            self.tell_relay();
         }
+        let missing = lock(&self.relay).is_none();
+        if missing && lock(&self.people).listed() > 0 {
+            self.ensure_relay();
+        }
+        self.tell_relay();
     }
 
     /// The timeline's marks from the `from`th on, and how many there are.
@@ -488,8 +485,9 @@ impl Room {
                 st.seek = Some(rec.start());
             }
             if let Some(target) = st.seek.take() {
-                st.tick = None;
                 let (hub, i, played) = rec.seek(target);
+                // Where it went, paused or not: the relay follows at once.
+                st.tick = hub.tick();
                 restore(&self.hub, hub);
                 (chunk, done, looked, st.at) = (i, played, None, target.max(rec.start()));
                 lines.clear();
@@ -764,6 +762,21 @@ mod tests {
         r.control(&Control { paused: Some(false), ..Control::default() }).unwrap();
         until("the new map", || r.hub.lock().unwrap().map.as_deref() == Some("cp_two"));
         r.stop();
+    }
+
+    /// A paused room plays no snapshots: the tick its relay follows comes from where it went.
+    #[test]
+    fn a_seek_while_paused_moves_what_the_relay_follows() {
+        let mut lines = String::new();
+        for tick in (4..=4000).step_by(4) {
+            writeln!(lines, "{}", serde_json::to_string(&crate::hub::tests::snapshot(tick, None, Vec::new())).unwrap()).unwrap();
+        }
+        let room = Room::start("r".into(), "me", Arc::new(Recording::read(lines.as_bytes(), "test").unwrap()));
+        room.control(&Control { paused: Some(true), ..Control::default() }).unwrap();
+        room.control(&Control { seek: Some(30_000), ..Control::default() }).unwrap();
+        // 30 s at 15 ms a tick.
+        until("the tick of the moment sought", || lock(&room.state).tick.is_some_and(|t| t.abs_diff(2000) <= 4));
+        room.stop();
     }
 
     #[test]
