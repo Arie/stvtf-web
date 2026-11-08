@@ -10,7 +10,7 @@ use anyhow::{Result, bail};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, Weak};
-use std::time::{Duration, SystemTime};
+use std::time::{Duration, Instant, SystemTime};
 
 /// A saved room nobody came back for is dropped after this long.
 const STALE: Duration = Duration::from_hours(1);
@@ -36,12 +36,17 @@ pub(crate) struct Rooms {
     relays: Option<Arc<Pool>>,
     /// A hash of each room file as last written here: one the same again is only touched.
     written: Mutex<HashMap<String, u64>>,
+    /// Who opened each room, for the limits per person, and when.
+    by: Mutex<HashMap<String, (String, Instant)>>,
     /// Quiet room files found to have no relay.
     unrelayed: Mutex<std::collections::HashSet<String>>,
 }
 
 /// Private playbacks at once, at most.
 pub(crate) const MAX_PRIVATE: usize = 200;
+/// Rooms and private playbacks one person may have opened at once.
+pub(crate) const ROOMS_PER_PERSON: usize = 2;
+pub(crate) const PRIVATE_PER_PERSON: usize = 3;
 
 /// What a room plays: a fixed match's recording, there again in the next process; a demos.tf
 /// demo's output, saved beside the rooms on it since its match is not; or a live match's
@@ -57,6 +62,8 @@ enum Source {
 struct SavedRoom {
     source: Source,
     room: Saved,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    by: Option<String>,
 }
 
 /// A room's file in the store, its marker's, and a demo's beside the rooms on it.
@@ -112,8 +119,10 @@ impl Rooms {
         }
     }
 
-    /// A room on match `from`, owned by `owner`; one on a live match starts at live.
-    pub(crate) fn open(&self, from: &Arc<Session>, recording: Arc<Recording>, owner: &str) -> Result<Arc<Room>> {
+    /// A room on match `from`, owned by `owner` and counting against `by` (none: a streamer); one
+    /// on a live match starts at live.
+    pub(crate) fn open(&self, from: &Arc<Session>, recording: Arc<Recording>, owner: &str, by: Option<&str>) -> Result<Arc<Room>> {
+        self.make_room_for(by, false)?;
         let id = crate::sessions::random_id();
         let source = Self::source(from);
         if let (Source::Demo(demo), Some(store)) = (&source, &self.store)
@@ -123,13 +132,50 @@ impl Rooms {
             store.put(&demo_file(*demo), &output)?;
         }
         let room = Room::start(id, owner, recording);
+        self.opened_by(&room.id, by);
         self.watch(&room.id, from, &source);
         self.offer(&room, from.demo_of(self.store.as_ref()));
         self.add(&room, source);
         Ok(room)
     }
 
-    /// A private playback of match `from` for `owner`, from `at`: theirs alone, not saved.
+    fn opened_by(&self, room: &str, by: Option<&str>) {
+        if let Some(by) = by {
+            lock(&self.by).insert(room.to_string(), (by.to_string(), Instant::now()));
+        }
+    }
+
+    /// Whether `by` may open another room (or private playback): fewer than the limit of theirs,
+    /// or their oldest goes. A room only once nobody has watched it for [`crate::sessions::MAKES_ROOM`].
+    fn make_room_for(&self, by: Option<&str>, private: bool) -> Result<()> {
+        let Some(by) = by else { return Ok(()) };
+        let privates = lock(&self.private).clone();
+        let mut theirs: Vec<(Instant, String)> = lock(&self.by)
+            .iter()
+            .filter(|(id, (b, _))| b == by && privates.contains(*id) == private)
+            .map(|(id, (_, t))| (*t, id.clone()))
+            .collect();
+        let max = if private { PRIVATE_PER_PERSON } else { ROOMS_PER_PERSON };
+        if theirs.len() < max {
+            return Ok(());
+        }
+        theirs.sort();
+        let map = lock(&self.map).clone();
+        let oldest = theirs
+            .into_iter()
+            .map(|(_, id)| id)
+            .find(|id| private || map.get(id).is_none_or(|r| r.idle_for().is_some_and(|t| t >= crate::sessions::MAKES_ROOM)));
+        let Some(id) = oldest else { bail!("You have {max} rooms open already: close one first.") };
+        if let Some(room) = lock(&self.map).remove(&id) {
+            room.stop();
+        }
+        self.forget_room(&id);
+        Ok(())
+    }
+
+    /// A private playback of match `from` for `owner`, from `at`: theirs alone, not saved. It
+    /// counts against `by`, as for [`Rooms::open`].
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn open_private(
         &self,
         from: &Arc<Session>,
@@ -138,11 +184,14 @@ impl Rooms {
         at: u64,
         speed: f64,
         paused: bool,
+        by: Option<&str>,
     ) -> Result<Arc<Room>> {
+        self.make_room_for(by, true)?;
         if lock(&self.private).len() >= MAX_PRIVATE {
             bail!("too many watching on their own");
         }
         let room = Room::start_at(crate::sessions::random_id(), owner, recording, at, speed, paused);
+        self.opened_by(&room.id, by);
         if from.demo_id().is_none() && !from.is_pinned() {
             self.watch(&room.id, from, &Source::Live(from.id.clone()));
         }
@@ -214,6 +263,7 @@ impl Rooms {
             self.watch(id, &m, &saved.source);
         }
         lock(&self.sources).insert(id.to_string(), saved.source);
+        self.opened_by(id, saved.by.as_deref());
         map.insert(id.to_string(), room.clone());
         eprintln!("stvtf-web: room {} picked up", &id[..8]);
         Some(room)
@@ -230,7 +280,8 @@ impl Rooms {
             store.touch(&demo_file(demo));
             store.touch(&demo_dem(demo));
         }
-        let mut saved = SavedRoom { source, room: room.saved() };
+        let by = lock(&self.by).get(&room.id).map(|(b, _)| b.clone());
+        let mut saved = SavedRoom { source, room: room.saved(), by };
         // Apart: not rewritten with where playback is every second.
         let marker = std::mem::take(&mut saved.room.marker);
         let written = serde_json::to_vec(&saved)
@@ -301,23 +352,29 @@ impl Rooms {
             keep
         });
         for id in ended {
-            let mut sources = lock(&self.sources);
-            let source = sources.remove(&id);
-            lock(&self.watching).remove(&id);
-            lock(&self.private).remove(&id);
-            lock(&self.written).retain(|name, _| !name.starts_with(&file(&id)));
-            if let Some(store) = &self.store {
-                store.forget(&file(&id));
-                store.forget(&marker_file(&id));
-                // A demo's file goes with the last room on it.
-                if let Some(Source::Demo(demo)) = source
-                    && !sources.values().any(|s| *s == Source::Demo(demo))
-                {
-                    store.forget(&demo_file(demo));
-                }
-            }
-            eprintln!("stvtf-web: room {} ended", &id[..8]);
+            self.forget_room(&id);
         }
+    }
+
+    /// Forgets room `id`, ended, and its files.
+    fn forget_room(&self, id: &str) {
+        let mut sources = lock(&self.sources);
+        let source = sources.remove(id);
+        lock(&self.watching).remove(id);
+        lock(&self.private).remove(id);
+        lock(&self.by).remove(id);
+        lock(&self.written).retain(|name, _| !name.starts_with(&file(id)));
+        if let Some(store) = &self.store {
+            store.forget(&file(id));
+            store.forget(&marker_file(id));
+            // A demo's file goes with the last room on it.
+            if let Some(Source::Demo(demo)) = source
+                && !sources.values().any(|s| *s == Source::Demo(demo))
+            {
+                store.forget(&demo_file(demo));
+            }
+        }
+        eprintln!("stvtf-web: room {} ended", &id[..8.min(id.len())]);
     }
 
     /// Drops saved rooms nobody came back for, demos no room plays, and the files of live matches
@@ -373,7 +430,7 @@ mod tests {
         let (sessions, dir) = demo();
         let rooms = Rooms::new(Some(store(&dir)), None);
         let m = sessions.get("demo").unwrap();
-        let r = rooms.open(&m, m.recording().unwrap(), "me").unwrap();
+        let r = rooms.open(&m, m.recording().unwrap(), "me", None).unwrap();
         let w = r.join("me", None, None, true);
         rooms.reap(Duration::ZERO);
         assert_eq!(rooms.count(), 1, "watched");
@@ -389,7 +446,7 @@ mod tests {
         let (sessions, dir) = demo();
         let rooms = Rooms::new(Some(store(&dir)), None);
         let m = sessions.get("demo").unwrap();
-        let r = rooms.open(&m, m.recording().unwrap(), "me").unwrap();
+        let r = rooms.open(&m, m.recording().unwrap(), "me", None).unwrap();
         let _w = r.join("me", Some("coach"), None, true);
         r.control(&crate::room::Control { paused: Some(true), speed: Some(2.0), seek: Some(600) }).unwrap();
         rooms.persist();
@@ -410,7 +467,7 @@ mod tests {
         let (sessions, dir) = demo();
         let rooms = Rooms::new(Some(store(&dir)), None);
         let m = sessions.get("demo").unwrap();
-        let r = rooms.open(&m, m.recording().unwrap(), "me").unwrap();
+        let r = rooms.open(&m, m.recording().unwrap(), "me", None).unwrap();
         r.control(&crate::room::Control { paused: Some(true), ..Default::default() }).unwrap();
         r.draw(&crate::room::Draw { stroke: 1, points: vec![[5.0, 5.0, 0.0]; 100], keep: true }, "me").unwrap();
         rooms.persist();
@@ -442,7 +499,7 @@ mod tests {
         let rooms = Rooms::new(Some(store(&dir)), None);
         let m = sessions.get("demo").unwrap();
         let (relayed, plain) =
-            (rooms.open(&m, m.recording().unwrap(), "me").unwrap(), rooms.open(&m, m.recording().unwrap(), "me").unwrap());
+            (rooms.open(&m, m.recording().unwrap(), "me", None).unwrap(), rooms.open(&m, m.recording().unwrap(), "me", None).unwrap());
         rooms.persist();
         let path = |id: &str| dir.join("store").join(file(id));
         let mut v: serde_json::Value = serde_json::from_slice(&std::fs::read(path(&relayed.id)).unwrap()).unwrap();
@@ -468,6 +525,33 @@ mod tests {
     }
 
     #[test]
+    fn one_person_s_third_room_ends_their_oldest_unwatched_and_fourth_playback_their_oldest() {
+        let (sessions, dir) = demo();
+        let rooms = Rooms::new(Some(store(&dir)), None);
+        let m = sessions.get("demo").unwrap();
+        let open = |by| rooms.open(&m, m.recording().unwrap(), "me", Some(by));
+        let (a, b) = (open("ip:192.0.2.9").unwrap(), open("ip:192.0.2.9").unwrap());
+        let _in_b = b.join("me", None, None, true);
+        assert!(open("ip:192.0.2.9").err().unwrap().to_string().contains("close one first"), "both just opened");
+        assert!(open("steam:7").is_ok(), "someone else");
+        *lock(&a.idle_since) = Some(Instant::now().checked_sub(crate::sessions::MAKES_ROOM).unwrap());
+        let c = open("ip:192.0.2.9").unwrap();
+        assert!(rooms.get(&a.id, &sessions).is_none(), "the unwatched one went");
+        assert!(rooms.get(&b.id, &sessions).is_some() && rooms.get(&c.id, &sessions).is_some());
+        // Private playbacks: the oldest goes, watched or not.
+        let private = || rooms.open_private(&m, m.recording().unwrap(), "me", 0, 1.0, false, Some("ip:192.0.2.9")).unwrap();
+        let first = private();
+        let _watching = first.join("me", None, None, false);
+        let (_, _) = (private(), private());
+        private();
+        assert!(!lock(&rooms.map).contains_key(&first.id));
+        assert_eq!(lock(&rooms.private).len(), 3);
+        for r in lock(&rooms.map).values() {
+            r.stop();
+        }
+    }
+
+    #[test]
     fn a_live_match_is_recorded_from_the_start_and_a_room_on_it_starts_at_live() {
         let sessions = Sessions::new(false, 4, 20.0);
         let m = sessions.open("192.0.2.1:27020 tv", None, None).unwrap();
@@ -481,7 +565,7 @@ mod tests {
             std::thread::sleep(Duration::from_millis(1));
         }
         let rooms = Rooms::default();
-        let room = rooms.open(&m, m.recording().unwrap(), "me").unwrap();
+        let room = rooms.open(&m, m.recording().unwrap(), "me", None).unwrap();
         assert!(saved_at(&room.saved()) > 0, "starts at live");
         assert!(m.watched(), "the room keeps the match watched");
         rooms.reap(Duration::ZERO);

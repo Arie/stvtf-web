@@ -32,7 +32,9 @@ const IN_PLAY_PLAYERS: usize = 2;
 const IN_PLAY_DATA: Duration = Duration::from_secs(60);
 /// A match nobody has watched for this long makes room for a new one when there are as many as
 /// there may be (one just started has no viewer yet either).
-const MAKES_ROOM: Duration = Duration::from_mins(3);
+pub(crate) const MAKES_ROOM: Duration = Duration::from_mins(3);
+/// Matches one person may have started at once (see [`Sessions::open_as`]).
+pub(crate) const MATCHES_PER_PERSON: usize = 4;
 /// How much of the id the log shows.
 const LABEL_ID_LEN: usize = 8;
 
@@ -72,6 +74,8 @@ pub struct Session {
     preparing: AtomicBool,
     /// A live match's demos, when there is a store to keep them in.
     demos: OnceLock<Arc<LiveDemos>>,
+    /// Who started it, for the limit per person: a Steam id or an address.
+    by: OnceLock<String>,
 }
 
 /// A recorded match: a saved file, or a demo's gzipped output.
@@ -106,6 +110,7 @@ impl Session {
             live: OnceLock::new(),
             preparing: AtomicBool::new(false),
             demos: OnceLock::new(),
+            by: OnceLock::new(),
         }
     }
 
@@ -363,6 +368,8 @@ struct SavedMatch {
     /// The feed's history lines, as sent to pages.
     #[serde(default)]
     history: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    by: Option<String>,
 }
 
 /// The file in the store holding the mark of the process it belongs to.
@@ -405,6 +412,7 @@ impl Store {
             reservation: s.reservation(),
             map,
             history,
+            by: s.by.get().cloned(),
         };
         let plain = serde_json::to_vec(&saved)?;
         std::fs::create_dir_all(&self.dir)?;
@@ -511,6 +519,11 @@ impl Sessions {
     /// asked for it, is only logged: anyone may watch any number of matches. `reservation` links
     /// the match to the site's reservation for the list of matches.
     pub fn open(&self, line: &str, owner: Option<&str>, reservation: Option<u64>) -> Result<Arc<Session>> {
+        self.open_as(None, line, owner, reservation)
+    }
+
+    /// [`Sessions::open`], a new match counting against `by` (none: a streamer, the console).
+    pub fn open_as(&self, by: Option<&str>, line: &str, owner: Option<&str>, reservation: Option<u64>) -> Result<Arc<Session>> {
         let (target, password) = parse_connect(line).ok_or_else(|| anyhow!("no server address"))?;
         let password = password.unwrap_or_else(|| DEFAULT_TV_PASSWORD.into());
         // Connect to the address that was checked, not whatever the name resolves to later.
@@ -525,8 +538,12 @@ impl Sessions {
             s.link(reservation);
             return Ok(join(s, owner));
         }
+        self.check_person(&mut map, by)?;
         self.check_room(&mut map)?;
         let s = self.start(&mut map, random_id(), server, password, owner.map(str::to_string), SharedHub::default());
+        if let Some(by) = by {
+            let _ = s.by.set(by.to_string());
+        }
         record(&s, self.store.as_ref(), false);
         s.link(reservation);
         eprintln!("stvtf-web: match {} started on {server}, owner {}", s.label(), owner.unwrap_or("-"));
@@ -539,17 +556,21 @@ impl Sessions {
     }
 
     /// The session playing demos.tf demo `demo`, joining one already playing it (where it is now)
-    /// or starting it from the beginning; `owner` as for [`Sessions::open`]. It is not saved for
-    /// the next process.
-    pub fn open_demo(&self, demo: u64, owner: Option<&str>) -> Result<Arc<Session>> {
+    /// or starting it from the beginning; `owner` as for [`Sessions::open`], a new one counting
+    /// against `by` as for [`Sessions::open_as`]. It is not saved for the next process.
+    pub fn open_demo_as(&self, by: Option<&str>, demo: u64, owner: Option<&str>) -> Result<Arc<Session>> {
         let mut map = self.lock();
         if let Some(s) = map.values().find(|s| s.demo == Some(demo) && !s.done.load(Ordering::Relaxed)) {
             return Ok(join(s, owner));
         }
+        self.check_person(&mut map, by)?;
         self.check_room(&mut map)?;
         let nowhere = SocketAddr::from((Ipv4Addr::UNSPECIFIED, 0));
         let mut session = Session::new(demo_id(demo), SharedHub::default(), nowhere, String::new(), owner.map(str::to_string), false);
         session.demo = Some(demo);
+        if let Some(by) = by {
+            let _ = session.by.set(by.to_string());
+        }
         let s = Arc::new(session);
         let (player, hz, store) = (s.clone(), self.hz, self.store.clone().filter(|_| self.demos));
         let thread = std::thread::spawn(move || {
@@ -597,6 +618,29 @@ impl Sessions {
                 Ok(())
             }
             None => bail!("already watching {} matches, the most this server does", self.max),
+        }
+    }
+
+    /// Whether `by` may start another match: fewer than [`MATCHES_PER_PERSON`] of theirs, or one
+    /// nobody has watched for [`MAKES_ROOM`], which ends.
+    fn check_person(&self, map: &mut HashMap<String, Arc<Session>>, by: Option<&str>) -> Result<()> {
+        let Some(by) = by else { return Ok(()) };
+        let theirs: Vec<&Arc<Session>> =
+            map.values().filter(|s| s.by.get().is_some_and(|b| b == by) && !s.done.load(Ordering::Relaxed)).collect();
+        if theirs.len() < MATCHES_PER_PERSON {
+            return Ok(());
+        }
+        let unwatched = theirs
+            .iter()
+            .filter_map(|s| lock(&s.idle_since).filter(|t| t.elapsed() >= MAKES_ROOM).map(|t| (t, s.id.clone())))
+            .min_by_key(|(t, _)| *t)
+            .and_then(|(_, id)| map.remove(&id));
+        match unwatched {
+            Some(s) => {
+                self.end(&s, "making room for its starter's next");
+                Ok(())
+            }
+            None => bail!("You are watching {MATCHES_PER_PERSON} matches already: close one first."),
         }
     }
 
@@ -662,6 +706,9 @@ impl Sessions {
             h.history = saved.history.into_iter().map(Into::into).collect();
         }
         let s = self.start(map, id.to_string(), saved.server, saved.password, saved.owner, hub);
+        if let Some(by) = saved.by {
+            let _ = s.by.set(by);
+        }
         record(&s, Some(store), true);
         s.link(saved.reservation);
         Some(s)
@@ -979,12 +1026,12 @@ mod tests {
         let dir = TempDir::new("demo-sessions");
         let mut s = Sessions::new(false, 3, 20.0);
         s.store = Some(Store { dir: dir.to_path_buf(), keys: None });
-        let a = s.open_demo(1, Some("u1")).unwrap();
-        assert_eq!(s.open_demo(1, Some("u2")).unwrap().id, a.id, "joined where it is");
+        let a = s.open_demo_as(None, 1, Some("u1")).unwrap();
+        assert_eq!(s.open_demo_as(None, 1, Some("u2")).unwrap().id, a.id, "joined where it is");
         let server = s.open("192.0.2.1:27020 tv", None, None).unwrap();
         assert_ne!(server.id, a.id);
-        s.open_demo(2, Some("u3")).unwrap();
-        let full = s.open_demo(3, Some("u3")).err().unwrap().to_string();
+        s.open_demo_as(None, 2, Some("u3")).unwrap();
+        let full = s.open_demo_as(None, 3, Some("u3")).err().unwrap().to_string();
         assert!(full.contains("already watching 3"), "demos count towards the limit: {full}");
         s.persist();
         assert!(!dir.join(&a.id).exists(), "the next process could not pick a demo up where it is");
@@ -1237,6 +1284,30 @@ mod tests {
         crate::hub::publish(&m.hub, &snapshot(200, None, vec![player(1, "p", Team::Spectator)]));
         s.reap(Duration::ZERO);
         assert!(s.get(&m.id).is_none());
+    }
+
+    #[test]
+    fn one_person_s_fifth_match_ends_their_longest_unwatched() {
+        let s = Sessions::new(false, 20, 20.0);
+        let open = |n: u8, by| s.open_as(Some(by), &format!("192.0.2.{n}:27020 tv"), None, None);
+        let theirs: Vec<_> = (70..74).map(|n| open(n, "steam:1").unwrap()).collect();
+        // All four just started: none goes.
+        assert!(open(74, "steam:1").err().unwrap().to_string().contains("close one first"));
+        assert!(open(74, "ip:192.0.2.9").is_ok(), "someone else");
+        assert!(s.open("192.0.2.75:27020 tv", None, None).is_ok(), "not counted");
+        // One of theirs someone else is on still counts, but stays.
+        assert!(s.open_as(Some("steam:2"), "192.0.2.70:27020 tv", None, None).is_ok(), "joining starts nothing");
+        let watching = Viewer::new(theirs[0].clone());
+        for m in &theirs {
+            let mut idle = lock(&m.idle_since);
+            *idle = idle.map(|_| Instant::now().checked_sub(MAKES_ROOM).unwrap());
+        }
+        *lock(&theirs[2].idle_since) = Some(Instant::now().checked_sub(MAKES_ROOM * 2).unwrap());
+        let fifth = open(76, "steam:1").unwrap();
+        assert!(s.get(&theirs[2].id).is_none(), "the longest unwatched went");
+        assert!(s.get(&theirs[0].id).is_some() && s.get(&fifth.id).is_some());
+        drop(watching);
+        s.stop_all();
     }
 
     #[test]

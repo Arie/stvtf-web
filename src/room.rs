@@ -38,7 +38,7 @@ pub(crate) struct Room {
     state: Mutex<State>,
     wake: Condvar,
     viewers: AtomicUsize,
-    idle_since: Mutex<Option<Instant>>,
+    pub(crate) idle_since: Mutex<Option<Instant>>,
     /// Where its relay would play from, if it can have one.
     offer: OnceLock<Offer>,
     /// Its relay, while the room is open and someone has been on a page of it.

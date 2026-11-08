@@ -84,10 +84,13 @@ function roomButton() {
       await copyText(page.href);
       return location.assign(page);
     }
-    button.disabled = false;
     button.classList.remove("busy");
-    button.textContent = idle;
-    button.title = r ? await r.text() : "Could not reach the server";
+    // Why not, on the button for a moment.
+    button.textContent = r ? await r.text() : "Could not reach the server";
+    setTimeout(() => {
+      button.disabled = false;
+      button.textContent = idle;
+    }, NOTE_MS);
   };
 }
 

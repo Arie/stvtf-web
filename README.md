@@ -28,6 +28,11 @@ watched at once; when that many are, the one nobody has watched the longest (3 m
 makes room for a new one, and `--public`, for a server that strangers can use, refuses private and
 internal addresses.
 
+One person, by the Steam id in the start link or of who is signed in, else by address (an IPv6
+one by its /64), has at most 4 matches started, 2 rooms and 3 private playbacks at once. One more
+ends their oldest that nobody has watched for 3 minutes (any private playback of theirs), or is
+refused. Streamers and admins, and this machine, have no limit.
+
 Behind a site such as serveme.tf, which signs users in and decides what they may watch, run
 it with `--public --base-path /live` and `STVTF_TOKEN_KEY` (64 hex digits) shared with the
 site. Matches then start only from the site's `/start?t=TOKEN` links: the token is AES-256-GCM

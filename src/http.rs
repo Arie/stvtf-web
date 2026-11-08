@@ -228,7 +228,7 @@ fn serve_many(
             let gone = format!("stvtf_user=; {}", cookie_attributes(app, 0));
             respond_with(&mut s, "303 See Other", &[("Location", &back), ("Set-Cookie", &gone)], b"")?;
         }
-        ("/start", _) => match start(app, sessions, &request.query) {
+        ("/start", _) => match start(app, sessions, request, client) {
             // <stv-map> asks where the match is instead of following the redirect.
             Ok(m) if param(&request.query, "format") == Some("json") => {
                 let page = format!("{}/w/{}/", app.base, m.id);
@@ -245,7 +245,7 @@ fn serve_many(
             let body = read_body(reader, request)?;
             let form = String::from_utf8_lossy(&body);
             let line = param(&form, "connect").map(form_decode).unwrap_or_default();
-            match sessions.open(&line, None, None) {
+            match sessions.open_as(counted(None, None, client).as_deref(), &line, None, None) {
                 Ok(m) => started(&mut s, &m)?,
                 Err(e) => respond(&mut s, "400 Bad Request", HTML, &app.page(&landing(&format!("{e:#}"))))?,
             }
@@ -289,9 +289,9 @@ fn serve_match(
             app.redirect(&mut s, "308 Permanent Redirect", &format!("{}/", request.path))?;
         }
         (Some(_), rest) if is_page(rest) => respond(&mut s, "200 OK", HTML, &app.page(INDEX))?,
-        (Some(m), "room") => open_room(&mut s, app, sessions, &m, request)?,
+        (Some(m), "room") => open_room(&mut s, app, sessions, &m, request, client)?,
         (Some(m), part @ ("timeline" | "marks")) => match_timeline(&mut s, &m, request, part)?,
-        (Some(m), "rewind") if request.method == "POST" => rewind(&mut s, reader, app, &m, request)?,
+        (Some(m), "rewind") if request.method == "POST" => rewind(&mut s, reader, app, &m, request, client)?,
         (Some(m), "events") => match app.stream_slot(client) {
             Some(_slot) => {
                 let _viewer = Viewer::new(m.clone());
@@ -316,14 +316,22 @@ struct Rewind {
 }
 
 /// A viewer of match `m` goes back in time: a private playback, theirs alone, from where they say.
-fn rewind(s: &mut TcpStream, reader: &mut BufReader<Take<TcpStream>>, app: &App, m: &Arc<Session>, request: &Request) -> Result<()> {
+fn rewind(
+    s: &mut TcpStream,
+    reader: &mut BufReader<Take<TcpStream>>,
+    app: &App,
+    m: &Arc<Session>,
+    request: &Request,
+    client: IpAddr,
+) -> Result<()> {
     let Some(recording) = m.ready() else { return Ok(respond(s, "409 Conflict", TEXT, b"No timeline yet.")?) };
     let r = match json_body::<Rewind>(reader, request) {
         Ok(r) => r,
         Err(e) => return Ok(respond(s, "400 Bad Request", TEXT, format!("{e:#}").as_bytes())?),
     };
-    let Who { key: guest, cookie, .. } = who(app, request);
-    match app.rooms.open_private(m, recording, &guest, r.at, r.speed.unwrap_or(1.0), r.paused) {
+    let Who { key: guest, cookie, user } = who(app, request);
+    let by = counted(user.as_ref(), None, client);
+    match app.rooms.open_private(m, recording, &guest, r.at, r.speed.unwrap_or(1.0), r.paused, by.as_deref()) {
         Ok(room) => opened(s, app, &room.id, cookie.as_deref()),
         Err(e) => Ok(respond(s, "503 Service Unavailable", TEXT, format!("{e:#}").as_bytes())?),
     }
@@ -437,7 +445,7 @@ fn opened(s: &mut TcpStream, app: &App, id: &str, cookie: Option<&str>) -> Resul
 }
 
 /// `GET` says whether a room can be opened on match `m`; `POST` opens one, owned by the browser.
-fn open_room(s: &mut TcpStream, app: &App, sessions: &Sessions, m: &Arc<Session>, request: &Request) -> Result<()> {
+fn open_room(s: &mut TcpStream, app: &App, sessions: &Sessions, m: &Arc<Session>, request: &Request, client: IpAddr) -> Result<()> {
     if !m.recordable() {
         return Ok(respond(s, "409 Conflict", TEXT, b"This match has nothing to play (yet).")?);
     }
@@ -446,7 +454,7 @@ fn open_room(s: &mut TcpStream, app: &App, sessions: &Sessions, m: &Arc<Session>
         m.prepare();
         return Ok(respond(s, "200 OK", JSON, b"{}")?);
     }
-    let Who { key: guest, cookie, .. } = who(app, request);
+    let Who { key: guest, cookie, user } = who(app, request);
     // One's room on it already: back to that.
     if let Some(room) = app.rooms.owned(m, &guest) {
         return opened(s, app, &room.id, cookie.as_deref());
@@ -458,7 +466,7 @@ fn open_room(s: &mut TcpStream, app: &App, sessions: &Sessions, m: &Arc<Session>
         Ok(r) => r,
         Err(e) => return Ok(respond(s, "409 Conflict", TEXT, format!("{e:#}").as_bytes())?),
     };
-    let room = match app.rooms.open(m, recording, &guest) {
+    let room = match app.rooms.open(m, recording, &guest, counted(user.as_ref(), None, client).as_deref()) {
         Ok(r) => r,
         Err(e) => return Ok(respond(s, "409 Conflict", TEXT, format!("{e:#}").as_bytes())?),
     };
@@ -616,14 +624,35 @@ fn list_matches(s: &mut TcpStream, keys: &token::Keys, sessions: &Sessions, requ
 }
 
 /// The match a site's `/start?t=` token asks for.
-fn start(app: &App, sessions: &Sessions, query: &str) -> Result<Arc<Session>> {
+fn start(app: &App, sessions: &Sessions, request: &Request, client: IpAddr) -> Result<Arc<Session>> {
     let keys = app.keys.as_ref().ok_or_else(|| anyhow!("this server starts matches from its own page"))?;
-    let token = param(query, "t").unwrap_or_default();
+    let token = param(&request.query, "t").unwrap_or_default();
     let t = keys.open(token, unix_now())?;
+    let user = request.user.as_deref().and_then(|c| keys.kept(c, unix_now()));
+    let by = counted(user.as_ref(), t.owner.as_deref(), client);
     match t.source {
-        Source::Connect(connect) => sessions.open(&connect, t.owner.as_deref(), t.reservation),
-        Source::Demo(demo) => sessions.open_demo(demo, t.owner.as_deref()),
+        Source::Connect(connect) => sessions.open_as(by.as_deref(), &connect, t.owner.as_deref(), t.reservation),
+        Source::Demo(demo) => sessions.open_demo_as(by.as_deref(), demo, t.owner.as_deref()),
     }
+}
+
+/// Who a start counts against, for the limits per person: a Steam id (`steam`, else the
+/// signed-in user's), else the address (an IPv6 one by its /64); nobody for a streamer or more,
+/// or on this machine.
+fn counted(user: Option<&token::User>, steam: Option<&str>, client: IpAddr) -> Option<String> {
+    if user.is_some_and(|u| u.streamer) || client.to_canonical().is_loopback() {
+        return None;
+    }
+    if let Some(id) = steam.or(user.map(|u| u.uid.as_str())) {
+        return Some(format!("{}{id}", crate::people::STEAM));
+    }
+    Some(match client.to_canonical() {
+        IpAddr::V6(ip) => {
+            let s = ip.segments();
+            format!("ip:{:x}:{:x}:{:x}:{:x}::/64", s[0], s[1], s[2], s[3])
+        }
+        ip @ IpAddr::V4(_) => format!("ip:{ip}"),
+    })
 }
 
 /// Display options a start link can carry over to the page.
@@ -768,6 +797,19 @@ mod tests {
     use super::*;
     use crate::hub::{SharedHub, publish};
     use crate::testing::{TempDir, app, server};
+
+    #[test]
+    fn a_start_counts_against_a_steam_id_else_an_address() {
+        let user = |streamer| token::User { uid: "765".into(), name: "n".into(), streamer };
+        let ip = |s: &str| s.parse::<IpAddr>().unwrap();
+        assert_eq!(counted(None, Some("1"), ip("192.0.2.1")).as_deref(), Some("steam:1"));
+        assert_eq!(counted(Some(&user(false)), None, ip("192.0.2.1")).as_deref(), Some("steam:765"));
+        assert_eq!(counted(Some(&user(true)), Some("1"), ip("192.0.2.1")), None, "streamers count against nobody");
+        assert_eq!(counted(None, None, ip("192.0.2.1")).as_deref(), Some("ip:192.0.2.1"));
+        assert_eq!(counted(None, Some("1"), ip("127.0.0.1")), None, "this machine");
+        assert_eq!(counted(None, None, ip("::ffff:192.0.2.1")).as_deref(), Some("ip:192.0.2.1"));
+        assert_eq!(counted(None, None, ip("2001:db8:1:2:aa::1")), counted(None, None, ip("2001:db8:1:2:bb::9")), "one /64");
+    }
     use crate::{App, Matches, TcpListener, token};
     use flate2::read::GzDecoder;
     use std::path::PathBuf;
