@@ -1106,6 +1106,12 @@ aside h3 {
   color: var(--dim);
   white-space: nowrap;
 }
+#rb-note {
+  color: #ffd23f;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 #roombar #rb-live {
   width: auto;
   padding: 0 8px;

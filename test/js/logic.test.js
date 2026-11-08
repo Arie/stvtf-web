@@ -15,7 +15,7 @@ import {
 import { command, steamid64 } from "../../app/embed.js";
 import { layerOn } from "../../app/layers.js";
 import { labelCorner } from "../../app/spawns.js";
-import { drawOwn, onClear, onDraw, onMarker, pointsOf } from "../../app/telestrator.js";
+import { drawOwn, markerFull, onClear, onDraw, onMarker, pointsOf, trimOwn } from "../../app/telestrator.js";
 import { demostfAlias, sameLayout, screenOffset, teamsTurn, toScreen } from "../../app/view.js";
 
 test("players sort by class, then name whatever its case, then id", () => {
@@ -316,5 +316,26 @@ test("a page that comes back has the marker as the room has it", () => {
   onMarker({ type: "marker", strokes: [{ stroke: 10, by: 2, points: pts }] });
   assert.equal(pointsOf(10), 2, "the whole stroke");
   assert.equal(pointsOf(11), 0, "cleared meanwhile");
+  onClear();
+});
+
+test("a marker stroke the full map refused is trimmed to what the room took", () => {
+  onClear();
+  onMarker({ type: "marker", strokes: [{ stroke: 1, by: 2, points: [[0, 0, 0]] }], max: 3 });
+  assert.ok(!markerFull());
+  drawOwn({
+    stroke: 2,
+    by: 1,
+    keep: true,
+    points: [
+      [0, 0, 0],
+      [1, 1, 8],
+    ],
+  });
+  assert.ok(markerFull());
+  trimOwn(2, 1);
+  assert.equal(pointsOf(2), 1);
+  trimOwn(2, 0);
+  assert.equal(pointsOf(2), 0);
   onClear();
 });

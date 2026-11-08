@@ -178,6 +178,8 @@ export type DrawLine = {
 export type MarkerLine = {
   type: "marker";
   strokes: { stroke: number; by: number; points: [number, number, number][] }[];
+  /** Points the map holds, all strokes together. */
+  max?: number;
 };
 
 /** An admin wiped the room's map. */

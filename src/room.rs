@@ -139,7 +139,7 @@ pub(crate) struct Kept {
 }
 
 /// Most permanent marker points on a room's map.
-const MAX_KEPT_POINTS: usize = 8000;
+pub(crate) const MAX_KEPT_POINTS: usize = 8000;
 
 /// The longest a stroke's points can say it took, in milliseconds.
 const MAX_STROKE_MS: f64 = 600_000.0;
@@ -148,7 +148,7 @@ type Leader = (u32, String, String);
 
 /// The marker for joiners, empty too: a page back after a clear it missed drops its own.
 fn kept_line(marker: &[Kept]) -> Arc<str> {
-    serde_json::json!({ "type": "marker", "strokes": marker }).to_string().into()
+    serde_json::json!({ "type": "marker", "strokes": marker, "max": MAX_KEPT_POINTS }).to_string().into()
 }
 
 /// Whether a relay told `sent` is where `now` is without being told again: same course, within
@@ -353,7 +353,7 @@ impl Room {
         }
         let mut marker = lock(&self.marker);
         if marker.iter().map(|k| k.points.len()).sum::<usize>() + d.points.len() > MAX_KEPT_POINTS {
-            bail!("the map is full of marker: clear it first");
+            bail!("The map is full of marker ({MAX_KEPT_POINTS} points): clear it first.");
         }
         match marker.iter_mut().find(|k| k.stroke == d.stroke && k.by == by) {
             Some(k) => k.points.extend(&d.points),
@@ -782,7 +782,7 @@ mod tests {
         r.draw(&Draw { stroke: 2, points: vec![[9.0, 9.0, 0.0]], keep: false }, "me").unwrap();
         let joined = |r: &Room| subscribe(&r.hub, false).try_iter().filter(|l| l.contains(r#""type":"marker""#)).collect::<Vec<_>>();
         let kept = joined(&r);
-        assert_eq!(&*kept[0], r#"{"strokes":[{"by":1,"points":[[1.0,0.0,0.0],[2.0,0.0,0.0]],"stroke":1}],"type":"marker"}"#);
+        assert_eq!(&*kept[0], r#"{"max":8000,"strokes":[{"by":1,"points":[[1.0,0.0,0.0],[2.0,0.0,0.0]],"stroke":1}],"type":"marker"}"#);
         // Picked up again after a restart.
         let saved: Saved = serde_json::from_str(&serde_json::to_string(&r.saved()).unwrap()).unwrap();
         let again = Room::restore("r2".into(), saved, r.recording.clone());
@@ -790,7 +790,7 @@ mod tests {
         let page = subscribe(&r.hub, false);
         r.clear("me");
         assert!(page.try_iter().any(|l| &*l == r#"{"by":1,"type":"clear"}"#));
-        assert_eq!(&*joined(&r)[0], r#"{"strokes":[],"type":"marker"}"#, "nothing kept, said so");
+        assert_eq!(&*joined(&r)[0], r#"{"max":8000,"strokes":[],"type":"marker"}"#, "nothing kept, said so");
         assert_eq!(r.saved().marker.len(), 0);
         let full = Draw { stroke: 3, points: vec![[0.0, 0.0, 0.0]; 200], keep: true };
         let mut drawn = 0;

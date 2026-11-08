@@ -56,15 +56,36 @@ function addPoints(m, behind) {
   strokes.set(m.stroke, s);
 }
 
+// Marker points the room's map holds.
+let keptMax = Infinity;
+
 // The marker as the room has it, on join or reconnect: in place of the page's, but for strokes
 // drawn here.
 /** @param {import("../types/stream").MarkerLine} m */
 export function onMarker(m) {
+  keptMax = m.max ?? Infinity;
   const kept = new Set(m.strokes.map(k => k.stroke));
   for (const [id, s] of strokes) if (s.keep && !kept.has(id) && !mine.has(id)) strokes.delete(id);
   for (const k of m.strokes)
     if (!mine.has(k.stroke))
       strokes.set(k.stroke, { points: k.points, start: -Infinity, ink: inkOf(k.by), keep: true });
+}
+
+export const markerFull = () => keptPoints() >= keptMax;
+
+function keptPoints() {
+  let n = 0;
+  for (const s of strokes.values()) if (s.keep) n += s.points.length;
+  return n;
+}
+
+// The room took only the first `n` points of this page's stroke.
+/** @param {number} stroke @param {number} n */
+export function trimOwn(stroke, n) {
+  const s = strokes.get(stroke);
+  if (!s) return;
+  if (n > 0) s.points.length = Math.min(n, s.points.length);
+  else strokes.delete(stroke);
 }
 
 // An admin wiped the map.

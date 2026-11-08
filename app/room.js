@@ -14,7 +14,7 @@ import {
   streamParams,
   viewListeners,
 } from "./stream.js";
-import { drawOwn, inkOf, setInks } from "./telestrator.js";
+import { drawOwn, inkOf, markerFull, setInks, trimOwn } from "./telestrator.js";
 import { pushMirror } from "./camera.js";
 import { RoomView, latestView, morePoints, sender } from "./roomview.js";
 import { focusOf, screenOffset, viewArea } from "./view.js";
@@ -270,7 +270,21 @@ function drawing(pen, marker) {
       other.classList.remove("on");
       env.el.classList.toggle("drawing", tool.classList.toggle("on"));
     };
-  const send = sender((/** @type {import("./roomview.js").Strokes} */ s) => post("draw", s), morePoints);
+  // Points the room took of each marker stroke, and strokes it refused (the map full).
+  /** @type {Map<number, number>} */
+  const taken = new Map();
+  /** @type {Set<number>} */
+  const refused = new Set();
+  const send = sender(async (/** @type {import("./roomview.js").Strokes} */ s) => {
+    if (refused.has(s.stroke)) return;
+    const r = await post("draw", s);
+    if (!s.keep) return;
+    if (r.ok) return taken.set(s.stroke, (taken.get(s.stroke) ?? 0) + s.points.length);
+    refused.add(s.stroke);
+    trimOwn(s.stroke, taken.get(s.stroke) ?? 0);
+    if (stroke?.id === s.stroke) stroke = null;
+    note(await r.text());
+  }, morePoints);
   /** @param {PointerEvent} e */
   const add = e => {
     if (!stroke) return;
@@ -298,6 +312,7 @@ function drawing(pen, marker) {
       // Before the view's own handlers: no panning, following or mouse events while drawing.
       e.preventDefault();
       e.stopImmediatePropagation();
+      if (keep && markerFull()) return note("The map is full of marker: clear it first.");
       canvas.setPointerCapture(e.pointerId);
       stroke = { id: Math.floor(Math.random() * 2 ** 31), last: null, began: performance.now(), keep };
       add(e);
@@ -309,6 +324,18 @@ function drawing(pen, marker) {
   canvas.addEventListener("pointerup", end);
   canvas.addEventListener("pointercancel", end);
 }
+
+// Why something did not happen, in the room bar for a moment.
+/** @param {string} text */
+function note(text) {
+  const el = $("rb-note");
+  Object.assign(el, { textContent: text, hidden: false });
+  clearTimeout(noteTimer);
+  noteTimer = setTimeout(() => (el.hidden = true), NOTE_MS);
+}
+const NOTE_MS = 5000;
+/** @type {ReturnType<typeof setTimeout> | undefined} */
+let noteTimer;
 
 // How to watch the room in TF2, when it is relayed: the console line to paste, and a link that
 // has Steam connect.
