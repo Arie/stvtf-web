@@ -139,7 +139,7 @@ function roomBar() {
     marker = /** @type {HTMLButtonElement} */ ($("rb-marker")),
     clear = /** @type {HTMLButtonElement} */ ($("rb-clear"));
   const control = (/** @type {import("./playbar.js").Control} */ c) => post("control", c);
-  const bar = playbar({ home: HOME, send: control, live: end => control({ seek: end, paused: false }) });
+  const bar = playbar({ home: HOME, send: control, live: end => control({ seek: end, paused: false }), room: true });
   playbackListeners.add(m => bar.heard(m));
   /** @param {boolean} on */
   const allow = on => {

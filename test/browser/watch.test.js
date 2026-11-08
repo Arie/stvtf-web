@@ -205,6 +205,8 @@ test("the owner draws on the map and everyone in the room sees it", async () => 
   await page.click("#roomopen");
   await page.waitForURL(/\/r\/[0-9a-f]{32}\/$/, { timeout: WAIT });
   await until(page, () => !(/** @type {HTMLButtonElement} */ (document.getElementById("rb-pen")).disabled));
+  const speeds = await page.$$eval("#rb-speed option", os => os.map(o => /** @type {HTMLOptionElement} */ (o).value));
+  assert.deepEqual(speeds, ["1", "2", "4"], "no slow motion in a room: TF2 shows it as a stutter");
   const viewer = await open();
   await viewer.page.goto(page.url());
   await until(viewer.page, m => document.getElementById("map").textContent === m, MAP);

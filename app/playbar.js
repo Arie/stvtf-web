@@ -7,7 +7,9 @@ import { timeline } from "./timeline.js";
 /** @typedef {import("../types/stream").PlaybackLine} PlaybackLine */
 /** @typedef {{ paused?: boolean; speed?: number; seek?: number }} Control */
 
-const SPEEDS = [0.25, 0.5, 1, 2, 4];
+// No slow motion in rooms: TF2 shows it as a stutter.
+const SPEEDS = [0.25, 0.5, 1, 2, 4],
+  ROOM_SPEEDS = [1, 2, 4];
 // A local jump is confirmed by playback within JUMP_MS of it, or dropped after JUMP_WAIT_MS.
 const JUMP_MS = 1500,
   JUMP_WAIT_MS = 3000;
@@ -35,10 +37,10 @@ export function moment(s) {
 /**
  * @param {{
  *   home: URL; send: (c: Control) => unknown; live: (length: number) => void;
- *   replay?: (behind: boolean, p: PlaybackLine) => boolean;
+ *   replay?: (behind: boolean, p: PlaybackLine) => boolean; room?: boolean;
  * }} o `home`: where the marks are; `send`: a control; `live`: the Live button (a live match's);
  * `replay`: whether the status says replay, from whether playback is behind a live match
- * (default: that).
+ * (default: that); `room`: a room's, with no slow motion.
  */
 export function playbar(o) {
   const bar = $("roombar"),
@@ -51,7 +53,9 @@ export function playbar(o) {
   bar.hidden = false;
   const width = widthOf(track);
   speed.replaceChildren(
-    ...SPEEDS.map(s => Object.assign(document.createElement("option"), { value: String(s), textContent: `${s}×` })),
+    ...(o.room ? ROOM_SPEEDS : SPEEDS).map(s =>
+      Object.assign(document.createElement("option"), { value: String(s), textContent: `${s}×` }),
+    ),
   );
   /** @type {PlaybackLine | null} */
   let last = null;
