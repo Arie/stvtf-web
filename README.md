@@ -546,12 +546,16 @@ script/test -s checks              # a section (checks, tests, audit); -t clippy
 script/test --list                 # each check and its command
 ```
 
-The checks: rustfmt (rustfmt.toml), clippy (`[lints]` in Cargo.toml), rustdoc, ESLint (eslint.config.mjs;
-code over its size limits when they came in is in eslint-suppressions.json, pruned with
+The checks: rustfmt (rustfmt.toml), clippy (`[lints]` in Cargo.toml; functions at most 60 lines, clippy.toml),
+rustdoc, ESLint (eslint.config.mjs: functions at most 60 lines and complexity 15, files at most 400; code over
+its limits when they came in is in eslint-suppressions.json, pruned with
 `npx eslint app test --prune-suppressions`), Prettier (.prettierrc.json), tsc (tsconfig.json, strict, against
 `types/`: the stream's lines and the page's state as .d.ts), shellcheck, actionlint, zizmor (the workflows'
 security), hadolint (the Dockerfile), the page tests, `cargo test`, the browser test and cargo-deny (advisories, licences and
 sources: deny.toml; `cargo install cargo-deny`). A check whose program is missing is skipped locally, and fails in CI.
+
+Numbers that decide behaviour (timings, thresholds, limits) are named constants at the top of their module;
+colours are named in `app/css/palette.css`. Pages carry no styling of their own (a test checks): it is in `app/css/`.
 
 `testdata/lines.jsonl` is one
 line of each kind the feed and chat show: Rust checks it against stvtf, the page's tests read it.
