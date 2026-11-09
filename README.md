@@ -37,8 +37,8 @@ heavy's ammo belt, which is our own.
 
 Backpack pictures (`backpack/`) come from TF2's game files, made by tf2-icons.
 
-The match at `/w/demo/` is the [RGL](https://rgl.gg) Philly LAN 2026 final on cp_metalworks_f7, RED
-5–4 ([demos.tf/1484103](https://demos.tf/1484103)), from its STV demo.
+The match at `/w/demo/` is an [RGL.gg](https://rgl.gg) Philly LAN 2026 match on cp_metalworks_f7,
+RED 5–4 ([demos.tf/1484103](https://demos.tf/1484103)), from its STV demo.
 
 The HUD font is Roboto Condensed by Christian Robertson, Apache License 2.0 (`fonts/LICENSE`).
 
