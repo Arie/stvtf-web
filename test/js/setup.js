@@ -21,7 +21,11 @@ class FakeElement {
   classList = {
     add: c => this.classes.add(c),
     remove: c => this.classes.delete(c),
-    toggle() {},
+    toggle: (c, on = !this.classes.has(c)) => {
+      if (on) this.classes.add(c);
+      else this.classes.delete(c);
+      return on;
+    },
     contains: c => this.classes.has(c),
   };
   innerHTML = "";

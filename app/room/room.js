@@ -277,7 +277,7 @@ function drawing(pen, marker) {
 // high one in either order, and asks the room for the arc between them; Esc or another tool
 // lets it go.
 /** @param {HTMLButtonElement} button @param {HTMLButtonElement[]} others */
-function arcTool(button, others) {
+export function arcTool(button, others) {
   /** @type {[number, number] | null} */
   let first = null;
   const arm = (/** @type {boolean} */ on) => {
@@ -289,7 +289,12 @@ function arcTool(button, others) {
     for (const o of others) if (o.classList.contains("on")) o.click();
     arm(!button.classList.contains("on"));
   };
-  for (const o of others) o.addEventListener("click", () => button.classList.contains("on") && arm(false));
+  // Another tool taken: only the arc's own state goes, the drawing mode is that tool's.
+  for (const o of others)
+    o.addEventListener("click", () => {
+      button.classList.toggle("on", false);
+      first = setPending(null);
+    });
   env.keys.addEventListener("keydown", e => e.key === "Escape" && button.classList.contains("on") && arm(false));
   canvas.addEventListener(
     "pointerdown",

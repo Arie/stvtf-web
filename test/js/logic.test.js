@@ -17,6 +17,8 @@ import { layerOn } from "../../app/core/layers.js";
 import { labelCorner } from "../../app/map/spawns.js";
 import { drawOwn, markerFull, onClear, onDraw, onMarker, pointsOf, trimOwn } from "../../app/room/telestrator.js";
 import { arcCount, arcShade, onArc } from "../../app/room/arcs.js";
+import { arcTool } from "../../app/room/room.js";
+import { env } from "../../app/core/env.js";
 import { demostfAlias, sameLayout, screenOffset, teamsTurn, toScreen } from "../../app/map/view.js";
 
 test("players sort by class, then name whatever its case, then id", () => {
@@ -362,4 +364,33 @@ test("jump arcs come with the marker and an arc line, are no strokes, and go wit
   assert.equal(arcCount(), 2);
   onClear();
   assert.equal(arcCount(), 0);
+});
+
+test("picking the pen with the arc tool armed leaves the map in drawing mode", () => {
+  // A room bar button: its own onclick, then whatever else listens, as a browser runs them.
+  const button = () => {
+    /** @type {(() => void)[]} */
+    const heard = [];
+    const classes = new Set();
+    const b = {
+      classList: {
+        contains: (/** @type {string} */ c) => classes.has(c),
+        toggle: (/** @type {string} */ c, on = !classes.has(c)) => (on ? classes.add(c) : classes.delete(c), on),
+      },
+      /** @type {null | (() => void)} */
+      onclick: null,
+      addEventListener: (/** @type {string} */ _type, /** @type {() => void} */ f) => heard.push(f),
+      click: () => [b.onclick, ...heard].forEach(f => f?.()),
+    };
+    return b;
+  };
+  const arc = button(),
+    pen = button();
+  pen.onclick = () => env.el.classList.toggle("drawing", pen.classList.toggle("on"));
+  arcTool(/** @type {any} */ (arc), [/** @type {any} */ (pen)]);
+  arc.click();
+  assert.ok(env.el.classList.contains("drawing"), "armed");
+  pen.click();
+  assert.ok(pen.classList.contains("on") && !arc.classList.contains("on"));
+  assert.ok(env.el.classList.contains("drawing"), "still drawing, with the pen");
 });
