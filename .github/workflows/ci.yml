@@ -71,6 +71,8 @@ jobs:
       - uses: jdx/mise-action@fc42bcc7ddbf51124c30f95a877a0c5168a3bfde # v5.2.1
         with:
           working_directory: stvtf-web
+          # Pinned: left to pick, it took 2026.11.4, whose .tar.zst GitHub answers with a 504.
+          version: 2026.11.3
       - run: script/test -v -t shellcheck,actionlint,zizmor,hadolint
 
   clippy:
