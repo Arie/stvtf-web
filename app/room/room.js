@@ -59,6 +59,8 @@ export function initRoom() {
   }
 }
 
+// How often the Watch together button asks again whether a room can open.
+const ASK_AGAIN_MS = 5000;
 // Offered once the match has a recording to play; greyed out, spinning, while a demo is fetched.
 function roomButton() {
   const button = /** @type {HTMLButtonElement} */ ($("roomopen"));
@@ -74,7 +76,7 @@ function roomButton() {
         if (r.ok) waiting(false);
         else if (r.status === 409) {
           waiting(true);
-          setTimeout(ask, 5000);
+          setTimeout(ask, ASK_AGAIN_MS);
         } else button.hidden = true;
       },
       () => {},

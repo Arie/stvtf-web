@@ -95,17 +95,24 @@ if (OVERLAY) {
 }
 // Marker size in the overlay follows the panel, so a corner minimap in a 1080p stream (~400px)
 // stays readable: player dot radius ~12px there. ui=<factor> scales it, dot=<px> fixes it.
+const DOT_PX = 12,
+  // The dot's radius: the panel's shorter side over this, kept between these.
+  DOT_OF_PANEL = 33,
+  [DOT_MIN_PX, DOT_MAX_PX] = [9, 20];
 export function overlayUnit() {
-  if (OPT.has("dot")) return Number(OPT.get("dot")) || 12;
+  if (OPT.has("dot")) return Number(OPT.get("dot")) || DOT_PX;
   const r = canvasSize();
-  return Math.max(9, Math.min(20, Math.min(r.width, r.height) / 33)) * (Number(OPT.get("ui")) || 1);
+  const dot = Math.min(r.width, r.height) / DOT_OF_PANEL;
+  return Math.max(DOT_MIN_PX, Math.min(DOT_MAX_PX, dot)) * (Number(OPT.get("ui")) || 1);
 }
 
 // 1080p is the design size; 4K gets the same layout at twice the size. The page's height is asked
 // of the layout once a resize (applyScale), not every frame: after the bar's changes, that reflows.
 let height = 0;
+const DESIGN_HEIGHT = 1080,
+  [MIN_UI_SCALE, MAX_UI_SCALE] = [0.75, 2.5];
 export function uiScale() {
-  return OVERLAY ? 1 : Math.max(0.75, Math.min(2.5, (height || innerHeight) / 1080));
+  return OVERLAY ? 1 : Math.max(MIN_UI_SCALE, Math.min(MAX_UI_SCALE, (height || innerHeight) / DESIGN_HEIGHT));
 }
 export function applyScale() {
   height = env.el.clientHeight;
@@ -184,6 +191,11 @@ export function setClockRate(r) {
   rate = r;
   state.paused = r === 0;
 }
+// How much of each new reading the smoothed snapshot gap and clock offset take.
+const GAP_SMOOTHING = 0.1,
+  CLOCK_SMOOTHING = 0.03,
+  // The clock is never set back by more than this many ticks a snapshot: it slows, never jumps back.
+  CLOCK_MAX_BACK = 0.5;
 // Ticks between snapshots, smoothed: stvtf's rate cap and the STV's tv_snapshotrate set it.
 /** @type {number | null} */
 let lastSnapTick = null,
@@ -192,7 +204,7 @@ let lastSnapTick = null,
 export function observeTick(tick) {
   if (state.tickOffset == null) lastSnapTick = null;
   const gap = lastSnapTick == null ? 0 : tick - lastSnapTick;
-  if (gap > 0 && gap < CLOCK_JUMP_TICKS) snapGap = snapGap * 0.9 + gap * 0.1;
+  if (gap > 0 && gap < CLOCK_JUMP_TICKS) snapGap += (gap - snapGap) * GAP_SMOOTHING;
   lastSnapTick = tick;
   // Paused, a snapshot only comes from a seek: show it as it is.
   if (rate === 0) {
@@ -201,7 +213,11 @@ export function observeTick(tick) {
   }
   const est = tick - (performance.now() * rate) / msPerTick;
   if (state.tickOffset == null || Math.abs(est - state.tickOffset) > CLOCK_JUMP_TICKS) state.tickOffset = est;
-  else state.tickOffset = Math.max(state.tickOffset * 0.97 + est * 0.03, state.tickOffset - 0.5);
+  else
+    state.tickOffset = Math.max(
+      state.tickOffset + (est - state.tickOffset) * CLOCK_SMOOTHING,
+      state.tickOffset - CLOCK_MAX_BACK,
+    );
 }
 export function renderTick() {
   return nowTick() - snapGap - JITTER_MS / msPerTick;

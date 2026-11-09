@@ -1,6 +1,14 @@
 import { $, OVERLAY, OPT, overlayUnit, canvas, uiScale, ctx, context2d, state, canvasSize } from "../core/core.js";
 import { env, asset } from "../core/env.js";
 import { renderGeometry } from "./geometry.js";
+
+// A fitted map fills this much of the panel (the overlay's more: it is small).
+const FIT_PAGE = 0.95,
+  FIT_OVERLAY = 0.96,
+  // rotate=auto turns the map a quarter only when that shows it this much larger.
+  TURN_GAIN = 1.1,
+  // An overview's near-black (brightness below this, of 255) is see-through, fading in to twice it.
+  BLACK_BELOW = 14;
 /** @typedef {import("../../types/page").Overview} Overview */
 /** @typedef {import("../../types/page").Geometry} Geometry */
 /** @typedef {{ x: number, y: number }} Point */
@@ -116,7 +124,7 @@ function fitTo(min, max) {
     rh = w * s + h * c;
   // Keep the map clear of the HUD columns on both sides.
   const hud = shown("hud") && r.width > HUD_MIN_WIDTH ? 2 * HUD_COLUMN * uiScale() : 0;
-  v.scale = Math.min((r.width - hud) / rw, r.height / rh) * (OVERLAY ? 0.96 : 0.95);
+  v.scale = Math.min((r.width - hud) / rw, r.height / rh) * (OVERLAY ? FIT_OVERLAY : FIT_PAGE);
   state.fitted = true;
 }
 
@@ -194,7 +202,7 @@ export function frameMap(keepView = false) {
       v1 = Math.max(...vs) + pad;
     const uc = (u0 + u1) / 2,
       vc = (v0 + v1) / 2;
-    const scale = Math.min(w / (u1 - u0), h / (v1 - v0)) * 0.96;
+    const scale = Math.min(w / (u1 - u0), h / (v1 - v0)) * FIT_OVERLAY;
     return { rot, cx: uc * c + vc * sn, cy: -uc * sn + vc * c, scale };
   };
   const want = OPT.get("rotate") ?? "teams";
@@ -204,7 +212,7 @@ export function frameMap(keepView = false) {
   } else if (want === "auto") {
     const upright = fit(0),
       turned = fit(Math.PI / 2);
-    best = turned.scale > upright.scale * 1.1 ? turned : upright;
+    best = turned.scale > upright.scale * TURN_GAIN ? turned : upright;
   } else {
     best = fit(((Number(want) || 0) * Math.PI) / 180);
   }
@@ -238,20 +246,23 @@ export function screenAngle(deg) {
 const TEXT_PAD = 3;
 /** @type {Map<string, { c: HTMLCanvasElement, w: number, h: number }>} */
 const textSprites = new Map();
+// Sprites kept at most: past that, all are made again (a zoom changes every size anyway).
+const MAX_TEXT_SPRITES = 128,
+  LINE_HEIGHT = 1.3;
 /** @param {string} text @param {string} font @param {string} fill @param {string | null} outline */
 function textSprite(text, font, fill, outline) {
   const dpr = window.devicePixelRatio || 1,
     key = `${text}\n${font}\n${fill}\n${outline}\n${dpr}`;
   let sp = textSprites.get(key);
   if (!sp) {
-    if (textSprites.size > 128) textSprites.clear();
+    if (textSprites.size > MAX_TEXT_SPRITES) textSprites.clear();
     const c = document.createElement("canvas"),
       g = context2d(c);
     g.font = font;
     const m = g.measureText(text),
       size = parseFloat(font.match(/(\d+(?:\.\d+)?)px/)?.[1] || "12");
     const w = Math.ceil(m.width) + TEXT_PAD * 2,
-      h = Math.ceil(size * 1.3) + TEXT_PAD * 2;
+      h = Math.ceil(size * LINE_HEIGHT) + TEXT_PAD * 2;
     c.width = Math.ceil(w * dpr);
     c.height = Math.ceil(h * dpr);
     g.scale(dpr, dpr);
@@ -319,8 +330,8 @@ function withoutBlack(img) {
       rgba = d.data;
     for (let i = 0; i < rgba.length; i += 4) {
       const lum = Math.max(rgba[i], rgba[i + 1], rgba[i + 2]);
-      if (lum < 14) rgba[i + 3] = 0;
-      else if (lum < 28) rgba[i + 3] = Math.round((255 * (lum - 14)) / 14);
+      if (lum < BLACK_BELOW) rgba[i + 3] = 0;
+      else if (lum < BLACK_BELOW * 2) rgba[i + 3] = Math.round((255 * (lum - BLACK_BELOW)) / BLACK_BELOW);
     }
     g.putImageData(d, 0, 0);
   } catch {

@@ -26,7 +26,16 @@ const MIN_SPAN = OVERLAY ? 1600 : 2600,
   SETTLE_MS = 2000,
   FRESH_MS = 10000,
   ESCAPE_S = 0.5,
-  AIM_S = 0.3;
+  AIM_S = 0.3,
+  // The margin, in markers.
+  MARGIN_MARKERS = 1.5,
+  // A framing this much tighter than the one held is "a lot"; held, one only TIGHTER is let in after SETTLE_MS.
+  MUCH_TIGHTER = 1.4,
+  TIGHTER = 1.25,
+  // The action moved: by this much of the half view.
+  SHIFT = 0.5,
+  // The longest step the camera's spring takes, in seconds (a frame after a pause).
+  MAX_STEP_S = 0.1;
 // When each player last came alive (a respawn).
 /** @type {Map<number, number>} */
 const spawnedAt = new Map(),
@@ -78,7 +87,7 @@ function wantedFraming(framed, full, at) {
   };
   [u0, u1] = grow(u0, u1);
   [v0, v1] = grow(v0, v1);
-  const m = 1.5 * playerRad();
+  const m = MARGIN_MARKERS * playerRad();
   const scale = Math.max(full.scale, Math.min((w - 2 * m) / (u1 - u0), (h - 2 * m) / (v1 - v0)));
   const uc = (u0 + u1) / 2,
     vc = (v0 + v1) / 2;
@@ -89,7 +98,7 @@ function wantedFraming(framed, full, at) {
 /** @param {LivePlayer} p @param {Framing} f @param {At} at */
 function inside(p, f, at) {
   const { w, h, toUV } = at,
-    m = 1.5 * playerRad();
+    m = MARGIN_MARKERS * playerRad();
   const [fu, fv] = toUV([f.cx, f.cy]),
     [pu, pv] = toUV(p.pos);
   return Math.abs(pu - fu) * f.scale < w / 2 - m && Math.abs(pv - fv) * f.scale < h / 2 - m;
@@ -101,17 +110,18 @@ function inside(p, f, at) {
 /** @param {Framing} hold @param {Framing} wanted @param {Framed} who @param {At} at */
 function holding(hold, wanted, { settled, framed }, at) {
   const { now, w, h, toUV } = at;
-  if (wanted.scale <= hold.scale * 1.25) tighterSince = null;
+  if (wanted.scale <= hold.scale * TIGHTER) tighterSince = null;
   else tighterSince ??= now;
   const [hu, hv] = toUV([hold.cx, hold.cy]),
     halfW = w / 2 / hold.scale,
     halfH = h / 2 / hold.scale;
   const inView = /** @param {LivePlayer} p */ p => inside(p, hold, at);
   const [wu, wv] = toUV([wanted.cx, wanted.cy]);
-  const shifted = Math.abs(wu - hu) > halfW * 0.5 || Math.abs(wv - hv) > halfH * 0.5;
+  const shifted = Math.abs(wu - hu) > halfW * SHIFT || Math.abs(wv - hv) > halfH * SHIFT;
   const settledInside = settled.every(inView);
   const tightened = tighterSince != null && now - tighterSince > SETTLE_MS;
-  const keep = framed.length > 0 && framed.every(inView) && !shifted && wanted.scale < hold.scale * 1.4 && !tightened;
+  const keep =
+    framed.length > 0 && framed.every(inView) && !shifted && wanted.scale < hold.scale * MUCH_TIGHTER && !tightened;
   // While everyone settled is inside, a new framing is only for fresh spawners: bring them in gently.
   wanted.slow = settledInside;
   return keep;
@@ -137,7 +147,7 @@ function springs(target, escaping) {
 /** @param {LivePlayer[]} keep @param {{ cx: number, cy: number }} focus @param {At} at */
 function deepestZoom(keep, focus, at) {
   const { w, h, toUV } = at,
-    m = 1.5 * playerRad(),
+    m = MARGIN_MARKERS * playerRad(),
     [fu, fv] = toUV([focus.cx, focus.cy]);
   let most = Infinity;
   for (const p of keep) {
@@ -235,7 +245,7 @@ export function mirror(s) {
 /** @param {Player[]} players */
 export function followAction(players) {
   const now = performance.now(),
-    dt = Math.min(0.1, (now - lastFrame) / 1000);
+    dt = Math.min(MAX_STEP_S, (now - lastFrame) / 1000);
   lastFrame = now;
   const v = state.view,
     full = state.full;
@@ -269,6 +279,7 @@ export function followAction(players) {
 function smoothDamp(x, to, vel, time, dt) {
   const w = 2 / time,
     e = w * dt,
+    // e^-e, as SmoothDamp approximates it.
     decay = 1 / (1 + e + 0.48 * e * e + 0.235 * e * e * e);
   const change = x - to,
     temp = (vel + w * change) * dt;

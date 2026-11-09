@@ -87,17 +87,25 @@ function cardClass(p, f) {
     p.id === state.follow && "followed",
     !p.alive && "dead",
     p.alive && p.hp > p.max_hp && "over",
-    p.alive && f < 0.35 && "low",
+    p.alive && f < LOW_HEALTH && "low",
     p.ubered && "ub",
   ]
     .filter(Boolean)
     .join(" ");
 }
-// How far into the overheal a player is, 0 to 1, of the most there is (150% of max, rounded down to 5).
+// A card is "low" below this much of its player's max health.
+const LOW_HEALTH = 0.35,
+  // The most overheal: this much of max health, rounded down to OVERHEAL_STEP.
+  OVERHEAL = 1.5,
+  OVERHEAL_STEP = 5;
+// How far into the overheal a player is, 0 to 1, of the most there is.
 /** @param {Player} p */
 function overheal(p) {
   if (!(p.alive && p.hp > p.max_hp)) return 0;
-  return Math.min(1, (p.hp - p.max_hp) / (Math.floor((p.max_hp * 1.5) / 5) * 5 - p.max_hp || 1));
+  return Math.min(
+    1,
+    (p.hp - p.max_hp) / (Math.floor((p.max_hp * OVERHEAL) / OVERHEAL_STEP) * OVERHEAL_STEP - p.max_hp || 1),
+  );
 }
 /** @param {Player} p */
 function conditionIcons(p) {

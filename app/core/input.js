@@ -12,6 +12,12 @@ const refit = () => {
 addEventListener("resize", refit);
 // An element on another site changes size without the window.
 if (env.component) new ResizeObserver(refit).observe(env.el);
+// A press that moves less than this is a click (to follow a player), not a drag.
+const DRAG_PX = 4,
+  // A click follows the nearest player within this (at the 1080p size).
+  PICK_PX = 18,
+  // How much one wheel step (deltaY 100) zooms: e^(-0.15).
+  WHEEL_ZOOM = 0.0015;
 /** @type {{ x: number; y: number; cx: number; cy: number; moved: boolean } | null} */
 let drag = null;
 canvas.addEventListener("mousedown", e => {
@@ -23,7 +29,7 @@ window.addEventListener("mouseup", e => {
 });
 window.addEventListener("mousemove", e => {
   if (!drag) return;
-  if (!drag.moved && Math.hypot(e.clientX - drag.x, e.clientY - drag.y) < 4) return;
+  if (!drag.moved && Math.hypot(e.clientX - drag.x, e.clientY - drag.y) < DRAG_PX) return;
   if (!drag.moved) {
     drag.moved = true;
     setFollow(null);
@@ -144,7 +150,7 @@ function followAt(cx, cy) {
   const r = canvas.getBoundingClientRect();
   /** @type {Player | null} */
   let best = null,
-    bestD = 18 * uiScale();
+    bestD = PICK_PX * uiScale();
   for (const p of state.lastPlayers) {
     if (!p.alive) continue;
     const [x, y] = toScreen(p.pos[0], p.pos[1]);
@@ -216,7 +222,7 @@ canvas.addEventListener(
     const [ax, ay] = screenOffset(mx, my, v.scale),
       wx = v.cx + ax,
       wy = v.cy + ay;
-    v.scale *= Math.exp(-e.deltaY * 0.0015);
+    v.scale *= Math.exp(-e.deltaY * WHEEL_ZOOM);
     state.handMoved = performance.now();
     const [bx, by] = screenOffset(mx, my, v.scale);
     v.cx = wx - bx;

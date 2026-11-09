@@ -87,11 +87,12 @@ function ago(age) {
   return `${Math.floor(age / 3600)}h ${Math.floor((age / 60) % 60)}m`;
 }
 // When the stream goes quiet (the match ended, or the page was opened afterwards), say how long ago
-// the last data came in.
+// the last data came in: once none came for QUIET_S.
+const QUIET_S = 5;
 setInterval(() => {
   const age = state.lastData == null ? 0 : (performance.now() - state.lastData) / 1000;
-  $("age").textContent = age < 5 ? "" : `last data ${ago(age)} ago`;
-  if (age >= 5 && !state.paused && $("status").textContent === "live") setStatus("no data", false);
+  $("age").textContent = age < QUIET_S ? "" : `last data ${ago(age)} ago`;
+  if (age >= QUIET_S && !state.paused && $("status").textContent === "live") setStatus("no data", false);
 }, 1000);
 
 // Until the first snapshot shows, say what the page is actually waiting for. The first data only
@@ -121,6 +122,8 @@ function waitingFor(m) {
   if (m.state === "full") return "SourceTV has just started: its first data comes tv_delay after that…";
   return m.reason ? `SourceTV ${m.state.replaceAll("_", " ")}: ${m.reason}` : "connecting to SourceTV…";
 }
+// How often the hold's countdown is redrawn.
+const COUNTDOWN_MS = 250;
 function countDown() {
   const empty = $("empty");
   if (empty.style.display === "none" || holdUntil == null) return;
@@ -128,7 +131,7 @@ function countDown() {
   empty.textContent = OVERLAY
     ? `starting in ${left}s…`
     : `holding the match back ${DELAY}s to line up with the stream: ${left}s…`;
-  setTimeout(countDown, 250);
+  setTimeout(countDown, COUNTDOWN_MS);
 }
 
 /** @param {GameEvent} m Any line of the stream; its `type` tells which. */

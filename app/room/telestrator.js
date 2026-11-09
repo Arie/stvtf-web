@@ -94,9 +94,12 @@ export function onClear() {
   mine.clear();
 }
 
+// A stroke's width at the 1080p size, and what its dark edge adds to it.
+const STROKE_PX = 4,
+  EDGE_PX = 3;
 export function drawStrokes(now = performance.now()) {
   if (!strokes.size) return;
-  const w = 4 * uiScale();
+  const w = STROKE_PX * uiScale();
   ctx.save();
   ctx.lineCap = ctx.lineJoin = "round";
   for (const [id, s] of strokes) {
@@ -119,7 +122,7 @@ export function drawStrokes(now = performance.now()) {
     // A lone point is a dot.
     if (shown.length === 1) ctx.lineTo(...toScreen(shown[0][0], shown[0][1]));
     ctx.strokeStyle = EDGE;
-    ctx.lineWidth = w + 3;
+    ctx.lineWidth = w + EDGE_PX;
     ctx.stroke();
     ctx.strokeStyle = s.ink;
     ctx.lineWidth = w;

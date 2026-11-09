@@ -192,6 +192,8 @@ function flagRow(ev, p, name) {
   if (ev.event === "returned")
     return { cls: "minor", html: `<span>${what[0].toUpperCase() + what.slice(1)} went home</span>` };
 }
+// Killstreaks look like s2 to s4 (streaks.css); longer ones like s4.
+const STREAK_STYLES = 4;
 // The feed row for each type of event: its classes and HTML, or nothing when it gets no row. Each
 // is given the event, who a player id is, and how to name them.
 /** @type {Record<string, (ev: GameEvent, p: Who, name: (id: number) => string) => { cls?: string; html: string } | undefined>} */
@@ -201,9 +203,9 @@ const FEED_ROW = {
     const k = killDetails(ev, p),
       n = k.streak;
     let cls = "";
-    if (n >= 2) cls += ` streak s${Math.min(n, 4)}`;
+    if (n >= 2) cls += ` streak s${Math.min(n, STREAK_STYLES)}`;
     const tags = [
-      n >= 2 && chip(`s${Math.min(n, 4)}`, `${n}K`),
+      n >= 2 && chip(`s${Math.min(n, STREAK_STYLES)}`, `${n}K`),
       ev.dominated && chip("dom", "DOMINATING"),
       ev.revenge && chip("rev", "REVENGE"),
       k.airshot && chip("air", "AIRSHOT"),

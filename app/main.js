@@ -82,6 +82,8 @@ const FRAME_MS = 1000 / 60,
   REFRESH_SMOOTHING = 0.1;
 // A projectile faces where it moved, once it moved this many units between snapshots.
 const MIN_HEADING_STEP = 4;
+// How much of the way to the followed player (and an admin's zoom) the view goes each frame.
+const FOLLOW_EASE = 0.18;
 let lastDraw = -Infinity,
   lastRefresh = 0,
   refreshMs = FRAME_MS;
@@ -131,13 +133,15 @@ function aim(f, tick) {
   // Dead players are reported where they died (no position if before we connected).
   const target = state.follow != null && f.players.find(p => p.id === state.follow);
   if (target && target.pos) {
-    state.view.cx += (target.pos[0] - state.view.cx) * 0.18;
-    state.view.cy += (target.pos[1] - state.view.cy) * 0.18;
+    state.view.cx += (target.pos[0] - state.view.cx) * FOLLOW_EASE;
+    state.view.cy += (target.pos[1] - state.view.cy) * FOLLOW_EASE;
     // A room's admin's zoom round them, fitted to this view.
     if (state.followZoom) {
       const { w, h } = viewArea(),
         z = Math.log(state.view.scale);
-      state.view.scale = Math.exp(z + (Math.log(Math.min(w / state.followZoom.w, h / state.followZoom.h)) - z) * 0.18);
+      state.view.scale = Math.exp(
+        z + (Math.log(Math.min(w / state.followZoom.w, h / state.followZoom.h)) - z) * FOLLOW_EASE,
+      );
     }
   }
   renderScoreboard(f.snap, tick);
