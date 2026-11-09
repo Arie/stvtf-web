@@ -265,3 +265,24 @@ fn only_listed_speeds_pass() {
     r.control(&Control { speed: Some(0.25), ..Control::default() }).unwrap();
     r.stop();
 }
+
+#[test]
+fn a_room_behind_a_live_match_that_ended_skips_to_its_end() {
+    let rec = Arc::new(Recording::live());
+    let mut time = 1_700_000_000_000;
+    for _ in 0..300 {
+        let text = r#"{"type":"stalemate","tick":5}"#;
+        let mut stamped: stvtf::output::Stamped = serde_json::from_str(text).unwrap();
+        stamped.time = Some(time);
+        rec.push(&stamped, text).unwrap();
+        time += 100;
+    }
+    let r = Room::start("r".into(), "me", rec.clone());
+    let _w = r.join("me", None, None, true);
+    r.control(&Control { seek: Some(1_000), ..Control::default() }).unwrap();
+    until("rewound", || lock(&r.state).at < 2_000 && lock(&r.state).seek.is_none());
+    rec.end();
+    r.control(&Control { seek: Some(rec.length()), paused: Some(false), ..Control::default() }).unwrap();
+    until("the end", || lock(&r.state).at == rec.length());
+    r.stop();
+}
