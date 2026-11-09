@@ -20,6 +20,9 @@ pub(crate) struct Draw {
     /// Permanent marker: stays until cleared.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub(crate) keep: bool,
+    /// The stroke's last piece: the pen was lifted (its points may be none).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub(crate) end: bool,
 }
 
 /// A permanent marker stroke, as drawn so far.
@@ -31,6 +34,9 @@ pub(crate) struct Kept {
     /// The ink it was drawn in (`#rrggbb`); none in rooms saved before.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(super) ink: Option<String>,
+    /// Still being drawn: its end not come yet.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub(super) open: bool,
 }
 
 /// Most permanent marker points on a room's map.
@@ -47,8 +53,8 @@ pub(super) fn kept_line(marker: &[Kept]) -> Arc<str> {
 impl Room {
     /// Passes a piece of a stroke by `guest` on to every page.
     pub(crate) fn draw(&self, d: &Draw, guest: &str) -> Result<()> {
-        if d.points.is_empty() || d.points.len() > MAX_POINTS {
-            bail!("1 to {MAX_POINTS} points");
+        if (d.points.is_empty() && !d.end) || d.points.len() > MAX_POINTS {
+            bail!("1 to {MAX_POINTS} points, or none at a stroke's end");
         }
         if !d.points.iter().all(|&[x, y, t]| [x, y].iter().all(|v| v.is_finite() && v.abs() < 1e6) && (0.0..=MAX_STROKE_MS).contains(&t)) {
             bail!("points must be on a map, in a stroke's time");
@@ -69,10 +75,11 @@ impl Room {
         }
         if let Some(k) = marker.iter_mut().find(|k| k.stroke == d.stroke && k.by == by) {
             k.points.extend(&d.points);
-        } else {
+            k.open = !d.end;
+        } else if !d.points.is_empty() {
             let [r, g, b] = self.ink_now(by);
             let ink = Some(format!("#{r:02x}{g:02x}{b:02x}"));
-            marker.push(Kept { stroke: d.stroke, by, points: d.points.clone(), ink });
+            marker.push(Kept { stroke: d.stroke, by, points: d.points.clone(), ink, open: !d.end });
         }
         send_keeping(&self.hub, &line, "marker", kept_line(&marker));
         drop(marker);

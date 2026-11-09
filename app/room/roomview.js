@@ -171,12 +171,13 @@ export const latestView = (waiting, item) => (item.take ? [item] : [...waiting.f
 
 // Points in one drawing request, at most.
 const MAX_POINTS = 256;
-/** @typedef {{ stroke: number; points: [number, number, number][]; keep?: boolean }} Strokes */
+/** @typedef {{ stroke: number; points: [number, number, number][]; keep?: boolean; end?: boolean }} Strokes */
 /** Points waiting join their stroke's. @param {Strokes[]} waiting @param {Strokes} item */
 export function morePoints(waiting, item) {
   const last = waiting[waiting.length - 1];
   if (last?.stroke === item.stroke && last.points.length + item.points.length <= MAX_POINTS) {
     last.points.push(...item.points);
+    if (item.end) last.end = true;
     return waiting;
   }
   return [...waiting, { ...item, points: [...item.points] }];

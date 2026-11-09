@@ -141,6 +141,14 @@ test("views waiting to be sent: the latest choice, and after it only the latest 
   assert.deepEqual(latestView(q, choice("free")), [choice("free")]);
 });
 
+test("a stroke's end joins its points waiting", () => {
+  /** @type {import("../../app/room/roomview.js").Strokes[]} */
+  let q = [];
+  q = morePoints(q, { stroke: 1, points: [[0, 0, 0]] });
+  q = morePoints(q, { stroke: 1, points: [], end: true });
+  assert.deepEqual(q, [{ stroke: 1, points: [[0, 0, 0]], end: true }]);
+});
+
 test("points waiting join their stroke, up to a request's worth", () => {
   /** @type {import("../../app/room/roomview.js").Strokes[]} */
   let q = [];

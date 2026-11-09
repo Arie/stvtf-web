@@ -9,7 +9,6 @@ use crate::lock;
 use crate::maps::drape::{self, Drape, Ground, Piece};
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
-use std::time::{Duration, Instant};
 use stvtf::relay::Beam;
 
 /// The pages' inks for those who picked none (`app/room/telestrator.js`).
@@ -25,23 +24,17 @@ const FENCE: f64 = 40.0;
 const POST_EVERY: f64 = 64.0;
 /// How fast the lines' texture runs toward the stroke's end, showing which way it goes.
 const SCROLL: u8 = 20;
-/// The arrowhead at a stroke's end: its wings' length and angle off the line.
-const HEAD: f64 = 40.0;
+/// The arrowhead at a finished stroke's end: its wings' length and angle off the line.
+const HEAD: f64 = 96.0;
 const HEAD_ANGLE: f64 = 30.0;
-/// A pen stroke with no new points for this long is done: it gets its arrowhead.
-const PEN_DONE: Duration = Duration::from_millis(400);
 /// The most strokes followed at once: more, and the oldest are forgotten.
 const MAX_DRAPES: usize = 64;
 
-/// A pen stroke being laid on the floors: by whom, which, in what ink, where its lines end now,
-/// when it last grew, and whether it has its arrowhead.
+/// A pen stroke being laid on the floors: by whom, which, and where its lines end now.
 pub(super) struct PenStroke {
     key: (u32, u32),
     drape: Drape,
-    ink: [u8; 3],
     ends: Vec<Piece>,
-    grew: Instant,
-    headed: bool,
 }
 
 impl Room {
@@ -49,26 +42,25 @@ impl Room {
     pub(super) fn draw_in_relay(&self, d: &Draw, by: u32) {
         let Some(ground) = self.ground_for_relay() else { return };
         let ink = self.ink_now(by);
-        let pieces = {
+        let beams = {
             let mut drapes = lock(&self.drapes);
             if !drapes.iter().any(|s| s.key == (by, d.stroke)) {
                 if drapes.len() >= MAX_DRAPES {
                     drapes.remove(0);
                 }
-                let fresh =
-                    PenStroke { key: (by, d.stroke), drape: Drape::new(), ink, ends: Vec::new(), grew: Instant::now(), headed: false };
-                drapes.push(fresh);
+                drapes.push(PenStroke { key: (by, d.stroke), drape: Drape::new(), ends: Vec::new() });
             }
             let Some(s) = drapes.iter_mut().find(|s| s.key == (by, d.stroke)) else { return };
             let pieces = s.drape.push(&ground, &d.points);
             if let Some(&[x, y, _]) = d.points.last() {
                 s.ends = ends(&pieces, [x, y]);
             }
-            s.grew = Instant::now();
-            s.headed = false;
-            pieces
+            let mut beams = beams(&pieces, ink, PEN_LIFE);
+            if d.end {
+                beams.extend(heads(&s.ends, ink, PEN_LIFE));
+            }
+            beams
         };
-        let beams = beams(&pieces, ink, PEN_LIFE);
         if !beams.is_empty()
             && let Some(r) = &*lock(&self.relay)
         {
@@ -81,14 +73,14 @@ impl Room {
     pub(super) fn keep_marker(&self) {
         self.marker_dirty.store(true, Ordering::Relaxed);
         let Some(ground) = self.ground_for_relay() else { return };
-        let strokes: Vec<(u32, Option<String>, Vec<[f64; 3]>)> =
-            lock(&self.marker).iter().map(|k| (k.by, k.ink.clone(), k.points.clone())).collect();
+        let strokes = lock(&self.marker).clone();
         let mut all = Vec::new();
-        for (by, ink, points) in strokes {
+        for k in strokes {
+            let (by, ink, points, open) = (k.by, k.ink, k.points, k.open);
             let ink = ink.as_deref().and_then(rgb).unwrap_or_else(|| self.ink_now(by));
             let pieces = Drape::new().push(&ground, &points);
             all.extend(beams(&pieces, ink, 0.0));
-            if let Some(&[x, y, _]) = points.last() {
+            if let Some(&[x, y, _]) = points.last().filter(|_| !open) {
                 all.extend(heads(&ends(&pieces, [x, y]), ink, 0.0));
             }
         }
@@ -102,23 +94,6 @@ impl Room {
     pub(super) fn keep_marker_if_changed(&self) {
         if self.marker_dirty.load(Ordering::Relaxed) {
             self.keep_marker();
-        }
-    }
-
-    /// Gives each pen stroke that stopped growing its arrowhead, for as long as the stroke shows.
-    pub(super) fn head_pens(&self) {
-        let mut heads_due = Vec::new();
-        for s in lock(&self.drapes).iter_mut().filter(|s| !s.headed && s.grew.elapsed() >= PEN_DONE) {
-            s.headed = true;
-            let life = PEN_LIFE - s.grew.elapsed().as_secs_f32();
-            if life > 0.0 {
-                heads_due.extend(heads(&s.ends, s.ink, life));
-            }
-        }
-        if !heads_due.is_empty()
-            && let Some(r) = &*lock(&self.relay)
-        {
-            r.draw(&heads_due);
         }
     }
 
@@ -235,7 +210,7 @@ mod tests {
         assert_eq!(head.len(), 6, "two wings, each on the floor, above and a post");
         let tips: Vec<[f32; 3]> =
             head.iter().filter(|b| b.to == [100.0, 0.0, 8.0]).map(|b| b.from.map(|v| (v * 10.0).round() / 10.0)).collect();
-        assert_eq!(tips, [[65.4, 20.0, 8.0], [65.4, -20.0, 8.0]], "back along the line, 30° off it");
+        assert_eq!(tips, [[16.9, 48.0, 8.0], [16.9, -48.0, 8.0]], "back along the line, 30° off it");
         assert!(beams(&pieces[..1], [1, 2, 3], 4.0).iter().filter(|b| b.speed > 0).all(|b| b.to[0] > b.from[0]), "running its way");
     }
 

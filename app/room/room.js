@@ -264,9 +264,11 @@ function drawing(pen, marker) {
     { capture: true },
   );
   canvas.addEventListener("pointermove", add);
-  const end = () => (stroke = null);
-  canvas.addEventListener("pointerup", end);
-  canvas.addEventListener("pointercancel", end);
+  const end = () => {
+    if (stroke) send({ stroke: stroke.id, points: [], keep: stroke.keep || undefined, end: true });
+    stroke = null;
+  };
+  for (const type of ["pointerup", "pointercancel"]) canvas.addEventListener(type, end);
 }
 
 // Why something did not happen, in the room bar for a moment.

@@ -75,24 +75,36 @@ fn the_end_pauses_at_the_length() {
 fn strokes_reach_every_page_and_stay_on_the_map() {
     let r = room(1);
     let page = subscribe(&r.hub, false);
-    r.draw(&Draw { stroke: 7, points: vec![[1.0, 2.0, 0.0], [3.5, -4.0, 16.0]], keep: false }, "me").unwrap();
+    r.draw(&Draw { stroke: 7, points: vec![[1.0, 2.0, 0.0], [3.5, -4.0, 16.0]], keep: false, end: false }, "me").unwrap();
     let line = page.try_iter().find(|l| l.contains(r#""type":"draw""#)).unwrap();
     assert_eq!(&*line, r#"{"by":1,"points":[[1.0,2.0,0.0],[3.5,-4.0,16.0]],"stroke":7,"type":"draw"}"#);
-    assert!(r.draw(&Draw { stroke: 7, points: vec![], keep: false }, "me").is_err());
-    assert!(r.draw(&Draw { stroke: 7, points: vec![[1e9, 0.0, 0.0]], keep: false }, "me").is_err());
-    assert!(r.draw(&Draw { stroke: 7, points: vec![[0.0, 0.0, -1.0]], keep: false }, "me").is_err());
-    assert!(r.draw(&Draw { stroke: 7, points: vec![[0.0, 0.0, 0.0]; 257], keep: false }, "me").is_err());
+    assert!(r.draw(&Draw { stroke: 7, points: vec![], keep: false, end: false }, "me").is_err());
+    r.draw(&Draw { stroke: 7, points: vec![], keep: false, end: true }, "me").expect("a stroke's end may have no points");
+    assert!(r.draw(&Draw { stroke: 7, points: vec![[1e9, 0.0, 0.0]], keep: false, end: false }, "me").is_err());
+    assert!(r.draw(&Draw { stroke: 7, points: vec![[0.0, 0.0, -1.0]], keep: false, end: false }, "me").is_err());
+    assert!(r.draw(&Draw { stroke: 7, points: vec![[0.0, 0.0, 0.0]; 257], keep: false, end: false }, "me").is_err());
     r.stop();
+}
+
+#[test]
+fn a_marker_stroke_is_open_until_its_end() {
+    let r = room(1);
+    r.draw(&Draw { stroke: 1, points: vec![[1.0, 0.0, 0.0]], keep: true, end: false }, "me").unwrap();
+    assert!(r.saved().marker[0].open);
+    r.draw(&Draw { stroke: 1, points: vec![], keep: true, end: true }, "me").unwrap();
+    assert!(!r.saved().marker[0].open);
+    r.draw(&Draw { stroke: 9, points: vec![], keep: true, end: true }, "me").unwrap();
+    assert_eq!(r.saved().marker.len(), 1, "an end alone is no stroke");
 }
 
 #[test]
 fn a_marker_stroke_keeps_the_ink_it_was_drawn_in() {
     let r = room(1);
     r.set_ink("me", "#ff0000").unwrap();
-    r.draw(&Draw { stroke: 1, points: vec![[1.0, 0.0, 0.0]], keep: true }, "me").unwrap();
+    r.draw(&Draw { stroke: 1, points: vec![[1.0, 0.0, 0.0]], keep: true, end: false }, "me").unwrap();
     r.set_ink("me", "#00ff00").unwrap();
-    r.draw(&Draw { stroke: 1, points: vec![[2.0, 0.0, 0.0]], keep: true }, "me").unwrap();
-    r.draw(&Draw { stroke: 2, points: vec![[3.0, 0.0, 0.0]], keep: true }, "me").unwrap();
+    r.draw(&Draw { stroke: 1, points: vec![[2.0, 0.0, 0.0]], keep: true, end: false }, "me").unwrap();
+    r.draw(&Draw { stroke: 2, points: vec![[3.0, 0.0, 0.0]], keep: true, end: false }, "me").unwrap();
     let inks: Vec<Option<String>> = r.saved().marker.iter().map(|k| k.ink.clone()).collect();
     assert_eq!(inks, [Some("#ff0000".into()), Some("#00ff00".into())]);
 }
@@ -100,15 +112,15 @@ fn a_marker_stroke_keeps_the_ink_it_was_drawn_in() {
 #[test]
 fn marker_stays_for_pages_that_join_until_cleared() {
     let r = room(1);
-    let marker = |stroke, x| Draw { stroke, points: vec![[x, 0.0, 0.0]], keep: true };
+    let marker = |stroke, x| Draw { stroke, points: vec![[x, 0.0, 0.0]], keep: true, end: false };
     r.draw(&marker(1, 1.0), "me").unwrap();
     r.draw(&marker(1, 2.0), "me").unwrap();
-    r.draw(&Draw { stroke: 2, points: vec![[9.0, 9.0, 0.0]], keep: false }, "me").unwrap();
+    r.draw(&Draw { stroke: 2, points: vec![[9.0, 9.0, 0.0]], keep: false, end: false }, "me").unwrap();
     let joined = |r: &Room| subscribe(&r.hub, false).try_iter().filter(|l| l.contains(r#""type":"marker""#)).collect::<Vec<_>>();
     let kept = joined(&r);
     assert_eq!(
         &*kept[0],
-        r##"{"max":8000,"strokes":[{"by":1,"ink":"#ffd23f","points":[[1.0,0.0,0.0],[2.0,0.0,0.0]],"stroke":1}],"type":"marker"}"##
+        r##"{"max":8000,"strokes":[{"by":1,"ink":"#ffd23f","open":true,"points":[[1.0,0.0,0.0],[2.0,0.0,0.0]],"stroke":1}],"type":"marker"}"##
     );
     // Picked up again after a restart.
     let saved: Saved = serde_json::from_str(&serde_json::to_string(&r.saved()).unwrap()).unwrap();
@@ -119,7 +131,7 @@ fn marker_stays_for_pages_that_join_until_cleared() {
     assert!(page.try_iter().any(|l| &*l == r#"{"by":1,"type":"clear"}"#));
     assert_eq!(&*joined(&r)[0], r#"{"max":8000,"strokes":[],"type":"marker"}"#, "nothing kept, said so");
     assert_eq!(r.saved().marker.len(), 0);
-    let full = Draw { stroke: 3, points: vec![[0.0, 0.0, 0.0]; 200], keep: true };
+    let full = Draw { stroke: 3, points: vec![[0.0, 0.0, 0.0]; 200], keep: true, end: false };
     let mut drawn = 0;
     while r.draw(&full, "me").is_ok() {
         drawn += 200;
