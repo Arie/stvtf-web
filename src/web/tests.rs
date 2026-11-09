@@ -867,6 +867,6 @@ fn a_form_may_be_as_long_as_the_limit_and_no_longer() {
 #[test]
 fn pages_leave_styling_to_the_stylesheet() {
     for page in [INDEX, LANDING] {
-        assert!(!page.contains(" style="), "a style attribute: put it in app/css/");
+        assert!(!page.contains(" style=") && !page.contains("<style"), "styling in a page: put it in app/css/");
     }
 }

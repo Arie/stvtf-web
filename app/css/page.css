@@ -10,15 +10,6 @@
   font-weight: 700;
 }
 .stvtf {
-  --bg: #15171a;
-  --panel: #1e2125;
-  --line: #2c3036;
-  --text: #d8dadd;
-  --dim: #8a9099;
-  --red: #d0453f;
-  --blue: #4f8fc0;
-  --red-soft: #d0453f33;
-  --blue-soft: #4f8fc033;
   /* Team shades worked out ahead: color-mix() in a gradient is converted again on every paint. */
   --blue-d45: #244056;
   --blue-d55: #2b4f6a;
@@ -109,10 +100,10 @@ aside {
   zoom: var(--s);
 }
 #status.ok {
-  color: #7cc47f;
+  color: var(--good);
 }
 #status.bad {
-  color: #e0a040;
+  color: var(--attention);
 }
 #age {
   color: var(--dim);

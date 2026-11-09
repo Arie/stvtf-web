@@ -98,7 +98,7 @@ aside section.log {
 }
 #tf2copy.copied .check {
   display: block;
-  color: #7cc47f;
+  color: var(--good);
 }
 #tf2open {
   display: inline-block;
@@ -115,7 +115,7 @@ aside section.log {
   font-size: 12px;
 }
 #peoplelist .signed {
-  color: #7cc47f;
+  color: var(--good);
   font-size: 11px;
 }
 #peoplelist a.nm {

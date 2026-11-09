@@ -10,7 +10,7 @@
   zoom: var(--s);
   padding: 4px 8px;
   border-radius: 6px;
-  background: #0b0c0ee6;
+  background: var(--shade-90);
   color: #fff;
   font-size: 12px;
 }
@@ -42,8 +42,8 @@
 }
 #roombar #rb-pen.on,
 #roombar #rb-marker.on {
-  background: #ffd23f;
-  color: #0b0c0e;
+  background: var(--pen);
+  color: var(--shade);
 }
 .stvtf.drawing canvas#c,
 .stvtf.drawing canvas#c:active {
@@ -55,7 +55,7 @@
   white-space: nowrap;
 }
 #rb-note {
-  color: #ffd23f;
+  color: var(--pen);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -67,7 +67,7 @@
   color: var(--dim);
 }
 #roombar #rb-live.at {
-  background: #d0453f;
+  background: var(--red);
   color: #fff;
 }
 #roombar :disabled:not(#rb-time) {
@@ -107,16 +107,16 @@
   width: 2px;
   height: 40px;
   border-radius: 1px;
-  background: #e0a040;
-  box-shadow: 0 0 0 1px #0b0c0ecc;
+  background: var(--attention);
+  box-shadow: 0 0 0 1px var(--shade-80);
 }
 #rb-track input::-moz-range-thumb {
   width: 2px;
   height: 40px;
   border: 0;
   border-radius: 1px;
-  background: #e0a040;
-  box-shadow: 0 0 0 1px #0b0c0ecc;
+  background: var(--attention);
+  box-shadow: 0 0 0 1px var(--shade-80);
 }
 #rb-track input:disabled {
   cursor: default;
@@ -166,7 +166,7 @@
   background: #4f8fc066;
 }
 .rb-round.won.red {
-  background: #d0453f66;
+  background: var(--red-40);
 }
 .rb-lane {
   position: absolute;
@@ -208,7 +208,7 @@
   height: 11px;
   margin-left: -5px;
   color: var(--team);
-  filter: drop-shadow(0 0 1px #0b0c0e) drop-shadow(0 0 1px #0b0c0e);
+  filter: drop-shadow(0 0 1px var(--shade)) drop-shadow(0 0 1px var(--shade));
 }
 .rb-drop svg {
   display: block;
@@ -284,7 +284,7 @@
   display: flex;
   padding: 2px;
   border-radius: 6px;
-  background: #0b0c0ee6;
+  background: var(--shade-90);
 }
 #bgtoggle button {
   padding: 4px 10px;

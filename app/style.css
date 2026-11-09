@@ -1,4 +1,5 @@
 /* The page's stylesheet, in this order (the build puts them into one file). */
+@import "css/palette.css";
 @import "css/page.css";
 @import "css/background.css";
 @import "css/sidebar.css";

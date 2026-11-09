@@ -65,7 +65,7 @@
 }
 .stvtf.seekable #feed time[data-tick]:hover,
 .stvtf.seekable #chat time[data-tick]:hover {
-  color: #e0a040;
+  color: var(--attention);
   text-decoration: underline;
 }
 #feed .ev time {
@@ -106,7 +106,7 @@
   background: var(--blue-d55);
 }
 #feed .ev.big.none {
-  background: #2c3036;
+  background: var(--line);
 }
 #feed .ev.hot.red {
   background: var(--red-h30);
@@ -133,10 +133,10 @@
   background: #ddd;
 }
 .chip.dom {
-  background: #ff6b5a;
+  background: var(--alert);
 }
 .chip.rev {
-  background: #ffd166;
+  background: var(--gold);
 }
 .chip.air {
   background: #9ff0ff;

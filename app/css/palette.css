@@ -1,0 +1,26 @@
+/* The colours: the page's (.stvtf, also inside <stv-map>) and the landing page's (:root). */
+:root,
+.stvtf {
+  --bg: #15171a;
+  --panel: #1e2125;
+  --line: #2c3036;
+  --text: #d8dadd;
+  --dim: #8a9099;
+  --red: #d0453f;
+  --blue: #4f8fc0;
+  --red-soft: #d0453f33;
+  --blue-soft: #4f8fc033;
+  --red-40: #d0453f66;
+  /* What went well, what wants attention, what is going wrong. */
+  --good: #7cc47f;
+  --attention: #e0a040;
+  --alert: #ff6b5a;
+  --gold: #ffd166;
+  /* The pen and marker, and what a room bar says. */
+  --pen: #ffd23f;
+  /* The dark of the bars and backdrops over the map, and as see-through. */
+  --shade: #0b0c0e;
+  --shade-95: #0b0c0ef2;
+  --shade-90: #0b0c0ee6;
+  --shade-80: #0b0c0ecc;
+}

@@ -35,7 +35,7 @@
   padding: 5px 10px;
   border: 0;
   border-radius: 6px;
-  background: #0b0c0ee6;
+  background: var(--shade-90);
   color: #fff;
   font: inherit;
   font-size: 12px;
@@ -65,7 +65,7 @@
   z-index: 4;
   padding: 10px 14px;
   border-radius: 6px;
-  background: #0b0c0ef2;
+  background: var(--shade-95);
   color: var(--text);
   font-size: 12px;
 }
@@ -82,7 +82,7 @@
   z-index: 4;
   padding: 10px 14px;
   border-radius: 6px;
-  background: #0b0c0ef2;
+  background: var(--shade-95);
   color: var(--text);
   font-size: 12px;
 }
@@ -188,5 +188,5 @@
 }
 #copylink.copied .check {
   display: block;
-  color: #7cc47f;
+  color: var(--good);
 }

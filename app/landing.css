@@ -1,0 +1,3 @@
+/* The landing page's stylesheet (the build puts the parts into one file). */
+@import "css/palette.css";
+@import "css/landing.css";
