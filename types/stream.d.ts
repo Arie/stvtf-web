@@ -106,6 +106,16 @@ type ObjectiveFields = {
 
 export type Timer = { team: Team; remaining: number; paused: boolean; setup: boolean };
 
+// Stopwatch: `setting` in the first half (`time` as of the last capture), then counting down to beat it.
+export type Stopwatch = {
+  attackers: Team;
+  setting: boolean;
+  state: "unset" | "running" | "overtime";
+  time: number;
+  paused: boolean;
+  points: number;
+};
+
 export type Snapshot = {
   type: "snapshot";
   tick: number;
@@ -120,6 +130,7 @@ export type Snapshot = {
   win_limit: number;
   score: TeamScore;
   timers?: Timer[];
+  stopwatch?: Stopwatch;
   captures?: TeamScore;
   points?: { red: number; blue: number; max: number | null; [field: string]: any };
   mvm?: { [field: string]: any };

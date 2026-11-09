@@ -16,7 +16,8 @@
   round banners.
 - **Scoreboard**: scores, round timer (SETUP, ROUND OVER, OVERTIME; per team on KotH), control
   points with owner, lock and progress; CTF captures, pass time goals, RD/PD points, MvM wave.
-  Time added floats under it. Hold Tab for TF2's: kills, deaths, assists, damage, healing, ping.
+  Time added floats under it. In stopwatch (tournament A/D and payload), TF2's stopwatch under
+  it: the time and points the first half's attackers set, then the time left to beat it. Hold Tab for TF2's: kills, deaths, assists, damage, healing, ping.
 - **Game modes**: pass time ball and goals, RD robots and cores, MvM tank, revive markers, money,
   robots left.
 - **Spawn rooms**: each team's active one in team colour, the rest dashed. A spawn tied to a

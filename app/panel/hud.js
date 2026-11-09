@@ -2,6 +2,7 @@ import { msPerTick, TEAM, CLASS, byClass, ICONS, $, OVERLAY, OPT, state, teamCol
 import { asset } from "../core/env.js";
 import { layerOn } from "../core/layers.js";
 import { esc } from "./feed.js";
+import { renderStopwatch } from "./stopwatch.js";
 /** @typedef {import("../../types/stream").GameEvent} GameEvent */
 /** @typedef {import("../../types/stream").Player} Player */
 /** @typedef {import("../../types/stream").Snapshot} Snapshot */
@@ -390,6 +391,7 @@ export function renderScoreboard(snap, tick) {
   setText("timer-blue", side("blue"));
   setText("timer-red", side("red"));
   renderRoundLabel(snap, t);
+  renderStopwatch(snap, tick);
 }
 // The snapshot's timers, run on to `tick`: the main one, each team's, and the map's time left.
 /** @param {Snapshot} snap @param {number} tick */

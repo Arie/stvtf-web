@@ -416,6 +416,39 @@
   color: #ffffffb3;
   font-variant-numeric: tabular-nums;
 }
+#stopwatch {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 3px 10px;
+  border-radius: 4px;
+  background: #14161acc;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  filter: drop-shadow(0 2px 6px #000a);
+}
+#stopwatch::before {
+  content: "⏱";
+  font-size: 12px;
+}
+#stopwatch span {
+  color: var(--gold);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+}
+#stopwatch b {
+  font-size: 16px;
+}
+#stopwatch i {
+  font-style: normal;
+  font-size: 10px;
+  color: #ffffffb3;
+  letter-spacing: 0.1em;
+}
 .cps {
   display: flex;
   gap: 6px;

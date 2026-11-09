@@ -481,6 +481,7 @@ pub(crate) mod tests {
             points: None,
             mvm: None,
             timers: Vec::new(),
+            stopwatch: None,
         })
     }
 
