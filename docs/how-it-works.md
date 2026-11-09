@@ -66,6 +66,8 @@ acked, and alternating baselines.
 ## What TF2 cannot do
 
 - Go back in a live SourceTV: the protocol is forward only.
+- Go back in a demo reliably: TF2 reloads the map and fast-forwards from the start to the moment,
+  and often fails (seen in the TF2 client, not measured here).
 - Watch a match together under control: SourceTV viewers all see the same live moment and nobody
   can pause or rewind it; a demo plays for one viewer.
 
@@ -143,5 +145,4 @@ On 2026-11-09, with a probe built on stvtf and tf-demo-parser:
 - **Code**: the constants named here, in stvtf (`relay/play`, `decode/world.rs`, `session.rs`,
   `net/messages.rs`, `demo/`) and stv.tf (`matches/`, `rooms/room/relay.rs`).
 
-Not checked, as it needs a TF2 client: how TF2 itself seeks in a demo, and the client behaviour the
-relay works around (refusing another spawn count, following director cues).
+Not checked, as it needs a TF2 client: the client behaviour the relay works around (refusing another spawn count, following director cues).
