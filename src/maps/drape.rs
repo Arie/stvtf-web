@@ -23,7 +23,7 @@ const SAME_FLOOR: f64 = 4.0;
 /// Lines are drawn this far above the floor, clear of it.
 const LIFT: f64 = 8.0;
 /// A line is made of as few straight pieces as keep it within this of its steps.
-const TOLERANCE: f64 = 2.0;
+const TOLERANCE: f64 = 6.0;
 /// Lines shorter than this are left out: a stroke over a ledge or a crate's edge.
 const MIN_LINE: f64 = 32.0;
 /// Floors are found through a grid of cells this big.

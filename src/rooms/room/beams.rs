@@ -29,12 +29,18 @@ const HEAD: f64 = 96.0;
 const HEAD_ANGLE: f64 = 30.0;
 /// The most strokes followed at once: more, and the oldest are forgotten.
 const MAX_DRAPES: usize = 64;
+/// The most beams of the marker, and of one pen stroke, shown in TF2: what the relay keeps up
+/// with, and what a client takes; past that a stroke shows on the pages only.
+const MAX_MARKER_BEAMS: usize = 1200;
+const MAX_PEN_BEAMS: usize = 1000;
 
 /// A pen stroke being laid on the floors: by whom, which, and where its lines end now.
 pub(super) struct PenStroke {
     key: (u32, u32),
     drape: Drape,
     ends: Vec<Piece>,
+    /// Beams shown so far.
+    shown: usize,
 }
 
 impl Room {
@@ -48,7 +54,7 @@ impl Room {
                 if drapes.len() >= MAX_DRAPES {
                     drapes.remove(0);
                 }
-                drapes.push(PenStroke { key: (by, d.stroke), drape: Drape::new(), ends: Vec::new() });
+                drapes.push(PenStroke { key: (by, d.stroke), drape: Drape::new(), ends: Vec::new(), shown: 0 });
             }
             let Some(s) = drapes.iter_mut().find(|s| s.key == (by, d.stroke)) else { return };
             let pieces = s.drape.push(&ground, &d.points);
@@ -59,6 +65,8 @@ impl Room {
             if d.end {
                 beams.extend(heads(&s.ends, ink, PEN_LIFE));
             }
+            beams.truncate(MAX_PEN_BEAMS.saturating_sub(s.shown));
+            s.shown += beams.len();
             beams
         };
         if !beams.is_empty()
@@ -84,6 +92,8 @@ impl Room {
                 all.extend(heads(&ends(&pieces, [x, y]), ink, 0.0));
             }
         }
+        // The first drawn are kept: what is drawn after the most shows on the pages only.
+        all.truncate(MAX_MARKER_BEAMS);
         if let Some(r) = &*lock(&self.relay) {
             r.keep(all);
             self.marker_dirty.store(false, Ordering::Relaxed);
@@ -157,21 +167,40 @@ fn beams(pieces: &[Piece], ink: [u8; 3], life: f32) -> Vec<Beam> {
     let beam = |from: [f64; 3], to: [f64; 3], speed: u8| beam(from, to, ink, life, speed);
     let up = |p: [f64; 3]| [p[0], p[1], p[2] + FENCE];
     let mut out = Vec::new();
-    let mut posts: Vec<[f64; 3]> = Vec::new();
     for p in pieces {
         out.push(beam(p.from, p.to, SCROLL));
         out.push(beam(up(p.from), up(p.to), SCROLL));
+    }
+    out.extend(posts(pieces).into_iter().map(|p| beam(p, up(p), 0)));
+    out
+}
+
+/// Whether two points are the one (a piece starting where another ends).
+fn same(a: [f64; 3], b: [f64; 3]) -> bool {
+    (0..3).all(|k| (a[k] - b[k]).abs() < 1e-6)
+}
+
+/// Where the fence's posts stand: at each line's ends and every [`POST_EVERY`] along it (a line
+/// being pieces each starting where the one before ends).
+fn posts(pieces: &[Piece]) -> Vec<[f64; 3]> {
+    let mut out: Vec<[f64; 3]> = Vec::new();
+    let mut since = 0.0;
+    for (i, p) in pieces.iter().enumerate() {
+        if i == 0 || !same(pieces[i - 1].to, p.from) {
+            out.push(p.from);
+            since = 0.0;
+        }
         let length = (0..3).map(|k| (p.to[k] - p.from[k]).powi(2)).sum::<f64>().sqrt();
-        let n = (length / POST_EVERY).ceil().max(1.0) as usize;
-        for i in 0..=n {
-            let t = i as f64 / n as f64;
-            let at = [0, 1, 2].map(|k| p.from[k] + (p.to[k] - p.from[k]) * t);
-            if !posts.contains(&at) {
-                posts.push(at);
-            }
+        let mut at = POST_EVERY - since;
+        while at < length {
+            out.push([0, 1, 2].map(|k| p.from[k] + (p.to[k] - p.from[k]) * at / length));
+            at += POST_EVERY;
+        }
+        since = (since + length) % POST_EVERY;
+        if pieces.get(i + 1).is_none_or(|n| !same(n.from, p.to)) {
+            out.push(p.to);
         }
     }
-    out.extend(posts.into_iter().map(|p| beam(p, up(p), 0)));
     out
 }
 
@@ -188,14 +217,18 @@ mod tests {
 
     #[test]
     #[allow(clippy::float_cmp)] // whole numbers, exact
-    fn a_line_is_a_fence_with_posts_at_corners_and_along() {
+    fn a_line_is_a_fence_with_posts_at_its_ends_and_along() {
         let piece = |from, to| Piece { from, to, ms: 0.0 };
         let got = beams(&[piece([0.0, 0.0, 8.0], [100.0, 0.0, 8.0]), piece([100.0, 0.0, 8.0], [100.0, 50.0, 8.0])], [1, 2, 3], 4.0);
         let (rails, posts): (Vec<&Beam>, Vec<&Beam>) = got.iter().partition(|b| b.from[2] == b.to[2]);
         assert_eq!(rails.len(), 4, "the line and the one above it, per piece");
         assert!(rails.iter().any(|b| b.from == [0.0, 0.0, 48.0] && b.to == [100.0, 0.0, 48.0]));
         let feet: Vec<[f32; 3]> = posts.iter().map(|b| b.from).collect();
-        assert_eq!(feet, [[0.0, 0.0, 8.0], [50.0, 0.0, 8.0], [100.0, 0.0, 8.0], [100.0, 50.0, 8.0]], "ends shared once, one between");
+        assert_eq!(
+            feet,
+            [[0.0, 0.0, 8.0], [64.0, 0.0, 8.0], [100.0, 28.0, 8.0], [100.0, 50.0, 8.0]],
+            "every 64 along the line, and its ends"
+        );
         assert!(posts.iter().all(|b| b.to[2] - b.from[2] == 40.0));
     }
 
