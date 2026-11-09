@@ -5,9 +5,9 @@
 //! starts it over: what came before is dropped, though chunks and marks keep their numbers. So is
 //! what is more than [`KEEP_MS`] old.
 
-use crate::hub::{Hub, SharedHub, publish};
 use crate::lock;
-use crate::replay::{Clock, read_line};
+use crate::matches::hub::{Hub, SharedHub, publish};
+use crate::matches::replay::{Clock, read_line};
 use anyhow::{Result, bail};
 use flate2::Compression;
 use flate2::read::GzDecoder;
@@ -572,11 +572,11 @@ mod tests {
 
     #[test]
     fn a_recording_marks_rounds_won_ubers_drops_and_kills() {
-        use crate::hub::tests::{player, snapshot};
+        use crate::matches::hub::tests::{player, snapshot};
         // Who the lines' players are: 3 and 5 blue (5 the medic), 4 red.
         let who = vec![player(3, "scout", Team::Blue), player(4, "soldier", Team::Red), player(5, "medic", Team::Blue)];
         let mut lines = serde_json::to_string(&snapshot(100, None, who)).unwrap() + "\n";
-        lines += include_str!("../testdata/lines.jsonl");
+        lines += include_str!("../../testdata/lines.jsonl");
         let r = Recording::read(lines.as_bytes(), "lines").unwrap();
         let (marks, all) = r.marks(0);
         assert_eq!(all, marks.len());

@@ -1,4 +1,4 @@
-// The page's own data: the map geometry the server builds (src/bsp.rs) and the shared `state`
+// The page's own data: the map geometry the server builds (src/maps/bsp.rs) and the shared `state`
 // in app/core.js. Only `tsc` reads this file.
 import type { Player, Snapshot, GameEvent, Team, Vec3 } from "./stream";
 

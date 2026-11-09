@@ -4,29 +4,19 @@
 //! Events; without one, a page to start watching any server, each match at its own link.
 //! Map geometry comes from the map's BSP on fastdl.
 
-mod bsp;
-mod cache;
 mod cli;
-mod demostf;
-mod http;
-mod hub;
-mod live_demos;
-mod people;
-mod recording;
-mod relay_daemon;
+mod maps;
+mod matches;
 mod relays;
-mod replay;
-mod room;
 mod rooms;
-mod sessions;
-mod token;
+mod web;
 
-use crate::cache::{WARM, demostf_maps, map_geometry_gzip, overview};
 use crate::cli::{DEFAULT_TV_PASSWORD, Options, USAGE, parse_connect};
-use crate::http::{MAX_STREAMS_PER_CLIENT, app_version, serve};
-use crate::hub::{SharedHub, watch_into};
-use crate::replay::replay;
-use crate::sessions::Sessions;
+use crate::maps::cache::{WARM, demostf_maps, map_geometry_gzip, overview};
+use crate::matches::hub::{SharedHub, watch_into};
+use crate::matches::replay::replay;
+use crate::matches::sessions::Sessions;
+use crate::web::{MAX_STREAMS_PER_CLIENT, app_version, serve};
 use anyhow::{Context, Result, bail};
 use std::collections::HashMap;
 use std::net::{IpAddr, TcpListener, TcpStream};
@@ -81,12 +71,12 @@ struct App {
     /// Where a proxy serves us, like `/live`; empty at the root.
     base: String,
     /// When set, matches start only from tokens a site in front of us made.
-    keys: Option<Arc<token::Keys>>,
+    keys: Option<Arc<web::token::Keys>>,
     /// Where `/` sends visitors when matches start only from the site's links.
     home: Option<String>,
     /// Open event streams by client address.
     streams: Mutex<HashMap<IpAddr, usize>>,
-    rooms: rooms::Rooms,
+    rooms: rooms::registry::Rooms,
 }
 
 /// Counts an event stream against its client's limit until dropped.
@@ -138,7 +128,7 @@ impl App {
 
     /// A redirect to `path` under `base`.
     fn redirect(&self, s: &mut TcpStream, status: &str, path: &str) -> std::io::Result<()> {
-        http::redirect(s, status, &format!("{}{path}", self.base))
+        web::redirect(s, status, &format!("{}{path}", self.base))
     }
 }
 
@@ -185,10 +175,10 @@ impl Drop for Connection {
 }
 
 /// Any number of matches: the hub's options, the matches a previous process left, the demos.
-fn many(options: &Options, keys: Option<&Arc<token::Keys>>) -> Result<Sessions> {
+fn many(options: &Options, keys: Option<&Arc<web::token::Keys>>) -> Result<Sessions> {
     let mut sessions = Sessions::new(options.public, options.max_matches, options.hz);
     if let Some(dir) = &options.sessions {
-        sessions.store = Some(sessions::Store { dir: dir.clone(), keys: keys.cloned() });
+        sessions.store = Some(matches::sessions::Store { dir: dir.clone(), keys: keys.cloned() });
         // Before matches are picked up, so they record as the new ones do.
         sessions.demos = options.relays.is_some() || options.relay_socket.is_some();
         let restored = sessions.restore();
@@ -255,7 +245,7 @@ fn prompt(app: &App, url: &str) {
 }
 
 /// What the options ask to watch: a saved match, one server, or any number of them.
-fn matches(options: &Options, keys: Option<&Arc<token::Keys>>, stop: &'static AtomicBool) -> Result<Matches> {
+fn matches(options: &Options, keys: Option<&Arc<web::token::Keys>>, stop: &'static AtomicBool) -> Result<Matches> {
     let hub = SharedHub::default();
     let fed = hub.clone();
     if let Some(file) = options.replay.clone() {
@@ -344,16 +334,16 @@ fn main() -> Result<()> {
     watch::stop_on_ctrl_c(&STOP)?;
     // The relay process: only the relays (the rest of the options are the image's for the web).
     if let (Some(socket), Some((host, ports))) = (&options.relay_daemon, &options.relays) {
-        return relay_daemon::serve(socket, &relays::Relays::new(host, ports.clone()), relay_daemon::LEASE);
+        return relays::daemon::serve(socket, &relays::pool::Relays::new(host, ports.clone()), relays::daemon::LEASE);
     }
-    let keys = std::env::var("STVTF_TOKEN_KEY").ok().map(|k| token::Keys::from_hex(&k).map(Arc::new)).transpose()?;
+    let keys = std::env::var("STVTF_TOKEN_KEY").ok().map(|k| web::token::Keys::from_hex(&k).map(Arc::new)).transpose()?;
     let console_prompt = keys.is_none() && std::io::IsTerminal::is_terminal(&std::io::stdin());
     let matches = matches(&options, keys.as_ref(), &STOP)?;
     let store = if let Matches::Many(sessions) = &matches { sessions.store.clone() } else { None };
     let relays = match (&options.relays, &options.relay_socket) {
         (Some(_), _) | (_, Some(_)) if store.is_none() => bail!("relays need --sessions"),
-        (Some((host, ports)), _) => Some(Arc::new(relays::Pool::Local(relays::Relays::new(host, ports.clone())))),
-        (None, Some(socket)) => Some(Arc::new(relays::Pool::Remote(relay_daemon::Remote::new(socket)))),
+        (Some((host, ports)), _) => Some(Arc::new(relays::pool::Pool::Local(relays::pool::Relays::new(host, ports.clone())))),
+        (None, Some(socket)) => Some(Arc::new(relays::pool::Pool::Remote(relays::daemon::Remote::new(socket)))),
         (None, None) => None,
     };
     let app = Arc::new(App {
@@ -366,7 +356,7 @@ fn main() -> Result<()> {
         keys,
         home: options.home.clone(),
         streams: Mutex::default(),
-        rooms: rooms::Rooms::new(store, relays),
+        rooms: rooms::registry::Rooms::new(store, relays),
     });
     app.rooms.sweep();
     if let Matches::Many(_) = app.matches {
@@ -491,7 +481,7 @@ mod testing {
             keys: None,
             home: None,
             streams: Mutex::default(),
-            rooms: rooms::Rooms::default(),
+            rooms: rooms::registry::Rooms::default(),
         }
     }
 
@@ -510,10 +500,10 @@ mod testing {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::http::MAX_STREAMS_PER_CLIENT;
-    use crate::hub::{SharedHub, publish};
+    use crate::matches::hub::{SharedHub, publish};
     use crate::testing::TempDir;
     use crate::testing::{app, server};
+    use crate::web::MAX_STREAMS_PER_CLIENT;
 
     #[test]
     fn connections_are_capped() {

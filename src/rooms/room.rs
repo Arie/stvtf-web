@@ -1,11 +1,11 @@
 //! A room: a recording played into its own hub, paused, sped up and sought by its owner, with
 //! everyone in it seeing the same.
 
-use crate::hub::{SharedHub, announce, publish, restore, send, send_keeping};
 use crate::lock;
-use crate::people::People;
-use crate::recording::Recording;
-use crate::relays::{Offer, RoomRelay, Was};
+use crate::matches::hub::{SharedHub, announce, publish, restore, send, send_keeping};
+use crate::matches::recording::Recording;
+use crate::relays::pool::{Offer, RoomRelay, Was};
+use crate::rooms::people::People;
 use anyhow::{Result, bail};
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
@@ -554,7 +554,7 @@ impl Room {
     }
 
     /// The timeline's marks from the `from`th on, and how many there are.
-    pub(crate) fn marks(&self, from: usize) -> (Vec<crate::recording::Mark>, usize) {
+    pub(crate) fn marks(&self, from: usize) -> (Vec<crate::matches::recording::Mark>, usize) {
         self.recording.marks(from)
     }
 
@@ -703,7 +703,7 @@ fn wait(gap: u64, speed: f64) -> Duration {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::hub::subscribe;
+    use crate::matches::hub::subscribe;
     use std::fmt::Write as _;
 
     /// `n` feed lines, a tick (15 ms) apart.
@@ -947,7 +947,7 @@ mod tests {
     fn a_seek_while_paused_moves_what_the_relay_follows() {
         let mut lines = String::new();
         for tick in (4..=4000).step_by(4) {
-            writeln!(lines, "{}", serde_json::to_string(&crate::hub::tests::snapshot(tick, None, Vec::new())).unwrap()).unwrap();
+            writeln!(lines, "{}", serde_json::to_string(&crate::matches::hub::tests::snapshot(tick, None, Vec::new())).unwrap()).unwrap();
         }
         let room = Room::start("r".into(), "me", Arc::new(Recording::read(lines.as_bytes(), "test").unwrap()));
         room.control(&Control { paused: Some(true), ..Control::default() }).unwrap();

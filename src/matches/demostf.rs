@@ -2,8 +2,8 @@
 //! gzipped stvtf output, and played through once at game speed. The demo file itself is dropped
 //! as soon as it is decoded, and the output when the match ends.
 
-use crate::hub::{SharedHub, publish};
-use crate::replay::play_lines;
+use crate::matches::hub::{SharedHub, publish};
+use crate::matches::replay::play_lines;
 use crate::{is_name, lock};
 use anyhow::{Context, Result, bail};
 use flate2::Compression;
@@ -172,7 +172,7 @@ mod tests {
     fn a_demo_stopped_before_its_turn_is_not_fetched_and_says_nothing() {
         let hub = SharedHub::default();
         play(&hub, 1, 20.0, &|| true, &AtomicBool::new(true), &|_| {}, &drop).unwrap();
-        assert_eq!(crate::hub::subscribe(&hub, false).try_iter().count(), 0);
+        assert_eq!(crate::matches::hub::subscribe(&hub, false).try_iter().count(), 0);
     }
 
     /// A demo from stvtf's own tests, which CI checks out next to this repository.
@@ -236,7 +236,7 @@ mod tests {
     }
 
     fn told(hub: &SharedHub) -> Vec<serde_json::Value> {
-        crate::hub::subscribe(hub, false).try_iter().map(|l| serde_json::from_str(&l).unwrap()).collect()
+        crate::matches::hub::subscribe(hub, false).try_iter().map(|l| serde_json::from_str(&l).unwrap()).collect()
     }
 
     #[test]

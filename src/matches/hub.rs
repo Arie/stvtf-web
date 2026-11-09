@@ -700,7 +700,7 @@ pub(crate) mod tests {
     /// another shape fails here, and what the page does not read from it fails there.
     #[test]
     fn the_sample_lines_are_what_stvtf_sends() {
-        let samples = include_str!("../testdata/lines.jsonl");
+        let samples = include_str!("../../testdata/lines.jsonl");
         for sample in samples.lines() {
             let line: Line = serde_json::from_str(sample).unwrap_or_else(|e| panic!("{sample}: {e}"));
             let written: Value = serde_json::to_value(&line).unwrap();

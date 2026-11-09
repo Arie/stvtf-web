@@ -472,22 +472,27 @@ sets the directory (default `backpack`, `/usr/share/stvtf/backpack` in the Docke
 
 ## Layout
 
-- `src/main.rs`: starting up: what to watch, housekeeping of the matches, accepting connections.
-- `src/http.rs`: a small HTTP server: the page and overlay, `/events`, `/start` and the connect
-  form, and `/up`; `src/http/assets.rs` the files it serves (the page's, `/map/NAME`, `/overview/`,
-  `/backpack/`, icons and fonts).
-- `src/hub.rs`: a match's latest state and feed, and the queue of each page watching it.
-- `src/sessions.rs`: many matches in one process, and saving them across a deploy.
-- `src/demostf.rs`: a demos.tf demo played as a match.
-- `src/cache.rs`: map geometry and demos.tf's overviews, fetched once and kept in `--cache`.
-- `src/replay.rs`, `src/cli.rs`, `src/token.rs`: saved matches, the command line, the site's start tokens.
-- `src/bsp.rs`: top-down geometry from a BSP, served on `/map/NAME`. Its child modules:
+- `src/main.rs`: starting up: what to watch, housekeeping of the matches, accepting connections;
+  `src/cli.rs` the command line.
+- `src/web.rs`: a small HTTP server: the page and overlay, `/events`, `/start` and the connect
+  form, and `/up`; `src/web/assets.rs` the files it serves (the page's, `/map/NAME`, `/overview/`,
+  `/backpack/`, icons and fonts); `src/web/token.rs` the site's start tokens.
+- `src/matches/`: `hub` (a match's latest state and feed, and the queue of each page watching
+  it), `sessions` (many matches in one process, and saving them across a deploy), `recording`
+  (what rooms play), `live_demos` (a live match's `.dem` files), `demostf` (a demos.tf demo
+  played as a match) and `replay` (saved matches).
+- `src/rooms/`: `room` (one room: playback, people, drawing, its relay), `registry` (the rooms
+  open, saved across a deploy) and `people` (who is in one).
+- `src/relays/`: `pool` (rooms as `SourceTV` addresses, on ports of the range) and `daemon` (the
+  relays in a process of their own).
+- `src/maps/`: `cache` (map geometry and demos.tf's overviews, fetched once and kept in
+  `--cache`) and `bsp`, top-down geometry from a BSP, served on `/map/NAME`. Its child modules:
   `format` (the file's lumps and records, including LZMA-compressed lumps), `entities` (the
   playable area's bounds, packs, capture areas, and spawn rooms and points with their control
   point), `material` (a floor's kind from its texture name), `displacement` (terrain at its real
   height), `track` (the payload cart's track) and `reach` (the flood fill of the playable area).
 - `index.html` and `app/`: the page, its stylesheet and ES modules (canvas, no build step),
-  embedded in the binary and listed in `src/http/assets.rs`:
+  embedded in the binary and listed in `src/web/assets.rs`:
   - `main.js` draws each frame; `stream.js` takes the event stream in; `core.js` holds the
     shared state, options and tick clock; `env.js` where the page runs (its own, or `<stv-map>`).
   - `view.js` loads the map and frames it (rotation, the screen transform, the background),

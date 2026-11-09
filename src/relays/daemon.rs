@@ -20,7 +20,7 @@
 //! alone for [`AWAY`].
 
 use crate::lock;
-use crate::relays::{LocalRelay, Relays, Was};
+use crate::relays::pool::{LocalRelay, Relays, Was};
 use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};

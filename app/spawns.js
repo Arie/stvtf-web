@@ -13,7 +13,7 @@ import { toScreen, drawText } from "./view.js";
 // Once a team has been seen spawning since the last change of ownership, that room wins.
 let ownersKey = "",
   ownersChanged = 0;
-// Spawn points stand up to SPAWN_SLACK above or below their room's box (as in bsp.rs).
+// Spawn points stand up to SPAWN_SLACK above or below their room's box (as in src/maps/bsp.rs).
 const SPAWN_SLACK = 64;
 /** @param {SpawnRoom} r @param {Vec3} p */
 const inRoom = (r, p) =>

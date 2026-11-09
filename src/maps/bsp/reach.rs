@@ -679,9 +679,9 @@ fn within(pts: &[[f64; 2]], q: [f64; 2]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::bsp::format::{LUMP_LENGTH, lump_entry};
-    use crate::bsp::tests::{map, process, process_built, swiftwater_built};
-    use crate::bsp::{Bounds, contains_point as contains, geometry};
+    use crate::maps::bsp::format::{LUMP_LENGTH, lump_entry};
+    use crate::maps::bsp::tests::{map, process, process_built, swiftwater_built};
+    use crate::maps::bsp::{Bounds, contains_point as contains, geometry};
 
     #[test]
     fn process_keeps_the_playable_floors_only() {

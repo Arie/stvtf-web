@@ -1,7 +1,7 @@
 //! The files served: page modules, fonts, icons, backpacks, maps, overviews.
 
 use super::{CSS, HTML, JS, JSON, SVG, TEXT, TTF, WEBP, not_found, respond, respond_cached, respond_with};
-use crate::cache::{map_geometry, map_geometry_gzip, overview};
+use crate::maps::cache::{map_geometry, map_geometry_gzip, overview};
 use crate::{App, is_name, lock};
 use std::net::TcpStream;
 

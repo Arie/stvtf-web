@@ -1,10 +1,11 @@
 //! The HTTP side: pages, files, event streams and starting matches.
 
-use crate::hub::{SharedHub, subscribe};
-use crate::room::{Control, Draw, ViewPost};
-use crate::sessions::{Session, Sessions, Viewer};
-use crate::token::Source;
-use crate::{App, Matches, lock, sessions, token};
+use crate::matches::hub::{SharedHub, subscribe};
+use crate::matches::sessions;
+use crate::matches::sessions::{Session, Sessions, Viewer};
+use crate::rooms::room::{Control, Draw, ViewPost};
+use crate::web::token::Source;
+use crate::{App, Matches, lock};
 use anyhow::{Result, anyhow, bail};
 use flate2::Compression;
 use flate2::write::GzEncoder;
@@ -15,6 +16,7 @@ use std::sync::mpsc::RecvTimeoutError;
 use std::time::Duration;
 
 mod assets;
+pub(crate) mod token;
 
 pub(crate) use assets::app_version;
 use assets::serve_file;
@@ -387,7 +389,7 @@ struct Who {
 fn who(app: &App, request: &Request) -> Who {
     let user = app.keys.as_ref().zip(request.user.as_deref()).and_then(|(k, c)| k.kept(c, unix_now()));
     if let Some(user) = user {
-        return Who { key: format!("{}{}", crate::people::STEAM, user.uid), cookie: None, user: Some(user) };
+        return Who { key: format!("{}{}", crate::rooms::people::STEAM, user.uid), cookie: None, user: Some(user) };
     }
     if let Some(g) = &request.guest {
         return Who { key: g.clone(), cookie: None, user: None };
@@ -700,7 +702,7 @@ fn counted(user: Option<&token::User>, steam: Option<&str>, client: IpAddr) -> O
         return None;
     }
     if let Some(id) = steam.or(user.map(|u| u.uid.as_str())) {
-        return Some(format!("{}{id}", crate::people::STEAM));
+        return Some(format!("{}{id}", crate::rooms::people::STEAM));
     }
     Some(format!("ip:{client}"))
 }
@@ -845,7 +847,7 @@ fn form_decode(v: &str) -> String {
 mod tests {
     use super::assets::APP;
     use super::*;
-    use crate::hub::{SharedHub, publish};
+    use crate::matches::hub::{SharedHub, publish};
     use crate::testing::{TempDir, app, server};
 
     #[test]
@@ -858,7 +860,7 @@ mod tests {
         assert_eq!(counted(None, None, ip("192.0.2.1")).as_deref(), Some("ip:192.0.2.1"));
         assert_eq!(counted(None, Some("1"), ip("127.0.0.1")), None, "this machine");
     }
-    use crate::{App, Matches, TcpListener, token};
+    use crate::{App, Matches, TcpListener};
     use flate2::read::GzDecoder;
     use std::path::PathBuf;
     use std::time::Instant;

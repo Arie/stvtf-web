@@ -8,14 +8,14 @@ import { PLAIN_BG, context2d, INK } from "./core.js";
 /** @typedef {{ c: CanvasRenderingContext2D, w: number, h: number, X: (x: number) => number, Y: (y: number) => number, res: number, cut: number }} Drawing */
 
 // Map geometry: at least this many world units per pixel, and a canvas at most this wide;
-// bsp.rs pads the bounds' top this far above the highest point or pickup (its PAD), floors are
+// src/maps/bsp.rs pads the bounds' top this far above the highest point or pickup (its PAD), floors are
 // kept up to this far above that, and a wall counts from this far below its top.
 const MIN_UNITS_PER_PIXEL = 4,
   MAX_CANVAS = 4096,
   GEOMETRY_PAD = 1536,
   ROOF_ABOVE = 400,
   WALL_BASE = 64;
-// Floor colours by surface kind (bsp.rs's material words); anything else, or none, is "other".
+// Floor colours by surface kind (src/maps/bsp.rs's material words); anything else, or none, is "other".
 const KIND_COLOURS = {
   __proto__: null,
   grass: "#56703d",

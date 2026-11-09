@@ -1,6 +1,6 @@
 //! Saved stvtf output played at game speed.
 
-use crate::hub::{SharedHub, default_tick_interval, publish};
+use crate::matches::hub::{SharedHub, default_tick_interval, publish};
 use anyhow::{Context, Result, bail};
 use std::io::{BufRead, BufReader, Read};
 use std::path::Path;
@@ -132,7 +132,7 @@ fn line_time(stamped: &Stamped, interval: f64) -> Option<u64> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::hub::{SharedHub, default_tick_interval};
+    use crate::matches::hub::{SharedHub, default_tick_interval};
     use crate::testing::TempDir;
     use crate::testing::server;
 
@@ -233,7 +233,7 @@ mod tests {
         };
         let err = replay(&hub, &path, &play).unwrap_err();
         assert!(format!("{err:#}").contains("opening"), "{err:#}");
-        let status = crate::hub::subscribe(&hub, false).try_recv().unwrap();
+        let status = crate::matches::hub::subscribe(&hub, false).try_recv().unwrap();
         assert!(status.contains("map_change"), "{status}");
     }
 }

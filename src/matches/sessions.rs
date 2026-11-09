@@ -2,13 +2,15 @@
 //! it and stopped a while after its last viewer leaves. With a store, the matches outlive the
 //! process: a deploy's new container picks them up under the same links.
 
-use crate::cache::write_atomic;
 use crate::cli::{DEFAULT_TV_PASSWORD, parse_connect};
-use crate::hub::{SharedHub, Summary, subscribe, watch_into};
-use crate::live_demos::LiveDemos;
-use crate::recording::{Recording, Save, Sink};
-use crate::relays::DemoOf;
-use crate::{demostf, lock, token};
+use crate::lock;
+use crate::maps::cache::write_atomic;
+use crate::matches::demostf;
+use crate::matches::hub::{SharedHub, Summary, subscribe, watch_into};
+use crate::matches::live_demos::LiveDemos;
+use crate::matches::recording::{Recording, Save, Sink};
+use crate::relays::pool::DemoOf;
+use crate::web::token;
 use aes_gcm::aead::OsRng;
 use aes_gcm::aead::rand_core::RngCore;
 use anyhow::{Result, anyhow, bail};
@@ -1277,17 +1279,17 @@ mod tests {
 
     #[test]
     fn a_match_in_play_stays_watched_with_nobody_watching() {
-        use crate::hub::tests::{player, snapshot};
+        use crate::matches::hub::tests::{player, snapshot};
         use stvtf::output::Team;
         let s = Sessions::new(false, 8, 20.0);
         let m = s.open("192.0.2.51:27020 tv", None, None).unwrap();
         drop(Viewer::new(m.clone()));
         let players = (1..=4).map(|i| player(i, "p", if i % 2 == 0 { Team::Red } else { Team::Blue })).collect();
-        crate::hub::publish(&m.hub, &snapshot(100, None, players));
+        crate::matches::hub::publish(&m.hub, &snapshot(100, None, players));
         s.reap(Duration::ZERO);
         assert!(s.get(&m.id).is_some(), "players on it: it stays");
         // Everyone gone to spectate, or left: it ends as any unwatched match.
-        crate::hub::publish(&m.hub, &snapshot(200, None, vec![player(1, "p", Team::Spectator)]));
+        crate::matches::hub::publish(&m.hub, &snapshot(200, None, vec![player(1, "p", Team::Spectator)]));
         s.reap(Duration::ZERO);
         assert!(s.get(&m.id).is_none());
     }

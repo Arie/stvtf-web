@@ -155,10 +155,10 @@ fn read(info: &[u8], verts: &[u8], disp: usize, face: &super::Face, base: [Vec3;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::bsp::contains_point as contains;
-    use crate::bsp::format::{LUMP_LENGTH, lump_entry};
-    use crate::bsp::geometry;
-    use crate::bsp::tests::{swiftwater, swiftwater_built};
+    use crate::maps::bsp::contains_point as contains;
+    use crate::maps::bsp::format::{LUMP_LENGTH, lump_entry};
+    use crate::maps::bsp::geometry;
+    use crate::maps::bsp::tests::{swiftwater, swiftwater_built};
     use std::collections::HashMap;
 
     /// The share of boundary grid points that other displacements share (same x, y to the unit)
