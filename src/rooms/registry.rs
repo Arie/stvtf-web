@@ -91,6 +91,13 @@ impl Rooms {
         self
     }
 
+    /// Tells `room` where the maps' geometry is, for the floors it draws on.
+    fn give_maps(&self, room: &Room) {
+        if let Some(maps) = &self.maps {
+            room.set_maps(maps.clone());
+        }
+    }
+
     /// Lets `room` be relayed to TF2 clients, from where `demo_of` says its demos are.
     fn offer(&self, room: &Room, demo_of: Option<DemoOf>) {
         if let (Some(relays), Some(demo_of)) = (&self.relays, demo_of) {
@@ -141,6 +148,7 @@ impl Rooms {
             store.put(&demo_file(*demo), &output)?;
         }
         let room = Room::start(id, owner, recording);
+        self.give_maps(&room);
         self.opened_by(&room.id, by);
         self.watch(&room.id, from, &source);
         self.offer(&room, from.demo_of(self.store.as_ref()));
@@ -265,6 +273,7 @@ impl Rooms {
             return Some(room.clone());
         }
         let room = Room::restore(id.to_string(), saved.room, recording);
+        self.give_maps(&room);
         self.offer(&room, self.demo_of(&saved.source, sessions));
         if let Source::Live(match_id) = &saved.source
             && let Some(m) = sessions.get(match_id)

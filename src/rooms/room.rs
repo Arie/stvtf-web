@@ -38,6 +38,8 @@ pub(crate) struct Room {
     pub(crate) idle_since: Mutex<Option<Instant>>,
     /// Where its relay would play from, if it can have one.
     offer: OnceLock<Offer>,
+    /// Where the maps' geometry is kept: the floors arcs and the relay's strokes are laid on.
+    maps: OnceLock<std::path::PathBuf>,
     /// Its relay, while the room is open and someone has been on a page of it.
     relay: Mutex<Option<RoomRelay>>,
     /// What its pages were last told of the relay.
@@ -143,6 +145,7 @@ impl Room {
             viewers: AtomicUsize::new(0),
             idle_since: Mutex::new(Some(Instant::now())),
             offer: OnceLock::new(),
+            maps: OnceLock::new(),
             relay: Mutex::new(None),
             relay_said: Mutex::new(None),
             relay_sent: Mutex::new(None),
@@ -254,6 +257,14 @@ impl Room {
 
 #[cfg(test)]
 mod tests;
+pub(crate) use arc::ArcDraw;
+
+impl Room {
+    /// Where the maps' geometry is kept, for the floors the room draws on.
+    pub(crate) fn set_maps(&self, cache: std::path::PathBuf) {
+        let _ = self.maps.set(cache);
+    }
+}
 pub(crate) use drawing::{Draw, Kept};
 pub(crate) use play::Control;
 pub(crate) use view::ViewPost;

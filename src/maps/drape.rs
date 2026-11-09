@@ -121,7 +121,6 @@ pub(crate) struct Ground {
     /// The faces whose box touches each cell, row by row.
     cells: Vec<Vec<u32>>,
     /// Floors above this are roofs the overview leaves out.
-    #[allow(dead_code)] // read by `top`, for the rooms' jump arcs
     roof: f64,
 }
 
@@ -173,7 +172,6 @@ impl Ground {
     }
 
     /// The highest floor at (x, y) the overview shows (under its roof cut), if there is one.
-    #[allow(dead_code)] // the rooms' jump arcs use it
     pub(crate) fn top(&self, x: f64, y: f64) -> Option<f64> {
         self.heights(x, y).into_iter().rev().find(|z| *z <= self.roof)
     }

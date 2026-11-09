@@ -28,7 +28,7 @@ pub(crate) struct Draw {
 /// A permanent marker stroke, as drawn so far.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct Kept {
-    stroke: u32,
+    pub(super) stroke: u32,
     pub(super) by: u32,
     pub(super) points: Vec<[f64; 3]>,
     /// The ink it was drawn in (`#rrggbb`); none in rooms saved before.
@@ -37,6 +37,9 @@ pub(crate) struct Kept {
     /// Still being drawn: its end not come yet.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub(super) open: bool,
+    /// A jump arc's points, launch to landing (its `points` are then the two clicks).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(super) arc: Option<Vec<[f64; 3]>>,
 }
 
 /// Most permanent marker points on a room's map.
@@ -79,7 +82,7 @@ impl Room {
             k.open = !d.end;
         } else if !d.points.is_empty() {
             let ink = Some(super::beams::hex(self.ink_now(by)));
-            marker.push(Kept { stroke: d.stroke, by, points: d.points.clone(), ink, open: !d.end });
+            marker.push(Kept { stroke: d.stroke, by, points: d.points.clone(), ink, open: !d.end, arc: None });
         }
         let beams = self.marker_in_tf2(&marker).inspect_err(|_| *marker = before)?;
         send_keeping(&self.hub, &line, "marker", kept_line(&marker));

@@ -313,3 +313,55 @@ fn a_room_behind_a_live_match_that_ended_skips_to_its_end() {
     until("the end", || lock(&r.state).at == rec.length());
     r.stop();
 }
+
+/// A room on `cp_test`, whose geometry has a floor at 0 by x 0..512 and one at 200 by x 1000..1512.
+fn arc_room() -> (Arc<Room>, crate::testing::TempDir) {
+    let dir = crate::testing::TempDir::new("arcs");
+    let floor = |x: f64, z: f64| serde_json::json!({ "z": z, "p": [x, 0.0, x + 512.0, 0.0, x + 512.0, 512.0, x, 512.0] });
+    let geometry = serde_json::json!({ "floors": [floor(0.0, 0.0), floor(1000.0, 200.0)], "bounds": [[0, 0, -100], [1600, 600, 2000]] });
+    std::fs::write(crate::maps::cache::geometry_path(&dir, "cp_test"), geometry.to_string()).unwrap();
+    let r = room(1);
+    r.set_maps(dir.to_path_buf());
+    lock(&r.hub).map = Some("cp_test".into());
+    (r, dir)
+}
+
+#[test]
+fn an_arc_is_kept_with_the_marker_and_cleared_with_it() {
+    let (r, _dir) = arc_room();
+    r.arc(&ArcDraw { from: [1256.0, 256.0], to: [256.0, 256.0] }, "me").unwrap();
+    let marker = r.saved().marker;
+    let arc = marker[0].arc.as_ref().expect("an arc");
+    assert_eq!(arc.len(), 17);
+    assert_eq!((arc[0][2], arc[16][2]), (0.0, 200.0), "from the low floor to the high one");
+    r.clear("me");
+    assert!(r.saved().marker.is_empty());
+}
+
+#[test]
+fn an_arc_off_the_floors_is_refused() {
+    let (r, _dir) = arc_room();
+    let e = r.arc(&ArcDraw { from: [256.0, 256.0], to: [700.0, 256.0] }, "me").unwrap_err();
+    assert_eq!(e.to_string(), "Pick a spot on a floor.");
+    assert!(r.saved().marker.is_empty());
+}
+
+#[test]
+fn an_arc_too_short_is_refused() {
+    let (r, _dir) = arc_room();
+    let e = r.arc(&ArcDraw { from: [256.0, 256.0], to: [260.0, 256.0] }, "me").unwrap_err();
+    assert_eq!(e.to_string(), "Too short for a jump.");
+}
+
+#[test]
+fn an_arc_on_a_map_not_built_is_refused() {
+    let r = room(1);
+    let e = r.arc(&ArcDraw { from: [256.0, 256.0], to: [1256.0, 256.0] }, "me").unwrap_err();
+    assert_eq!(e.to_string(), "The map is not ready yet.");
+}
+
+#[test]
+fn a_marker_saved_before_arcs_reads_as_before() {
+    let kept: Kept = serde_json::from_str(r#"{"stroke":1,"by":1,"points":[[0.0,0.0,0.0]]}"#).unwrap();
+    assert_eq!(kept.arc, None);
+}

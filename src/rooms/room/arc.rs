@@ -1,5 +1,58 @@
 //! A jump arc's shape: a rocket or sticky jump from low ground onto high ground, straight up at
-//! first, then over (the air-strafe) and down onto the high spot; seen from above, straight.
+//! first, then over (the air-strafe) and down onto the high spot; seen from above, straight. And
+//! drawing one in a room: two clicks, kept with the marker.
+
+use super::Room;
+use super::beams::hex;
+use super::drawing::{Kept, MAX_KEPT_POINTS, kept_line};
+use crate::lock;
+use crate::matches::hub::send_keeping;
+use anyhow::{Result, bail};
+use serde::Deserialize;
+
+/// Two clicks closer than this are no jump.
+const MIN_JUMP: f64 = 16.0;
+/// Arcs' ids, apart from the pages' strokes'.
+const ARC_IDS: u32 = 0x8000_0000;
+
+/// An arc as a page asks for it: the two clicks, either order.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct ArcDraw {
+    pub(crate) from: [f64; 2],
+    pub(crate) to: [f64; 2],
+}
+
+impl Room {
+    /// Admin `guest` draws a jump arc between two spots, onto the floors under them: kept with the
+    /// marker, shown to every page and in TF2.
+    pub(crate) fn arc(&self, a: &ArcDraw, guest: &str) -> Result<()> {
+        let Some(ground) = self.ground() else { bail!("The map is not ready yet.") };
+        let spot = |[x, y]: [f64; 2]| ground.top(x, y).map(|z| [x, y, z]);
+        let (Some(from), Some(to)) = (spot(a.from), spot(a.to)) else { bail!("Pick a spot on a floor.") };
+        if (from[0] - to[0]).hypot(from[1] - to[1]) < MIN_JUMP {
+            bail!("Too short for a jump.");
+        }
+        let points = jump(from, to);
+        let by = lock(&self.people).id(guest);
+        let ink = hex(self.ink_now(by));
+        let mut marker = lock(&self.marker);
+        if marker.iter().map(|k| k.points.len()).sum::<usize>() + 2 > MAX_KEPT_POINTS {
+            bail!("The map is full of marker ({MAX_KEPT_POINTS} points): clear it first.");
+        }
+        let before = marker.clone();
+        let stroke = ARC_IDS | marker.iter().filter(|k| k.arc.is_some()).count() as u32;
+        let clicks = vec![[a.from[0], a.from[1], 0.0], [a.to[0], a.to[1], 0.0]];
+        let kept = Kept { stroke, by, points: clicks, ink: Some(ink.clone()), open: false, arc: Some(points.clone()) };
+        marker.push(kept);
+        let beams = self.marker_in_tf2(&marker).inspect_err(|_| *marker = before)?;
+        let line = serde_json::json!({ "type": "arc", "by": by, "stroke": stroke, "ink": ink, "points": points });
+        send_keeping(&self.hub, &line.to_string().into(), "marker", kept_line(&marker));
+        drop(marker);
+        self.hand_marker(beams);
+        Ok(())
+    }
+}
 
 /// Pieces the arc is made of, and of those the first that go straight up.
 const PIECES: usize = 16;
@@ -12,7 +65,6 @@ const HANDLE: f64 = 0.6;
 
 /// The arc from the lower of `a` and `b` (`a` when as high) to the other: its points, the ends
 /// those spots.
-#[allow(dead_code)] // the room draws arcs with it
 pub(super) fn jump(a: [f64; 3], b: [f64; 3]) -> Vec<[f64; 3]> {
     let (launch, land) = if b[2] < a[2] { (b, a) } else { (a, b) };
     let peak = launch[2].max(land[2]) + RISE;

@@ -164,7 +164,12 @@ impl Room {
         if self.relay_clients() == 0 {
             return None;
         }
-        let maps = self.offer.get()?.maps.as_ref()?;
+        self.ground()
+    }
+
+    /// The floors of the map the room plays, once built.
+    pub(super) fn ground(&self) -> Option<Arc<Ground>> {
+        let maps = self.maps.get().or_else(|| self.offer.get()?.maps.as_ref())?;
         let map = lock(&self.hub).map.clone()?;
         drape::ground(maps, &map)
     }

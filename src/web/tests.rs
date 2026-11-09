@@ -216,6 +216,17 @@ fn only_admins_control_a_room() {
 }
 
 #[test]
+fn only_admins_draw_arcs() {
+    let (app, _dir) = demo_app();
+    let (page, cookie) = open_room(&app);
+    let arc = format!("{page}arc");
+    let spots = r#"{"from":[0,0],"to":[500,0]}"#;
+    assert!(post(&app, &arc, "", spots).starts_with("HTTP/1.1 403"));
+    // An admin's is taken up (here refused for a map not built, not for who sent it).
+    assert!(post(&app, &arc, &cookie, spots).starts_with("HTTP/1.1 400"));
+}
+
+#[test]
 fn admins_make_others_admin() {
     let (app, _dir) = demo_app();
     let (page, owner) = open_room(&app);
