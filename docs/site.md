@@ -6,11 +6,12 @@ Behind a site like serveme.tf, which signs users in and decides what they may wa
 ## Tokens
 
 All tokens are AES-256-GCM, `base64url(12-byte nonce | ciphertext | tag)` of a JSON object with
-`exp`. A start token does not list, a list token starts nothing.
+`exp`. Start tokens may add `"reservation"`, linking the match to the site's reservation. A start token
+does not list, a list token starts nothing.
 
 | token | |
 |---|---|
-| `{"connect", "owner", "exp"}` | `/start?t=TOKEN` starts or joins that match. `owner` (Steam id or null) is logged, limits nothing. Optional `"reservation"` links it to the site's reservation. |
+| `{"connect", "owner", "exp"}` | `/start?t=TOKEN` starts or joins that match. `owner` (Steam id or null) is logged, limits nothing. |
 | `{"demo": <id>, "owner", "exp"}` | plays that [demos.tf](https://demos.tf) demo, see below |
 | `{"list": true, "exp"}` | `GET /matches` with `Authorization: Bearer TOKEN` |
 | `{"signin": {"uid", "name", "streamer"}, "exp"}` | sign-in, see below |
