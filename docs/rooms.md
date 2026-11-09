@@ -8,8 +8,8 @@ pressed again, it returns to your room on that match. The match's own page never
 - Admins pause (space), set speed (¼× to 4×) and seek (← → by 5 s); everyone sees the same.
 - The pen (✎ or `d`) draws on the map for everyone, the room's overlay too, for a few seconds.
   Each admin picks a colour by the swatch after their name.
-- A jump arc (↷ or `a`): two clicks, the low and the high ground in either order, draw a rocket
-  or sticky jump between the floors under them, straight up then over and down, shaded dark to
+- A jump arc (↷ or `a`): two clicks, where the jump starts and where it lands, draw a rocket or
+  sticky jump between the floors under them, straight up then over and down, shaded dark to
   bright by its height, in TF2 too. It stays, with the marker (✒︎ or `m`), until cleared.
 - People are listed by the name they give (kept in the browser) or Guest N, known by the
   `stvtf_guest` cookie (pages only see numbers), or by Steam id when [signed in](site.md#sign-in).
@@ -78,7 +78,7 @@ seeking and at speed with it.
 | `POST /r/<id>/admin` | admin: `{"person": <number>, "admin": true\|false}` |
 | `POST /r/<id>/view` | admin: `{"mode": "free"\|"auto"}`, `{"mode": "follow", "player": <id>, "w", "h"}` (area round them) or `{"mode": "admin", "cx", "cy", "w", "h", "rot"}` (area they see), with `"page"` (the tab's name). `"take": true` chooses the view; without it, a camera move, counted only while the view is of its kind. That page leads from then on |
 | `POST /r/<id>/control` | admin: `{"paused", "speed", "seek"}` (any; `seek` in ms) |
-| `POST /r/<id>/arc` | admin: `{"from": [x, y], "to": [x, y]}`, a jump arc between the floors under them, the lower the launch; 400 with why when there is no floor there, they are too close or the map is not built |
+| `POST /r/<id>/arc` | admin: `{"from": [x, y], "to": [x, y]}`, a jump arc between the floors under them, `from` the launch; 400 with why when there is no floor there, they are too close or the map is not built |
 | `POST /r/<id>/draw` | admin: `{"stroke": <id>, "points": [[x, y, ms], …]}`, up to 256, ms into the stroke; later points continue it; pages draw at that pace, 40 ms behind |
 
 ## Stream lines

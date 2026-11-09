@@ -1,6 +1,6 @@
-//! A jump arc's shape: a rocket or sticky jump from low ground onto high ground, straight up at
-//! first, then over (the air-strafe) and down onto the high spot; seen from above, straight. And
-//! drawing one in a room: two clicks, kept with the marker.
+//! A jump arc's shape: a rocket or sticky jump from the first click to the second, straight up at
+//! first, then over (the air-strafe) and down onto the landing; seen from above, straight. And
+//! drawing one in a room: two clicks, launch then landing, kept with the marker.
 
 use super::Room;
 use super::beams::{beam, heads, hex};
@@ -17,7 +17,7 @@ const MIN_JUMP: f64 = 16.0;
 /// Arcs' ids, apart from the pages' strokes'.
 const ARC_IDS: u32 = 0x8000_0000;
 
-/// An arc as a page asks for it: the two clicks, either order.
+/// An arc as a page asks for it: the launch, then the landing.
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct ArcDraw {
@@ -26,8 +26,8 @@ pub(crate) struct ArcDraw {
 }
 
 impl Room {
-    /// Admin `guest` draws a jump arc between two spots, onto the floors under them: kept with the
-    /// marker, shown to every page and in TF2.
+    /// Admin `guest` draws a jump arc from one spot to another, onto the floors under them: kept
+    /// with the marker, shown to every page and in TF2.
     pub(crate) fn arc(&self, a: &ArcDraw, guest: &str) -> Result<()> {
         let Some(ground) = self.ground() else { bail!("The map is not ready yet.") };
         let spot = |[x, y]: [f64; 2]| ground.top(x, y).map(|z| [x, y, z]);
@@ -65,10 +65,9 @@ const STRAIGHT: f64 = 1.0 / 3.0;
 /// Where along the way the curve's second handle is, at its height.
 const HANDLE: f64 = 0.6;
 
-/// The arc from the lower of `a` and `b` (`a` when as high) to the other: its points, the ends
-/// those spots.
+/// The arc from launch `a` to landing `b`, up or down: its points, the ends those spots.
 pub(super) fn jump(a: [f64; 3], b: [f64; 3]) -> Vec<[f64; 3]> {
-    let (launch, land) = if b[2] < a[2] { (b, a) } else { (a, b) };
+    let (launch, land) = (a, b);
     let peak = launch[2].max(land[2]) + RISE;
     let up = launch[2] + (peak - launch[2]) * STRAIGHT;
     let mut out: Vec<[f64; 3]> =
@@ -162,12 +161,13 @@ mod tests {
     }
 
     #[test]
-    fn it_goes_from_the_low_spot_to_the_high_one_either_way() {
+    fn it_goes_from_the_first_click_to_the_second_up_or_down() {
         let (low, high) = ([0.0, 0.0, 0.0], [300.0, 0.0, 200.0]);
-        let (one, other) = (jump(low, high), jump(high, low));
-        assert_eq!(one.len(), 17);
-        assert!(one.iter().zip(&other).all(|(a, b)| close(*a, *b)));
-        assert!(close(one[0], low) && close(one[16], high));
+        let (up, down) = (jump(low, high), jump(high, low));
+        assert_eq!(up.len(), 17);
+        assert!(close(up[0], low) && close(up[16], high));
+        assert!(close(down[0], high) && close(down[16], low), "a jump down off the high ground");
+        assert!(down[1][2] > high[2], "straight up first, down too");
     }
 
     #[test]

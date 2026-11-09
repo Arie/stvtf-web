@@ -329,7 +329,7 @@ fn arc_room() -> (Arc<Room>, crate::testing::TempDir) {
 #[test]
 fn an_arc_is_kept_with_the_marker_and_cleared_with_it() {
     let (r, _dir) = arc_room();
-    r.arc(&ArcDraw { from: [1256.0, 256.0], to: [256.0, 256.0] }, "me").unwrap();
+    r.arc(&ArcDraw { from: [256.0, 256.0], to: [1256.0, 256.0] }, "me").unwrap();
     let marker = r.saved().marker;
     let arc = marker[0].arc.as_ref().expect("an arc");
     assert_eq!(arc.len(), 17);

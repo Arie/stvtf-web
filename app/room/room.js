@@ -273,9 +273,8 @@ function drawing(pen, marker) {
   for (const type of ["pointerup", "pointercancel"]) canvas.addEventListener(type, end);
 }
 
-// The jump arc tool: armed by its button, it takes two clicks on the map, the low spot and the
-// high one in either order, and asks the room for the arc between them; Esc or another tool
-// lets it go.
+// The jump arc tool: armed by its button, it takes two clicks on the map, the launch then the
+// landing, and asks the room for the arc between them; Esc or another tool lets it go.
 /** @param {HTMLButtonElement} button @param {HTMLButtonElement[]} others */
 export function arcTool(button, others) {
   /** @type {[number, number] | null} */
