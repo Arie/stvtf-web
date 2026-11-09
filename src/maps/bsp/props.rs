@@ -122,8 +122,9 @@ fn read_props(b: &[u8], version: u16) -> Result<Vec<Prop>> {
 }
 
 /// The tops of the map's solid stock props inside `bounds`: each upward face of their collision
-/// meshes, placed as the map places the prop. None when the props cannot be read.
-pub(super) fn prop_floors(data: &[u8], bounds: Option<Bounds>) -> Vec<Floor> {
+/// meshes, placed as the map places the prop. A prop is kept when `stands(x, y)` says players get
+/// to where it stands (at any height: a stack of containers is taller than what they reach).
+pub(super) fn prop_floors(data: &[u8], bounds: Option<Bounds>, stands: impl Fn(f64, f64) -> bool) -> Vec<Floor> {
     let props = props(data).unwrap_or_else(|e| {
         eprintln!("stvtf-web: static props left out: {e:#}");
         Vec::new()
@@ -131,7 +132,7 @@ pub(super) fn prop_floors(data: &[u8], bounds: Option<Bounds>) -> Vec<Floor> {
     let models = models();
     let mut out = Vec::new();
     for p in props {
-        if bounds.is_some_and(|b| !b.contains(&p.origin)) {
+        if bounds.is_some_and(|b| !b.contains(&p.origin)) || !stands(f64::from(p.origin[0]), f64::from(p.origin[1])) {
             continue;
         }
         let Some(tris) = models.get(&p.model) else { continue };

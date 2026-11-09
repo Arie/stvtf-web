@@ -588,6 +588,14 @@ impl Reach {
         false
     }
 
+    /// Whether players get anywhere in the column at (x, y), at any height.
+    pub(super) fn over(&self, x: f64, y: f64) -> bool {
+        let g = &self.grid;
+        let (Some(x), Some(y)) = (g.at(0, x), g.at(1, y)) else { return false };
+        let col = g.column(x, y);
+        self.reached.any(col, col + g.dims[2])
+    }
+
     /// Whether players can get to the space just above the floor `p` (`x, y, x, y, …`) at height `z`.
     pub(super) fn keeps(&self, p: &[f64], z: f64) -> bool {
         let Some(left) = self.floor_work_left.get().checked_sub(samples_work(p)) else { return true };

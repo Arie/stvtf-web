@@ -324,10 +324,7 @@ fn geometry_counted(data: &[u8]) -> Result<(Geometry, (usize, f64))> {
     let before_fill = (floors.len(), floors.iter().map(|f| outline_area(&f.p)).sum());
     let reach = reach.filter(|r| fill(&mut floors, |f| r.keeps(&f.p, f.z), &stands, before_fill.1));
     let floors = without_shallow_water(floors);
-    let mut props = props::prop_floors(data, bounds);
-    if let Some(r) = &reach {
-        props.retain(|f| r.keeps(&f.p, f.z));
-    }
+    let props = props::prop_floors(data, bounds, |x, y| reach.as_ref().is_none_or(|r| r.over(x, y)));
     // Without points or pickups, the floors frame the map; the top keeps the PAD above the
     // highest floor that the viewer's roof cut expects.
     let bounds = bounds.or_else(|| {
