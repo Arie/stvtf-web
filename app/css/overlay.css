@@ -1,0 +1,81 @@
+/* Broadcast overlay (/overlay): only the map, on a transparent page for OBS. */
+.stvtf.overlay {
+  background: transparent;
+  display: block;
+}
+.stvtf.overlay header,
+.stvtf.overlay aside,
+.stvtf.overlay .hud,
+.stvtf.overlay #follow,
+.stvtf.overlay #bgtoggle,
+.stvtf.overlay #sidetoggle,
+.stvtf.overlay #helptoggle,
+.stvtf.overlay #help,
+.stvtf.overlay #settingstoggle,
+.stvtf.overlay #settings,
+.stvtf.overlay #empty,
+.stvtf.overlay #banner,
+.stvtf.overlay #roombar {
+  display: none !important;
+}
+/* Except while a delay holds the match back: one dim line in the panel instead of nothing. */
+.stvtf.overlay #empty.holding {
+  display: grid !important;
+  font-size: 12px;
+  color: #fff;
+  text-shadow:
+    0 1px 2px #000,
+    0 0 6px #000;
+}
+.stvtf.overlay main {
+  display: block;
+  height: 100%;
+}
+/* Only the map covers the stream: no backdrop, corners or edge unless panel= asks for a backdrop
+   (streamers frame it themselves). */
+.stvtf.overlay #stage {
+  position: absolute;
+  inset: 0;
+  background: rgb(11 12 14 / var(--overlay-opacity, 0));
+}
+.stvtf.overlay canvas#c {
+  cursor: default;
+  pointer-events: none;
+}
+.stvtf.overlay #scoreboard {
+  top: 6px;
+  transform: translateX(-50%) scale(0.62);
+  transform-origin: top center;
+}
+@keyframes pulse {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0.55;
+  }
+}
+/* Moving exactly one 24px tile per cycle loops seamlessly. */
+@keyframes stripes {
+  from {
+    background-position: 0 0;
+  }
+  to {
+    background-position: 24px 0;
+  }
+}
+@container (max-width: 800px) {
+  .hud {
+    width: 150px;
+  }
+  .card .nm small,
+  .card .tag {
+    display: none;
+  }
+}
+#feed,
+#chat {
+  overflow-y: auto;
+  flex: 1;
+  min-height: 80px;
+}

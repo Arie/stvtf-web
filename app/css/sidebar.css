@@ -1,0 +1,233 @@
+aside section {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--line);
+}
+#people {
+  max-height: 35%;
+  overflow-y: auto;
+}
+#whoami {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 6px;
+  font-size: 12px;
+}
+/* The heading, and Sign in on its right. */
+#peoplehead {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+#peoplehead h3 {
+  margin: 0;
+}
+#signin {
+  color: var(--dim);
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+#signin:hover {
+  color: var(--text);
+}
+#claim {
+  padding: 1px 6px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+}
+/* The console line to watch the room in TF2, with a copy button. */
+#tf2 {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+#tf2cmd {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  user-select: all;
+  -webkit-user-select: all;
+}
+#tf2copy {
+  flex: none;
+  padding: 3px 5px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--dim);
+  line-height: 0;
+  cursor: pointer;
+}
+#tf2copy:hover {
+  color: var(--text);
+}
+#tf2copy svg {
+  width: 13px;
+  height: 13px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+#tf2copy .check,
+#tf2copy.copied .copy {
+  display: none;
+}
+#tf2copy.copied .check {
+  display: block;
+  color: #7cc47f;
+}
+#tf2open {
+  display: inline-block;
+  margin-top: 4px;
+  color: var(--dim);
+  font-size: 12px;
+}
+#tf2open:hover {
+  color: var(--text);
+}
+#tf2why {
+  margin: 4px 0 0;
+  color: var(--dim);
+  font-size: 12px;
+}
+#peoplelist .signed {
+  color: #7cc47f;
+  font-size: 11px;
+}
+#peoplelist a.nm {
+  color: inherit;
+  text-decoration: none;
+}
+#peoplelist a.nm:hover {
+  text-decoration: underline;
+}
+/* One's own name in the list, edited in place: text until hovered or focused. */
+#myname {
+  flex: 0 1 auto;
+  field-sizing: content;
+  min-width: 6ch;
+  max-width: 60%;
+  /* No border or padding, so its text lines up with the other names; an outline when it is in use. */
+  padding: 0;
+  border: 0;
+  border-radius: 2px;
+  outline: 1px solid transparent;
+  outline-offset: 2px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+}
+#peoplelist .rename {
+  margin-left: -4px;
+  color: var(--dim);
+  font-size: 11px;
+  cursor: pointer;
+}
+#peoplelist .rename:hover {
+  color: var(--text);
+}
+#myname:focus + .rename {
+  display: none;
+}
+#myname:hover {
+  outline-color: var(--line);
+}
+#myname:focus {
+  outline-color: var(--dim);
+}
+#myname::placeholder {
+  color: var(--text);
+}
+#myname:focus::placeholder {
+  color: var(--dim);
+}
+#peoplelist {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+#peoplelist li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 0;
+}
+#peoplelist .nm {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  unicode-bidi: isolate;
+}
+#peoplelist .ink {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+}
+#peoplelist input.ink {
+  padding: 0;
+  border: 1px solid var(--line);
+  background: none;
+  cursor: pointer;
+}
+#peoplelist input.ink::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
+#peoplelist input.ink::-webkit-color-swatch {
+  border: 0;
+  border-radius: 50%;
+}
+#peoplelist input.ink::-moz-color-swatch {
+  border: 0;
+  border-radius: 50%;
+}
+#peoplelist .you {
+  color: var(--dim);
+  font-size: 11px;
+}
+#peoplelist .tag {
+  margin-right: auto;
+  color: var(--dim);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+#peoplelist .tag:not(:empty) {
+  padding: 0 4px;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+}
+#peoplelist button {
+  flex: none;
+  padding: 1px 6px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--dim);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+#peoplelist button:hover {
+  color: var(--text);
+}
+aside h3 {
+  margin: 0 0 6px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--dim);
+}

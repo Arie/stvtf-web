@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { $ } from "../../app/core.js";
-import { mmss, renderBoard } from "../../app/hud.js";
+import { $ } from "../../app/core/core.js";
+import { mmss, renderBoard } from "../../app/panel/hud.js";
 
 test("the scoreboard escapes names and ranks each team by points", () => {
   const player = (id, team, name, points) => ({

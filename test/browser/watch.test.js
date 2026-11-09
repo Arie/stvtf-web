@@ -81,7 +81,7 @@ async function open() {
 const viewState = () =>
   addEventListener("load", async () => {
     const main = [...document.scripts].find(s => s.src.includes("main.js"));
-    if (main) window.viewState = (await import(main.src.replace("main.js", "core.js"))).state;
+    if (main) window.viewState = (await import(main.src.replace("main.js", "core/core.js"))).state;
   });
 const scale = page => page.evaluate(() => window.viewState.view.scale);
 

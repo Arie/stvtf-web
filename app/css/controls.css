@@ -1,0 +1,192 @@
+#follow b {
+  color: #fff;
+}
+#follow button,
+#bgtoggle button {
+  border: 0;
+  font: inherit;
+  cursor: pointer;
+}
+#follow button {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #ffffff1a;
+  color: #fff;
+}
+.stvtf.noside aside {
+  display: none;
+}
+.stvtf.nohud .hud,
+.stvtf.noscore #scoreboard {
+  display: none;
+}
+.stvtf.noside main {
+  grid-template-columns: 1fr;
+  grid-template-rows: 1fr;
+}
+#sidetoggle,
+#helptoggle,
+#settingstoggle,
+#autozoom {
+  position: absolute;
+  right: 12px;
+  z-index: 3;
+  padding: 5px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: #0b0c0ee6;
+  color: #fff;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+#sidetoggle,
+#helptoggle,
+#settingstoggle {
+  top: 12px;
+  font-size: 16px;
+  line-height: 1;
+  padding: 4px 0;
+  width: 24px;
+  text-align: center;
+}
+#settingstoggle {
+  font-size: 18px;
+  padding: 3px 0;
+}
+#helptoggle {
+  right: 46px;
+}
+#help {
+  position: absolute;
+  top: 44px;
+  right: 12px;
+  z-index: 4;
+  padding: 10px 14px;
+  border-radius: 6px;
+  background: #0b0c0ef2;
+  color: var(--text);
+  font-size: 12px;
+}
+#help table {
+  border-collapse: collapse;
+}
+#settingstoggle {
+  right: 80px;
+}
+#settings {
+  position: absolute;
+  top: 44px;
+  right: 12px;
+  z-index: 4;
+  padding: 10px 14px;
+  border-radius: 6px;
+  background: #0b0c0ef2;
+  color: var(--text);
+  font-size: 12px;
+}
+#settings label {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 2px 0;
+  cursor: pointer;
+}
+#settings label.master {
+  padding-bottom: 6px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--line);
+}
+#settings kbd {
+  margin-left: auto;
+  color: var(--dim);
+}
+#help td {
+  padding: 2px 0;
+}
+#help kbd {
+  display: inline-block;
+  min-width: 18px;
+  margin-right: 10px;
+  padding: 1px 5px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  text-align: center;
+  font: inherit;
+  color: #fff;
+}
+#autozoom {
+  bottom: 52px;
+}
+#signout {
+  margin-left: auto;
+  color: var(--dim);
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+#signout:hover {
+  color: var(--text);
+}
+#roomopen.busy {
+  cursor: progress;
+  color: var(--dim);
+}
+#roomopen.busy::before {
+  content: "";
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  margin-right: 6px;
+  vertical-align: -1px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+#copylink,
+#roomopen {
+  margin-left: auto;
+  padding: 2px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+/* An icon: a chain, a check once copied. */
+#copylink {
+  align-self: center;
+  margin-left: 0;
+  padding: 3px 5px;
+  line-height: 0;
+  color: var(--dim);
+}
+#copylink:hover {
+  color: var(--text);
+}
+#copylink svg {
+  width: 13px;
+  height: 13px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+#copylink .check,
+#copylink.copied .chain {
+  display: none;
+}
+#copylink.copied .check {
+  display: block;
+  color: #7cc47f;
+}

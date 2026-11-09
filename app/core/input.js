@@ -1,0 +1,229 @@
+import { $, DELAY, OPT, OVERLAY, PAGE, PLAIN_BG, canvas, optOn, uiScale, applyScale, state } from "./core.js";
+import { env } from "./env.js";
+/** @typedef {import("../../types/stream").Player} Player */
+import { layerOn, setLayer, setOverkill, overkillOn } from "./layers.js";
+import { viewCentre, frameMap, toScreen, screenOffset } from "../map/view.js";
+
+// A resize (or hiding the events) only refits the whole-map framing; auto zoom glides to it.
+const refit = () => {
+  applyScale();
+  if (state.framed) frameMap(true);
+};
+addEventListener("resize", refit);
+// An element on another site changes size without the window.
+if (env.component) new ResizeObserver(refit).observe(env.el);
+/** @type {{ x: number; y: number; cx: number; cy: number; moved: boolean } | null} */
+let drag = null;
+canvas.addEventListener("mousedown", e => {
+  if (!state.locked) drag = { x: e.clientX, y: e.clientY, cx: state.view.cx, cy: state.view.cy, moved: false };
+});
+window.addEventListener("mouseup", e => {
+  if (drag && !drag.moved) followAt(e.clientX, e.clientY);
+  drag = null;
+});
+window.addEventListener("mousemove", e => {
+  if (!drag) return;
+  if (!drag.moved && Math.hypot(e.clientX - drag.x, e.clientY - drag.y) < 4) return;
+  if (!drag.moved) {
+    drag.moved = true;
+    setFollow(null);
+    setAutoZoom(false);
+  }
+  const [dx, dy] = screenOffset(e.clientX - drag.x, e.clientY - drag.y, state.view.scale);
+  state.view.cx = drag.cx - dx;
+  state.view.cy = drag.cy - dy;
+  state.handMoved = performance.now();
+});
+// h: player HUD and scores, s: just the scores, e: events and chat, g: overview or geometry,
+// o: the overlay or back.
+/** @param {string} cls */
+function toggle(cls) {
+  const on = env.el.classList.toggle(cls);
+  try {
+    if (env.storage) localStorage.setItem(cls, on ? "1" : "0");
+  } catch {}
+  dispatchEvent(new Event("resize"));
+}
+/** @param {string} id */
+function toggleExclusive(id) {
+  const other = $(id === "help" ? "settings" : "help");
+  other.hidden = true;
+  $(id).hidden = !$(id).hidden;
+}
+// Hold Tab for the scoreboard, as in TF2.
+/** @param {boolean} on */
+function showBoard(on) {
+  if (OVERLAY || $("board").hidden === !on) return;
+  $("board").hidden = !on;
+  state.lastPanel = 0;
+}
+env.keys.addEventListener("keyup", e => {
+  if (e.key === "Tab") showBoard(false);
+});
+env.keys.addEventListener("blur", () => showBoard(false));
+// What each key does (Tab is held, so it is handled on its own).
+const KEYS = {
+  Escape() {
+    if (!state.locked) setFollow(null);
+    $("help").hidden = true;
+    $("settings").hidden = true;
+  },
+  "?": () => toggleExclusive("help"),
+  k() {
+    if (!OVERLAY) toggleExclusive("settings");
+  },
+  x() {
+    if (!OVERLAY) setOverkill(!overkillOn());
+  },
+  j() {
+    if (!OVERLAY) setLayer("jumps", !layerOn("jumps"));
+  },
+  l() {
+    if (!OVERLAY) setLayer("loadout", !layerOn("loadout"));
+  },
+  h: () => toggle("nohud"),
+  s: () => toggle("noscore"),
+  e: () => setSidebar(env.el.classList.contains("noside")),
+  g() {
+    if (!$("bgtoggle").hidden)
+      /** @type {HTMLButtonElement} */ (env.root.querySelector("#bgtoggle button:not(.on)")).click();
+  },
+  o() {
+    if (!env.component)
+      location.replace(
+        OVERLAY
+          ? PAGE.replace(/overlay\/?$/, "") + DELAY
+          : PAGE.replace(/(index\.html)?$/, "overlay") + (DELAY && "/" + DELAY),
+      );
+  },
+};
+env.keys.addEventListener("keydown", e => {
+  if (
+    e.ctrlKey ||
+    e.metaKey ||
+    e.altKey ||
+    /** @type {Element} */ (e.composedPath()[0]).closest?.("input:not([type=checkbox]), textarea")
+  )
+    return;
+  if (e.key === "Tab") {
+    e.preventDefault();
+    showBoard(true);
+    return;
+  }
+  if (Object.hasOwn(KEYS, e.key)) KEYS[/** @type {keyof typeof KEYS} */ (e.key)]();
+});
+for (const cls of ["nohud", "noscore"]) {
+  try {
+    if (!OVERLAY && env.storage && localStorage.getItem(cls) === "1") env.el.classList.add(cls);
+  } catch {}
+}
+// The address beats the saved choice for this visit, without changing it. The overlay's
+// scoreboard is off unless asked for (renderScoreboard).
+if (!OVERLAY) env.el.classList.toggle("noscore", !optOn("score", !env.el.classList.contains("noscore")));
+
+/** @param {boolean} on */
+export function setAutoZoom(on) {
+  if (OVERLAY || state.autoZoom === on) return;
+  state.autoZoom = on;
+  state.camTarget = null;
+  state.cam = null;
+  $("autozoom").hidden = on;
+}
+
+// Click a dot on the map or a card in the HUD to keep that player centred.
+/** @param {number | null} id */
+export function setFollow(id) {
+  state.follow = id != null && id !== state.follow ? id : null;
+  const p = state.lastPlayers.find(x => x.id === state.follow);
+  $("follow").hidden = !p;
+  if (p) $("follow-name").textContent = p.name;
+  state.lastPanel = 0;
+}
+/** @param {number} cx @param {number} cy */
+function followAt(cx, cy) {
+  const r = canvas.getBoundingClientRect();
+  /** @type {Player | null} */
+  let best = null,
+    bestD = 18 * uiScale();
+  for (const p of state.lastPlayers) {
+    if (!p.alive) continue;
+    const [x, y] = toScreen(p.pos[0], p.pos[1]);
+    const d = Math.hypot(x - (cx - r.left), y - (cy - r.top));
+    if (d < bestD) {
+      best = p;
+      bestD = d;
+    }
+  }
+  if (best) setFollow(best.id);
+}
+for (const id of ["hud-blue", "hud-red"]) {
+  $(id).addEventListener("click", e => {
+    const c = /** @type {HTMLElement} */ (/** @type {Element} */ (e.target).closest(".card"));
+    if (c && !state.locked) setFollow(Number(c.dataset.id));
+  });
+}
+$("follow-stop").addEventListener("click", () => state.locked || setFollow(null));
+$("settingstoggle").addEventListener("click", () => toggleExclusive("settings"));
+$("settings").addEventListener("change", e => {
+  const box = /** @type {HTMLInputElement} */ (e.target),
+    id = box.dataset.layer;
+  if (id === "*") setOverkill(box.checked);
+  else if (id) setLayer(id, box.checked);
+});
+
+$("helptoggle").addEventListener("click", () => toggleExclusive("help"));
+$("autozoom").addEventListener("click", () => state.locked || setAutoZoom(true));
+$("feed").addEventListener("click", e => {
+  const who = /** @type {HTMLElement} */ (/** @type {Element} */ (e.target).closest(".who[data-id]"));
+  const id = Number(who?.dataset.id);
+  if (!OVERLAY && !state.locked && Number.isFinite(id) && id !== state.follow) setFollow(id);
+});
+
+/** @param {boolean} show */
+function setSidebar(show) {
+  env.el.classList.toggle("noside", !show);
+  $("sidetoggle").textContent = show ? "›" : "‹";
+  $("sidetoggle").title = show ? "Hide events and chat (e)" : "Show events and chat (e)";
+  try {
+    if (env.storage) localStorage.setItem("sidebar", show ? "1" : "0");
+  } catch {}
+  dispatchEvent(new Event("resize"));
+}
+$("sidetoggle").addEventListener("click", () => setSidebar(env.el.classList.contains("noside")));
+try {
+  if (!OVERLAY && env.storage && localStorage.getItem("sidebar") === "0") setSidebar(false);
+} catch {}
+// side=0: no events and chat beside the map, for a site that shows its own.
+if (OPT.get("side") === "0") env.el.classList.add("noside");
+for (const b of /** @type {NodeListOf<HTMLButtonElement>} */ (env.root.querySelectorAll("#bgtoggle button"))) {
+  b.addEventListener("click", () => {
+    state.bg = b.dataset.bg ?? state.bg;
+    for (const o of env.root.querySelectorAll("#bgtoggle button")) o.classList.toggle("on", o === b);
+  });
+  if (b.dataset.bg === (PLAIN_BG ? "geometry" : OPT.get("bg"))) b.click();
+}
+canvas.addEventListener(
+  "wheel",
+  e => {
+    e.preventDefault();
+    if (state.locked) return;
+    setAutoZoom(false);
+    const r = canvas.getBoundingClientRect(),
+      v = state.view;
+    const mx = e.clientX - r.left - r.width / 2,
+      my = e.clientY - r.top - r.height / 2;
+    // The world point under the cursor stays under it.
+    const [ax, ay] = screenOffset(mx, my, v.scale),
+      wx = v.cx + ax,
+      wy = v.cy + ay;
+    v.scale *= Math.exp(-e.deltaY * 0.0015);
+    state.handMoved = performance.now();
+    const [bx, by] = screenOffset(mx, my, v.scale);
+    v.cx = wx - bx;
+    v.cy = wy - by;
+    // No further out than the whole map, framed as at the start.
+    const full = state.full;
+    if (full && v.scale <= full.scale) Object.assign(v, { scale: full.scale, ...viewCentre(full, full.scale) });
+  },
+  { passive: false },
+);

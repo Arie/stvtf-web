@@ -5,41 +5,7 @@ use crate::maps::cache::{map_geometry, map_geometry_gzip, overview};
 use crate::{App, is_name, lock};
 use std::net::TcpStream;
 
-/// The page's stylesheet and modules, served at `/app/<version>/`: `main.js` imports the rest.
-pub(super) const APP: [(&str, &str, &[u8]); 32] = [
-    ("style.css", CSS, include_bytes!("../../app/style.css")),
-    ("env.js", JS, include_bytes!("../../app/env.js")),
-    ("core.js", JS, include_bytes!("../../app/core.js")),
-    ("layers.js", JS, include_bytes!("../../app/layers.js")),
-    ("stream.js", JS, include_bytes!("../../app/stream.js")),
-    ("geometry.js", JS, include_bytes!("../../app/geometry.js")),
-    ("view.js", JS, include_bytes!("../../app/view.js")),
-    ("camera.js", JS, include_bytes!("../../app/camera.js")),
-    ("input.js", JS, include_bytes!("../../app/input.js")),
-    ("events.js", JS, include_bytes!("../../app/events.js")),
-    ("feed.js", JS, include_bytes!("../../app/feed.js")),
-    ("payload.js", JS, include_bytes!("../../app/payload.js")),
-    ("points.js", JS, include_bytes!("../../app/points.js")),
-    ("modes.js", JS, include_bytes!("../../app/modes.js")),
-    ("flags.js", JS, include_bytes!("../../app/flags.js")),
-    ("objectives.js", JS, include_bytes!("../../app/objectives.js")),
-    ("buildings.js", JS, include_bytes!("../../app/buildings.js")),
-    ("playbar.js", JS, include_bytes!("../../app/playbar.js")),
-    ("room.js", JS, include_bytes!("../../app/room.js")),
-    ("roomview.js", JS, include_bytes!("../../app/roomview.js")),
-    ("telestrator.js", JS, include_bytes!("../../app/telestrator.js")),
-    ("timeline.js", JS, include_bytes!("../../app/timeline.js")),
-    ("spawns.js", JS, include_bytes!("../../app/spawns.js")),
-    ("overkill.js", JS, include_bytes!("../../app/overkill.js")),
-    ("status.js", JS, include_bytes!("../../app/status.js")),
-    ("players.js", JS, include_bytes!("../../app/players.js")),
-    ("projectiles.js", JS, include_bytes!("../../app/projectiles.js")),
-    ("effects.js", JS, include_bytes!("../../app/effects.js")),
-    ("hud.js", JS, include_bytes!("../../app/hud.js")),
-    ("embed.js", JS, include_bytes!("../../app/embed.js")),
-    ("stv-map.js", JS, include_bytes!("../../app/stv-map.js")),
-    ("main.js", JS, include_bytes!("../../app/main.js")),
-];
+include!(concat!(env!("OUT_DIR"), "/app_files.rs"));
 const ICONS: [(&str, &[u8]); 9] = [
     ("scout", include_bytes!("../../icons/scout.svg")),
     ("soldier", include_bytes!("../../icons/soldier.svg")),

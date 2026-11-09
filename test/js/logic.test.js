@@ -11,12 +11,12 @@ import {
   setTickInterval,
   state,
   statusText,
-} from "../../app/core.js";
-import { command, steamid64 } from "../../app/embed.js";
-import { layerOn } from "../../app/layers.js";
-import { labelCorner } from "../../app/spawns.js";
-import { drawOwn, markerFull, onClear, onDraw, onMarker, pointsOf, trimOwn } from "../../app/telestrator.js";
-import { demostfAlias, sameLayout, screenOffset, teamsTurn, toScreen } from "../../app/view.js";
+} from "../../app/core/core.js";
+import { command, steamid64 } from "../../app/embed/embed.js";
+import { layerOn } from "../../app/core/layers.js";
+import { labelCorner } from "../../app/map/spawns.js";
+import { drawOwn, markerFull, onClear, onDraw, onMarker, pointsOf, trimOwn } from "../../app/room/telestrator.js";
+import { demostfAlias, sameLayout, screenOffset, teamsTurn, toScreen } from "../../app/map/view.js";
 
 test("players sort by class, then name whatever its case, then id", () => {
   const rows = [

@@ -1,0 +1,40 @@
+/* The map picture under the canvas, placed by a transform the compositor applies. */
+#bg {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  background: #101214;
+}
+#bg > * {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform-origin: 0 0;
+  will-change: transform;
+}
+.stvtf.overlay #bg {
+  background: none;
+}
+#banner {
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 6px 16px;
+  border-radius: 4px;
+  background: #000a;
+  font-weight: 600;
+  font-size: 15px;
+  opacity: 0;
+  transition: opacity 0.4s;
+  pointer-events: none;
+}
+aside {
+  width: 380px;
+  border-left: 1px solid var(--line);
+  background: var(--panel);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}

@@ -491,19 +491,23 @@ sets the directory (default `backpack`, `/usr/share/stvtf/backpack` in the Docke
   playable area's bounds, packs, capture areas, and spawn rooms and points with their control
   point), `material` (a floor's kind from its texture name), `displacement` (terrain at its real
   height), `track` (the payload cart's track) and `reach` (the flood fill of the playable area).
-- `index.html` and `app/`: the page, its stylesheet and ES modules (canvas, no build step),
-  embedded in the binary and listed in `src/web/assets.rs`:
-  - `main.js` draws each frame; `stream.js` takes the event stream in; `core.js` holds the
-    shared state, options and tick clock; `env.js` where the page runs (its own, or `<stv-map>`).
-  - `view.js` loads the map and frames it (rotation, the screen transform, the background),
-    `geometry.js` draws the map geometry, and `camera.js` is the auto zoom.
-  - `players.js`, `status.js`, `projectiles.js`, `effects.js`, `buildings.js`, `spawns.js` and
-    `overkill.js` draw what is on the map; `events.js` turns events into effects.
-  - `objectives.js` hands each objective to `points.js` (control points), `payload.js` (the cart),
-    `modes.js` (the other game modes'), and `flags.js` (flags, the ball: what players carry).
-  - `hud.js` (player cards and scoreboard), `feed.js` (events and chat), `input.js` (keys,
-    mouse, follow) and `layers.js` (the overkill settings) are the rest of the page.
-  - `embed.js` and `stv-map.js` talk to a page embedding the map.
+- `app/`: the page, embedded in the binary (canvas and ES modules, no bundler). `build.rs` lists
+  its modules for the server and puts the stylesheet's parts into one file.
+  - `main.js` draws each frame; `stv-map.js` is `<stv-map>` for other sites; `style.css` lists
+    the parts in `css/`, in order; `pages/` holds `index.html` and `landing.html`.
+  - `core/`: `core.js` (the shared state, options and tick clock), `stream.js` (the event stream
+    in), `env.js` (where the page runs: its own, or `<stv-map>`), `input.js` (keys, mouse,
+    follow) and `layers.js` (the overkill settings).
+  - `map/`: `view.js` loads the map and frames it (rotation, the screen transform, the
+    background), `geometry.js` draws its geometry, `camera.js` is the auto zoom; `players.js`,
+    `status.js`, `projectiles.js`, `effects.js`, `buildings.js`, `spawns.js` and `overkill.js`
+    draw what is on it; `events.js` turns events into effects. In `map/objectives/`,
+    `objectives.js` hands each objective to `points.js` (control points), `payload.js` (the cart),
+    `modes.js` (the other game modes') and `flags.js` (flags, the ball: what players carry).
+  - `panel/`: `hud.js` (player cards and scoreboard) and `feed.js` (events and chat).
+  - `room/`: `room.js` (a room's bar, people and drawing), `roomview.js` (how everyone sees the
+    map), `playbar.js` and `timeline.js` (playback and its marks), `telestrator.js` (strokes).
+  - `embed/embed.js` talks to a page embedding the map.
 - `types/`: the stream's lines and the page's state as TypeScript declarations, for `tsc` only.
 - `script/test` runs every check (see Development); `bin/build` and `bin/deploy` build and deploy the image.
 

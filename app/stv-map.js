@@ -3,7 +3,7 @@
 // delay="<seconds>", side="0", and the overlay's options (names, score, panel, rotate, dot, ui,
 // zoom). It fires the same messages as an iframe sends, as events named by their type, and
 // has follow() and setLayer(). The viewer runs once per page, so a page has one map.
-import { configure } from "./env.js";
+import { configure } from "./core/env.js";
 
 const BASE = new URL("../../", import.meta.url);
 // See asset() in env.js.
@@ -80,7 +80,7 @@ const loaded = /** @param {HTMLLinkElement} link */ link =>
   });
 
 class StvMap extends HTMLElement {
-  /** @type {((m: import("./embed.js").EmbedCommand) => void) | null} */
+  /** @type {((m: import("./embed/embed.js").EmbedCommand) => void) | null} */
   #command = null;
 
   async connectedCallback() {
@@ -126,7 +126,7 @@ class StvMap extends HTMLElement {
         search: `?${search}`,
         emit: m => this.dispatchEvent(new CustomEvent(m.type, { detail: m })),
       });
-      this.#command = (await import("./embed.js")).command;
+      this.#command = (await import("./embed/embed.js")).command;
       await import("./main.js");
     } catch (e) {
       if (mounted === this && !this.#command) mounted = null;

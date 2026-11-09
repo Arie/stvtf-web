@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { $ } from "../../app/core.js";
-import { chat, esc, feedEvent, killiconsLoaded } from "../../app/feed.js";
+import { $ } from "../../app/core/core.js";
+import { chat, esc, feedEvent, killiconsLoaded } from "../../app/panel/feed.js";
 
 const HOSTILE = "<img src=x onerror=alert(1)>";
 const PLAYERS = {

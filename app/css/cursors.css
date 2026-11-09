@@ -1,0 +1,16 @@
+/* No hand on what this viewer cannot use: marks without a timeline to jump, the camera and
+   players while an admin's view holds it. */
+.stvtf:not(.seekable) .rb-uber,
+.stvtf:not(.seekable) .rb-drop,
+.stvtf:not(.seekable) .rb-win,
+.stvtf.locked canvas#c,
+.stvtf.locked canvas#c:active,
+.stvtf.locked .card,
+.stvtf.locked #feed .who[data-id] {
+  cursor: default;
+}
+.stvtf.locked .card:hover,
+.stvtf.locked #feed .who[data-id]:hover {
+  filter: none;
+  text-decoration: none;
+}

@@ -1,22 +1,22 @@
-import { drawBuildings } from "./buildings.js";
-import { followAction, mirror } from "./camera.js";
-import { OVERLAY, afterDraw, canvas, ctx, state, renderTick, canvasSize, optOn } from "./core.js";
-import { EMBEDDED, embedState } from "./embed.js";
-import { fireEvents } from "./events.js";
-import { updatePanel, renderScoreboard, shownScore } from "./hud.js";
-import { layerOn, renderSettings } from "./layers.js";
-import { drawObjectives } from "./objectives.js";
-import { drawCapAreas } from "./points.js";
-import { drawFlags } from "./flags.js";
-import { drawMarks, drawPacks, drawJumpTrails } from "./overkill.js";
-import { drawHealBeams, drawPlayers } from "./players.js";
-import { drawProjectiles } from "./projectiles.js";
-import { drawEffects } from "./effects.js";
-import { initRoom } from "./room.js";
-import { drawSpawnRooms } from "./spawns.js";
-import { openStream } from "./stream.js";
-import { drawStrokes } from "./telestrator.js";
-import { frameMap, drawBackground, viewArea } from "./view.js";
+import { drawBuildings } from "./map/buildings.js";
+import { followAction, mirror } from "./map/camera.js";
+import { OVERLAY, afterDraw, canvas, ctx, state, renderTick, canvasSize, optOn } from "./core/core.js";
+import { EMBEDDED, embedState } from "./embed/embed.js";
+import { fireEvents } from "./map/events.js";
+import { updatePanel, renderScoreboard, shownScore } from "./panel/hud.js";
+import { layerOn, renderSettings } from "./core/layers.js";
+import { drawObjectives } from "./map/objectives/objectives.js";
+import { drawCapAreas } from "./map/objectives/points.js";
+import { drawFlags } from "./map/objectives/flags.js";
+import { drawMarks, drawPacks, drawJumpTrails } from "./map/overkill.js";
+import { drawHealBeams, drawPlayers } from "./map/players.js";
+import { drawProjectiles } from "./map/projectiles.js";
+import { drawEffects } from "./map/effects.js";
+import { initRoom } from "./room/room.js";
+import { drawSpawnRooms } from "./map/spawns.js";
+import { openStream } from "./core/stream.js";
+import { drawStrokes } from "./room/telestrator.js";
+import { frameMap, drawBackground, viewArea } from "./map/view.js";
 
 const SHOW_BUILDINGS = optOn("buildings", !OVERLAY),
   SHOW_PROJECTILES = optOn("projectiles", !OVERLAY),

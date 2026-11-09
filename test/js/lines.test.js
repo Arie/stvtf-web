@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
-import { $, state } from "../../app/core.js";
-import { CHAT_TYPES, chat, feedEvent } from "../../app/feed.js";
+import { $, state } from "../../app/core/core.js";
+import { CHAT_TYPES, chat, feedEvent } from "../../app/panel/feed.js";
 
 // The lines Rust checks against stvtf (`the_sample_lines_are_what_stvtf_sends`), so a field the page
 // reads that stvtf does not send shows up as a hole in the row.

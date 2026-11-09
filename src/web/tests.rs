@@ -442,6 +442,26 @@ fn endless_header_is_cut_off() {
     assert_eq!(response, "");
 }
 
+/// The modules `name` imports (`from "…"` and `import("…")`), as paths under `app/`.
+fn imports(name: &str, text: &str) -> Vec<String> {
+    let dir: Vec<&str> = name.split('/').rev().skip(1).collect::<Vec<_>>().into_iter().rev().collect();
+    let specs = text.split("from \"").chain(text.split("import(\"")).skip(1).filter_map(|r| r.split('"').next());
+    specs
+        .filter(|s| s.starts_with('.') && std::path::Path::new(s).extension().is_some_and(|e| e == "js"))
+        .map(|spec| {
+            let mut path = dir.clone();
+            for part in spec.split('/') {
+                match part {
+                    "." => {}
+                    ".." => drop(path.pop()),
+                    p => path.push(p),
+                }
+            }
+            path.join("/")
+        })
+        .collect()
+}
+
 #[test]
 fn serves_the_page_and_its_modules_under_the_version() {
     let a = app(Matches::One(SharedHub::default()));
@@ -449,21 +469,21 @@ fn serves_the_page_and_its_modules_under_the_version() {
     let page = get("/");
     let v = app_version();
     assert!(page.contains(&format!("\"app/{v}/style.css\"")) && page.contains(&format!("\"app/{v}/main.js\"")), "{page}");
-    let mut imported = String::new();
+    let mut imported = std::collections::HashSet::new();
     for (name, ctype, _) in APP {
         let file = get(&format!("/app/{v}/{name}"));
         assert!(file.starts_with("HTTP/1.1 200 OK") && file.contains("max-age=86400"), "{name}");
         assert!(file.contains(&format!("Content-Type: {ctype}")), "{name}");
-        imported += &file;
+        imported.extend(imports(name, &file));
     }
     for (name, ctype, _) in APP {
         // The page's entry, and the one /embed/v1/stv-map.js loads for other sites.
         let entry = name == "main.js" || name == "stv-map.js";
-        assert!(ctype != JS || entry || imported.contains(&format!("from \"./{name}\"")), "nothing imports {name}");
+        assert!(ctype != JS || entry || imported.contains(name), "nothing imports {name}");
     }
     // And everything imported is served: a module missing from APP would 404 in the browser.
-    for import in imported.split("from \"./").skip(1).map(|r| r.split('"').next().unwrap()) {
-        assert!(APP.iter().any(|(name, ..)| *name == import), "{import} is imported but not in APP");
+    for import in &imported {
+        assert!(APP.iter().any(|(name, ..)| name == import), "{import} is imported but not in APP");
     }
     // The stylesheet's own links are relative to where it is served.
     let css = std::str::from_utf8(APP[0].2).unwrap();

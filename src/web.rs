@@ -25,8 +25,8 @@ use matches::{is_page, list_matches, serve_match, start, start_view};
 use rooms::serve_room;
 use visitor::{cookie_attributes, local_path, origin, url_encode};
 
-const INDEX: &str = include_str!("../index.html");
-const LANDING: &str = include_str!("../landing.html");
+const INDEX: &str = include_str!("../app/pages/index.html");
+const LANDING: &str = include_str!("../app/pages/landing.html");
 const HTML: &str = "text/html; charset=utf-8";
 const CSS: &str = "text/css; charset=utf-8";
 const JS: &str = "text/javascript; charset=utf-8";

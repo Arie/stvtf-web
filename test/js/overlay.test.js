@@ -6,8 +6,8 @@ globalThis.location = {
   pathname: "/w/abc/overlay/4.5",
   search: "?names=0&score=1&health=2&zoom=map&bg=flat&delay=x&dot=14",
 };
-const { DELAY, DELAY_MS, OVERLAY, PAGE, PLAIN_BG, optOn, overlayUnit, state } = await import("../../app/core.js");
-const { layerOn } = await import("../../app/layers.js");
+const { DELAY, DELAY_MS, OVERLAY, PAGE, PLAIN_BG, optOn, overlayUnit, state } = await import("../../app/core/core.js");
+const { layerOn } = await import("../../app/core/layers.js");
 
 test("a delay after the last / holds the match back, and is not part of the page", () => {
   assert.equal(DELAY, "4.5");

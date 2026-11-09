@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { clock, moment } from "../../app/playbar.js";
+import { clock, moment } from "../../app/room/playbar.js";
 
 test("a moment reads back what the clock writes", () => {
   for (const ms of [0, 754_000, 3_723_000]) assert.equal(moment(clock(ms)), ms);

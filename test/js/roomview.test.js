@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { HAND_MS, RoomView, atTick, latestView, morePoints, sender } from "../../app/roomview.js";
+import { HAND_MS, RoomView, atTick, latestView, morePoints, sender } from "../../app/room/roomview.js";
 
-/** @typedef {import("../../app/roomview.js").Seen} Seen */
+/** @typedef {import("../../app/room/roomview.js").Seen} Seen */
 
 const camera = () => ({ mode: "admin", cx: 1, cy: 2, w: 300, h: 200, rot: 0 });
 /** A page's camera: following nobody, not moved by hand, at `now`. @returns {Seen} */
@@ -134,7 +134,7 @@ test("a viewer made admin is unlocked, and locked again when no longer", () => {
 test("views waiting to be sent: the latest choice, and after it only the latest move", () => {
   const move = (/** @type {number} */ cx) => ({ view: { ...camera(), cx }, take: false });
   const choice = (/** @type {string} */ mode) => ({ view: { mode }, take: true });
-  /** @type {import("../../app/roomview.js").Send[]} */
+  /** @type {import("../../app/room/roomview.js").Send[]} */
   let q = [];
   for (const s of [move(1), move(2), choice("auto"), move(3), move(4)]) q = latestView(q, s);
   assert.deepEqual(q, [choice("auto"), move(4)]);
@@ -142,7 +142,7 @@ test("views waiting to be sent: the latest choice, and after it only the latest 
 });
 
 test("points waiting join their stroke, up to a request's worth", () => {
-  /** @type {import("../../app/roomview.js").Strokes[]} */
+  /** @type {import("../../app/room/roomview.js").Strokes[]} */
   let q = [];
   q = morePoints(q, { stroke: 1, points: [[0, 0, 0]] });
   q = morePoints(q, { stroke: 1, points: [[1, 1, 16]] });
