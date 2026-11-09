@@ -17,7 +17,6 @@ mod beams;
 mod drawing;
 mod play;
 mod relay;
-mod tube;
 mod view;
 
 pub(crate) const SPEEDS: [f64; 5] = [0.25, 0.5, 1.0, 2.0, 4.0];

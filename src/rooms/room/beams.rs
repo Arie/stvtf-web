@@ -5,17 +5,28 @@
 
 use super::Room;
 use super::drawing::Draw;
-use super::tube::{heads, tube};
 use crate::lock;
 use crate::maps::drape::{self, Drape, Ground, Piece};
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
+use stvtf::relay::Beam;
 
 /// The pages' inks for those who picked none (`app/room/telestrator.js`).
 const INKS: [[u8; 3]; 6] =
     [[0xff, 0xd2, 0x3f], [0x4f, 0xd1, 0xc5], [0xf4, 0x72, 0xb6], [0xa3, 0xe6, 0x35], [0xfb, 0x92, 0x3c], [0xc0, 0x84, 0xfc]];
 /// How long the pen's lines show: as long as pages hold and fade a stroke.
 const PEN_LIFE: f32 = 4.0;
+/// How wide the lines are, in units.
+const WIDTH: f32 = 5.0;
+/// Each line is a fence: the line on the floor, another this much above it, and posts between them
+/// at every corner and at least this often.
+const FENCE: f64 = 40.0;
+const POST_EVERY: f64 = 64.0;
+/// How fast the lines' texture runs toward the stroke's end, showing which way it goes.
+const SCROLL: u8 = 20;
+/// The arrowhead at a finished stroke's end: its wings' length and angle off the line.
+const HEAD: f64 = 96.0;
+const HEAD_ANGLE: f64 = 30.0;
 /// The most strokes followed at once: more, and the oldest are forgotten.
 const MAX_DRAPES: usize = 64;
 
@@ -44,7 +55,7 @@ impl Room {
             if let Some(&[x, y, _]) = d.points.last() {
                 s.ends = ends(&pieces, [x, y]);
             }
-            let mut beams = tube(&pieces, ink, PEN_LIFE);
+            let mut beams = beams(&pieces, ink, PEN_LIFE);
             if d.end {
                 beams.extend(heads(&s.ends, ink, PEN_LIFE));
             }
@@ -68,7 +79,7 @@ impl Room {
             let (by, ink, points, open) = (k.by, k.ink, k.points, k.open);
             let ink = ink.as_deref().and_then(rgb).unwrap_or_else(|| self.ink_now(by));
             let pieces = Drape::new().push(&ground, &points);
-            all.extend(tube(&pieces, ink, 0.0));
+            all.extend(beams(&pieces, ink, 0.0));
             if let Some(&[x, y, _]) = points.last().filter(|_| !open) {
                 all.extend(heads(&ends(&pieces, [x, y]), ink, 0.0));
             }
@@ -107,9 +118,61 @@ impl Room {
     }
 }
 
+/// A beam of `ink` from `from` to `to`, shown for `life` seconds, its texture running at `speed`.
+fn beam(from: [f64; 3], to: [f64; 3], ink: [u8; 3], life: f32, speed: u8) -> Beam {
+    Beam { from: from.map(|v| v as f32), to: to.map(|v| v as f32), rgb: ink, life, width: WIDTH, speed }
+}
+
 /// The pieces of `pieces` ending where the stroke does, at (x, y): one per floor it ends on.
 fn ends(pieces: &[Piece], [x, y]: [f64; 2]) -> Vec<Piece> {
     pieces.iter().filter(|p| (p.to[0] - x).hypot(p.to[1] - y) < 1.0).copied().collect()
+}
+
+/// An arrowhead on the end of each of `ends`, as a fence: wings on the floor and above, and posts
+/// at their tips.
+fn heads(ends: &[Piece], ink: [u8; 3], life: f32) -> Vec<Beam> {
+    let mut out = Vec::new();
+    for p in ends {
+        let (dx, dy) = (p.to[0] - p.from[0], p.to[1] - p.from[1]);
+        let len = dx.hypot(dy);
+        if len < 1.0 {
+            continue;
+        }
+        let (back_x, back_y) = (-dx / len, -dy / len);
+        for side in [-1.0, 1.0] {
+            let (s, c) = (side * HEAD_ANGLE).to_radians().sin_cos();
+            let tip = [p.to[0] + (back_x * c - back_y * s) * HEAD, p.to[1] + (back_x * s + back_y * c) * HEAD, p.to[2]];
+            let up = |q: [f64; 3]| [q[0], q[1], q[2] + FENCE];
+            out.push(beam(tip, p.to, ink, life, 0));
+            out.push(beam(up(tip), up(p.to), ink, life, 0));
+            out.push(beam(tip, up(tip), ink, life, 0));
+        }
+    }
+    out
+}
+
+/// `pieces` as a fence of beams of `ink` (see [`FENCE`]), shown for `life` seconds: its lines'
+/// texture running toward the stroke's end, its posts still.
+fn beams(pieces: &[Piece], ink: [u8; 3], life: f32) -> Vec<Beam> {
+    let beam = |from: [f64; 3], to: [f64; 3], speed: u8| beam(from, to, ink, life, speed);
+    let up = |p: [f64; 3]| [p[0], p[1], p[2] + FENCE];
+    let mut out = Vec::new();
+    let mut posts: Vec<[f64; 3]> = Vec::new();
+    for p in pieces {
+        out.push(beam(p.from, p.to, SCROLL));
+        out.push(beam(up(p.from), up(p.to), SCROLL));
+        let length = (0..3).map(|k| (p.to[k] - p.from[k]).powi(2)).sum::<f64>().sqrt();
+        let n = (length / POST_EVERY).ceil().max(1.0) as usize;
+        for i in 0..=n {
+            let t = i as f64 / n as f64;
+            let at = [0, 1, 2].map(|k| p.from[k] + (p.to[k] - p.from[k]) * t);
+            if !posts.contains(&at) {
+                posts.push(at);
+            }
+        }
+    }
+    out.extend(posts.into_iter().map(|p| beam(p, up(p), 0)));
+    out
 }
 
 /// `#rrggbb` as its bytes.
@@ -124,11 +187,31 @@ mod tests {
     use super::*;
 
     #[test]
-    fn a_stroke_ends_on_each_floor_it_ends_on() {
+    #[allow(clippy::float_cmp)] // whole numbers, exact
+    fn a_line_is_a_fence_with_posts_at_corners_and_along() {
+        let piece = |from, to| Piece { from, to, ms: 0.0 };
+        let got = beams(&[piece([0.0, 0.0, 8.0], [100.0, 0.0, 8.0]), piece([100.0, 0.0, 8.0], [100.0, 50.0, 8.0])], [1, 2, 3], 4.0);
+        let (rails, posts): (Vec<&Beam>, Vec<&Beam>) = got.iter().partition(|b| b.from[2] == b.to[2]);
+        assert_eq!(rails.len(), 4, "the line and the one above it, per piece");
+        assert!(rails.iter().any(|b| b.from == [0.0, 0.0, 48.0] && b.to == [100.0, 0.0, 48.0]));
+        let feet: Vec<[f32; 3]> = posts.iter().map(|b| b.from).collect();
+        assert_eq!(feet, [[0.0, 0.0, 8.0], [50.0, 0.0, 8.0], [100.0, 0.0, 8.0], [100.0, 50.0, 8.0]], "ends shared once, one between");
+        assert!(posts.iter().all(|b| b.to[2] - b.from[2] == 40.0));
+    }
+
+    #[test]
+    #[allow(clippy::float_cmp)] // whole numbers and tenths rounded, exact
+    fn a_stroke_ends_in_an_arrowhead_pointing_its_way() {
         let piece = |from, to| Piece { from, to, ms: 0.0 };
         let pieces = [piece([0.0, 0.0, 8.0], [100.0, 0.0, 8.0]), piece([0.0, 0.0, 200.0], [100.0, 0.0, 200.0])];
-        assert_eq!(ends(&pieces, [100.0, 0.0]).len(), 2);
-        assert_eq!(ends(&pieces, [50.0, 0.0]), []);
+        let ends = ends(&pieces, [100.0, 0.0]);
+        assert_eq!(ends.len(), 2, "on both floors it ends on");
+        let head = heads(&ends[..1], [1, 2, 3], 4.0);
+        assert_eq!(head.len(), 6, "two wings, each on the floor, above and a post");
+        let tips: Vec<[f32; 3]> =
+            head.iter().filter(|b| b.to == [100.0, 0.0, 8.0]).map(|b| b.from.map(|v| (v * 10.0).round() / 10.0)).collect();
+        assert_eq!(tips, [[16.9, 48.0, 8.0], [16.9, -48.0, 8.0]], "back along the line, 30° off it");
+        assert!(beams(&pieces[..1], [1, 2, 3], 4.0).iter().filter(|b| b.speed > 0).all(|b| b.to[0] > b.from[0]), "running its way");
     }
 
     #[test]
