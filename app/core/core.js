@@ -278,3 +278,10 @@ export function objPos(o, tick) {
   const t = (tick - s[i - 1].tick) / (s[i].tick - s[i - 1].tick);
   return [a.pos[0] + (b.pos[0] - a.pos[0]) * t, a.pos[1] + (b.pos[1] - a.pos[1]) * t];
 }
+
+// A timer's seconds left as TF2's HUD shows them, m:ss.
+/** @param {number} secs */
+export function clock(secs) {
+  const s = Math.max(0, Math.ceil(secs));
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+}

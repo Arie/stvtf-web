@@ -1,4 +1,4 @@
-import { msPerTick, TEAM, CLASS, byClass, ICONS, $, OVERLAY, OPT, state, teamColour } from "../core/core.js";
+import { msPerTick, TEAM, CLASS, byClass, ICONS, $, OVERLAY, OPT, state, teamColour, clock } from "../core/core.js";
 import { asset } from "../core/env.js";
 import { layerOn } from "../core/layers.js";
 import { esc } from "./feed.js";
@@ -289,11 +289,6 @@ const ROUND_LABEL = {
   restart: "",
   running: "",
 };
-/** @param {number} secs */
-function clock(secs) {
-  const s = Math.max(0, Math.ceil(secs));
-  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
-}
 /** @param {number} secs */
 export function mmss(secs) {
   return `${Math.floor(secs / 60)}:${String(Math.floor(secs % 60)).padStart(2, "0")}`;
