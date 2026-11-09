@@ -4,9 +4,10 @@
 //! be taken back, so a cleared marker goes within the relay's refresh.
 
 use super::Room;
-use super::drawing::Draw;
+use super::drawing::{Draw, Kept};
 use crate::lock;
 use crate::maps::drape::{self, Drape, Ground, Piece};
+use anyhow::{Result, bail};
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use stvtf::relay::Beam;
@@ -44,9 +45,10 @@ pub(super) struct PenStroke {
 }
 
 impl Room {
-    /// Shows a piece of a pen stroke by person `by` to the TF2 clients in its relay.
-    pub(super) fn draw_in_relay(&self, d: &Draw, by: u32) {
-        let Some(ground) = self.ground_for_relay() else { return };
+    /// Shows a piece of a pen stroke by person `by` to the TF2 clients in its relay; refused once
+    /// the stroke is more than TF2 shows (its end aside), so pages stop it there too.
+    pub(super) fn draw_in_relay(&self, d: &Draw, by: u32) -> Result<()> {
+        let Some(ground) = self.ground_for_relay() else { return Ok(()) };
         let ink = self.ink_now(by);
         let beams = {
             let mut drapes = lock(&self.drapes);
@@ -56,7 +58,7 @@ impl Room {
                 }
                 drapes.push(PenStroke { key: (by, d.stroke), drape: Drape::new(), ends: Vec::new(), shown: 0 });
             }
-            let Some(s) = drapes.iter_mut().find(|s| s.key == (by, d.stroke)) else { return };
+            let Some(s) = drapes.iter_mut().find(|s| s.key == (by, d.stroke)) else { return Ok(()) };
             let pieces = s.drape.push(&ground, &d.points);
             if let Some(&[x, y, _]) = d.points.last() {
                 s.ends = ends(&pieces, [x, y]);
@@ -65,7 +67,9 @@ impl Room {
             if d.end {
                 beams.extend(heads(&s.ends, ink, PEN_LIFE));
             }
-            beams.truncate(MAX_PEN_BEAMS.saturating_sub(s.shown));
+            if s.shown + beams.len() > MAX_PEN_BEAMS && !d.end {
+                bail!("TF2 cannot show a longer stroke: lift the pen.");
+            }
             s.shown += beams.len();
             beams
         };
@@ -74,6 +78,26 @@ impl Room {
         {
             r.draw(&beams);
         }
+        Ok(())
+    }
+
+    /// Whether TF2 can show all of `marker`: always, with nobody in it.
+    pub(super) fn marker_fits(&self, marker: &[Kept]) -> bool {
+        self.ground_for_relay().is_none_or(|ground| self.marker_beams(&ground, marker).len() <= MAX_MARKER_BEAMS)
+    }
+
+    /// `marker` as beams, each stroke in the ink it was drawn in, a finished one with its arrowhead.
+    fn marker_beams(&self, ground: &Ground, marker: &[Kept]) -> Vec<Beam> {
+        let mut all = Vec::new();
+        for k in marker {
+            let ink = k.ink.as_deref().and_then(rgb).unwrap_or_else(|| self.ink_now(k.by));
+            let pieces = Drape::new().push(ground, &k.points);
+            all.extend(beams(&pieces, ink, 0.0));
+            if let Some(&[x, y, _]) = k.points.last().filter(|_| !k.open) {
+                all.extend(heads(&ends(&pieces, [x, y]), ink, 0.0));
+            }
+        }
+        all
     }
 
     /// Hands the relay the marker as it is now, each stroke in the ink it was drawn in, once
@@ -82,17 +106,8 @@ impl Room {
         self.marker_dirty.store(true, Ordering::Relaxed);
         let Some(ground) = self.ground_for_relay() else { return };
         let strokes = lock(&self.marker).clone();
-        let mut all = Vec::new();
-        for k in strokes {
-            let (by, ink, points, open) = (k.by, k.ink, k.points, k.open);
-            let ink = ink.as_deref().and_then(rgb).unwrap_or_else(|| self.ink_now(by));
-            let pieces = Drape::new().push(&ground, &points);
-            all.extend(beams(&pieces, ink, 0.0));
-            if let Some(&[x, y, _]) = points.last().filter(|_| !open) {
-                all.extend(heads(&ends(&pieces, [x, y]), ink, 0.0));
-            }
-        }
-        // The first drawn are kept: what is drawn after the most shows on the pages only.
+        let mut all = self.marker_beams(&ground, &strokes);
+        // A marker from before TF2 clients came in can be more than they are shown.
         all.truncate(MAX_MARKER_BEAMS);
         if let Some(r) = &*lock(&self.relay) {
             r.keep(all);

@@ -65,14 +65,15 @@ impl Room {
         line["by"] = by.into();
         let line: Arc<str> = line.to_string().into();
         if !d.keep {
+            self.draw_in_relay(d, by)?;
             send(&self.hub, &line);
-            self.draw_in_relay(d, by);
             return Ok(());
         }
         let mut marker = lock(&self.marker);
         if marker.iter().map(|k| k.points.len()).sum::<usize>() + d.points.len() > MAX_KEPT_POINTS {
             bail!("The map is full of marker ({MAX_KEPT_POINTS} points): clear it first.");
         }
+        let before = marker.clone();
         if let Some(k) = marker.iter_mut().find(|k| k.stroke == d.stroke && k.by == by) {
             k.points.extend(&d.points);
             k.open = !d.end;
@@ -80,6 +81,10 @@ impl Room {
             let [r, g, b] = self.ink_now(by);
             let ink = Some(format!("#{r:02x}{g:02x}{b:02x}"));
             marker.push(Kept { stroke: d.stroke, by, points: d.points.clone(), ink, open: !d.end });
+        }
+        if !self.marker_fits(&marker) {
+            *marker = before;
+            bail!("TF2 cannot show more marker: clear it first.");
         }
         send_keeping(&self.hub, &line, "marker", kept_line(&marker));
         drop(marker);

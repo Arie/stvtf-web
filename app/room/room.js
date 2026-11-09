@@ -214,7 +214,7 @@ function drawing(pen, marker) {
       other.classList.remove("on");
       env.el.classList.toggle("drawing", tool.classList.toggle("on"));
     };
-  // Points the room took of each marker stroke, and strokes it refused (the map full).
+  // Points the room took of each stroke, and strokes it refused (the map full, or more than TF2 shows).
   /** @type {Map<number, number>} */
   const taken = new Map();
   /** @type {Set<number>} */
@@ -222,7 +222,6 @@ function drawing(pen, marker) {
   const send = sender(async (/** @type {import("./roomview.js").Strokes} */ s) => {
     if (refused.has(s.stroke)) return;
     const r = await post("draw", s);
-    if (!s.keep) return;
     if (r.ok) return taken.set(s.stroke, (taken.get(s.stroke) ?? 0) + s.points.length);
     refused.add(s.stroke);
     trimOwn(s.stroke, taken.get(s.stroke) ?? 0);
