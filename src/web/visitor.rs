@@ -4,6 +4,9 @@ use super::{Request, form_decode, token, unix_now};
 use crate::App;
 use crate::matches::sessions;
 
+/// How long a guest cookie lasts: who one is in rooms, kept across visits.
+const GUEST_FOR: std::time::Duration = std::time::Duration::from_hours(365 * 24);
+
 /// A cookie's attributes, lasting `seconds`: only for us, never to scripts, and over HTTPS when
 /// a site is in front.
 pub(super) fn cookie_attributes(app: &App, seconds: u64) -> String {
@@ -28,7 +31,7 @@ pub(super) fn who(app: &App, request: &Request) -> Who {
         return Who { key: g.clone(), cookie: None, user: None };
     }
     let g = sessions::random_id();
-    let cookie = format!("stvtf_guest={g}; {}", cookie_attributes(app, 365 * 24 * 3600));
+    let cookie = format!("stvtf_guest={g}; {}", cookie_attributes(app, GUEST_FOR.as_secs()));
     Who { key: g, cookie: Some(cookie), user: None }
 }
 

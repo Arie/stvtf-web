@@ -16,6 +16,8 @@ use stvtf::relay::{Playback, Relay, RelayConfig, Want};
 
 /// TF2 clients a room takes at once.
 const SLOTS: usize = 24;
+/// The longest password a relay is started again with.
+const MAX_PASSWORD: usize = 32;
 
 /// A relay's port and password: started again on them, TF2's `retry` gets back in.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -33,7 +35,7 @@ impl Was {
 
     /// Safe in a console line.
     fn password_ok(&self) -> bool {
-        (1..=32).contains(&self.password.len()) && self.password.bytes().all(|b| b.is_ascii_alphanumeric())
+        (1..=MAX_PASSWORD).contains(&self.password.len()) && self.password.bytes().all(|b| b.is_ascii_alphanumeric())
     }
 }
 

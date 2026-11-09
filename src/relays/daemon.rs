@@ -34,6 +34,8 @@ use stvtf::relay::Want;
 
 /// A relay not asked about for this long is stopped: longer than any deploy takes.
 pub(crate) const LEASE: Duration = Duration::from_mins(2);
+/// How often relays whose lease ran out are stopped.
+const REAP_EVERY: Duration = Duration::from_secs(1);
 /// How long stv.tf waits for an answer.
 const ANSWER: Duration = Duration::from_millis(500);
 /// How often stv.tf asks how a relay is.
@@ -120,7 +122,7 @@ pub(crate) fn serve(socket: &Path, relays: &Arc<Relays>, lease: Duration) -> Res
     let reaped = rooms.clone();
     std::thread::spawn(move || {
         loop {
-            std::thread::sleep(Duration::from_secs(1));
+            std::thread::sleep(REAP_EVERY);
             lock(&reaped).retain(|room, l| {
                 let keep = l.seen.elapsed() < lease && !l.relay.stopped();
                 if !keep {
