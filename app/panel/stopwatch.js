@@ -16,7 +16,8 @@ export function stopwatchParts(sw, since) {
   if (sw.state === "unset") return { label: "CAPTURE TIME NOT YET SET", time: "", points: "" };
   if (sw.state === "overtime") return { label: `ATTACKERS NEED ${points(sw.points)} TO WIN`, time: "", points: "" };
   const defenders = sw.attackers === "red" ? "blue" : "red";
-  const time = clock(sw.paused ? sw.time : sw.time - since);
+  // Not twice: once it is the round timer, the time shows there.
+  const time = sw.in_hud ? "" : clock(sw.paused ? sw.time : sw.time - since);
   return { label: sw.setting ? "" : `${NAME[defenders]}'S TIME`, time, points: points(sw.points) };
 }
 

@@ -39,6 +39,12 @@ test("the stopwatch reads like TF2's panel to a spectator", () => {
   assert.deepEqual(stopwatchParts(set, 5), { label: "", time: "1:33", points: "1 POINT" }, "stands still while set");
   const beat = { ...set, setting: false, paused: false, time: 100, points: 3 };
   assert.deepEqual(stopwatchParts(beat, 10.5), { label: "RED'S TIME", time: "1:30", points: "3 POINTS" });
+  const shown = { ...beat, in_hud: true };
+  assert.deepEqual(
+    stopwatchParts(shown, 10.5),
+    { label: "RED'S TIME", time: "", points: "3 POINTS" },
+    "the round timer shows it",
+  );
   const over = { ...beat, state: "overtime", time: 0, paused: true, points: 2 };
   assert.equal(stopwatchParts(over, 0).label, "ATTACKERS NEED 2 POINTS TO WIN");
 });

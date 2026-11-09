@@ -114,6 +114,8 @@ export type Stopwatch = {
   time: number;
   paused: boolean;
   points: number;
+  /** Its timer is the round timer the HUD shows: the time is there already. */
+  in_hud?: boolean;
 };
 
 export type Snapshot = {
