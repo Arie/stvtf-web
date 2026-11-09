@@ -111,3 +111,23 @@ fn on_process_every_piece_is_just_above_a_floor() {
         }
     }
 }
+
+/// Geometry JSON with these floors, the bounds' top `hi` high.
+fn json(floors: &[Floor], hi: f64) -> Vec<u8> {
+    let fl: Vec<serde_json::Value> = floors.iter().map(|f| serde_json::json!({ "z": f.z, "p": f.p })).collect();
+    serde_json::to_vec(&serde_json::json!({ "floors": fl, "bounds": [[0.0, 0.0, -100.0], [1000.0, 1000.0, hi]] })).unwrap()
+}
+
+#[test]
+fn the_top_floor_is_the_highest_under_the_roof() {
+    let floors = [0.0, 128.0, 4000.0].map(|z| floor(0.0, 0.0, 256.0, 256.0, z, None));
+    // The roof cut is 2000 - 1536 + 400 = 864: the floor at 4000 is a roof the overview leaves out.
+    let ground = Ground::from_json(&json(&floors, 2000.0)).unwrap();
+    assert_eq!(ground.top(100.0, 100.0), Some(128.0));
+}
+
+#[test]
+fn no_floor_no_top() {
+    let ground = Ground::from_json(&json(&[floor(0.0, 0.0, 256.0, 256.0, 0.0, None)], 2000.0)).unwrap();
+    assert_eq!(ground.top(5000.0, 5000.0), None);
+}

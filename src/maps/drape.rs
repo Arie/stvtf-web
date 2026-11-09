@@ -69,7 +69,14 @@ struct Geometry {
     /// The tops of solid static props.
     #[serde(default)]
     props: Vec<Floor>,
+    /// The playable area's lowest and highest corner.
+    #[serde(default)]
+    bounds: Option<[[f64; 3]; 2]>,
 }
+
+/// The overview leaves out floors above `bounds`' top less this plus that (`app/map/geometry.js`).
+const GEOMETRY_PAD: f64 = 1536.0;
+const ROOF_ABOVE: f64 = 400.0;
 
 /// One floor: its outline, its box, and its height as a plane.
 struct Face {
@@ -113,6 +120,9 @@ pub(crate) struct Ground {
     h: usize,
     /// The faces whose box touches each cell, row by row.
     cells: Vec<Vec<u32>>,
+    /// Floors above this are roofs the overview leaves out.
+    #[allow(dead_code)] // read by `top`, for the rooms' jump arcs
+    roof: f64,
 }
 
 /// The most cells the grid has: a crafted map's huge floors get bigger cells' worth of faces.
@@ -125,7 +135,8 @@ impl Ground {
     /// The floors of the map geometry JSON served on `/map/NAME`.
     pub(crate) fn from_json(json: &[u8]) -> Result<Self> {
         let g: Geometry = serde_json::from_slice(json)?;
-        Ok(Self::new(g.floors.into_iter().chain(g.props).collect()))
+        let roof = g.bounds.map_or(f64::INFINITY, |[_, hi]| hi[2] - GEOMETRY_PAD + ROOF_ABOVE);
+        Ok(Ground { roof, ..Self::new(g.floors.into_iter().chain(g.props).collect()) })
     }
 
     fn new(floors: Vec<Floor>) -> Self {
@@ -133,13 +144,13 @@ impl Ground {
         let lo = |k: usize| faces.iter().map(|f| f.min[k]).fold(f64::INFINITY, f64::min);
         let hi = |k: usize| faces.iter().map(|f| f.max[k]).fold(f64::NEG_INFINITY, f64::max);
         if faces.is_empty() {
-            return Ground { faces, origin: [0.0, 0.0], w: 0, h: 0, cells: Vec::new() };
+            return Ground { faces, origin: [0.0, 0.0], w: 0, h: 0, cells: Vec::new(), roof: f64::INFINITY };
         }
         let origin = [lo(0), lo(1)];
         let along = |k: usize| (((hi(k) - origin[k]) / CELL).floor() as usize + 1).min(MAX_CELLS);
         let (w, h) = (along(0), along(1).min(MAX_CELLS / along(0)).max(1));
         let mut cells = vec![Vec::new(); w * h];
-        let mut g = Ground { faces: Vec::new(), origin, w, h, cells: Vec::new() };
+        let mut g = Ground { faces: Vec::new(), origin, w, h, cells: Vec::new(), roof: f64::INFINITY };
         let mut left = MAX_IN_CELLS;
         for (i, f) in faces.iter().enumerate() {
             let ([x0, y0], [x1, y1]) = (g.cell(f.min), g.cell(f.max));
@@ -159,6 +170,12 @@ impl Ground {
     fn cell(&self, p: [f64; 2]) -> [usize; 2] {
         let at = |k: usize, n: usize| (((p[k] - self.origin[k]) / CELL).floor().max(0.0) as usize).min(n.saturating_sub(1));
         [at(0, self.w), at(1, self.h)]
+    }
+
+    /// The highest floor at (x, y) the overview shows (under its roof cut), if there is one.
+    #[allow(dead_code)] // the rooms' jump arcs use it
+    pub(crate) fn top(&self, x: f64, y: f64) -> Option<f64> {
+        self.heights(x, y).into_iter().rev().find(|z| *z <= self.roof)
     }
 
     /// The heights of the floors at (x, y), low to high, those about as high as one another once.
