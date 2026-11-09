@@ -4,6 +4,7 @@ use super::view::View;
 use super::{Room, SPEEDS};
 use crate::lock;
 use crate::matches::hub::{announce, publish, restore};
+use crate::matches::recording::Recording;
 use anyhow::{Result, bail};
 use serde::Deserialize;
 use std::collections::VecDeque;
@@ -17,6 +18,30 @@ pub(super) const ANNOUNCE_EVERY: Duration = Duration::from_secs(1);
 /// How often a room nobody watches looks again, and one at a live match's end for more of it.
 pub(super) const IDLE_POLL: Duration = Duration::from_millis(250);
 pub(super) const LIVE_POLL: Duration = Duration::from_millis(20);
+
+/// Where playback is in the recording: the chunk, how many of its lines are played, and the lines
+/// after, as far as the recording had them when last looked at (`looked`: how many it had then).
+#[derive(Default)]
+struct Cursor {
+    chunk: usize,
+    done: usize,
+    looked: Option<usize>,
+    lines: VecDeque<(u64, Line)>,
+}
+
+impl Cursor {
+    /// More of this chunk, if a live one grew; else on to the next.
+    fn refill(&mut self, rec: &Recording) {
+        if self.lines.is_empty() && self.looked != Some(rec.count()) {
+            self.looked = Some(rec.count());
+            self.lines = rec.chunk(self.chunk).unwrap_or_default().into_iter().skip(self.done).collect();
+        }
+        while self.lines.is_empty() && self.chunk + 1 < rec.chunks() {
+            (self.chunk, self.done) = (self.chunk + 1, 0);
+            self.lines = rec.chunk(self.chunk).unwrap_or_default().into();
+        }
+    }
+}
 
 pub(super) struct State {
     pub(super) paused: bool,
@@ -98,10 +123,7 @@ impl Room {
     /// end of a live match's recording it waits for more; at the end of any other it pauses.
     pub(super) fn play(&self) {
         let rec = &self.recording;
-        // Where playback is: the chunk, how many of its lines are played, and the lines after,
-        // as far as the recording had them when last looked at (`looked`: how many it had then).
-        let (mut chunk, mut done, mut looked) = (0, 0, None);
-        let mut lines: VecDeque<(u64, Line)> = VecDeque::new();
+        let mut cur = Cursor::default();
         let mut st = lock(&self.state);
         self.announce(&st);
         let mut announced = Instant::now();
@@ -111,51 +133,19 @@ impl Room {
             }
             // A live match goes on, paused or not: pages hear how long it is now.
             if rec.is_live() && announced.elapsed() >= ANNOUNCE_EVERY {
-                self.announce(&st);
-                self.tell_relay();
-                announced = Instant::now();
+                self.announce_now(&st, &mut announced);
             }
             // What is played was dropped (a new map): on from what is kept.
             if st.seek.is_none() && st.at < rec.start() {
                 st.seek = Some(rec.start());
             }
             if let Some(target) = st.seek.take() {
-                let (hub, i, played) = rec.seek(target);
-                // Where it went, paused or not: the relay follows at once.
-                st.tick = hub.tick();
-                restore(&self.hub, hub);
-                (chunk, done, looked, st.at) = (i, played, None, target.max(rec.start()));
-                lines.clear();
-                self.announce(&st);
+                self.seek_to(&mut st, &mut cur, target);
                 continue;
             }
-            // More of this chunk, if a live one grew; else on to the next.
-            if lines.is_empty() && looked != Some(rec.count()) {
-                looked = Some(rec.count());
-                lines = rec.chunk(chunk).unwrap_or_default().into_iter().skip(done).collect();
-            }
-            while lines.is_empty() && chunk + 1 < rec.chunks() {
-                (chunk, done) = (chunk + 1, 0);
-                lines = rec.chunk(chunk).unwrap_or_default().into();
-            }
-            let Some(&(t, _)) = lines.front() else {
-                if rec.is_live() {
-                    // At live: as far as the match is, which comes in at 1× however fast it was played.
-                    if !st.paused {
-                        st.at = st.at.max(rec.length());
-                    }
-                    if (st.speed - 1.0).abs() > f64::EPSILON {
-                        st.speed = 1.0;
-                        self.announce(&st);
-                    }
-                    st = self.sleep(st, LIVE_POLL);
-                } else {
-                    if !st.paused {
-                        (st.paused, st.at) = (true, rec.length());
-                        self.announce(&st);
-                    }
-                    st = self.sleep(st, IDLE_POLL);
-                }
+            cur.refill(rec);
+            let Some(&(t, _)) = cur.lines.front() else {
+                st = self.at_end(st);
                 continue;
             };
             if st.paused || (self.viewers.load(Ordering::Relaxed) == 0 && self.relay_clients() == 0) {
@@ -163,26 +153,70 @@ impl Room {
                 continue;
             }
             if t > st.at {
-                let (speed, started, gap) = (st.speed, Instant::now(), t - st.at);
-                st = self.sleep(st, wait(gap, speed).min(ANNOUNCE_EVERY));
-                // Whatever was waited counts at the speed it was waited at.
-                let played = (started.elapsed().as_secs_f64() * 1000.0 * speed) as u64;
-                st.at = (st.at + played).min(t);
-                if announced.elapsed() >= ANNOUNCE_EVERY {
-                    self.announce(&st);
-                    self.tell_relay();
-                    announced = Instant::now();
-                }
+                st = self.wait_until(st, t, &mut announced);
                 continue;
             }
-            let (_, line) = lines.pop_front().expect("a front line");
-            done += 1;
+            let (_, line) = cur.lines.pop_front().expect("a front line");
+            cur.done += 1;
             publish(&self.hub, &line);
             if let Line::Snapshot(snap) = &line {
                 st.tick = Some(snap.tick);
                 self.follow(&st);
             }
         }
+    }
+
+    /// Pages and the relay hear where playback is, now.
+    fn announce_now(&self, st: &State, announced: &mut Instant) {
+        self.announce(st);
+        self.tell_relay();
+        *announced = Instant::now();
+    }
+
+    /// Playback goes to `target`: the hub as it was there, and the lines after.
+    fn seek_to(&self, st: &mut State, cur: &mut Cursor, target: u64) {
+        let rec = &self.recording;
+        let (hub, chunk, done) = rec.seek(target);
+        // Where it went, paused or not: the relay follows at once.
+        st.tick = hub.tick();
+        restore(&self.hub, hub);
+        *cur = Cursor { chunk, done, looked: None, lines: VecDeque::new() };
+        st.at = target.max(rec.start());
+        self.announce(st);
+    }
+
+    /// At the end of what is recorded: a live match's goes on (at 1×, as it comes in), any other
+    /// pauses there.
+    fn at_end<'a>(&self, mut st: MutexGuard<'a, State>) -> MutexGuard<'a, State> {
+        let rec = &self.recording;
+        if rec.is_live() {
+            if !st.paused {
+                st.at = st.at.max(rec.length());
+            }
+            if (st.speed - 1.0).abs() > f64::EPSILON {
+                st.speed = 1.0;
+                self.announce(&st);
+            }
+            return self.sleep(st, LIVE_POLL);
+        }
+        if !st.paused {
+            (st.paused, st.at) = (true, rec.length());
+            self.announce(&st);
+        }
+        self.sleep(st, IDLE_POLL)
+    }
+
+    /// Waits toward the next line, at `t`, for at most [`ANNOUNCE_EVERY`]; whatever was waited
+    /// counts at the speed it was waited at.
+    fn wait_until<'a>(&self, st: MutexGuard<'a, State>, t: u64, announced: &mut Instant) -> MutexGuard<'a, State> {
+        let (speed, started, gap) = (st.speed, Instant::now(), t - st.at);
+        let mut st = self.sleep(st, wait(gap, speed).min(ANNOUNCE_EVERY));
+        let played = (started.elapsed().as_secs_f64() * 1000.0 * speed) as u64;
+        st.at = (st.at + played).min(t);
+        if announced.elapsed() >= ANNOUNCE_EVERY {
+            self.announce_now(&st, announced);
+        }
+        st
     }
 
     pub(super) fn sleep<'a>(&self, st: MutexGuard<'a, State>, d: Duration) -> MutexGuard<'a, State> {

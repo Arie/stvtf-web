@@ -171,6 +171,7 @@ enum Route {
     Live,
 }
 
+#[allow(clippy::too_many_lines, reason = "a table: every kind of line, and its route")]
 fn route(line: &Line) -> Route {
     match line {
         Line::Status(_) | Line::Server(_) | Line::World(_) | Line::Snapshot(_) => Route::State,
@@ -273,6 +274,62 @@ struct DataAge {
     ms: u64,
 }
 
+impl Hub {
+    /// A status line: a map change forgets the old map's state and feed.
+    fn on_status(&mut self, map_change: bool, json: &Arc<str>) {
+        if map_change {
+            self.snapshot = None;
+            self.history.clear();
+            self.names.clear();
+            self.changes += 1;
+        }
+        self.status = Some(json.clone());
+    }
+
+    /// The server's line: signon restarts announce the same map again; only a new map starts a
+    /// new history.
+    fn on_server(&mut self, server: &stvtf::output::Server, json: &Arc<str>) {
+        if self.map.as_deref() != Some(server.map.as_str()) {
+            self.history.clear();
+            self.names.clear();
+            self.map = Some(server.map.clone());
+            self.changes += 1;
+        }
+        (self.server, self.snapshot, self.round_clock, self.tick) = (Some(json.clone()), None, None, None);
+        self.tick_interval = Some(server.tick_interval).filter(|i| *i > 0.0);
+    }
+
+    /// A snapshot: the latest state, and the names of everyone in it.
+    fn on_snapshot(&mut self, snapshot: &stvtf::output::Snapshot, json: &Arc<str>) {
+        self.round_clock = snapshot.round_time.map(|t| (snapshot.tick, t));
+        self.tick = Some(snapshot.tick);
+        self.snapshot = Some(json.clone());
+        self.snapshot_at = Some(Instant::now());
+        for p in &snapshot.players {
+            // Every snapshot names everyone: reuse the string rather than allocate a new one.
+            let seen = self.names.entry(p.id).or_insert_with(|| Seen { name: String::new(), team: p.team });
+            seen.name.clone_from(&p.name);
+            seen.team = p.team;
+        }
+    }
+
+    /// A feed line, kept in the history with the names it uses and its time into the round.
+    fn keep(&mut self, line: &Line) {
+        let interval = self.tick_interval.unwrap_or_else(default_tick_interval);
+        let at = self.round_clock.zip(line.tick()).map(|((tick, time), at)| {
+            let seconds = time + (f64::from(at) - f64::from(tick)) * interval;
+            round1(seconds).max(0.0)
+        });
+        let names = line.players().filter_map(|id| Some((id, self.names.get(&id)?))).collect();
+        let past = serde_json::to_string(&Past { line, history: true, names, at }).expect("a line serializes");
+        if self.history.len() == HISTORY {
+            self.history.pop_front();
+        }
+        self.history.push_back(past.into());
+        self.changes += 1;
+    }
+}
+
 pub(crate) type SharedHub = Arc<Mutex<Hub>>;
 
 pub(crate) fn publish(hub: &SharedHub, line: &Line) {
@@ -280,53 +337,11 @@ pub(crate) fn publish(hub: &SharedHub, line: &Line) {
     let route = route(line);
     let mut h = lock(hub);
     match line {
-        Line::Status(status) => {
-            if *status == Status::MapChange {
-                h.snapshot = None;
-                h.history.clear();
-                h.names.clear();
-                h.changes += 1;
-            }
-            h.status = Some(json.clone());
-        }
-        Line::Server(server) => {
-            // Signon restarts announce the same map again; only a new map starts a new history.
-            if h.map.as_deref() != Some(server.map.as_str()) {
-                h.history.clear();
-                h.names.clear();
-                h.map = Some(server.map.clone());
-                h.changes += 1;
-            }
-            (h.server, h.snapshot, h.round_clock, h.tick) = (Some(json.clone()), None, None, None);
-            h.tick_interval = Some(server.tick_interval).filter(|i| *i > 0.0);
-        }
+        Line::Status(status) => h.on_status(*status == Status::MapChange, &json),
+        Line::Server(server) => h.on_server(server, &json),
         Line::World(_) => h.world = Some(json.clone()),
-        Line::Snapshot(snapshot) => {
-            h.round_clock = snapshot.round_time.map(|t| (snapshot.tick, t));
-            h.tick = Some(snapshot.tick);
-            h.snapshot = Some(json.clone());
-            h.snapshot_at = Some(Instant::now());
-            for p in &snapshot.players {
-                // Every snapshot names everyone: reuse the string rather than allocate a new one.
-                let seen = h.names.entry(p.id).or_insert_with(|| Seen { name: String::new(), team: p.team });
-                seen.name.clone_from(&p.name);
-                seen.team = p.team;
-            }
-        }
-        _ if route == Route::Feed => {
-            let interval = h.tick_interval.unwrap_or_else(default_tick_interval);
-            let at = h.round_clock.zip(line.tick()).map(|((tick, time), at)| {
-                let seconds = time + (f64::from(at) - f64::from(tick)) * interval;
-                round1(seconds).max(0.0)
-            });
-            let names = line.players().filter_map(|id| Some((id, h.names.get(&id)?))).collect();
-            let past = serde_json::to_string(&Past { line, history: true, names, at }).expect("a line serializes");
-            if h.history.len() == HISTORY {
-                h.history.pop_front();
-            }
-            h.history.push_back(past.into());
-            h.changes += 1;
-        }
+        Line::Snapshot(snapshot) => h.on_snapshot(snapshot, &json),
+        _ if route == Route::Feed => h.keep(line),
         _ => {}
     }
     // A browser that cannot keep up is dropped; it reconnects and resyncs from the latest state.

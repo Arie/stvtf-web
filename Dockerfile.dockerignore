@@ -9,6 +9,7 @@
 !stvtf-web/Cargo.lock
 !stvtf-web/rust-toolchain.toml
 !stvtf-web/build.rs
+!stvtf-web/clippy.toml
 !stvtf-web/src
 !stvtf-web/app
 !stvtf-web/examples

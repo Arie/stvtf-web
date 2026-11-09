@@ -1,0 +1,2 @@
+# Functions longer than this are split (clippy::too_many_lines, on with pedantic).
+too-many-lines-threshold = 60

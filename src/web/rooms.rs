@@ -7,7 +7,7 @@ use super::visitor::{Who, origin, who};
 use super::{HTML, INDEX, JSON, Request, TEXT, done, form_decode, json_body, not_found, param, respond, respond_with};
 use crate::App;
 use crate::matches::sessions::{Session, Sessions};
-use crate::rooms::room::{Control, Draw, ViewPost};
+use crate::rooms::room::{Control, Draw, Room, ViewPost};
 use anyhow::Result;
 use std::io::{BufReader, Take};
 use std::net::{IpAddr, TcpStream};
@@ -98,13 +98,12 @@ pub(super) fn serve_room(
         return Ok(respond(&mut s, "404 Not Found", TEXT, b"That room has closed.")?);
     };
     // Without a cookie (none yet, or refused), a page is someone new each time.
-    let Who { key: guest, cookie, user } = who(app, request);
-    let admin = room.is_admin(&guest);
+    let who = who(app, request);
     match (rest, request.method.as_str()) {
         ("", _) if !path.ends_with('/') => app.redirect(&mut s, "308 Permanent Redirect", &format!("{}/", request.path))?,
         (rest, "GET") if is_page(rest) => {
             let mut headers = vec![("Content-Type", HTML), ("Cache-Control", "no-cache")];
-            if let Some(c) = &cookie {
+            if let Some(c) = &who.cookie {
                 headers.push(("Set-Cookie", c));
             }
             respond_with(&mut s, "200 OK", &headers, &app.page(INDEX))?;
@@ -113,52 +112,66 @@ pub(super) fn serve_room(
             Some(_slot) => {
                 let name = param(&request.query, "name").map(form_decode);
                 let listed = param(&request.query, "overlay") != Some("1");
-                let site = user.as_ref().map(|u| u.name.as_str());
-                let _watching = room.join(&guest, name.as_deref(), site, listed);
+                let site = who.user.as_ref().map(|u| u.name.as_str());
+                let _watching = room.join(&who.key, name.as_deref(), site, listed);
                 stream(s, &room.hub, request.gzip, wants_detail(&request.query))?;
             }
             None => too_many_streams(&mut s)?,
         },
-        ("me", "GET") => {
-            let (id, admin) = room.me(&guest);
-            let me = serde_json::json!({
-                "id": id,
-                "admin": admin,
-                "signed": user.is_some(),
-                "streamer": user.as_ref().is_some_and(|u| u.streamer),
-                "signin": app.keys.is_some() && app.home.as_deref().and_then(origin).is_some(),
-            });
-            respond(&mut s, "200 OK", JSON, me.to_string().as_bytes())?;
-        }
+        ("me", "GET") => me(&mut s, app, &room, &who)?,
         ("marks", "GET") => {
             let from = param(&request.query, "from").and_then(|f| f.parse().ok()).unwrap_or(0);
             let (marks, all) = room.marks(from);
             respond(&mut s, "200 OK", JSON, serde_json::json!({ "marks": marks, "all": all }).to_string().as_bytes())?;
         }
-        ("claim", "POST") if user.as_ref().is_some_and(|u| u.streamer) => {
-            room.make_admin(&guest);
-            respond(&mut s, "204 No Content", TEXT, b"")?;
-        }
-        ("claim", "POST") => {
-            respond(&mut s, "403 Forbidden", TEXT, b"Only the site's streamers make themselves admin.")?;
-        }
-        ("name", "POST") => {
-            let name = json_body::<Name>(reader, request).map(|n| room.rename(&guest, &n.name));
-            done(&mut s, name)?;
-        }
-        ("control" | "draw" | "clear" | "admin" | "view" | "ink", "POST") if !admin => {
-            respond(&mut s, "403 Forbidden", TEXT, b"Only the room's admins do that.")?;
-        }
-        ("view", "POST") => done(&mut s, json_body::<ViewPost>(reader, request).and_then(|v| room.set_view(&v, &guest)))?,
-        ("ink", "POST") => done(&mut s, json_body::<Ink>(reader, request).and_then(|i| room.set_ink(&guest, &i.ink)))?,
-        ("draw", "POST") => done(&mut s, json_body::<Draw>(reader, request).and_then(|d| room.draw(&d, &guest)))?,
-        ("clear", "POST") => {
-            room.clear(&guest);
-            respond(&mut s, "204 No Content", TEXT, b"")?;
-        }
-        ("control", "POST") => done(&mut s, json_body::<Control>(reader, request).and_then(|c| room.control(&c)))?,
-        ("admin", "POST") => done(&mut s, json_body::<Admin>(reader, request).and_then(|a| room.set_admin(&guest, a.person, a.admin)))?,
+        (part, "POST") => change(&mut s, reader, request, &room, &who, part)?,
         _ => not_found(&mut s)?,
     }
     Ok(())
+}
+
+/// Who the visitor is in `room`, and what they may do.
+fn me(s: &mut TcpStream, app: &App, room: &Room, who: &Who) -> std::io::Result<()> {
+    let (id, admin) = room.me(&who.key);
+    let me = serde_json::json!({
+        "id": id,
+        "admin": admin,
+        "signed": who.user.is_some(),
+        "streamer": who.user.as_ref().is_some_and(|u| u.streamer),
+        "signin": app.keys.is_some() && app.home.as_deref().and_then(origin).is_some(),
+    });
+    respond(s, "200 OK", JSON, me.to_string().as_bytes())
+}
+
+/// A change to `room` (`part`, posted): one's own name and ink by anyone, the rest by its admins.
+fn change(
+    s: &mut TcpStream,
+    reader: &mut BufReader<Take<TcpStream>>,
+    request: &Request,
+    room: &Room,
+    who: &Who,
+    part: &str,
+) -> std::io::Result<()> {
+    let guest = &who.key;
+    match part {
+        "claim" if who.user.as_ref().is_some_and(|u| u.streamer) => {
+            room.make_admin(guest);
+            respond(s, "204 No Content", TEXT, b"")
+        }
+        "claim" => respond(s, "403 Forbidden", TEXT, b"Only the site's streamers make themselves admin."),
+        "name" => done(s, json_body::<Name>(reader, request).map(|n| room.rename(guest, &n.name))),
+        "control" | "draw" | "clear" | "admin" | "view" | "ink" if !room.is_admin(guest) => {
+            respond(s, "403 Forbidden", TEXT, b"Only the room's admins do that.")
+        }
+        "view" => done(s, json_body::<ViewPost>(reader, request).and_then(|v| room.set_view(&v, guest))),
+        "ink" => done(s, json_body::<Ink>(reader, request).and_then(|i| room.set_ink(guest, &i.ink))),
+        "draw" => done(s, json_body::<Draw>(reader, request).and_then(|d| room.draw(&d, guest))),
+        "clear" => {
+            room.clear(guest);
+            respond(s, "204 No Content", TEXT, b"")
+        }
+        "control" => done(s, json_body::<Control>(reader, request).and_then(|c| room.control(&c))),
+        "admin" => done(s, json_body::<Admin>(reader, request).and_then(|a| room.set_admin(guest, a.person, a.admin))),
+        _ => not_found(s),
+    }
 }
