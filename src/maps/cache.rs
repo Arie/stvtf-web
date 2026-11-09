@@ -87,7 +87,7 @@ pub(crate) fn map_geometry_gzip(cache: &Path, name: &str, fetch: bool) -> Result
 /// Where a map's geometry is cached. Bump the suffix when the extracted data changes, so cached
 /// maps are redone.
 fn geometry_path(cache: &Path, name: &str) -> PathBuf {
-    cache.join(format!("{name}.v7.json"))
+    cache.join(format!("{name}.v8.json"))
 }
 
 /// demos.tf's map overviews, `boundaries.json` and `<map>.webp`, kept in the cache so viewers do
@@ -169,7 +169,7 @@ mod tests {
     #[test]
     fn write_atomic_replaces_the_file() {
         let dir = TempDir::new("atomic");
-        let path = dir.join("m.v7.json");
+        let path = dir.join("m.v8.json");
         std::fs::write(&path, b"old, longer contents").unwrap();
         write_atomic(&path, b"new").unwrap();
         assert_eq!(std::fs::read(&path).unwrap(), b"new");
@@ -180,7 +180,7 @@ mod tests {
     fn a_failed_write_atomic_leaves_no_temporary_file() {
         let dir = TempDir::new("atomicfail");
         // A file cannot be renamed over a directory that has something in it.
-        let path = dir.join("m.v7.json");
+        let path = dir.join("m.v8.json");
         std::fs::create_dir(&path).unwrap();
         std::fs::write(path.join("inside"), b"").unwrap();
         assert!(write_atomic(&path, b"new").is_err());
@@ -208,7 +208,7 @@ mod tests {
         let cache = TempDir::new("onmap");
         // Not cached and not being watched: an error, without asking fastdl.
         assert!(map_geometry(&cache, "cp_nothere", false).unwrap_err().to_string().contains("no match"));
-        std::fs::write(cache.join("cp_cached.v7.json"), b"{}").unwrap();
+        std::fs::write(cache.join("cp_cached.v8.json"), b"{}").unwrap();
         assert_eq!(map_geometry(&cache, "cp_cached", false).unwrap(), b"{}");
     }
 
@@ -321,7 +321,7 @@ mod tests {
         let mut unzipped = Vec::new();
         flate2::read::GzDecoder::new(&gz[..]).read_to_end(&mut unzipped).unwrap();
         assert_eq!(unzipped, json);
-        std::fs::remove_file(cache.join("cp_built.v7.json")).unwrap();
+        std::fs::remove_file(cache.join("cp_built.v8.json")).unwrap();
         assert_eq!(map_geometry_gzip(&cache, "cp_built", false).unwrap(), gz, "the gzipped copy is kept");
     }
 }

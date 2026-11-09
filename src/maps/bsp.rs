@@ -61,12 +61,16 @@ pub struct Geometry {
 /// An upward face: its height, outline (`x, y, x, y, …`) and what it is made of.
 #[derive(Debug, Serialize)]
 pub struct Floor {
+    /// The height at the mean of the outline's points.
     pub z: f64,
     pub p: Vec<f64>,
     pub k: Kind,
     /// A cell of a displacement (terrain), drawn at its real height.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub d: bool,
+    /// How much the height rises per unit along x and y; absent on a flat floor.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub g: Option<[f64; 2]>,
 }
 
 /// A wall seen from above: its top and its two ends (`x1, y1, x2, y2`).
@@ -247,12 +251,26 @@ impl World {
 /// How far up a cell of a displacement faces, as a unit normal's z, turned to the same side as
 /// the base face's `plane`.
 fn cell_normal_z(cell: &[Vec3; 4], plane: &[f32; 4]) -> f32 {
-    let d = |a: usize, b: usize| [0, 1, 2].map(|i| cell[a][i] - cell[b][i]);
-    let (u, v) = (d(2, 0), d(3, 1));
-    let n = [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]];
+    let n = cell_normal(cell);
     let len = n.iter().map(|c| c * c).sum::<f32>().sqrt();
     let side = if n[0] * plane[0] + n[1] * plane[1] + n[2] * plane[2] < 0.0 { -1.0 } else { 1.0 };
     side * n[2] / len
+}
+
+/// A cell's normal, unnormalised and facing either way: across its diagonals.
+fn cell_normal(cell: &[Vec3; 4]) -> Vec3 {
+    let d = |a: usize, b: usize| [0, 1, 2].map(|i| cell[a][i] - cell[b][i]);
+    let (u, v) = (d(2, 0), d(3, 1));
+    [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]]
+}
+
+/// Gradients are kept to this many places: a unit off over 10 000 units.
+const GRADIENT_PLACES: f64 = 1e4;
+
+/// How much a surface with normal `n` rises per unit along x and y, or None when it is flat.
+fn gradient(n: Vec3) -> Option<[f64; 2]> {
+    let g = [0, 1].map(|i| (-f64::from(n[i]) / f64::from(n[2]) * GRADIENT_PLACES).round() / GRADIENT_PLACES);
+    (g != [0.0, 0.0] && g.iter().all(|v| v.is_finite())).then_some(g)
 }
 
 /// A wall's top and ends seen from above, or None for one too short to draw.
@@ -356,7 +374,7 @@ fn faces(world: &World, map: &Entities, bounds: Option<Bounds>, disps: &[displac
                 match cell_normal_z(&cell, &d.plane) {
                     z if z > FLOOR_MIN_NORMAL_Z => {
                         let p: Vec<f64> = cell.iter().flat_map(|p| [round1(p[0]), round1(p[1])]).collect();
-                        floors.push((c, Floor { z: round1(c), p, k: kind, d: true }));
+                        floors.push((c, Floor { z: round1(c), p, k: kind, d: true, g: gradient(cell_normal(&cell)) }));
                         if bounds.is_none() {
                             floor_pts.extend(cell);
                         }
@@ -368,7 +386,8 @@ fn faces(world: &World, map: &Entities, bounds: Option<Bounds>, disps: &[displac
         } else if face.normal_z > FLOOR_MIN_NORMAL_Z {
             let p: Vec<f64> = face.pts.iter().flat_map(|p| [round1(p[0]), round1(p[1])]).collect();
             let k = world.textures.get(face.texture).map_or(Kind::Other, |t| material::kind(t));
-            floors.push((centre[2], Floor { z: round1(centre[2]), p, k, d: false }));
+            let g = gradient([face.plane[0], face.plane[1], face.plane[2]]);
+            floors.push((centre[2], Floor { z: round1(centre[2]), p, k, d: false, g }));
             if bounds.is_none() {
                 floor_pts.extend(face.pts);
             }
@@ -557,6 +576,20 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn a_slope_rises_as_its_normal_leans_and_a_flat_floor_has_none() {
+        assert_eq!(gradient([0.0, -0.6, 0.8]), Some([0.0, 0.75]));
+        assert_eq!(gradient([0.0, 0.0, 1.0]), None);
+    }
+
+    #[test]
+    fn process_has_ramps_and_terrain_with_slopes() {
+        let Some(g) = process_built() else { return };
+        assert!(g.floors.iter().any(|f| !f.d && f.g.is_some()), "a sloped brush floor");
+        assert!(g.floors.iter().any(|f| f.d && f.g.is_some()), "sloped terrain");
+        assert!(g.floors.iter().filter_map(|f| f.g).all(|[x, y]| x.hypot(y) < 1.1), "within 45° or so");
+    }
+
+    #[test]
     fn rejects_non_bsp() {
         assert!(geometry(b"not a map").is_err());
     }
@@ -707,7 +740,7 @@ pub(crate) mod tests {
 
     /// A 256-unit square floor at height `z`.
     fn sq(z: f64, k: Kind) -> Floor {
-        Floor { z, p: vec![0.0, 0.0, 256.0, 0.0, 256.0, 256.0, 0.0, 256.0], k, d: false }
+        Floor { z, p: vec![0.0, 0.0, 256.0, 0.0, 256.0, 256.0, 0.0, 256.0], k, d: false, g: None }
     }
 
     #[test]
@@ -756,14 +789,14 @@ pub(crate) mod tests {
     fn many_big_water_floors_are_bounded() {
         // Thousands of map-sized water faces over as many shallow beds: every sample would scan
         // every bed, for hours. The budget runs out instead, and the water left is kept.
-        let big = |z: f64, k: Kind| Floor { z, p: vec![0.0, 0.0, 30000.0, 0.0, 30000.0, 30000.0, 0.0, 30000.0], k, d: false };
+        let big = |z: f64, k: Kind| Floor { z, p: vec![0.0, 0.0, 30000.0, 0.0, 30000.0, 30000.0, 0.0, 30000.0], k, d: false, g: None };
         let mut floors: Vec<Floor> = (0..4000).map(|i| if i % 2 == 0 { big(-10.0, Kind::Dirt) } else { big(0.0, Kind::Water) }).collect();
         // And one water face with a million outline points, which every sample is tested against.
         let ring = (0..1_000_000).flat_map(|i| {
             let a = f64::from(i) / 1_000_000.0 * std::f64::consts::TAU;
             [15000.0 + 15000.0 * a.cos(), 15000.0 + 15000.0 * a.sin()]
         });
-        floors.insert(0, Floor { z: 0.0, p: ring.collect(), k: Kind::Water, d: false });
+        floors.insert(0, Floor { z: 0.0, p: ring.collect(), k: Kind::Water, d: false, g: None });
         let t = std::time::Instant::now();
         let kept = without_shallow_water(floors);
         eprintln!("{:.2?}", t.elapsed());
