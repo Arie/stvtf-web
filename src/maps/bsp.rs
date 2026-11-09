@@ -264,7 +264,11 @@ fn cell_normal_z(cell: &[Vec3; 4], plane: &[f32; 4]) -> f32 {
 /// A cell's normal, unnormalised and facing either way: across its diagonals.
 fn cell_normal(cell: &[Vec3; 4]) -> Vec3 {
     let d = |a: usize, b: usize| [0, 1, 2].map(|i| cell[a][i] - cell[b][i]);
-    let (u, v) = (d(2, 0), d(3, 1));
+    cross(d(2, 0), d(3, 1))
+}
+
+/// `u` × `v`.
+pub(super) fn cross(u: Vec3, v: Vec3) -> Vec3 {
     [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]]
 }
 

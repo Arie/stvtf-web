@@ -7,7 +7,7 @@
 
 use super::format::{LUMP_GAME_LUMP, bytes, i32_at, index_at, lump, u16_at, unpack, vec3_at};
 use super::material::Kind;
-use super::{Bounds, FLOOR_MIN_NORMAL_Z, Floor, Vec3, gradient};
+use super::{Bounds, FLOOR_MIN_NORMAL_Z, Floor, Vec3, cross, gradient};
 use anyhow::{Result, bail};
 use std::collections::HashMap;
 use std::io::Read;
@@ -157,11 +157,7 @@ pub(super) fn prop_floors(data: &[u8], bounds: Option<Bounds>, stands: impl Fn(f
 fn upward_normal([first, second, third]: &[Vec3; 3]) -> Option<Vec3> {
     let along = [0, 1, 2].map(|k| second[k] - first[k]);
     let across = [0, 1, 2].map(|k| third[k] - first[k]);
-    let normal = [
-        along[1] * across[2] - along[2] * across[1],
-        along[2] * across[0] - along[0] * across[2],
-        along[0] * across[1] - along[1] * across[0],
-    ];
+    let normal = cross(along, across);
     let len = normal.iter().map(|x| x * x).sum::<f32>().sqrt();
     (len >= 1.0 && normal[2] / len > FLOOR_MIN_NORMAL_Z).then_some(normal)
 }
@@ -187,6 +183,13 @@ mod tests {
         let m = rotation([0.0, 90.0, 0.0]);
         let x = [m[0][0], m[1][0], m[2][0]];
         assert!((x[0]).abs() < 1e-6 && (x[1] - 1.0).abs() < 1e-6, "{x:?}");
+    }
+
+    #[test]
+    fn process_has_prop_tops_where_players_get_to() {
+        let Some(g) = crate::maps::bsp::tests::process_built() else { return };
+        assert!(!g.props.is_empty());
+        assert!(g.props.iter().all(|f| f.p.len() == 6 && f.z.is_finite()), "triangles");
     }
 
     #[test]
