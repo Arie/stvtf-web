@@ -550,7 +550,7 @@ pub(crate) mod tests {
     }
 
     /// The geometry of `cp_process_f12`, built once for the tests that only read it.
-    pub(super) fn process_built() -> Option<&'static Geometry> {
+    pub(crate) fn process_built() -> Option<&'static Geometry> {
         static BUILT: OnceLock<Option<Geometry>> = OnceLock::new();
         BUILT.get_or_init(|| process().map(|data| geometry(&data).unwrap())).as_ref()
     }
