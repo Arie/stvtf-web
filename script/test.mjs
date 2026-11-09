@@ -9,7 +9,7 @@ import { parseArgs } from "node:util";
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const CI = process.env.CI === "true";
 const NPM = { file: "node_modules", hint: "npm ci" };
-const GULLYWASH = { file: "testdata/maps/cp_gullywash_f9.bsp", hint: "see Tests in the README" };
+const GULLYWASH = { file: "testdata/maps/cp_gullywash_f9.bsp", hint: "see docs/development.md, Tests" };
 
 /**
  * Each check: its section, the command, the one that fixes what it finds (if there is one) and

@@ -13,7 +13,7 @@ import { layerOn, setLayer } from "../core/layers.js";
 
 // On another site, in an iframe or as <stv-map>: what happens goes to that page as the map shows it
 // (so after any delay), as postMessage or as the element's events, and the page can follow a
-// player or switch a layer. Every message carries `stvtf: 1`. See "Embedding" in the README.
+// player or switch a layer. Every message carries `stvtf: 1`. See docs/embedding.md.
 export const EMBEDDED = Boolean(env.emit) || window.parent !== window;
 // What the page's own feed and chat show; not the effects drawn on the map.
 const EFFECTS = new Set([
