@@ -2,6 +2,18 @@ aside section {
   padding: 8px 10px;
   border-bottom: 1px solid var(--line);
 }
+/* The events and the chat share the rest of the sidebar's height. */
+aside section.log {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+#events {
+  flex: 1.4;
+}
+#chatlog {
+  flex: 1;
+}
 #people {
   max-height: 35%;
   overflow-y: auto;

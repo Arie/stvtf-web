@@ -52,14 +52,63 @@
         <tr><td><kbd>?</kbd></td><td>Show or hide this list</td></tr>
       </table>
     </div>
-    <div id="roombar" hidden><button id="rb-play">⏸</button><div id="rb-track"><input id="rb-time" type="range" min="0" max="0" step="100" value="0" aria-label="Position"></div><span id="rb-clock"></span><button id="rb-live" hidden title="Back to live">● Live</button><select id="rb-speed" aria-label="Speed"></select><button id="rb-pen" title="Draw on the map (d)">✎</button><button id="rb-marker" title="Permanent marker: stays until cleared (m)">✒︎</button><button id="rb-clear" title="Clear all drawings">⌫</button><select id="rb-view" aria-label="How everyone sees the map" title="How everyone sees the map"><option value="free" title="Everyone moves their own camera">Free</option><option value="auto">Auto zoom</option><option value="follow" id="rb-follow" hidden disabled>Following</option><option value="admin">Admin's view</option></select><span id="rb-lead" hidden></span><span id="rb-note" role="status" hidden></span></div>
+    <div id="roombar" hidden>
+      <button id="rb-play">⏸</button>
+      <div id="rb-track"><input id="rb-time" type="range" min="0" max="0" step="100" value="0" aria-label="Position"></div>
+      <span id="rb-clock"></span>
+      <button id="rb-live" hidden title="Back to live">● Live</button>
+      <select id="rb-speed" aria-label="Speed"></select>
+      <button id="rb-pen" title="Draw on the map (d)">✎</button>
+      <button id="rb-marker" title="Permanent marker: stays until cleared (m)">✒︎</button>
+      <button id="rb-clear" title="Clear all drawings">⌫</button>
+      <select id="rb-view" aria-label="How everyone sees the map" title="How everyone sees the map">
+        <option value="free" title="Everyone moves their own camera">Free</option>
+        <option value="auto">Auto zoom</option>
+        <option value="follow" id="rb-follow" hidden disabled>Following</option>
+        <option value="admin">Admin's view</option>
+      </select>
+      <span id="rb-lead" hidden></span>
+      <span id="rb-note" role="status" hidden></span>
+    </div>
     <div id="bgtoggle" hidden title="g"><button data-bg="overview" class="on">Overview</button><button data-bg="geometry">Geometry</button></div>
   </div>
   <aside>
-    <div id="title"><b id="map">connecting…</b><span id="status" class="bad">waiting for data</span><button id="copylink" hidden><svg class="chain" viewBox="0 0 24 24" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/></svg><svg class="check" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg></button><span id="age"></span><a id="signout" hidden>Sign out</a><button id="roomopen" hidden title="Open a room: you control pause, speed and position for everyone you send its link, and can draw">Watch together</button></div>
-    <section id="people" hidden><div id="peoplehead"><h3>In this room</h3><a id="signin" hidden>Sign in with serveme</a></div><div id="whoami"><input id="myname" maxlength="32" placeholder="Your name" aria-label="Your name"><button id="claim" hidden title="As a streamer on serveme">Become admin</button></div><ul id="peoplelist"></ul></section><section id="intf2" hidden><h3>In TF2</h3><div id="tf2"><code id="tf2cmd"></code><button id="tf2copy" title="Copy, to paste in the console" aria-label="Copy, to paste in the console"><svg class="copy" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg><svg class="check" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg></button></div><a id="tf2open">Open in TF2</a><p id="tf2why" hidden></p></section>
-    <section style="display:flex;flex-direction:column;flex:1.4;min-height:0"><div id="feed"></div></section>
-    <section style="display:flex;flex-direction:column;flex:1;min-height:0"><h3>Chat</h3><div id="chat"></div></section>
+    <div id="title">
+      <b id="map">connecting…</b>
+      <span id="status" class="bad">waiting for data</span>
+      <button id="copylink" hidden><svg class="chain" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/>
+          <path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/>
+        </svg><svg class="check" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg></button>
+      <span id="age"></span>
+      <a id="signout" hidden>Sign out</a>
+      <button id="roomopen" hidden title="Open a room: you control pause, speed and position for everyone you send its link, and can draw">Watch together</button>
+    </div>
+    <section id="people" hidden>
+      <div id="peoplehead">
+        <h3>In this room</h3>
+        <a id="signin" hidden>Sign in with serveme</a>
+      </div>
+      <div id="whoami">
+        <input id="myname" maxlength="32" placeholder="Your name" aria-label="Your name">
+        <button id="claim" hidden title="As a streamer on serveme">Become admin</button>
+      </div>
+      <ul id="peoplelist"></ul>
+    </section>
+    <section id="intf2" hidden>
+      <h3>In TF2</h3>
+      <div id="tf2">
+        <code id="tf2cmd"></code>
+        <button id="tf2copy" title="Copy, to paste in the console" aria-label="Copy, to paste in the console"><svg class="copy" viewBox="0 0 24 24" aria-hidden="true">
+            <rect x="9" y="9" width="11" height="11" rx="2"/>
+            <path d="M5 15V5a2 2 0 0 1 2-2h10"/>
+          </svg><svg class="check" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg></button>
+      </div>
+      <a id="tf2open">Open in TF2</a>
+      <p id="tf2why" hidden></p>
+    </section>
+    <section class="log" id="events"><div id="feed"></div></section>
+    <section class="log" id="chatlog"><h3>Chat</h3><div id="chat"></div></section>
   </aside>
 </main>
 </div>
