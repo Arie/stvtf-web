@@ -78,30 +78,23 @@ impl Room {
             k.points.extend(&d.points);
             k.open = !d.end;
         } else if !d.points.is_empty() {
-            let [r, g, b] = self.ink_now(by);
-            let ink = Some(format!("#{r:02x}{g:02x}{b:02x}"));
+            let ink = Some(super::beams::hex(self.ink_now(by)));
             marker.push(Kept { stroke: d.stroke, by, points: d.points.clone(), ink, open: !d.end });
         }
-        if !self.marker_fits(&marker) {
-            *marker = before;
-            bail!("TF2 cannot show more marker: clear it first.");
-        }
+        let beams = self.marker_in_tf2(&marker).inspect_err(|_| *marker = before)?;
         send_keeping(&self.hub, &line, "marker", kept_line(&marker));
         drop(marker);
-        self.keep_marker();
+        self.hand_marker(beams);
         Ok(())
     }
 
     /// Admin `guest` wipes every stroke, marker too.
     pub(crate) fn clear(&self, guest: &str) {
         let by = lock(&self.people).id(guest);
-        let mut marker = lock(&self.marker);
-        marker.clear();
-        drop(marker);
+        lock(&self.marker).clear();
         self.forget_drapes();
         self.keep_marker();
-        let marker = lock(&self.marker);
         let line = serde_json::json!({ "type": "clear", "by": by }).to_string().into();
-        send_keeping(&self.hub, &line, "marker", kept_line(&marker));
+        send_keeping(&self.hub, &line, "marker", kept_line(&lock(&self.marker)));
     }
 }

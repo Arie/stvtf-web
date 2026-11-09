@@ -322,7 +322,8 @@ impl Drape {
     }
 }
 
-fn dist(a: [f64; 3], b: [f64; 3]) -> f64 {
+/// How far apart `a` and `b` are.
+pub(crate) fn dist(a: [f64; 3], b: [f64; 3]) -> f64 {
     (0..3).map(|k| (a[k] - b[k]).powi(2)).sum::<f64>().sqrt()
 }
 

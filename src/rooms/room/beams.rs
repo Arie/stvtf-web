@@ -35,6 +35,10 @@ const MAX_DRAPES: usize = 64;
 const MAX_MARKER_BEAMS: usize = 1200;
 const MAX_PEN_BEAMS: usize = 1000;
 
+/// The marker's beams' life: the relay shows kept beams again as they run out, for as long as it
+/// sets.
+const KEPT_LIFE: f32 = 0.0;
+
 /// A pen stroke being laid on the floors: by whom, which, and where its lines end now.
 pub(super) struct PenStroke {
     key: (u32, u32),
@@ -44,34 +48,46 @@ pub(super) struct PenStroke {
     shown: usize,
 }
 
+impl PenStroke {
+    fn new(key: (u32, u32)) -> Self {
+        PenStroke { key, drape: Drape::new(), ends: Vec::new(), shown: 0 }
+    }
+
+    /// The beams for the stroke's next piece `d`, in `ink`; refused once the stroke is more than
+    /// TF2 shows, its end aside.
+    fn push(&mut self, ground: &Ground, d: &Draw, ink: [u8; 3]) -> Result<Vec<Beam>> {
+        let pieces = self.drape.push(ground, &d.points);
+        if let Some(&[x, y, _]) = d.points.last() {
+            self.ends = ends(&pieces, [x, y]);
+        }
+        let mut out = beams(&pieces, ink, PEN_LIFE);
+        if d.end {
+            out.extend(heads(&self.ends, ink, PEN_LIFE));
+        } else if self.shown + out.len() > MAX_PEN_BEAMS {
+            bail!("TF2 cannot show a longer stroke: lift the pen.");
+        }
+        self.shown += out.len();
+        Ok(out)
+    }
+}
+
 impl Room {
     /// Shows a piece of a pen stroke by person `by` to the TF2 clients in its relay; refused once
     /// the stroke is more than TF2 shows (its end aside), so pages stop it there too.
     pub(super) fn draw_in_relay(&self, d: &Draw, by: u32) -> Result<()> {
         let Some(ground) = self.ground_for_relay() else { return Ok(()) };
         let ink = self.ink_now(by);
+        let key = (by, d.stroke);
         let beams = {
             let mut drapes = lock(&self.drapes);
-            if !drapes.iter().any(|s| s.key == (by, d.stroke)) {
+            let i = drapes.iter().position(|s| s.key == key).unwrap_or_else(|| {
                 if drapes.len() >= MAX_DRAPES {
                     drapes.remove(0);
                 }
-                drapes.push(PenStroke { key: (by, d.stroke), drape: Drape::new(), ends: Vec::new(), shown: 0 });
-            }
-            let Some(s) = drapes.iter_mut().find(|s| s.key == (by, d.stroke)) else { return Ok(()) };
-            let pieces = s.drape.push(&ground, &d.points);
-            if let Some(&[x, y, _]) = d.points.last() {
-                s.ends = ends(&pieces, [x, y]);
-            }
-            let mut beams = beams(&pieces, ink, PEN_LIFE);
-            if d.end {
-                beams.extend(heads(&s.ends, ink, PEN_LIFE));
-            }
-            if s.shown + beams.len() > MAX_PEN_BEAMS && !d.end {
-                bail!("TF2 cannot show a longer stroke: lift the pen.");
-            }
-            s.shown += beams.len();
-            beams
+                drapes.push(PenStroke::new(key));
+                drapes.len() - 1
+            });
+            drapes[i].push(&ground, d, ink)?
         };
         if !beams.is_empty()
             && let Some(r) = &*lock(&self.relay)
@@ -81,9 +97,15 @@ impl Room {
         Ok(())
     }
 
-    /// Whether TF2 can show all of `marker`: always, with nobody in it.
-    pub(super) fn marker_fits(&self, marker: &[Kept]) -> bool {
-        self.ground_for_relay().is_none_or(|ground| self.marker_beams(&ground, marker).len() <= MAX_MARKER_BEAMS)
+    /// `marker` as TF2 shows it, while TF2 clients are in to see it; refused when it is more than
+    /// TF2 shows.
+    pub(super) fn marker_in_tf2(&self, marker: &[Kept]) -> Result<Option<Vec<Beam>>> {
+        let Some(ground) = self.ground_for_relay() else { return Ok(None) };
+        let all = self.marker_beams(&ground, marker);
+        if all.len() > MAX_MARKER_BEAMS {
+            bail!("TF2 cannot show more marker: clear it first.");
+        }
+        Ok(Some(all))
     }
 
     /// `marker` as beams, each stroke in the ink it was drawn in, a finished one with its arrowhead.
@@ -92,25 +114,35 @@ impl Room {
         for k in marker {
             let ink = k.ink.as_deref().and_then(rgb).unwrap_or_else(|| self.ink_now(k.by));
             let pieces = Drape::new().push(ground, &k.points);
-            all.extend(beams(&pieces, ink, 0.0));
+            all.extend(beams(&pieces, ink, KEPT_LIFE));
             if let Some(&[x, y, _]) = k.points.last().filter(|_| !k.open) {
-                all.extend(heads(&ends(&pieces, [x, y]), ink, 0.0));
+                all.extend(heads(&ends(&pieces, [x, y]), ink, KEPT_LIFE));
             }
         }
         all
     }
 
-    /// Hands the relay the marker as it is now, each stroke in the ink it was drawn in, once
-    /// TF2 clients are in to see it; until then it waits.
+    /// Hands the relay the marker as it is now, once TF2 clients are in to see it; until then it
+    /// waits.
     pub(super) fn keep_marker(&self) {
-        self.marker_dirty.store(true, Ordering::Relaxed);
-        let Some(ground) = self.ground_for_relay() else { return };
         let strokes = lock(&self.marker).clone();
-        let mut all = self.marker_beams(&ground, &strokes);
-        // A marker from before TF2 clients came in can be more than they are shown.
-        all.truncate(MAX_MARKER_BEAMS);
-        if let Some(r) = &*lock(&self.relay) {
-            r.keep(all);
+        let beams = self.ground_for_relay().map(|ground| {
+            let mut all = self.marker_beams(&ground, &strokes);
+            // A marker from before TF2 clients came in can be more than they are shown.
+            all.truncate(MAX_MARKER_BEAMS);
+            all
+        });
+        self.hand_marker(beams);
+    }
+
+    /// Hands the relay the marker's `beams`, or (None, or no relay yet) leaves it to hand over
+    /// once it can.
+    pub(super) fn hand_marker(&self, beams: Option<Vec<Beam>>) {
+        self.marker_dirty.store(true, Ordering::Relaxed);
+        if let Some(beams) = beams
+            && let Some(r) = &*lock(&self.relay)
+        {
+            r.keep(beams);
             self.marker_dirty.store(false, Ordering::Relaxed);
         }
     }
@@ -167,7 +199,6 @@ fn heads(ends: &[Piece], ink: [u8; 3], life: f32) -> Vec<Beam> {
         for side in [-1.0, 1.0] {
             let (s, c) = (side * HEAD_ANGLE).to_radians().sin_cos();
             let tip = [p.to[0] + (back_x * c - back_y * s) * HEAD, p.to[1] + (back_x * s + back_y * c) * HEAD, p.to[2]];
-            let up = |q: [f64; 3]| [q[0], q[1], q[2] + FENCE];
             out.push(beam(tip, p.to, ink, life, 0));
             out.push(beam(up(tip), up(p.to), ink, life, 0));
             out.push(beam(tip, up(tip), ink, life, 0));
@@ -180,7 +211,6 @@ fn heads(ends: &[Piece], ink: [u8; 3], life: f32) -> Vec<Beam> {
 /// texture running toward the stroke's end, its posts still.
 fn beams(pieces: &[Piece], ink: [u8; 3], life: f32) -> Vec<Beam> {
     let beam = |from: [f64; 3], to: [f64; 3], speed: u8| beam(from, to, ink, life, speed);
-    let up = |p: [f64; 3]| [p[0], p[1], p[2] + FENCE];
     let mut out = Vec::new();
     for p in pieces {
         out.push(beam(p.from, p.to, SCROLL));
@@ -188,6 +218,11 @@ fn beams(pieces: &[Piece], ink: [u8; 3], life: f32) -> Vec<Beam> {
     }
     out.extend(posts(pieces).into_iter().map(|p| beam(p, up(p), 0)));
     out
+}
+
+/// `p` at the fence's top.
+fn up(p: [f64; 3]) -> [f64; 3] {
+    [p[0], p[1], p[2] + FENCE]
 }
 
 /// Whether two points are the one (a piece starting where another ends).
@@ -205,7 +240,7 @@ fn posts(pieces: &[Piece]) -> Vec<[f64; 3]> {
             out.push(p.from);
             since = 0.0;
         }
-        let length = (0..3).map(|k| (p.to[k] - p.from[k]).powi(2)).sum::<f64>().sqrt();
+        let length = drape::dist(p.from, p.to);
         let mut at = POST_EVERY - since;
         while at < length {
             out.push([0, 1, 2].map(|k| p.from[k] + (p.to[k] - p.from[k]) * at / length));
@@ -217,6 +252,11 @@ fn posts(pieces: &[Piece]) -> Vec<[f64; 3]> {
         }
     }
     out
+}
+
+/// `ink` as `#rrggbb`.
+pub(super) fn hex([r, g, b]: [u8; 3]) -> String {
+    format!("#{r:02x}{g:02x}{b:02x}")
 }
 
 /// `#rrggbb` as its bytes.
@@ -263,9 +303,27 @@ mod tests {
     }
 
     #[test]
+    fn a_pen_stroke_longer_than_tf2_shows_is_refused_but_its_end_is_not() {
+        let ground = Ground::from_json(br#"{"floors":[{"z":0,"p":[0,-200,100000,-200,100000,200,0,200]}]}"#).unwrap();
+        let mut s = PenStroke::new((1, 1));
+        // A zigzag: a corner, and so a post, at every point.
+        let zigzag = |from: usize| (from..from + 64).map(|i| [i as f64 * 32.0, if i % 2 == 0 { -64.0 } else { 64.0 }, 0.0]).collect();
+        let piece = |from, end| Draw { stroke: 1, points: zigzag(from), keep: false, end };
+        let mut from = 0;
+        while s.push(&ground, &piece(from, false), [1, 2, 3]).is_ok() {
+            from += 64;
+            assert!(from < 64 * 100, "never refused");
+        }
+        assert!(s.shown <= MAX_PEN_BEAMS, "{} shown", s.shown);
+        let end = s.push(&ground, &Draw { stroke: 1, points: Vec::new(), keep: false, end: true }, [1, 2, 3]).unwrap();
+        assert!(!end.is_empty(), "the arrowhead");
+    }
+
+    #[test]
     fn inks_are_their_bytes() {
         assert_eq!(rgb("#ff8000"), Some([255, 128, 0]));
         assert_eq!(rgb("#ff80"), None);
         assert_eq!(rgb("ff8000"), None);
+        assert_eq!(hex([255, 128, 0]), "#ff8000");
     }
 }

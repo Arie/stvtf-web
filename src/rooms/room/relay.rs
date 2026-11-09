@@ -5,6 +5,7 @@ use super::{Room, Saved};
 use crate::lock;
 use crate::matches::hub::announce;
 use crate::relays::pool::{Offer, RoomRelay};
+use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
 
 /// A relay that could not start is tried again after this long.
@@ -70,7 +71,7 @@ impl Room {
                     *lock(&self.relay_sent) = Some(want);
                     *relay = Some(r);
                     // A new relay has no marker yet.
-                    self.marker_dirty.store(true, std::sync::atomic::Ordering::Relaxed);
+                    self.marker_dirty.store(true, Ordering::Relaxed);
                 }
             }
             Ok(None) => {}

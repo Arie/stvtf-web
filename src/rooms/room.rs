@@ -10,7 +10,7 @@ use anyhow::Result;
 use drawing::kept_line;
 use play::State;
 use serde::{Deserialize, Serialize};
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 mod beams;
@@ -55,7 +55,7 @@ pub(crate) struct Room {
     /// The strokes being laid on the floors for the relay, by person and stroke, oldest first.
     drapes: Mutex<Vec<beams::PenStroke>>,
     /// The marker changed since the relay was last handed it.
-    marker_dirty: std::sync::atomic::AtomicBool,
+    marker_dirty: AtomicBool,
 }
 
 type Leader = (u32, String, String);
@@ -150,7 +150,7 @@ impl Room {
             camera: Mutex::new(None),
             marker: Mutex::new(Vec::new()),
             drapes: Mutex::new(Vec::new()),
-            marker_dirty: std::sync::atomic::AtomicBool::new(true),
+            marker_dirty: AtomicBool::new(true),
         });
         announce(&room.hub, "marker", &kept_line(&[]));
         let player = room.clone();
