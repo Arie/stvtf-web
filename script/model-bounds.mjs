@@ -10,6 +10,8 @@ import { openSync, readSync, readFileSync } from "node:fs";
 
 const SIGNATURE = 0x55aa1234;
 const HEADER_V2 = 28;
+// A directory entry after its name: CRC, preload size, archive, offset, length, terminator.
+const ENTRY = 18;
 // In the directory file itself, after the tree.
 const IN_DIR = 0x7fff;
 // The physics engine works in metres, its y down and z forward.
@@ -53,8 +55,8 @@ for (let ext = cstring(); ext; ext = cstring())
         archive = buf.readUInt16LE(at + 6),
         offset = buf.readUInt32LE(at + 8),
         length = buf.readUInt32LE(at + 12);
-      const preload = buf.subarray(at + 18, at + 18 + preloadBytes);
-      at += 18 + preloadBytes;
+      const preload = buf.subarray(at + ENTRY, at + ENTRY + preloadBytes);
+      at += ENTRY + preloadBytes;
       if (ext === "phy" && path.startsWith("models/props"))
         phys.push({ name: `${path}/${name}.mdl`, archive, offset, length, preload });
     }
