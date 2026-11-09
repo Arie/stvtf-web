@@ -3,12 +3,14 @@
 //! drawing one in a room: two clicks, kept with the marker.
 
 use super::Room;
-use super::beams::hex;
+use super::beams::{beam, heads, hex};
 use super::drawing::{Kept, MAX_KEPT_POINTS, kept_line};
 use crate::lock;
+use crate::maps::drape::Piece;
 use crate::matches::hub::send_keeping;
 use anyhow::{Result, bail};
 use serde::Deserialize;
+use stvtf::relay::Beam;
 
 /// Two clicks closer than this are no jump.
 const MIN_JUMP: f64 = 16.0;
@@ -100,6 +102,57 @@ fn handle_for(up: f64, peak: f64, land: f64) -> f64 {
     hi
 }
 
+/// A jump arc's beams are this far above its points, clear of the floors it starts and ends on.
+const ARC_LIFT: f64 = 8.0;
+/// Its shading: lightness from the launch floor to the peak, as the site's jump trails.
+const DARK: f64 = 0.24;
+const BRIGHT: f64 = 0.74;
+
+/// A jump arc's beams: a piece each, shaded by its end's height, and an arrowhead where it lands.
+pub(super) fn arc_beams(points: &[[f64; 3]], ink: [u8; 3], life: f32) -> Vec<Beam> {
+    let lifted: Vec<[f64; 3]> = points.iter().map(|p| [p[0], p[1], p[2] + ARC_LIFT]).collect();
+    let (Some(first), Some(_)) = (lifted.first(), lifted.last()) else { return Vec::new() };
+    let peak = lifted.iter().map(|p| p[2]).fold(first[2], f64::max);
+    let height = |z: f64| if peak > first[2] { (z - first[2]) / (peak - first[2]) } else { 0.0 };
+    let mut out: Vec<Beam> = lifted.windows(2).map(|w| beam(w[0], w[1], shade(ink, height(w[1][2])), life, 0)).collect();
+    if let [.., from, to] = lifted.as_slice() {
+        out.extend(heads(&[Piece { from: *from, to: *to, ms: 0.0 }], shade(ink, height(to[2])), life));
+    }
+    out
+}
+
+/// `ink` at the lightness `height` (0 the launch, 1 the peak) gives it: its hue and saturation kept.
+pub(super) fn shade(ink: [u8; 3], height: f64) -> [u8; 3] {
+    let [red, green, blue] = ink.map(|v| f64::from(v) / 255.0);
+    let (top, bottom) = (red.max(green).max(blue), red.min(green).min(blue));
+    let chroma = top - bottom;
+    let was = f64::midpoint(top, bottom);
+    let saturation = if chroma > 0.0 { chroma / (1.0 - (2.0 * was - 1.0).abs()) } else { 0.0 };
+    // The hue's sixth, from whichever channel is strongest (as bytes: exact).
+    let [r8, g8, b8] = ink;
+    let sixth = if chroma <= 0.0 {
+        0.0
+    } else if r8 >= g8 && r8 >= b8 {
+        ((green - blue) / chroma).rem_euclid(6.0)
+    } else if g8 >= b8 {
+        (blue - red) / chroma + 2.0
+    } else {
+        (red - green) / chroma + 4.0
+    };
+    let light = DARK + (BRIGHT - DARK) * height.clamp(0.0, 1.0);
+    let span = (1.0 - (2.0 * light - 1.0).abs()) * saturation;
+    let second = span * (1.0 - (sixth.rem_euclid(2.0) - 1.0).abs());
+    let rgb = match sixth as u8 {
+        0 => [span, second, 0.0],
+        1 => [second, span, 0.0],
+        2 => [0.0, span, second],
+        3 => [0.0, second, span],
+        4 => [second, 0.0, span],
+        _ => [span, 0.0, second],
+    };
+    rgb.map(|v| ((v + light - span / 2.0) * 255.0).round().clamp(0.0, 255.0) as u8)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -143,5 +196,23 @@ mod tests {
             assert!(along >= last - 1e-9, "never back");
             last = along;
         }
+    }
+    #[test]
+    fn shading_runs_from_dark_at_the_launch_to_bright_at_the_peak() {
+        let near = |a: [u8; 3], b: [u8; 3]| (0..3).all(|k| a[k].abs_diff(b[k]) <= 1);
+        assert!(near(shade([255, 0, 0], 0.0), [122, 0, 0]), "{:?}", shade([255, 0, 0], 0.0));
+        assert!(near(shade([255, 0, 0], 1.0), [255, 123, 123]), "{:?}", shade([255, 0, 0], 1.0));
+    }
+
+    #[test]
+    fn an_arc_is_a_beam_per_piece_and_an_arrowhead() {
+        let arc = jump([0.0, 0.0, 0.0], [300.0, 0.0, 200.0]);
+        let beams = arc_beams(&arc, [255, 0, 0], 2.0);
+        assert_eq!(beams.len(), 16 + 6, "a beam per piece, then the arrowhead's");
+        let pieces = &beams[..16];
+        let lightness = |b: &Beam| u32::from(b.rgb[1]);
+        let brightest = pieces.iter().max_by_key(|b| lightness(b)).unwrap();
+        let peak = arc.iter().map(|p| p[2]).fold(f64::MIN, f64::max);
+        assert!((f64::from(brightest.to[2]) - ARC_LIFT - peak).abs() < 1.0, "brightest at the peak: {brightest:?}");
     }
 }

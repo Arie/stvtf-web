@@ -113,6 +113,10 @@ impl Room {
         let mut all = Vec::new();
         for k in marker {
             let ink = k.ink.as_deref().and_then(rgb).unwrap_or_else(|| self.ink_now(k.by));
+            if let Some(arc) = &k.arc {
+                all.extend(super::arc::arc_beams(arc, ink, KEPT_LIFE));
+                continue;
+            }
             let pieces = Drape::new().push(ground, &k.points);
             all.extend(beams(&pieces, ink, KEPT_LIFE));
             if let Some(&[x, y, _]) = k.points.last().filter(|_| !k.open) {
@@ -181,7 +185,7 @@ impl Room {
 }
 
 /// A beam of `ink` from `from` to `to`, shown for `life` seconds, its texture running at `speed`.
-fn beam(from: [f64; 3], to: [f64; 3], ink: [u8; 3], life: f32, speed: u8) -> Beam {
+pub(super) fn beam(from: [f64; 3], to: [f64; 3], ink: [u8; 3], life: f32, speed: u8) -> Beam {
     Beam { from: from.map(|v| v as f32), to: to.map(|v| v as f32), rgb: ink, life, width: WIDTH, speed }
 }
 
@@ -192,7 +196,7 @@ fn ends(pieces: &[Piece], [x, y]: [f64; 2]) -> Vec<Piece> {
 
 /// An arrowhead on the end of each of `ends`, as a fence: wings on the floor and above, and posts
 /// at their tips.
-fn heads(ends: &[Piece], ink: [u8; 3], life: f32) -> Vec<Beam> {
+pub(super) fn heads(ends: &[Piece], ink: [u8; 3], life: f32) -> Vec<Beam> {
     let mut out = Vec::new();
     for p in ends {
         let (dx, dy) = (p.to[0] - p.from[0], p.to[1] - p.from[1]);
