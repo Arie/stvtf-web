@@ -230,7 +230,7 @@ impl Session {
     }
 
     /// Not the demo nor a demos.tf demo.
-    pub(super) fn watches_server(&self) -> bool {
+    pub(crate) fn watches_server(&self) -> bool {
         !self.pinned && self.demo.is_none()
     }
 

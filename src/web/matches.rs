@@ -94,8 +94,9 @@ pub(super) fn rewind(
     }
 }
 
-/// A match page's timeline: where its shared playback is (a live match at live), how long it is,
-/// its rounds and how many marks; or the marks from `?from=` on. While a demo is read, `202 {}`.
+/// A match page's timeline: where its shared playback is (a live match at live, or at its end),
+/// how long it is, its rounds and how many marks; or the marks from `?from=` on. While a demo is
+/// read, `202 {}`.
 pub(super) fn match_timeline(s: &mut TcpStream, m: &Arc<Session>, request: &Request, part: &str) -> std::io::Result<()> {
     let Some(r) = m.ready() else {
         m.prepare();
@@ -106,7 +107,8 @@ pub(super) fn match_timeline(s: &mut TcpStream, m: &Arc<Session>, request: &Requ
         let (marks, all) = r.marks(from);
         serde_json::json!({ "marks": marks, "all": all })
     } else {
-        let at = if r.is_live() { r.length() } else { lock(&m.hub).played.min(r.length()) };
+        // A live match's is at its end, once it ended too: only a replay plays from the start.
+        let at = if m.watches_server() { r.length() } else { lock(&m.hub).played.min(r.length()) };
         let (length, live, rounds, marks) = (r.length(), r.is_live(), r.rounds(), r.marks(usize::MAX).1);
         let (start, origin) = (r.start(), r.origin());
         serde_json::json!({ "at": at, "length": length, "start": start, "origin": origin, "live": live, "rounds": rounds, "marks": marks })

@@ -299,6 +299,25 @@ fn a_live_match_opens_a_room_that_records_it_from_then_on() {
     sessions.stop_all();
 }
 
+#[test]
+fn an_ended_live_match_is_at_its_end() {
+    let app = app(Matches::Many(Sessions::new(false, 2, 20.0)));
+    let Matches::Many(sessions) = &app.matches else { unreachable!() };
+    let m = sessions.open("192.0.2.1:27020 tv", None, None).unwrap();
+    let rec = m.recording().unwrap();
+    let stalemate = serde_json::from_str::<Line>(r#"{"type":"stalemate","tick":500}"#).unwrap();
+    while rec.length() < 50 {
+        publish(&m.hub, &stalemate);
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    // The match ended: no more lines come.
+    rec.end();
+    let timeline = get(&app, &format!("/w/{}/timeline", m.id), "");
+    let at = format!(r#""at":{}"#, rec.length());
+    assert!(timeline.contains(&at) && timeline.contains(r#""live":false"#), "{timeline}");
+    sessions.stop_all();
+}
+
 fn post_watch(app: &App, connect: &str) -> String {
     let body = format!("connect={connect}");
     let send = format!("POST /watch HTTP/1.1\r\nHost: x\r\nContent-Length: {}\r\n\r\n{body}", body.len());
