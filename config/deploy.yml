@@ -50,6 +50,8 @@ ssh:
 proxy:
   ssl: true
   app_port: 8080
+  # Cloudflare's X-Forwarded-For through, so the app sees visitors, not Cloudflare (as serveme).
+  forward_headers: true
   healthcheck:
     path: /up
     interval: 3

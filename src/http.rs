@@ -63,8 +63,8 @@ struct Request {
     query: String,
     length: usize,
     gzip: bool,
-    /// The client's address as the proxy in front says it.
-    forwarded: Option<IpAddr>,
+    /// `X-Forwarded-For`, nearest hop last; empty if any of it is not an address.
+    forwarded: Vec<IpAddr>,
     /// An `Authorization: Bearer` token.
     bearer: Option<String>,
     /// The `stvtf_guest` cookie: who the browser is, to the rooms.
@@ -87,7 +87,7 @@ fn read_request(reader: &mut impl BufRead) -> Result<Request> {
         query: query.to_string(),
         length: 0,
         gzip: false,
-        forwarded: None,
+        forwarded: Vec::new(),
         bearer: None,
         guest: None,
         user: None,
@@ -104,8 +104,7 @@ fn read_request(reader: &mut impl BufRead) -> Result<Request> {
         if name.eq_ignore_ascii_case("content-length") {
             request.length = value.trim().parse().unwrap_or(0);
         } else if name.eq_ignore_ascii_case("x-forwarded-for") {
-            // The proxy in front adds the address it saw last; earlier ones are the client's say-so.
-            request.forwarded = value.rsplit(',').next().and_then(|a| a.trim().parse::<IpAddr>().ok());
+            request.forwarded = value.split(',').map(|a| a.trim().parse::<IpAddr>()).collect::<Result<_, _>>().unwrap_or_default();
         } else if name.eq_ignore_ascii_case("authorization") {
             request.bearer = value.trim().strip_prefix("Bearer ").map(|t| t.trim().to_string());
         } else if name.eq_ignore_ascii_case("cookie") {
@@ -174,7 +173,7 @@ pub(crate) fn serve(mut s: TcpStream, app: &App) -> Result<()> {
     let mut reader = BufReader::new(s.try_clone()?.take(MAX_REQUEST));
     let request = read_request(&mut reader)?;
     let peer = s.peer_addr()?.ip();
-    let client = client_of(request.forwarded, peer);
+    let client = client_of(&request.forwarded, peer);
     match &app.matches {
         _ if request.path == "/up" => respond(&mut s, "200 OK", TEXT, b"ok")?,
         Matches::One(hub) => serve_one(s, app, hub, &request, client)?,
@@ -591,9 +590,63 @@ fn on_our_network(ip: IpAddr) -> bool {
     }
 }
 
-/// Who is asking: what the proxy says if the connection is from one of ours, or else whoever connected.
-fn client_of(forwarded: Option<IpAddr>, peer: IpAddr) -> IpAddr {
-    client_key(forwarded.filter(|_| on_our_network(peer)).unwrap_or(peer))
+/// Who is asking: walking `X-Forwarded-For` back from whoever connected, the first address that
+/// is neither ours nor Cloudflare's, as serveme does. Each hop wrote the one before it, so only
+/// a trusted hop's word is taken.
+fn client_of(forwarded: &[IpAddr], peer: IpAddr) -> IpAddr {
+    let mut client = peer;
+    for &hop in forwarded.iter().rev() {
+        if !trusted(client) {
+            break;
+        }
+        client = hop;
+    }
+    client_key(client)
+}
+
+/// Our proxy, or Cloudflare's edge in front of it.
+fn trusted(ip: IpAddr) -> bool {
+    on_our_network(ip) || is_cloudflare(ip)
+}
+
+/// Cloudflare's addresses, from <https://www.cloudflare.com/ips/> (2026-11; serveme has the same).
+const CLOUDFLARE: [&str; 22] = [
+    "173.245.48.0/20",
+    "103.21.244.0/22",
+    "103.22.200.0/22",
+    "103.31.4.0/22",
+    "141.101.64.0/18",
+    "108.162.192.0/18",
+    "190.93.240.0/20",
+    "188.114.96.0/20",
+    "197.234.240.0/22",
+    "198.41.128.0/17",
+    "162.158.0.0/15",
+    "104.16.0.0/13",
+    "104.24.0.0/14",
+    "172.64.0.0/13",
+    "131.0.72.0/22",
+    "2400:cb00::/32",
+    "2606:4700::/32",
+    "2803:f800::/32",
+    "2405:b500::/32",
+    "2405:8100::/32",
+    "2a06:98c0::/29",
+    "2c0f:f248::/32",
+];
+
+fn is_cloudflare(ip: IpAddr) -> bool {
+    let bits = |ip: IpAddr| match ip.to_canonical() {
+        IpAddr::V4(v4) => (u128::from(v4.to_bits()), 32),
+        IpAddr::V6(v6) => (v6.to_bits(), 128),
+    };
+    let (ip, width) = bits(ip);
+    CLOUDFLARE.iter().any(|range| {
+        let Some((net, len)) = range.split_once('/') else { return false };
+        let (Ok(net), Ok(len)) = (net.parse::<IpAddr>(), len.parse::<u32>()) else { return false };
+        let (net, net_width) = bits(net);
+        net_width == width && len <= width && (ip ^ net) >> (width - len) == 0
+    })
 }
 
 /// What a client is counted by: its address, or for IPv6 its /64, which one user usually has all of.
@@ -637,8 +690,8 @@ fn start(app: &App, sessions: &Sessions, request: &Request, client: IpAddr) -> R
 }
 
 /// Who a start counts against, for the limits per person: a Steam id (`steam`, else the
-/// signed-in user's), else the address (an IPv6 one by its /64); nobody for a streamer or more,
-/// or on this machine.
+/// signed-in user's), else the client (see [`client_of`]); nobody for a streamer or more, or on
+/// this machine.
 fn counted(user: Option<&token::User>, steam: Option<&str>, client: IpAddr) -> Option<String> {
     if user.is_some_and(|u| u.streamer) || client.to_canonical().is_loopback() {
         return None;
@@ -646,13 +699,7 @@ fn counted(user: Option<&token::User>, steam: Option<&str>, client: IpAddr) -> O
     if let Some(id) = steam.or(user.map(|u| u.uid.as_str())) {
         return Some(format!("{}{id}", crate::people::STEAM));
     }
-    Some(match client.to_canonical() {
-        IpAddr::V6(ip) => {
-            let s = ip.segments();
-            format!("ip:{:x}:{:x}:{:x}:{:x}::/64", s[0], s[1], s[2], s[3])
-        }
-        ip @ IpAddr::V4(_) => format!("ip:{ip}"),
-    })
+    Some(format!("ip:{client}"))
 }
 
 /// Display options a start link can carry over to the page.
@@ -807,8 +854,6 @@ mod tests {
         assert_eq!(counted(Some(&user(true)), Some("1"), ip("192.0.2.1")), None, "streamers count against nobody");
         assert_eq!(counted(None, None, ip("192.0.2.1")).as_deref(), Some("ip:192.0.2.1"));
         assert_eq!(counted(None, Some("1"), ip("127.0.0.1")), None, "this machine");
-        assert_eq!(counted(None, None, ip("::ffff:192.0.2.1")).as_deref(), Some("ip:192.0.2.1"));
-        assert_eq!(counted(None, None, ip("2001:db8:1:2:aa::1")), counted(None, None, ip("2001:db8:1:2:bb::9")), "one /64");
     }
     use crate::{App, Matches, TcpListener, token};
     use flate2::read::GzDecoder;
@@ -1502,23 +1547,31 @@ mod tests {
     #[test]
     fn only_a_proxy_of_ours_is_believed_about_the_client() {
         let ip = |s: &str| s.parse::<IpAddr>().unwrap();
-        let claimed = Some(ip("203.0.113.9"));
-        assert_eq!(client_of(claimed, ip("172.18.0.2")), ip("203.0.113.9"));
-        assert_eq!(client_of(claimed, ip("141.94.96.119")), ip("141.94.96.119"), "a stranger cannot choose whose streams count");
-        assert_eq!(client_of(None, ip("172.18.0.2")), ip("172.18.0.2"));
+        let claimed = [ip("203.0.113.9")];
+        assert_eq!(client_of(&claimed, ip("172.18.0.2")), ip("203.0.113.9"));
+        assert_eq!(client_of(&claimed, ip("141.94.96.119")), ip("141.94.96.119"), "a stranger cannot choose whose streams count");
+        assert_eq!(client_of(&[], ip("172.18.0.2")), ip("172.18.0.2"));
+        // Visitor, Cloudflare, our proxy: the visitor, whatever they claimed before that.
+        let via = [ip("10.0.0.1"), ip("81.2.69.160"), ip("162.158.1.2")];
+        assert_eq!(client_of(&via, ip("172.18.0.2")), ip("81.2.69.160"));
+        assert_eq!(client_of(&[ip("81.2.69.160"), ip("2a06:98c0::1")], ip("172.18.0.2")), ip("81.2.69.160"));
+        // Straight to our proxy, claiming to be Cloudflare: themselves.
+        assert_eq!(client_of(&[ip("81.2.69.160"), ip("162.158.1.2"), ip("89.160.20.112")], ip("172.18.0.2")), ip("89.160.20.112"));
+        assert!(is_cloudflare(ip("104.27.255.255")) && !is_cloudflare(ip("104.28.0.0")));
+        assert!(is_cloudflare(ip("::ffff:173.245.63.1")) && !is_cloudflare(ip("2a06:98c8::")));
     }
 
     #[test]
-    fn the_client_is_the_last_forwarded_address() {
+    fn forwarded_addresses_are_read_in_order() {
         let forwarded = |header: &str| {
             let send = format!("GET / HTTP/1.1\r\n{header}\r\n\r\n");
-            read_request(&mut send.as_bytes()).unwrap().forwarded.map(|ip| ip.to_string())
+            read_request(&mut send.as_bytes()).unwrap().forwarded.iter().map(ToString::to_string).collect::<Vec<_>>().join(" ")
         };
-        assert_eq!(forwarded("X-Forwarded-For: 203.0.113.9").as_deref(), Some("203.0.113.9"));
-        assert_eq!(forwarded("x-forwarded-for: 198.51.100.7, 203.0.113.9").as_deref(), Some("203.0.113.9"));
-        assert_eq!(forwarded("X-Forwarded-For: 2001:db8::1").as_deref(), Some("2001:db8::1"));
-        assert_eq!(forwarded("X-Forwarded-For: 203.0.113.9, nonsense"), None);
-        assert_eq!(forwarded("Host: x"), None);
+        assert_eq!(forwarded("X-Forwarded-For: 203.0.113.9"), "203.0.113.9");
+        assert_eq!(forwarded("x-forwarded-for: 198.51.100.7, 203.0.113.9"), "198.51.100.7 203.0.113.9");
+        assert_eq!(forwarded("X-Forwarded-For: 2001:db8::1"), "2001:db8::1");
+        assert_eq!(forwarded("X-Forwarded-For: 203.0.113.9, nonsense"), "");
+        assert_eq!(forwarded("Host: x"), "");
     }
 
     #[test]
