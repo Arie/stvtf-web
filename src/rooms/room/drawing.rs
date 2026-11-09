@@ -26,8 +26,8 @@ pub(crate) struct Draw {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct Kept {
     stroke: u32,
-    by: u32,
-    points: Vec<[f64; 3]>,
+    pub(super) by: u32,
+    pub(super) points: Vec<[f64; 3]>,
 }
 
 /// Most permanent marker points on a room's map.
@@ -57,6 +57,7 @@ impl Room {
         let line: Arc<str> = line.to_string().into();
         if !d.keep {
             send(&self.hub, &line);
+            self.draw_in_relay(d, by);
             return Ok(());
         }
         let mut marker = lock(&self.marker);
@@ -68,6 +69,8 @@ impl Room {
             None => marker.push(Kept { stroke: d.stroke, by, points: d.points.clone() }),
         }
         send_keeping(&self.hub, &line, "marker", kept_line(&marker));
+        drop(marker);
+        self.draw_in_relay(d, by);
         Ok(())
     }
 
@@ -76,6 +79,7 @@ impl Room {
         let by = lock(&self.people).id(guest);
         let mut marker = lock(&self.marker);
         marker.clear();
+        self.forget_drapes();
         let line = serde_json::json!({ "type": "clear", "by": by }).to_string().into();
         send_keeping(&self.hub, &line, "marker", kept_line(&marker));
     }

@@ -5,8 +5,11 @@
 //! the stroke each floor under it continues the line on the floor before when it is within a step
 //! or a slope of it; a line goes on over a short gap (a wall, a railing) and ends after a longer one.
 
+use crate::lock;
 use anyhow::Result;
 use serde::Deserialize;
+use std::path::Path;
+use std::sync::{Arc, Mutex};
 
 /// The stroke is followed in steps this long, so lines follow the floor between its points.
 const STEP: f64 = 8.0;
@@ -29,6 +32,26 @@ const CELL: f64 = 256.0;
 const MAX_STEPS: usize = 20_000;
 /// The most lines a stroke has on the floors at once.
 const MAX_LINES: usize = 16;
+
+/// The most maps whose floors are kept at once.
+const MAX_GROUNDS: usize = 8;
+
+/// The floors of `map`, from its geometry in `cache`, kept for the next stroke; None while the map
+/// has not been built.
+pub(crate) fn ground(cache: &Path, map: &str) -> Option<Arc<Ground>> {
+    static KEPT: Mutex<Vec<(String, Arc<Ground>)>> = Mutex::new(Vec::new());
+    if let Some((_, g)) = lock(&KEPT).iter().find(|(m, _)| m == map) {
+        return Some(g.clone());
+    }
+    let json = super::cache::map_geometry(cache, map, false).ok()?;
+    let g = Arc::new(Ground::from_json(&json).ok()?);
+    let mut kept = lock(&KEPT);
+    if kept.len() >= MAX_GROUNDS {
+        kept.remove(0);
+    }
+    kept.push((map.to_string(), g.clone()));
+    Some(g)
+}
 
 /// A floor as the map geometry serves it.
 #[derive(Debug, Deserialize)]

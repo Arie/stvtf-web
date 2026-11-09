@@ -143,5 +143,6 @@ impl Room {
             self.ensure_relay();
         }
         self.tell_relay();
+        self.redraw_marker();
     }
 }

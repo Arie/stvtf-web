@@ -9,6 +9,7 @@ use crate::rooms::room::{Room, Saved};
 use anyhow::{Result, bail};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex, Weak};
 use std::time::{Duration, Instant, SystemTime};
 
@@ -34,6 +35,8 @@ pub(crate) struct Rooms {
     private: Mutex<std::collections::HashSet<String>>,
     /// The ports rooms are relayed on, if they are (`--relay-ports`).
     relays: Option<Arc<Pool>>,
+    /// Where the maps' geometry is kept, for the relays to draw strokes on their floors.
+    maps: Option<PathBuf>,
     /// A hash of each room file as last written here: one the same again is only touched.
     written: Mutex<HashMap<String, u64>>,
     /// Who opened each room, for the limits per person, and when.
@@ -82,10 +85,16 @@ impl Rooms {
         Rooms { store, relays, ..Rooms::default() }
     }
 
+    /// Their relays draw strokes on the floors of the maps kept in `cache`.
+    pub(crate) fn with_maps(mut self, cache: PathBuf) -> Rooms {
+        self.maps = Some(cache);
+        self
+    }
+
     /// Lets `room` be relayed to TF2 clients, from where `demo_of` says its demos are.
     fn offer(&self, room: &Room, demo_of: Option<DemoOf>) {
         if let (Some(relays), Some(demo_of)) = (&self.relays, demo_of) {
-            room.offer_relay(Offer { relays: relays.clone(), demo_of });
+            room.offer_relay(Offer { relays: relays.clone(), demo_of, maps: self.maps.clone() });
         }
     }
 

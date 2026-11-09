@@ -356,7 +356,7 @@ fn main() -> Result<()> {
         keys,
         home: options.home.clone(),
         streams: Mutex::default(),
-        rooms: rooms::registry::Rooms::new(store, relays),
+        rooms: rooms::registry::Rooms::new(store, relays).with_maps(options.cache.clone()),
     });
     app.rooms.sweep();
     if let Matches::Many(_) = app.matches {

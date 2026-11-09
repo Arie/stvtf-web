@@ -13,6 +13,7 @@ use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex, OnceLock};
 use std::time::{Duration, Instant};
+mod beams;
 mod drawing;
 mod play;
 mod relay;
@@ -51,6 +52,10 @@ pub(crate) struct Room {
     camera: Mutex<Option<u16>>,
     /// The permanent marker strokes on the map.
     marker: Mutex<Vec<Kept>>,
+    /// The strokes being laid on the floors for the relay, by person and stroke, oldest first.
+    drapes: Mutex<Vec<((u32, u32), crate::maps::drape::Drape)>>,
+    /// When the relay was last sent the marker.
+    marker_drawn: Mutex<Option<Instant>>,
 }
 
 type Leader = (u32, String, String);
@@ -144,6 +149,8 @@ impl Room {
             relay_failed: Mutex::new(None),
             camera: Mutex::new(None),
             marker: Mutex::new(Vec::new()),
+            drapes: Mutex::new(Vec::new()),
+            marker_drawn: Mutex::new(None),
         });
         announce(&room.hub, "marker", &kept_line(&[]));
         let player = room.clone();

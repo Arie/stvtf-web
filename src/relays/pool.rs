@@ -12,7 +12,7 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
-use stvtf::relay::{Playback, Relay, RelayConfig, Want};
+use stvtf::relay::{Beam, Playback, Relay, RelayConfig, Want};
 
 /// TF2 clients a room takes at once.
 const SLOTS: usize = 24;
@@ -137,6 +137,11 @@ impl LocalRelay {
         self.bound().relay().clients()
     }
 
+    /// Shows `beams` to the TF2 clients in.
+    pub(crate) fn draw(&self, beams: &[Beam]) {
+        self.playback.draw(beams);
+    }
+
     /// Whether it stopped on its own (it could not even start), so the room should start another.
     pub(crate) fn stopped(&self) -> bool {
         self.thread.is_finished()
@@ -202,6 +207,14 @@ impl RoomRelay {
         }
     }
 
+    /// Shows `beams` to the TF2 clients in.
+    pub(crate) fn draw(&self, beams: &[Beam]) {
+        match self {
+            RoomRelay::Local(r) => r.draw(beams),
+            RoomRelay::Remote(r) => r.draw(beams),
+        }
+    }
+
     /// TF2 clients in.
     pub(crate) fn clients(&self) -> usize {
         match self {
@@ -247,6 +260,8 @@ pub(crate) type DemoOf = Arc<dyn Fn(u32) -> Option<PathBuf> + Send + Sync>;
 pub(crate) struct Offer {
     pub(crate) relays: Arc<Pool>,
     pub(crate) demo_of: DemoOf,
+    /// Where the maps' geometry is kept, to draw strokes on their floors.
+    pub(crate) maps: Option<PathBuf>,
 }
 
 #[cfg(test)]

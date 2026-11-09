@@ -71,6 +71,11 @@ impl People {
         self.person(guest).id
     }
 
+    /// The ink person `id` picked, if they did.
+    pub(crate) fn ink_of(&self, id: u32) -> Option<&str> {
+        self.by_guest.values().find(|p| p.id == id).and_then(|p| p.ink.as_deref())
+    }
+
     /// A page of `guest`'s joins, with the name it gives; one signed in (`site`) is called what the
     /// site calls them.
     pub(crate) fn join(&mut self, guest: &str, name: Option<&str>, site: Option<&str>) {

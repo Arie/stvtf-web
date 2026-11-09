@@ -10,6 +10,8 @@
 //!   every port is taken.
 //! - `{"op": "follow", "room", "want"}`: where the room is now.
 //! - `{"op": "status", "room"}`: TF2 clients in, whether it stopped, and its page line.
+//! - `{"op": "draw", "room", "beams"}`: lines to show the TF2 clients in, each
+//!   `[x1, y1, z1, x2, y2, z2, r, g, b, seconds, width]`.
 //! - `{"op": "stop", "room"}`: the room ended.
 //!
 //! A `want` is a [`stvtf::relay::Want`] with `age_ms` (how long ago `tick` was wanted) for its
@@ -30,7 +32,7 @@ use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Condvar, Mutex, PoisonError};
 use std::time::{Duration, Instant};
-use stvtf::relay::Want;
+use stvtf::relay::{Beam, Want};
 
 /// A relay not asked about for this long is stopped: longer than any deploy takes.
 pub(crate) const LEASE: Duration = Duration::from_mins(2);
@@ -42,6 +44,8 @@ const ANSWER: Duration = Duration::from_millis(500);
 const STATUS_EVERY: Duration = Duration::from_millis(500);
 /// How long a relay process that did not answer is left alone.
 const AWAY: Duration = Duration::from_secs(2);
+/// The most beams waiting to go to the relay process: more are dropped.
+const MAX_BEAMS_WAITING: usize = 4096;
 
 /// A [`Want`] on the wire.
 #[derive(Serialize, Deserialize)]
@@ -100,9 +104,26 @@ enum Request {
     Status {
         room: String,
     },
+    Draw {
+        room: String,
+        beams: Vec<BeamLine>,
+    },
     Stop {
         room: String,
     },
+}
+
+/// A [`Beam`] on the wire.
+type BeamLine = [f32; 11];
+
+fn beam_line(b: &Beam) -> BeamLine {
+    let [r, g, bl] = b.rgb.map(f32::from);
+    [b.from[0], b.from[1], b.from[2], b.to[0], b.to[1], b.to[2], r, g, bl, b.life, b.width]
+}
+
+fn beam(l: &BeamLine) -> Beam {
+    let byte = |v: f32| v.clamp(0.0, 255.0) as u8;
+    Beam { from: [l[0], l[1], l[2]], to: [l[3], l[4], l[5]], rgb: [byte(l[6]), byte(l[7]), byte(l[8])], life: l[9], width: l[10] }
 }
 
 struct Leased {
@@ -194,6 +215,13 @@ fn handle(r: Request, rooms: &Rooms, relays: &Arc<Relays>) -> Value {
             }
             None => json!({ "gone": true }),
         },
+        Request::Draw { room, beams } => match lock(rooms).get_mut(&room) {
+            Some(l) => {
+                l.relay.draw(&beams.iter().map(beam).collect::<Vec<_>>());
+                json!({})
+            }
+            None => json!({ "gone": true }),
+        },
         Request::Stop { room } => {
             lock(rooms).remove(&room);
             json!({})
@@ -267,7 +295,7 @@ impl Remote {
         let shared = Arc::new(Shared {
             remote: self.clone(),
             room: room.to_string(),
-            inner: Mutex::new(Inner { clients: 0, stopped: false, line, want: None, done: None }),
+            inner: Mutex::new(Inner { clients: 0, stopped: false, line, want: None, beams: Vec::new(), done: None }),
             wake: Condvar::new(),
         });
         let tending = shared.clone();
@@ -291,6 +319,7 @@ struct Inner {
     line: Value,
     /// Not sent yet.
     want: Option<Want>,
+    beams: Vec<Beam>,
     done: Option<Done>,
 }
 
@@ -306,16 +335,16 @@ impl Shared {
     fn tend(&self) {
         let mut asked = Instant::now();
         loop {
-            let (want, done) = {
+            let (want, beams, done) = {
                 let mut i = lock(&self.inner);
-                while i.want.is_none() && i.done.is_none() {
+                while i.want.is_none() && i.beams.is_empty() && i.done.is_none() {
                     let left = STATUS_EVERY.saturating_sub(asked.elapsed());
                     if left.is_zero() {
                         break;
                     }
                     i = self.wake.wait_timeout(i, left).unwrap_or_else(PoisonError::into_inner).0;
                 }
-                (i.want.take(), i.done)
+                (i.want.take(), std::mem::take(&mut i.beams), i.done)
             };
             match done {
                 Some(Done::End) => {
@@ -330,6 +359,10 @@ impl Shared {
                 if answer.is_ok_and(|a| a.get("gone").is_some()) {
                     lock(&self.inner).stopped = true;
                 }
+            }
+            if !beams.is_empty() {
+                let beams: Vec<BeamLine> = beams.iter().map(beam_line).collect();
+                let _ = self.remote.call(&json!({ "op": "draw", "room": self.room, "beams": beams }));
             }
             if asked.elapsed() >= STATUS_EVERY {
                 asked = Instant::now();
@@ -368,6 +401,16 @@ impl RemoteRelay {
         self.0.wake.notify_all();
     }
 
+    /// Shows `beams` to the TF2 clients in; those not sent yet go with them.
+    pub(crate) fn draw(&self, beams: &[Beam]) {
+        let mut i = lock(&self.0.inner);
+        if i.beams.len() + beams.len() <= MAX_BEAMS_WAITING {
+            i.beams.extend_from_slice(beams);
+        }
+        drop(i);
+        self.0.wake.notify_all();
+    }
+
     /// As last asked.
     pub(crate) fn clients(&self) -> usize {
         lock(&self.0.inner).clients
@@ -397,6 +440,13 @@ impl Drop for RemoteRelay {
 mod tests {
     use super::*;
     use crate::testing::TempDir;
+
+    #[test]
+    fn a_beam_goes_to_the_relay_process_as_it_was() {
+        let b = Beam { from: [1.5, -2.0, 3.0], to: [4.0, 5.0, -6.25], rgb: [255, 128, 0], life: 4.0, width: 3.0 };
+        let line: BeamLine = serde_json::from_value(serde_json::to_value(beam_line(&b)).unwrap()).unwrap();
+        assert_eq!(beam(&line), b);
+    }
 
     #[test]
     fn a_relay_process_that_does_not_answer_is_left_alone_a_while() {
