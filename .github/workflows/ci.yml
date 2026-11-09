@@ -68,7 +68,7 @@ jobs:
         with:
           path: stvtf-web
           persist-credentials: false
-      - uses: jdx/mise-action@fc42bcc7ddbf51124c30f95a877a0c5168a3bfde # v5.2.1
+      - uses: jdx/mise-action@b44d12e7d0d8ee7461bb893e1b1993500433185b # v5.2.7
         with:
           working_directory: stvtf-web
           # Pinned: left to pick, it took 2026.11.4, whose .tar.zst GitHub answers with a 504.
@@ -176,7 +176,7 @@ jobs:
           ssh-key: ${{ secrets.STVMAP_DEPLOY_KEY }}
           persist-credentials: false
       - run: rustup toolchain install
-      - uses: taiki-e/install-action@86f7a0ffb25f40114606501a311ebcfaf882ea32 # v2.88.0
+      - uses: taiki-e/install-action@3a3daafd3b7f23b8f65d9f5ba2db203fb59b79e2 # v2.90.2
         with:
           tool: cargo-deny
       - run: script/test -v -t cargo-deny
