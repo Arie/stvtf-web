@@ -193,12 +193,24 @@ aside section {
   margin-bottom: 6px;
   font-size: 12px;
 }
-#whoami a {
+/* The heading, and Sign in on its right. */
+#peoplehead {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+#peoplehead h3 {
+  margin: 0;
+}
+#signin {
   color: var(--dim);
+  font-size: 12px;
   white-space: nowrap;
   cursor: pointer;
 }
-#whoami a:hover {
+#signin:hover {
   color: var(--text);
 }
 #claim {
