@@ -10,11 +10,26 @@ srcds's built-in spectator server. Viewers connect to `tv_port` and only receive
 | cvar | default | league configs | |
 |---|---|---|---|
 | `tv_port` | 27020 | | stvtf tries game port + 5 when given a game port |
-| `tv_delay` | 30 | | seconds behind the game; measured 30.4 s for a `say` |
+| `tv_delay` | 30 | 90 | seconds behind the game; measured 30.4 s for a `say` at 30 |
 | `tv_snapshotrate` | 16 | 66 | frames per second: every 4 ticks, or every tick |
-| `tv_transmitall` | 0 | 1 | with 12 bots, 0 and 1 gave the same players and projectiles |
+| `tv_transmitall` | 0 | 1 | all entities, or only what the director sees; below |
+| `tv_relayvoice` | 1 | 0 | players' voice to SourceTV |
 
-Of 16 STV demos, 13 have a frame every tick (all 7 from serveme.tf), 2 every 4 ticks, 1 every 2.
+League configs: serveme.tf's copies (38 of them set `tv_delay 90` and `tv_relayvoice 0`). All 16 STV
+demos checked ran `tv_transmitall 1`; 13 have a frame every tick (all 7 from serveme.tf), 2 every 4
+ticks, 1 every 2.
+
+### `tv_transmitall`
+
+With 0, SourceTV sends only the entities the director's camera can see, plus those always sent to
+a spectator: TF2 sends every player and building to the spectator team
+(`CTFPlayer::ShouldForceTransmitsForTeam`). With 4 bots standing in both spawns on `ctf_turbine`,
+the first full update had 128 entities at 0 and 234 at 1: the same players, flags and objectives,
+but fewer doors, props, beams and `CBaseAnimating`. Projectiles were not tested.
+
+A TF2 client watching locks its camera to the director while it is 0 (`C_HLTVCamera::IsPVSLocked`
+is `!tv_transmitall`), as there is nothing to see elsewhere. stv.tf wants 1, which leagues set.
+Whether voice depends on it was not tested: it needs a player talking.
 
 ## A frame
 
@@ -138,10 +153,14 @@ On 2026-11-09, with a probe built on stvtf and tf-demo-parser:
   frame spacing, baselines, signon messages, `ClassInfo`'s create flag, spawn counts.
 - **Live**: `serveme/tf2-cloud-server` in Docker, build 10682184, `ctf_turbine` with 12 bots and
   default cvars. Read the cvars over rcon, recorded 55 s as a `.dem` and counted it like the demos,
-  timed a `say` through the stream, compared `tv_transmitall` 0 and 1, killed a client with `kill -9`
+  timed a `say` through the stream, compared `tv_transmitall` 0 and 1 (12 roaming bots, then 4
+  standing in the spawns, counting each full update's entities by class), killed a client with `kill -9`
   and watched `tv_status` every 15 s.
 - **Jumps**: a relay playing `pl_upward.dem` with an stvtf client, timing each jump until a
   snapshot of the target tick arrived.
+- **Source SDK 2013**: `CServerGameEnts::CheckTransmit`, `CTFPlayer::ShouldForceTransmitsForTeam`,
+  `C_HLTVCamera::IsPVSLocked`. The engine's SourceTV server is not in it.
+- **Configs**: serveme.tf's league configs, and the `SetConVar`s in each demo's signon.
 - **Code**: the constants named here, in stvtf (`relay/play`, `decode/world.rs`, `session.rs`,
   `net/messages.rs`, `demo/`) and stv.tf (`matches/`, `rooms/room/relay.rs`).
 
