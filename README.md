@@ -15,6 +15,7 @@ cargo build --release
 
 ## Docs
 
+- [How it works](docs/how-it-works.md): SourceTV, demos, and how stv.tf plays both.
 - [Running locally](docs/running-locally.md): on a LAN, no serveme.tf.
 - [Running](docs/running.md): options, limits, sessions, demos.
 - [Behind a site](docs/site.md): serveme.tf's tokens, `/matches`, sign-in.
