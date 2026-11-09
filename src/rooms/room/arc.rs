@@ -59,16 +59,30 @@ impl Room {
 /// Pieces the arc is made of, and of those the first that go straight up.
 const PIECES: usize = 16;
 const UP_PIECES: usize = PIECES / 4;
-/// How far the arc rises above the higher spot, and how much of its climb goes straight up.
-const RISE: f64 = 128.0;
+/// How much of its climb goes straight up.
 const STRAIGHT: f64 = 1.0 / 3.0;
 /// Where along the way the curve's second handle is, at its height.
 const HANDLE: f64 = 0.6;
 
+/// How far a soldier's jump rises above the higher of its spots, by how far it goes (flat): the
+/// RGL LAN final's medians, flatter the longer it goes.
+const RISES: [(f64, f64); 4] = [(0.0, 64.0), (400.0, 100.0), (800.0, 170.0), (1100.0, 220.0)];
+
+fn rise(distance: f64) -> f64 {
+    let last = RISES[RISES.len() - 1];
+    if distance >= last.0 {
+        return last.1;
+    }
+    RISES
+        .windows(2)
+        .find(|w| distance < w[1].0)
+        .map_or(RISES[0].1, |w| w[0].1 + (w[1].1 - w[0].1) * (distance - w[0].0) / (w[1].0 - w[0].0))
+}
+
 /// The arc from launch `a` to landing `b`, up or down: its points, the ends those spots.
 pub(super) fn jump(a: [f64; 3], b: [f64; 3]) -> Vec<[f64; 3]> {
     let (launch, land) = (a, b);
-    let peak = launch[2].max(land[2]) + RISE;
+    let peak = launch[2].max(land[2]) + rise((land[0] - launch[0]).hypot(land[1] - launch[1]));
     let up = launch[2] + (peak - launch[2]) * STRAIGHT;
     let mut out: Vec<[f64; 3]> =
         (0..=UP_PIECES).map(|i| [launch[0], launch[1], launch[2] + (up - launch[2]) * i as f64 / UP_PIECES as f64]).collect();
@@ -93,7 +107,7 @@ fn handle_for(up: f64, peak: f64, land: f64) -> f64 {
     let top = |handle: f64| {
         (1..=PIECES - UP_PIECES).map(|i| curve(i as f64 / (PIECES - UP_PIECES) as f64, up, handle, land).1).fold(up, f64::max)
     };
-    let (mut lo, mut hi) = (peak, peak + 4.0 * RISE + (peak - land));
+    let (mut lo, mut hi) = (peak, peak + 4.0 * (peak - up) + (peak - land));
     for _ in 0..60 {
         let mid = f64::midpoint(lo, hi);
         if top(mid) < peak { lo = mid } else { hi = mid }
@@ -178,10 +192,19 @@ mod tests {
     }
 
     #[test]
+    fn it_rises_as_soldiers_jumps_do_flatter_the_longer_they_go() {
+        // The RGL LAN final's medians: about 70 up on a short hop, 220 or so from 1100 on.
+        assert!((rise(0.0) - 64.0).abs() < 1.0 && (rise(1100.0) - 220.0).abs() < 1.0);
+        assert!((rise(3000.0) - 220.0).abs() < 1.0, "no higher for longer");
+        let flatness = |d: f64| rise(d) / d;
+        assert!(flatness(300.0) > flatness(800.0) && flatness(800.0) > flatness(2000.0));
+    }
+
+    #[test]
     fn it_rises_above_the_landing_and_comes_down_onto_it() {
         let arc = jump([0.0, 0.0, 0.0], [300.0, 0.0, 200.0]);
         let peak = arc.iter().map(|p| p[2]).fold(f64::MIN, f64::max);
-        assert!((peak - (200.0 + RISE)).abs() < 1.0, "{peak}");
+        assert!((peak - (200.0 + rise(300.0))).abs() < 1.0, "{peak}");
         assert!(arc[15][2] > arc[16][2] && arc[14][2] > arc[15][2], "falling onto it");
     }
 
