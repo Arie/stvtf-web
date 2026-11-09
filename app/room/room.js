@@ -125,7 +125,7 @@ async function copyText(text) {
     }
   } catch {}
   const area = Object.assign(document.createElement("textarea"), { value: text, readOnly: true });
-  area.style.cssText = "position: fixed; top: 0; left: 0; opacity: 0";
+  area.className = "offscreen";
   document.body.append(area);
   area.select();
   let ok = false;

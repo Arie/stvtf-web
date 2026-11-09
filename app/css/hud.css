@@ -223,6 +223,19 @@
   width: 2px;
   background: var(--shade);
 }
+/* The Vaccinator's four pips: marks at their quarters. */
+.charge .seg.q1 {
+  left: 25%;
+}
+.charge .seg.q2 {
+  left: 50%;
+}
+.charge .seg.q3 {
+  left: 75%;
+}
+.charge > span.sub {
+  opacity: 0.75;
+}
 .charge > span {
   position: relative;
   font-size: 12px;

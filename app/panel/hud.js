@@ -185,7 +185,7 @@ function chargeLabel(g, pct) {
 function chargeMeter(p) {
   const el = node(
     `c${p.id}`,
-    `<div class="charge"><div class="bar"></div><i class="segs"></i><span></span><span style="opacity:.75"></span><span class="pct"></span></div>`,
+    `<div class="charge"><div class="bar"></div><i class="segs"></i><span></span><span class="sub"></span><span class="pct"></span></div>`,
   );
   /** @type {import("../../types/stream").Medigun} */
   const g = p.medigun || { kind: "medigun", releasing: false, resist: null, target: null };
@@ -198,10 +198,7 @@ function chargeMeter(p) {
   );
   setStyle(/** @type {HTMLElement} */ (el.children[0]), "clipPath", `inset(0px ${100 - pct}% 0px 0px)`);
   // The Vaccinator charges in four 25% pips; the others in one bar.
-  setHTML(
-    el.children[1],
-    g.kind === "vaccinator" ? [25, 50, 75].map(x => `<i class="seg" style="left:${x}%"></i>`).join("") : "",
-  );
+  setHTML(el.children[1], g.kind === "vaccinator" ? [1, 2, 3].map(q => `<i class="seg q${q}"></i>`).join("") : "");
   setText2(el.children[2], chargeLabel(g, pct));
   setText2(
     el.children[3],

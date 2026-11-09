@@ -129,3 +129,10 @@ canvas#c {
 canvas#c:active {
   cursor: grabbing;
 }
+/* Out of sight but there: the text a copy button copies the old way. */
+.offscreen {
+  position: fixed;
+  top: 0;
+  left: 0;
+  opacity: 0;
+}
