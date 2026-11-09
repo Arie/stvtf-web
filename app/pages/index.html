@@ -1,183 +1,117 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>stv.tf</title>
-    <!-- The server fills in where it is served (behind a proxy, /live/); all asset links are relative to it. -->
-    <base href="/" />
-    <link rel="stylesheet" href="killicons.css" />
-    <link rel="stylesheet" href="app/dev/style.css" />
-  </head>
-  <body>
-    <div class="stvtf" id="app">
-      <main>
-        <div id="stage">
-          <div id="bg"></div>
-          <canvas id="c"></canvas>
-          <div id="empty">connecting…</div>
-          <div id="banner"></div>
-          <div class="hud" id="hud-blue"></div>
-          <div class="hud" id="hud-red"></div>
-          <div id="scoreboard" hidden>
-            <div class="sb-row">
-              <div class="sb-team blue">
-                <span class="sb-name">BLU</span><b id="score-blue">0</b><i id="timer-blue" class="sb-sub"></i>
-              </div>
-              <div class="sb-timer"><span id="round-label"></span><b id="timer-main"></b><i id="timer-map"></i></div>
-              <div class="sb-team red">
-                <b id="score-red">0</b><span class="sb-name">RED</span><i id="timer-red" class="sb-sub"></i>
-              </div>
-            </div>
-            <div class="cps" id="cps"></div>
-          </div>
-          <div id="follow" hidden>
-            <span>Following <b id="follow-name"></b></span
-            ><button id="follow-stop" title="Stop following (Esc)">✕</button>
-          </div>
-          <button id="autozoom" hidden>Auto zoom</button>
-          <button id="sidetoggle" title="Hide events and chat (e)">›</button>
-          <button id="helptoggle" title="Keyboard shortcuts (?)">?</button>
-          <button id="settingstoggle" title="Overkill layers (k)">⚙</button>
-          <div id="settings" hidden></div>
-          <div id="board" hidden></div>
-          <div id="help" hidden>
-            <table>
-              <tr>
-                <td><kbd>Tab</kbd></td>
-                <td>Hold for the scoreboard</td>
-              </tr>
-              <tr>
-                <td><kbd>h</kbd></td>
-                <td>Hide or show the player HUD</td>
-              </tr>
-              <tr>
-                <td><kbd>s</kbd></td>
-                <td>Hide or show the scores</td>
-              </tr>
-              <tr>
-                <td><kbd>e</kbd></td>
-                <td>Hide or show events and chat</td>
-              </tr>
-              <tr>
-                <td><kbd>g</kbd></td>
-                <td>Switch between overview and geometry</td>
-              </tr>
-              <tr>
-                <td><kbd>k</kbd></td>
-                <td>Open or close the layer settings</td>
-              </tr>
-              <tr>
-                <td><kbd>d</kbd></td>
-                <td>Draw on the map, in a room you are admin of</td>
-              </tr>
-              <tr>
-                <td><kbd>m</kbd></td>
-                <td>Permanent marker, in a room you are admin of</td>
-              </tr>
-              <tr>
-                <td><kbd>x</kbd></td>
-                <td>Switch all overkill layers on or off</td>
-              </tr>
-              <tr>
-                <td><kbd>j</kbd></td>
-                <td>Jump trails</td>
-              </tr>
-              <tr>
-                <td><kbd>l</kbd></td>
-                <td>Loadouts</td>
-              </tr>
-              <tr>
-                <td><kbd>o</kbd></td>
-                <td>Switch to the broadcast overlay and back</td>
-              </tr>
-              <tr>
-                <td><kbd>Esc</kbd></td>
-                <td>Stop following a player</td>
-              </tr>
-              <tr>
-                <td><kbd>?</kbd></td>
-                <td>Show or hide this list</td>
-              </tr>
-            </table>
-          </div>
-          <div id="roombar" hidden>
-            <button id="rb-play">⏸</button>
-            <div id="rb-track">
-              <input id="rb-time" type="range" min="0" max="0" step="100" value="0" aria-label="Position" />
-            </div>
-            <span id="rb-clock"></span>
-            <button id="rb-live" hidden title="Back to live">● Live</button>
-            <select id="rb-speed" aria-label="Speed"></select>
-            <button id="rb-pen" title="Draw on the map (d)">✎</button>
-            <button id="rb-marker" title="Permanent marker: stays until cleared (m)">✒︎</button>
-            <button id="rb-clear" title="Clear all drawings">⌫</button>
-            <select id="rb-view" aria-label="How everyone sees the map" title="How everyone sees the map">
-              <option value="free" title="Everyone moves their own camera">Free</option>
-              <option value="auto">Auto zoom</option>
-              <option value="follow" id="rb-follow" hidden disabled>Following</option>
-              <option value="admin">Admin's view</option>
-            </select>
-            <span id="rb-lead" hidden></span>
-            <span id="rb-note" role="status" hidden></span>
-          </div>
-          <div id="bgtoggle" hidden title="g">
-            <button data-bg="overview" class="on">Overview</button><button data-bg="geometry">Geometry</button>
-          </div>
-        </div>
-        <aside>
-          <div id="title">
-            <b id="map">connecting…</b>
-            <span id="status" class="bad">waiting for data</span>
-            <button id="copylink" hidden>
-              <svg class="chain" viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7" />
-                <path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7" /></svg
-              ><svg class="check" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6 9 17l-5-5" /></svg>
-            </button>
-            <span id="age"></span>
-            <a id="signout" hidden>Sign out</a>
-            <button
-              id="roomopen"
-              hidden
-              title="Open a room: you control pause, speed and position for everyone you send its link, and can draw"
-            >
-              Watch together
-            </button>
-          </div>
-          <section id="people" hidden>
-            <div id="peoplehead">
-              <h3>In this room</h3>
-              <a id="signin" hidden>Sign in with serveme</a>
-            </div>
-            <div id="whoami">
-              <input id="myname" maxlength="32" placeholder="Your name" aria-label="Your name" />
-              <button id="claim" hidden title="As a streamer on serveme">Become admin</button>
-            </div>
-            <ul id="peoplelist"></ul>
-          </section>
-          <section id="intf2" hidden>
-            <h3>In TF2</h3>
-            <div id="tf2">
-              <code id="tf2cmd"></code>
-              <button id="tf2copy" title="Copy, to paste in the console" aria-label="Copy, to paste in the console">
-                <svg class="copy" viewBox="0 0 24 24" aria-hidden="true">
-                  <rect x="9" y="9" width="11" height="11" rx="2" />
-                  <path d="M5 15V5a2 2 0 0 1 2-2h10" /></svg
-                ><svg class="check" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6 9 17l-5-5" /></svg>
-              </button>
-            </div>
-            <a id="tf2open">Open in TF2</a>
-            <p id="tf2why" hidden></p>
-          </section>
-          <section class="log" id="events"><div id="feed"></div></section>
-          <section class="log" id="chatlog">
-            <h3>Chat</h3>
-            <div id="chat"></div>
-          </section>
-        </aside>
-      </main>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>stv.tf</title>
+<!-- The server fills in where it is served (behind a proxy, /live/); all asset links are relative to it. -->
+<base href="/">
+<link rel="stylesheet" href="killicons.css">
+<link rel="stylesheet" href="app/dev/style.css">
+</head>
+<body>
+<div class="stvtf" id="app">
+<main>
+  <div id="stage">
+    <div id="bg"></div>
+    <canvas id="c"></canvas>
+    <div id="empty">connecting…</div>
+    <div id="banner"></div>
+    <div class="hud" id="hud-blue"></div>
+    <div class="hud" id="hud-red"></div>
+    <div id="scoreboard" hidden>
+      <div class="sb-row">
+        <div class="sb-team blue"><span class="sb-name">BLU</span><b id="score-blue">0</b><i id="timer-blue" class="sb-sub"></i></div>
+        <div class="sb-timer"><span id="round-label"></span><b id="timer-main"></b><i id="timer-map"></i></div>
+        <div class="sb-team red"><b id="score-red">0</b><span class="sb-name">RED</span><i id="timer-red" class="sb-sub"></i></div>
+      </div>
+      <div class="cps" id="cps"></div>
     </div>
-    <script type="module" src="app/dev/main.js"></script>
-  </body>
+    <div id="follow" hidden><span>Following <b id="follow-name"></b></span><button id="follow-stop" title="Stop following (Esc)">✕</button></div>
+    <button id="autozoom" hidden>Auto zoom</button>
+    <button id="sidetoggle" title="Hide events and chat (e)">›</button>
+    <button id="helptoggle" title="Keyboard shortcuts (?)">?</button>
+    <button id="settingstoggle" title="Overkill layers (k)">⚙</button>
+    <div id="settings" hidden></div>
+    <div id="board" hidden></div>
+    <div id="help" hidden>
+      <table>
+        <tr><td><kbd>Tab</kbd></td><td>Hold for the scoreboard</td></tr>
+        <tr><td><kbd>h</kbd></td><td>Hide or show the player HUD</td></tr>
+        <tr><td><kbd>s</kbd></td><td>Hide or show the scores</td></tr>
+        <tr><td><kbd>e</kbd></td><td>Hide or show events and chat</td></tr>
+        <tr><td><kbd>g</kbd></td><td>Switch between overview and geometry</td></tr>
+        <tr><td><kbd>k</kbd></td><td>Open or close the layer settings</td></tr>
+        <tr><td><kbd>d</kbd></td><td>Draw on the map, in a room you are admin of</td></tr>
+        <tr><td><kbd>m</kbd></td><td>Permanent marker, in a room you are admin of</td></tr>
+        <tr><td><kbd>x</kbd></td><td>Switch all overkill layers on or off</td></tr>
+        <tr><td><kbd>j</kbd></td><td>Jump trails</td></tr>
+        <tr><td><kbd>l</kbd></td><td>Loadouts</td></tr>
+        <tr><td><kbd>o</kbd></td><td>Switch to the broadcast overlay and back</td></tr>
+        <tr><td><kbd>Esc</kbd></td><td>Stop following a player</td></tr>
+        <tr><td><kbd>?</kbd></td><td>Show or hide this list</td></tr>
+      </table>
+    </div>
+    <div id="roombar" hidden>
+      <button id="rb-play">⏸</button>
+      <div id="rb-track"><input id="rb-time" type="range" min="0" max="0" step="100" value="0" aria-label="Position"></div>
+      <span id="rb-clock"></span>
+      <button id="rb-live" hidden title="Back to live">● Live</button>
+      <select id="rb-speed" aria-label="Speed"></select>
+      <button id="rb-pen" title="Draw on the map (d)">✎</button>
+      <button id="rb-marker" title="Permanent marker: stays until cleared (m)">✒︎</button>
+      <button id="rb-clear" title="Clear all drawings">⌫</button>
+      <select id="rb-view" aria-label="How everyone sees the map" title="How everyone sees the map">
+        <option value="free" title="Everyone moves their own camera">Free</option>
+        <option value="auto">Auto zoom</option>
+        <option value="follow" id="rb-follow" hidden disabled>Following</option>
+        <option value="admin">Admin's view</option>
+      </select>
+      <span id="rb-lead" hidden></span>
+      <span id="rb-note" role="status" hidden></span>
+    </div>
+    <div id="bgtoggle" hidden title="g"><button data-bg="overview" class="on">Overview</button><button data-bg="geometry">Geometry</button></div>
+  </div>
+  <aside>
+    <div id="title">
+      <b id="map">connecting…</b>
+      <span id="status" class="bad">waiting for data</span>
+      <button id="copylink" hidden><svg class="chain" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/>
+          <path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/>
+        </svg><svg class="check" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg></button>
+      <span id="age"></span>
+      <a id="signout" hidden>Sign out</a>
+      <button id="roomopen" hidden title="Open a room: you control pause, speed and position for everyone you send its link, and can draw">Watch together</button>
+    </div>
+    <section id="people" hidden>
+      <div id="peoplehead">
+        <h3>In this room</h3>
+        <a id="signin" hidden>Sign in with serveme</a>
+      </div>
+      <div id="whoami">
+        <input id="myname" maxlength="32" placeholder="Your name" aria-label="Your name">
+        <button id="claim" hidden title="As a streamer on serveme">Become admin</button>
+      </div>
+      <ul id="peoplelist"></ul>
+    </section>
+    <section id="intf2" hidden>
+      <h3>In TF2</h3>
+      <div id="tf2">
+        <code id="tf2cmd"></code>
+        <button id="tf2copy" title="Copy, to paste in the console" aria-label="Copy, to paste in the console"><svg class="copy" viewBox="0 0 24 24" aria-hidden="true">
+            <rect x="9" y="9" width="11" height="11" rx="2"/>
+            <path d="M5 15V5a2 2 0 0 1 2-2h10"/>
+          </svg><svg class="check" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg></button>
+      </div>
+      <a id="tf2open">Open in TF2</a>
+      <p id="tf2why" hidden></p>
+    </section>
+    <section class="log" id="events"><div id="feed"></div></section>
+    <section class="log" id="chatlog"><h3>Chat</h3><div id="chat"></div></section>
+  </aside>
+</main>
+</div>
+<script type="module" src="app/dev/main.js"></script>
+</body>
 </html>

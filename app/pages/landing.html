@@ -1,28 +1,21 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>stv.tf</title>
-    <base href="/" />
-    <link rel="stylesheet" href="app/dev/landing.css" />
-  </head>
-  <body>
-    <main>
-      <h1>Watch a match</h1>
-      <p>Paste the server's SourceTV connect string, like <code>connect host:27020; password "tv"</code>.</p>
-      <form method="post" action="watch">
-        <input
-          name="connect"
-          placeholder='connect host:27020; password "tv"'
-          autofocus
-          required
-          autocomplete="off"
-          spellcheck="false"
-        />
-        <button>Watch</button>
-      </form>
-      <div class="error">{error}</div>
-    </main>
-  </body>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>stv.tf</title>
+<base href="/">
+<link rel="stylesheet" href="app/dev/landing.css">
+</head>
+<body>
+<main>
+  <h1>Watch a match</h1>
+  <p>Paste the server's SourceTV connect string, like <code>connect host:27020; password "tv"</code>.</p>
+  <form method="post" action="watch">
+    <input name="connect" placeholder='connect host:27020; password "tv"' autofocus required autocomplete="off" spellcheck="false">
+    <button>Watch</button>
+  </form>
+  <div class="error">{error}</div>
+</main>
+</body>
 </html>
