@@ -7,6 +7,7 @@ import { env } from "../core/env.js";
 import { setAutoZoom, setFollow } from "../core/input.js";
 import { EVENTS_URL, openStream, playbackListeners, streamParams, viewListeners } from "../core/stream.js";
 import { drawOwn, markerFull, trimOwn } from "./telestrator.js";
+import { setPending } from "./arcs.js";
 import { pushMirror } from "../map/camera.js";
 import { HOME, IN_ROOM, me, names, post } from "./home.js";
 import { copyLink, copyText } from "./copy.js";
@@ -86,6 +87,7 @@ function roomBar() {
   copyLink("Copy the room's link, to send", () => new URL(location.pathname, location.origin));
   const pen = /** @type {HTMLButtonElement} */ ($("rb-pen")),
     marker = /** @type {HTMLButtonElement} */ ($("rb-marker")),
+    arc = /** @type {HTMLButtonElement} */ ($("rb-arc")),
     clear = /** @type {HTMLButtonElement} */ ($("rb-clear"));
   const control = (/** @type {import("./playbar.js").Control} */ c) => post("control", c);
   const bar = playbar({ home: HOME, send: control, live: end => control({ seek: end, paused: false }), room: true });
@@ -94,9 +96,9 @@ function roomBar() {
   const allow = on => {
     me.admin = on;
     bar.allow(on);
-    for (const c of [pen, marker, clear, $("rb-view")]) /** @type {HTMLButtonElement} */ (c).disabled = !on;
+    for (const c of [pen, marker, arc, clear, $("rb-view")]) /** @type {HTMLButtonElement} */ (c).disabled = !on;
     $("roombar").title = on ? "" : "The room's admins control playback";
-    for (const t of [pen, marker]) if (!on && t.classList.contains("on")) t.click();
+    for (const t of [pen, marker, arc]) if (!on && t.classList.contains("on")) t.click();
     if (on) $("claim").hidden = true;
     setViewAdmin(on);
   };
@@ -115,10 +117,11 @@ function roomBar() {
   const showPeople = people(allow, showLead);
   inTf2();
   drawing(pen, marker);
+  arcTool(arc, [pen, marker]);
   clear.onclick = () => post("clear", {});
-  // d takes the pen, m the marker.
+  // d takes the pen, m the marker, a a jump arc.
   /** @type {Record<string, HTMLButtonElement>} */
-  const tools = { d: pen, m: marker };
+  const tools = { d: pen, m: marker, a: arc };
   env.keys.addEventListener("keydown", e => {
     const target = /** @type {Element} */ (e.composedPath()[0]);
     const tool = tools[e.key];
@@ -268,6 +271,51 @@ function drawing(pen, marker) {
     stroke = null;
   };
   for (const type of ["pointerup", "pointercancel"]) canvas.addEventListener(type, end);
+}
+
+// The jump arc tool: armed by its button, it takes two clicks on the map, the low spot and the
+// high one in either order, and asks the room for the arc between them; Esc or another tool
+// lets it go.
+/** @param {HTMLButtonElement} button @param {HTMLButtonElement[]} others */
+function arcTool(button, others) {
+  /** @type {[number, number] | null} */
+  let first = null;
+  const arm = (/** @type {boolean} */ on) => {
+    button.classList.toggle("on", on);
+    env.el.classList.toggle("drawing", on);
+    first = setPending(null);
+  };
+  button.onclick = () => {
+    for (const o of others) if (o.classList.contains("on")) o.click();
+    arm(!button.classList.contains("on"));
+  };
+  for (const o of others) o.addEventListener("click", () => button.classList.contains("on") && arm(false));
+  env.keys.addEventListener("keydown", e => e.key === "Escape" && button.classList.contains("on") && arm(false));
+  canvas.addEventListener(
+    "pointerdown",
+    e => {
+      if (!button.classList.contains("on") || e.button !== 0) return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      const at = worldAt(e);
+      if (!first) return void (first = setPending(at));
+      const from = first;
+      arm(false);
+      post("arc", { from, to: at }).then(
+        async r => r.ok || note(await r.text()),
+        () => {},
+      );
+    },
+    { capture: true },
+  );
+}
+
+// Where on the map a pointer is.
+/** @param {PointerEvent} e @returns {[number, number]} */
+function worldAt(e) {
+  const r = canvas.getBoundingClientRect();
+  const [dx, dy] = screenOffset(e.clientX - r.left - r.width / 2, e.clientY - r.top - r.height / 2, state.view.scale);
+  return [Math.round(state.view.cx + dx), Math.round(state.view.cy + dy)];
 }
 
 // Why something did not happen, in the room bar for a moment.

@@ -41,7 +41,8 @@
   padding: 0 6px;
 }
 #roombar #rb-pen.on,
-#roombar #rb-marker.on {
+#roombar #rb-marker.on,
+#roombar #rb-arc.on {
   background: var(--pen);
   color: var(--shade);
 }
@@ -271,6 +272,7 @@
 /* A match page's own timeline: playback only, no room controls. */
 .stvtf.watch #rb-pen,
 .stvtf.watch #rb-marker,
+.stvtf.watch #rb-arc,
 .stvtf.watch #rb-clear,
 .stvtf.watch #rb-view,
 .stvtf.watch #rb-lead {

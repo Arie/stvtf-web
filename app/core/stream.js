@@ -21,6 +21,7 @@ import { setFollow } from "./input.js";
 import { detailNeeded } from "./layers.js";
 import { cartState } from "../map/objectives/payload.js";
 import { onClear, onDraw, onMarker } from "../room/telestrator.js";
+import { onArc } from "../room/arcs.js";
 import { loadMap } from "../map/view.js";
 /** @typedef {import("../../types/stream").GameEvent} GameEvent */
 /** @typedef {import("../../types/stream").StreamMessage} StreamMessage */
@@ -151,6 +152,7 @@ const ON_LINE = {
   },
   draw: m => onDraw(/** @type {import("../../types/stream").DrawLine} */ (m)),
   marker: m => onMarker(/** @type {import("../../types/stream").MarkerLine} */ (m)),
+  arc: m => onArc(/** @type {import("../../types/stream").ArcLine} */ (m)),
   clear: () => onClear(),
   view: m => viewListeners.forEach(f => f(/** @type {import("../../types/stream").ViewLine} */ (m))),
   people: m => peopleListeners.forEach(f => f(/** @type {import("../../types/stream").PeopleLine} */ (m))),

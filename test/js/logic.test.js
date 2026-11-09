@@ -16,6 +16,7 @@ import { command, steamid64 } from "../../app/embed/embed.js";
 import { layerOn } from "../../app/core/layers.js";
 import { labelCorner } from "../../app/map/spawns.js";
 import { drawOwn, markerFull, onClear, onDraw, onMarker, pointsOf, trimOwn } from "../../app/room/telestrator.js";
+import { arcCount, arcShade, onArc } from "../../app/room/arcs.js";
 import { demostfAlias, sameLayout, screenOffset, teamsTurn, toScreen } from "../../app/map/view.js";
 
 test("players sort by class, then name whatever its case, then id", () => {
@@ -338,4 +339,27 @@ test("a marker stroke the full map refused is trimmed to what the room took", ()
   trimOwn(2, 0);
   assert.equal(pointsOf(2), 0);
   onClear();
+});
+
+test("a jump arc is shaded like the jump trails, dark at the launch to bright at the peak", () => {
+  assert.equal(arcShade("#ff0000", 0), "hsl(0 100% 24%)");
+  assert.equal(arcShade("#ff0000", 1), "hsl(0 100% 74%)");
+});
+
+test("jump arcs come with the marker and an arc line, are no strokes, and go with a clear", () => {
+  onClear();
+  /** @type {[number, number, number][]} */
+  const points = [
+    [0, 0, 0],
+    [0, 0, 100],
+    [200, 0, 228],
+    [300, 0, 200],
+  ];
+  onMarker({ type: "marker", strokes: [{ stroke: 2 ** 31, by: 1, points: [[0, 0, 0]], ink: "#ff0000", arc: points }] });
+  assert.equal(arcCount(), 1);
+  assert.equal(pointsOf(2 ** 31), 0, "not drawn as a stroke");
+  onArc({ type: "arc", by: 1, stroke: 2 ** 31 + 1, ink: "#00ff00", points });
+  assert.equal(arcCount(), 2);
+  onClear();
+  assert.equal(arcCount(), 0);
 });

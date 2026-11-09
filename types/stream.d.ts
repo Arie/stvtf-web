@@ -190,10 +190,19 @@ export type DrawLine = {
 /** The permanent marker on a room's map, as a page joins. */
 export type MarkerLine = {
   type: "marker";
-  strokes: { stroke: number; by: number; points: [number, number, number][]; ink?: string }[];
+  strokes: {
+    stroke: number;
+    by: number;
+    points: [number, number, number][];
+    ink?: string;
+    arc?: [number, number, number][];
+  }[];
   /** Points the map holds, all strokes together. */
   max?: number;
 };
+
+/** A jump arc an admin drew: its points from launch to landing, in the drawer's ink. */
+export type ArcLine = { type: "arc"; by: number; stroke: number; ink: string; points: [number, number, number][] };
 
 /** An admin wiped the room's map. */
 export type ClearLine = { type: "clear"; by: number };
@@ -236,6 +245,7 @@ export type StreamMessage =
   | PlaybackLine
   | DrawLine
   | MarkerLine
+  | ArcLine
   | ClearLine
   | PeopleLine
   | ViewLine

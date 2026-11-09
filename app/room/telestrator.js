@@ -2,6 +2,7 @@
 // marker stays until cleared.
 import { ctx, uiScale } from "../core/core.js";
 import { toScreen } from "../map/view.js";
+import { arcsFromMarker, clearArcs, drawArcs } from "./arcs.js";
 /** @typedef {import("../../types/stream").DrawLine} DrawLine */
 /** @typedef {{ stroke: number; points: [number, number, number][]; by?: number; keep?: boolean }} Piece */
 
@@ -64,10 +65,11 @@ let keptMax = Infinity;
 /** @param {import("../../types/stream").MarkerLine} m */
 export function onMarker(m) {
   keptMax = m.max ?? Infinity;
+  arcsFromMarker(m.strokes);
   const kept = new Set(m.strokes.map(k => k.stroke));
   for (const [id, s] of strokes) if (s.keep && !kept.has(id) && !mine.has(id)) strokes.delete(id);
   for (const k of m.strokes)
-    if (!mine.has(k.stroke))
+    if (!mine.has(k.stroke) && !k.arc)
       strokes.set(k.stroke, { points: k.points, start: -Infinity, ink: k.ink ?? inkOf(k.by), keep: true });
 }
 
@@ -90,6 +92,7 @@ export function trimOwn(stroke, n) {
 
 // An admin wiped the map.
 export function onClear() {
+  clearArcs();
   strokes.clear();
   mine.clear();
 }
@@ -98,6 +101,7 @@ export function onClear() {
 const STROKE_PX = 4,
   EDGE_PX = 3;
 export function drawStrokes(now = performance.now()) {
+  drawArcs();
   if (!strokes.size) return;
   const w = STROKE_PX * uiScale();
   ctx.save();
