@@ -11,9 +11,9 @@
     "test:browser": "node --test \"test/browser/*.test.js\""
   },
   "devDependencies": {
-    "@eslint/js": "9.39.1",
-    "eslint": "9.39.1",
-    "globals": "16.5.0",
+    "@eslint/js": "10.0.1",
+    "eslint": "10.14.0",
+    "globals": "17.14.0",
     "playwright-core": "1.64.1",
     "prettier": "3.9.10",
     "typescript": "7.0.2"
