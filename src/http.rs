@@ -445,6 +445,9 @@ fn opened(s: &mut TcpStream, app: &App, id: &str, cookie: Option<&str>) -> Resul
 
 /// `GET` says whether a room can be opened on match `m`; `POST` opens one, owned by the browser.
 fn open_room(s: &mut TcpStream, app: &App, sessions: &Sessions, m: &Arc<Session>, request: &Request, client: IpAddr) -> Result<()> {
+    if !m.recordable() && m.gave_up() {
+        return Ok(respond(s, "410 Gone", TEXT, b"This match has nothing to play.")?);
+    }
     if !m.recordable() {
         return Ok(respond(s, "409 Conflict", TEXT, b"This match has nothing to play (yet).")?);
     }

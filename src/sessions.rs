@@ -158,6 +158,12 @@ impl Session {
         self.live.get().is_some() || self.recording.get().is_some() || lock(&self.source).is_some()
     }
 
+    /// Whether its watcher gave up or was stopped: a demo that could not be fetched never has
+    /// anything to play.
+    pub fn gave_up(&self) -> bool {
+        self.done.load(Ordering::Relaxed)
+    }
+
     /// Its recording, if it is ready now: a live match's, or a demo's once read.
     pub fn ready(&self) -> Option<Arc<Recording>> {
         self.live.get().or_else(|| self.recording.get()).cloned()

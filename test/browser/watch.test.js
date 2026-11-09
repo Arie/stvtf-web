@@ -155,6 +155,29 @@ test("<stv-map> fires the messages as events", async () => {
   await page.close();
 });
 
+test("Watch together shows greyed out and spinning until the timeline is ready", async () => {
+  const { page, errors } = await open();
+  let ready = false;
+  await page.route("**/w/*/room", route =>
+    route.request().method() === "GET" && !ready ? route.fulfill({ status: 409, body: "not yet" }) : route.continue(),
+  );
+  await page.goto(base);
+  await until(page, () => {
+    const b = /** @type {HTMLButtonElement} */ (document.getElementById("roomopen"));
+    return !b.hidden && b.disabled && b.classList.contains("busy");
+  });
+  ready = true;
+  await until(page, () => {
+    const b = /** @type {HTMLButtonElement} */ (document.getElementById("roomopen"));
+    return !b.disabled && !b.classList.contains("busy");
+  });
+  assert.deepEqual(
+    errors.filter(e => !e.includes("409")),
+    [],
+  );
+  await page.close();
+});
+
 test("a room is driven by its owner and followed by everyone else", async () => {
   const { page, errors } = await open();
   await page.goto(base);

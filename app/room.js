@@ -59,20 +59,28 @@ export function initRoom() {
   }
 }
 
-// Offered once the match has a recording to play (a demo); a demo still being fetched asks again.
+// Offered once the match has a recording to play; greyed out, spinning, while a demo is fetched.
 function roomButton() {
   const button = /** @type {HTMLButtonElement} */ ($("roomopen"));
+  const [idle, title] = [button.textContent, button.title];
+  /** @param {boolean} on */
+  const waiting = on => {
+    Object.assign(button, { hidden: false, disabled: on, title: on ? "Getting the timeline ready…" : title });
+    button.classList.toggle("busy", on);
+  };
   const ask = () =>
     fetch(new URL("room", HOME)).then(
       r => {
-        if (r.ok) button.hidden = false;
-        else if (r.status === 409) setTimeout(ask, 5000);
+        if (r.ok) waiting(false);
+        else if (r.status === 409) {
+          waiting(true);
+          setTimeout(ask, 5000);
+        } else button.hidden = true;
       },
       () => {},
     );
   ask();
   // Opening can take a few seconds: say so.
-  const idle = button.textContent;
   button.onclick = async () => {
     button.disabled = true;
     button.classList.add("busy");
