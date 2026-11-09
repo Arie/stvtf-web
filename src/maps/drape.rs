@@ -66,6 +66,9 @@ struct Floor {
 struct Geometry {
     #[serde(default)]
     floors: Vec<Floor>,
+    /// The tops of solid static props.
+    #[serde(default)]
+    props: Vec<Floor>,
 }
 
 /// One floor: its outline, its box, and its height as a plane.
@@ -122,7 +125,7 @@ impl Ground {
     /// The floors of the map geometry JSON served on `/map/NAME`.
     pub(crate) fn from_json(json: &[u8]) -> Result<Self> {
         let g: Geometry = serde_json::from_slice(json)?;
-        Ok(Self::new(g.floors))
+        Ok(Self::new(g.floors.into_iter().chain(g.props).collect()))
     }
 
     fn new(floors: Vec<Floor>) -> Self {

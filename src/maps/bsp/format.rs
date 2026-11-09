@@ -20,6 +20,7 @@ pub(super) const LUMP_BRUSHES: usize = 18;
 pub(super) const LUMP_BRUSHSIDES: usize = 19;
 pub(super) const LUMP_DISPINFO: usize = 26;
 pub(super) const LUMP_DISP_VERTS: usize = 33;
+pub(super) const LUMP_GAME_LUMP: usize = 35;
 pub(super) const LUMP_TEXDATA_STRING_DATA: usize = 43;
 pub(super) const LUMP_TEXDATA_STRING_TABLE: usize = 44;
 
@@ -110,19 +111,24 @@ pub(super) fn lump(data: &[u8], index: usize) -> Result<Vec<u8>> {
     if len > MAX_LUMP {
         bail!("lump {index}: {len} bytes");
     }
+    unpack(raw).map_err(|e| anyhow!("lump {index}: {e}"))
+}
+
+/// A lump's bytes as stored, unpacked if packed (Valve's LZMA header).
+pub(super) fn unpack(raw: &[u8]) -> Result<Vec<u8>> {
     if !raw.starts_with(LZMA_MAGIC) {
         return Ok(raw.to_vec());
     }
     let actual = u32::from_le_bytes(bytes(raw, LZMA_ACTUAL_SIZE)?) as usize;
     if actual > MAX_LUMP {
-        bail!("lump {index}: {actual} bytes unpacked");
+        bail!("{actual} bytes unpacked");
     }
     let props: [u8; 5] = bytes(raw, LZMA_PROPERTIES)?;
     let mut alone = props.to_vec();
     alone.extend_from_slice(&(actual as u64).to_le_bytes());
     alone.extend_from_slice(&raw[LZMA_HEADER..]);
     let mut out = Vec::with_capacity(actual);
-    lzma_rs::lzma_decompress(&mut &alone[..], &mut out).map_err(|e| anyhow!("lump {index}: {e:?}"))?;
+    lzma_rs::lzma_decompress(&mut &alone[..], &mut out).map_err(|e| anyhow!("{e:?}"))?;
     out.truncate(actual);
     Ok(out)
 }

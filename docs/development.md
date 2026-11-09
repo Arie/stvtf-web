@@ -111,9 +111,9 @@ npm run test:browser    # after cargo build and `npx playwright-core install --o
   pickups (MGE, jump) draw every floor. Framed by points, pickups and nearby spawns (or the
   floors) to keep the 3D skybox out.
 
-  The JSON: floors with kind `k` (and `d` for terrain, `g` the slope along x and y), `track` segments, `playable` (a mask of
+  The JSON: floors with kind `k` (and `d` for terrain, `g` the slope along x and y), `props` (the tops of solid static props, from `props.txt.gz`), `track` segments, `playable` (a mask of
   16-unit cells), `packs` (health and ammo by size), `cap_areas` (trigger bounds and point).
-  Cached as `<map>.v8.json` and `<map>.v8.json.gz`.
+  Cached as `<map>.v9.json` and `<map>.v9.json.gz`.
 
 ## Backpack
 

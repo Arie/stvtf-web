@@ -551,7 +551,7 @@ fn serves_backpack_pictures() {
 fn map_geometry_is_gzipped_for_browsers_that_take_it() {
     let dir = TempDir::new("mapgzip");
     let json = format!(r#"{{"floors":[{}]}}"#, r#"{"z":0,"p":[0,0,1,0,1,1],"k":"grass"},"#.repeat(200).trim_end_matches(','));
-    std::fs::write(dir.join("cp_test.v8.json"), &json).unwrap();
+    std::fs::write(dir.join("cp_test.v9.json"), &json).unwrap();
     let mut a = app(Matches::One(SharedHub::default()));
     a.cache = dir.to_path_buf();
     let get = |accept: &str| {
@@ -574,7 +574,7 @@ fn map_geometry_is_gzipped_for_browsers_that_take_it() {
     GzDecoder::new(&body[..]).read_to_string(&mut unzipped).unwrap();
     assert_eq!(unzipped, json);
     // Served again from the gzipped copy in the cache, which the plain JSON stays next to.
-    assert!(dir.join("cp_test.v8.json.gz").exists());
+    assert!(dir.join("cp_test.v9.json.gz").exists());
     assert_eq!(get("Accept-Encoding: gzip\r\n").1, body);
     let (head, body) = get("");
     assert!(!head.contains("Content-Encoding") && head.contains("\r\nVary: Accept-Encoding"), "{head}");
@@ -859,7 +859,7 @@ fn cached_overviews_keep_and_maps_do_not() {
     std::fs::create_dir(cache.join("demostf")).unwrap();
     std::fs::write(cache.join("demostf/boundaries.json"), b"{}").unwrap();
     std::fs::write(cache.join("demostf/cp_x.webp"), b"RIFF").unwrap();
-    std::fs::write(cache.join("cp_x.v8.json"), b"{}").unwrap();
+    std::fs::write(cache.join("cp_x.v9.json"), b"{}").unwrap();
     let mut a = app(Matches::One(SharedHub::default()));
     a.cache = cache.to_path_buf();
 

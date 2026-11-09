@@ -19,6 +19,7 @@ mod displacement;
 mod entities;
 mod format;
 mod material;
+mod props;
 mod reach;
 mod track;
 
@@ -51,6 +52,9 @@ pub struct Geometry {
     pub bounds: Option<[[f64; 3]; 2]>,
     /// Upward faces, from low to high.
     pub floors: Vec<Floor>,
+    /// The tops of solid static props (see `props`), for strokes drawn on them in TF2.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub props: Vec<Floor>,
     pub walls: Vec<Wall>,
     /// The payload track's segments (`x1, y1, z1, x2, y2, z2`); empty without a payload cart.
     pub track: Vec<[f64; 6]>,
@@ -320,6 +324,10 @@ fn geometry_counted(data: &[u8]) -> Result<(Geometry, (usize, f64))> {
     let before_fill = (floors.len(), floors.iter().map(|f| outline_area(&f.p)).sum());
     let reach = reach.filter(|r| fill(&mut floors, |f| r.keeps(&f.p, f.z), &stands, before_fill.1));
     let floors = without_shallow_water(floors);
+    let mut props = props::prop_floors(data, bounds);
+    if let Some(r) = &reach {
+        props.retain(|f| r.keeps(&f.p, f.z));
+    }
     // Without points or pickups, the floors frame the map; the top keeps the PAD above the
     // highest floor that the viewer's roof cut expects.
     let bounds = bounds.or_else(|| {
@@ -333,6 +341,7 @@ fn geometry_counted(data: &[u8]) -> Result<(Geometry, (usize, f64))> {
         cap_areas,
         bounds: bounds.map(|b| [b.lo.map(f64::from), b.hi.map(f64::from)]),
         floors,
+        props,
         walls,
         track: track.into_iter().map(|[a, b]| [a[0], a[1], a[2], b[0], b[1], b[2]].map(round1)).collect(),
         playable: reach.map(|r| r.mask()),
