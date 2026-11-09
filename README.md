@@ -37,9 +37,7 @@ heavy's ammo belt, which is our own.
 
 Backpack pictures (`backpack/`) come from TF2's game files, made by tf2-icons.
 
-The match at `/w/demo/` is the koth_product decider of the ETF2L Season 51 Premiership upper
-bracket final, MANDEM vs D M ([etf2l.org/matches/91982](https://etf2l.org/matches/91982/)), from
-ETF2L's STV demo.
+The match at `/w/demo/` is an [RGL](https://rgl.gg) LAN final on cp_metalworks_f7.
 
 The HUD font is Roboto Condensed by Christian Robertson, Apache License 2.0 (`fonts/LICENSE`).
 
