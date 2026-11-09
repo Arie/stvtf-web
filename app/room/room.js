@@ -1,21 +1,17 @@
 // A room (/r/<id>/): its playback bar, which its owner drives and everyone else watches; and
 // on a match's own page, the button that opens a room on it.
-import { $, OVERLAY, PAGE, canvas, setClockRate, state } from "../core/core.js";
+import { $, OVERLAY, canvas, setClockRate, state } from "../core/core.js";
 import { EMBEDDED } from "../embed/embed.js";
 import { clock, moment, playbar } from "./playbar.js";
 import { env } from "../core/env.js";
 import { setAutoZoom, setFollow } from "../core/input.js";
-import {
-  EVENTS_URL,
-  openStream,
-  peopleListeners,
-  playbackListeners,
-  relayListeners,
-  streamParams,
-  viewListeners,
-} from "../core/stream.js";
-import { drawOwn, inkOf, markerFull, setInks, trimOwn } from "./telestrator.js";
+import { EVENTS_URL, openStream, playbackListeners, streamParams, viewListeners } from "../core/stream.js";
+import { drawOwn, markerFull, trimOwn } from "./telestrator.js";
 import { pushMirror } from "../map/camera.js";
+import { HOME, IN_ROOM, me, names, post } from "./home.js";
+import { copyLink, copyText } from "./copy.js";
+import { people, signedIn } from "./people.js";
+import { inTf2 } from "./intf2.js";
 import { RoomView, latestView, morePoints, sender } from "./roomview.js";
 import { focusOf, screenOffset, viewArea } from "../map/view.js";
 /** @typedef {import("../../types/stream").PlaybackLine} PlaybackLine */
@@ -24,27 +20,6 @@ import { focusOf, screenOffset, viewArea } from "../map/view.js";
 const MIN_STEP_PX = 3;
 // How often a match page looks where its shared playback is, in milliseconds.
 const SHARED_MS = 1000;
-// How long the link button says it copied, in milliseconds.
-const COPIED_MS = 1500;
-export const IN_ROOM = /\/r\/[0-9a-f]{32}\/$/.test(PAGE.replace(/overlay\/?$/, ""));
-// The room's or match's own address, which its routes are under.
-const HOME = new URL(PAGE.replace(/(overlay\/?|index\.html)?$/, ""), env.base);
-
-// Who this page is in the room: its number, and whether it is an admin.
-const me = { id: 0, admin: false };
-// Everyone's names, by number.
-/** @type {Map<number, string>} */
-const names = new Map();
-// Where a name is kept between visits.
-const NAME_KEY = "name";
-
-/** @param {string} path @param {object} body */
-const post = (path, body) =>
-  fetch(new URL(path, HOME), {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
 
 // The playback bar in a room, the Room button and a viewer's own timeline on a match's page;
 // neither on the overlay or another site.
@@ -104,45 +79,6 @@ function roomButton() {
   };
 }
 
-// The link button by the map's name: copies the link `url` makes (`what` it is), a check for a
-// moment once it has.
-/** @param {string} what @param {() => URL} url */
-function copyLink(what, url) {
-  const link = $("copylink");
-  Object.assign(link, { hidden: false, title: what });
-  link.setAttribute("aria-label", what);
-  link.onclick = () => copyText(url().href).then(ok => ok && copied(link));
-}
-
-// Copies `text`: through the clipboard API where the page may use it (HTTPS, localhost), else by
-// copying a selection, the old way, which a page over plain HTTP (on a LAN) may still do.
-/** @param {string} text @returns {Promise<boolean>} whether it did */
-async function copyText(text) {
-  try {
-    if (navigator.clipboard) {
-      await navigator.clipboard.writeText(text);
-      return true;
-    }
-  } catch {}
-  const area = Object.assign(document.createElement("textarea"), { value: text, readOnly: true });
-  area.className = "offscreen";
-  document.body.append(area);
-  area.select();
-  let ok = false;
-  try {
-    ok = document.execCommand("copy");
-  } catch {}
-  area.remove();
-  return ok;
-}
-
-// A copy button shows a check for a moment.
-/** @param {HTMLElement} button */
-function copied(button) {
-  button.classList.add("copied");
-  setTimeout(() => button.classList.remove("copied"), COPIED_MS);
-}
-
 function roomBar() {
   env.el.classList.add("room");
   // A room's link, to send.
@@ -176,7 +112,7 @@ function roomBar() {
       },
       () => {},
     );
-  const showPeople = people(allow);
+  const showPeople = people(allow, showLead);
   inTf2();
   drawing(pen, marker);
   clear.onclick = () => post("clear", {});
@@ -190,6 +126,15 @@ function roomBar() {
     tool.click();
     e.preventDefault();
   });
+}
+
+// This page's address at `since` into the map (?t=), kept in the address bar too.
+/** @param {number} since */
+function momentLink(since) {
+  const url = new URL(location.href);
+  url.search = `?t=${clock(Math.max(0, since))}`;
+  history.replaceState(null, "", url);
+  return url;
 }
 
 // A match page's timeline: by default the shared playback (live, for a live match); moving it,
@@ -209,19 +154,10 @@ function watchBar() {
   /** @param {import("./playbar.js").Control} c */
   const send = async c => {
     if (starting) await starting;
-    if (own)
-      return fetch(new URL("control", own), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(c),
-      });
+    if (own) return post("control", c, own);
     const now = bar.state();
     const body = { at: c.seek ?? Math.round(bar.at()), speed: c.speed ?? now.speed, paused: c.paused ?? now.paused };
-    starting = fetch(new URL("rewind", HOME), {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    })
+    starting = post("rewind", body)
       .then(r => (r.ok ? r.json() : null))
       .then(r => {
         if (!r) return;
@@ -244,12 +180,7 @@ function watchBar() {
   playbackListeners.add(m => own && bar.heard(m));
   // A link to a moment (?t=12:34, from the map's start) watches from there.
   let wanted = moment(new URLSearchParams(location.search).get("t"));
-  copyLink("Copy a link to this moment", () => {
-    const url = new URL(location.href);
-    url.search = `?t=${clock(Math.max(0, bar.since()))}`;
-    history.replaceState(null, "", url);
-    return url;
-  });
+  copyLink("Copy a link to this moment", () => momentLink(bar.since()));
   // Where the shared playback is, while this viewer watches along.
   const shared = () =>
     !own &&
@@ -350,130 +281,6 @@ const NOTE_MS = 5000;
 /** @type {ReturnType<typeof setTimeout> | undefined} */
 let noteTimer;
 
-// How to watch the room in TF2, when it is relayed: the console line to paste, and a link that
-// has Steam connect.
-function inTf2() {
-  const cmd = $("tf2cmd"),
-    copy = $("tf2copy"),
-    why = $("tf2why");
-  relayListeners.add(m => {
-    $("intf2").hidden = !m.connect;
-    if (!m.connect) return;
-    cmd.textContent = `connect ${m.connect}; password "${m.password}"`;
-    // Steam's link takes an IP address, not a name: none without one.
-    const open = /** @type {HTMLAnchorElement} */ ($("tf2open"));
-    open.hidden = !m.address;
-    if (m.address) open.href = `steam://connect/${m.address}/${m.password}`;
-    why.hidden = !m.problem;
-    why.textContent = m.problem ? `Cannot be played in TF2: ${m.problem}` : "";
-  });
-  copy.onclick = () => copyText(cmd.textContent ?? "").then(ok => ok && copied(copy));
-}
-
-// Who is in the room, with the viewer's own name to set; admins make others admin or not.
-/** @param {(admin: boolean) => void} allow @returns {() => void} shows the list again */
-function people(allow) {
-  const list = $("peoplelist"),
-    name = /** @type {HTMLInputElement} */ ($("myname"));
-  $("people").hidden = false;
-  try {
-    name.value = (env.storage && localStorage.getItem(NAME_KEY)) || "";
-  } catch {}
-  // The stream opens with it, so the room knows the name from the start.
-  if (name.value) streamParams.set("name", name.value);
-  name.onchange = () => {
-    post("name", { name: name.value });
-    streamParams.set("name", name.value);
-    try {
-      if (env.storage) localStorage.setItem(NAME_KEY, name.value);
-    } catch {}
-  };
-  name.onkeydown = e => {
-    if (e.key === "Enter") name.blur();
-  };
-  /** @type {import("../../types/stream").PeopleLine | null} */
-  let latest = null;
-  peopleListeners.add(m => {
-    latest = m;
-    show(m);
-  });
-  return () => latest && show(latest);
-  /** @param {import("../../types/stream").PeopleLine} m */
-  function show(m) {
-    const self = m.people.find(p => p.id === me.id);
-    if (self && self.admin !== me.admin) allow(self.admin);
-    setInks(m.people);
-    names.clear();
-    for (const p of m.people) names.set(p.id, p.name);
-    showLead();
-    // One's own name is edited in place, unless signed in; a list redrawn while typing keeps it.
-    const typing = document.activeElement === name ? [name.selectionStart, name.selectionEnd] : null;
-    list.replaceChildren(
-      ...m.people.map(p => {
-        const li = document.createElement("li"),
-          own = p.id === me.id && !p.signed,
-          // Signed in with serveme: their name leads to their Steam profile.
-          nm = /^\d+$/.test(p.steamid ?? "")
-            ? steamLink(/** @type {string} */ (p.steamid))
-            : document.createElement(own ? "input" : "span"),
-          tag = document.createElement("span");
-        if (own) {
-          name.placeholder = p.name;
-          // A pen says it can be changed.
-          const pen = Object.assign(document.createElement("span"), { className: "rename", textContent: "✎" });
-          pen.title = "Change your name";
-          pen.onclick = () => name.focus();
-          li.append(name, pen);
-        } else {
-          nm.className = "nm";
-          nm.textContent = p.name;
-          li.append(nm);
-        }
-        if (p.signed) {
-          const mark = document.createElement("span");
-          mark.className = "signed";
-          mark.textContent = "✓";
-          mark.title = "Signed in with serveme";
-          nm.append(" ", mark);
-        }
-        // "Arie (you) OWNER": spaces between, so it copies as it reads.
-        const you = Object.assign(document.createElement("span"), { className: "you", textContent: "(you)" }),
-          role = (p.owner && "owner") || (p.admin && "admin") || "";
-        tag.className = "tag";
-        tag.textContent = role;
-        li.append(...(p.id === me.id ? [" ", you] : []), " ", tag);
-        if (me.admin && !p.owner && p.id !== me.id) {
-          const b = document.createElement("button");
-          b.textContent = p.admin ? "Remove admin" : "Make admin";
-          b.onclick = () => post("admin", { person: p.id, admin: !p.admin });
-          li.append(b);
-        }
-        // Last, so names line up: an admin's pen colour, which they pick for themselves.
-        if (p.admin && p.id === me.id) {
-          const pick = document.createElement("input");
-          pick.type = "color";
-          pick.className = "ink";
-          pick.title = "Your pen colour";
-          pick.value = inkOf(p.id);
-          pick.onchange = () => post("ink", { ink: pick.value });
-          li.append(pick);
-        } else if (p.admin) {
-          const ink = document.createElement("i");
-          ink.className = "ink";
-          ink.title = "Their pen colour";
-          ink.style.background = inkOf(p.id);
-          li.append(ink);
-        }
-        return li;
-      }),
-    );
-    if (typing) {
-      name.focus();
-      name.setSelectionRange(typing[0], typing[1]);
-    }
-  }
-}
-
 // How everyone sees the map, as its admins set it (see roomview.js for the rules), on this page.
 // This page among its admin's pages (two tabs, say): a page leads, not a person.
 const views = new RoomView(Math.random().toString(36).slice(2, 12));
@@ -551,30 +358,4 @@ function roomView() {
     if (!s.take) state.mirror = null;
     send(s);
   }, VIEW_MS);
-}
-
-/** @param {string} steamid */
-function steamLink(steamid) {
-  const a = document.createElement("a");
-  a.href = `https://steamcommunity.com/profiles/${steamid}/`;
-  a.target = "_blank";
-  a.rel = "noopener noreferrer";
-  a.title = "Steam profile";
-  return a;
-}
-
-// Signing in with serveme: the name is theirs there, and a streamer may make themselves admin.
-/** @param {{ admin: boolean; signed: boolean; streamer: boolean; signin: boolean }} m */
-function signedIn(m) {
-  const back = encodeURIComponent(location.pathname);
-  const signin = /** @type {HTMLAnchorElement} */ ($("signin")),
-    signout = /** @type {HTMLAnchorElement} */ ($("signout")),
-    claim = /** @type {HTMLButtonElement} */ ($("claim"));
-  signin.href = new URL(`signin?return=${back}`, env.base).href;
-  signout.href = new URL(`signout?return=${back}`, env.base).href;
-  signin.hidden = !m.signin || m.signed;
-  signout.hidden = !m.signed;
-  $("myname").hidden = m.signed;
-  claim.hidden = !m.streamer || m.admin;
-  claim.onclick = () => post("claim", {}).then(() => (claim.hidden = true));
 }

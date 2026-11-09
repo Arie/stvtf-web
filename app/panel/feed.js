@@ -375,27 +375,32 @@ export function feedEvent(ev, p) {
 }
 /** @param {GameEvent} ev @param {Who} p */
 export function chat(ev, p) {
-  const d = document.createElement("div");
   const pl = ev.player != null ? p(ev.player) : null;
   const stamp = ev.at != null ? mmss(ev.at) : state.clock;
-  const time = stamp ? timeOf(ev, stamp) : "";
+  const row = chatRow(ev, pl, stamp ? timeOf(ev, stamp) : "");
+  if (!row) return;
+  const d = document.createElement("div");
+  if (row.cls) d.className = row.cls;
+  d.innerHTML = row.html;
+  prepend($("chat"), d);
+}
+// A chat row's class and HTML: a voice command, a server's text, a player's say, or a notice;
+// none for what the flow layer leaves out.
+/** @param {GameEvent} ev @param {ReturnType<Who>} pl @param {string} time @returns {{ cls?: string; html: string } | null} */
+function chatRow(ev, pl, time) {
   if (ev.type === "voice_command") {
     const text = VOICE[ev.menu]?.[ev.item];
-    if (!layerOn("flow") || !pl || !text) return;
-    d.className = "voice";
-    d.innerHTML = `${time}${who(pl)} <span class="w">🔊 ${esc(text)}</span>`;
-  } else if (ev.type === "server_text") {
-    if (!layerOn("flow") || !ev.text || ev.text.startsWith("#")) return;
-    d.className = "srvtext";
-    d.innerHTML = time + esc(ev.text);
-  } else if (pl || ev.name) {
-    d.innerHTML = `${time}${pl ? who(pl) : `<span class="w">${esc(ev.name)}</span>`}: ${coloured(ev, pl)}`;
-  } else {
-    // Server messages (plugins, rcon say) as notices; `say` from the console adds its own prefix.
-    d.className = "notice";
-    d.innerHTML = time + coloured(ev, pl, /^Console: /);
+    if (!layerOn("flow") || !pl || !text) return null;
+    return { cls: "voice", html: `${time}${who(pl)} <span class="w">🔊 ${esc(text)}</span>` };
   }
-  prepend($("chat"), d);
+  if (ev.type === "server_text") {
+    if (!layerOn("flow") || !ev.text || ev.text.startsWith("#")) return null;
+    return { cls: "srvtext", html: time + esc(ev.text) };
+  }
+  if (pl || ev.name)
+    return { html: `${time}${pl ? who(pl) : `<span class="w">${esc(ev.name)}</span>`}: ${coloured(ev, pl)}` };
+  // Server messages (plugins, rcon say) as notices; `say` from the console adds its own prefix.
+  return { cls: "notice", html: time + coloured(ev, pl, /^Console: /) };
 }
 // A chat line in the colours its sender gave it (TF2's colour codes, as plugins use them):
 // `team` is the sender's team colour, null the line's own colour.

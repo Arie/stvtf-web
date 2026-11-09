@@ -200,20 +200,7 @@ const SHOW_FALLEN = optOn("deaths", OVERLAY);
 
 /** @param {Player[]} players */
 export function drawPlayers(players) {
-  /** @type {Dot[]} */
-  const alive = [];
-  // The followed player is drawn last, so their dot and name are on top.
-  players = [...players].sort((a, b) => Number(a.id === state.follow) - Number(b.id === state.follow));
-  for (const p of players) {
-    if (p.team !== "red" && p.team !== "blue") continue;
-    if (!p.alive) {
-      // The overlay keeps an X where each dead player fell until they respawn, like a CS radar.
-      if (SHOW_FALLEN) drawFallen(p);
-      continue;
-    }
-    const [x, y] = toScreen(p.pos[0], p.pos[1]);
-    alive.push({ p, x, y, rad: playerRad(), col: TEAM[p.team], cloaked: p.conds?.includes("Stealthed") });
-  }
+  const alive = dots(players);
   // In passes, so in a clump every class icon sits on top of the other players' discs.
   if (SHOW_FACING) for (const d of alive) drawPointer(d);
   for (const d of alive) drawDisc(d);
@@ -223,6 +210,26 @@ export function drawPlayers(players) {
   if (layerOn("effects")) for (const d of alive) drawStatusOver(d);
   if (SHOW_NAMES) for (const d of alive) drawName(d);
   ctx.globalAlpha = 1;
+}
+
+// The players on the teams alive, as dots to draw; the dead are marked where they fell (in the
+// overlay). The followed player comes last, so their dot and name are on top.
+/** @param {Player[]} players @returns {Dot[]} */
+function dots(players) {
+  /** @type {Dot[]} */
+  const alive = [];
+  const followed = /** @param {Player} p */ p => Number(p.id === state.follow);
+  for (const p of [...players].sort((a, b) => followed(a) - followed(b))) {
+    if (p.team !== "red" && p.team !== "blue") continue;
+    if (!p.alive) {
+      // The overlay keeps an X where each dead player fell until they respawn, like a CS radar.
+      if (SHOW_FALLEN) drawFallen(p);
+      continue;
+    }
+    const [x, y] = toScreen(p.pos[0], p.pos[1]);
+    alive.push({ p, x, y, rad: playerRad(), col: TEAM[p.team], cloaked: p.conds?.includes("Stealthed") });
+  }
+  return alive;
 }
 
 /** @param {Player} p */

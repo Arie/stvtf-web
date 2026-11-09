@@ -93,33 +93,38 @@ export function drawFlags(snap, players, tick) {
       drawPickups(o, carrier, snap, tick);
       continue;
     }
-    const [x, y] = shownAt(carrier, o.pos);
-    const s = OVERLAY ? overlayUnit() * 1.3 : px(48, 17);
-    ctx.save();
-    if (state.map?.startsWith("mvm_")) drawBomb(x, y, s * 0.45, Math.max(1.5, s * 0.1));
-    else {
-      ctx.lineWidth = Math.max(1.5, s * 0.12);
-      ctx.strokeStyle = "#000";
-      ctx.beginPath();
-      ctx.roundRect(x - s * 0.25, y - s * 0.62, s * 0.5, s * 0.36, s * 0.1);
-      ctx.stroke();
-      ctx.beginPath();
-      ctx.roundRect(x - s * 0.6, y - s * 0.35, s * 1.2, s * 0.8, s * 0.14);
-      ctx.fillStyle = o.team === "red" || o.team === "blue" ? TEAM[o.team] : NEUTRAL;
-      ctx.fill();
-      ctx.stroke();
-    }
-    if (o.status === "dropped" && o.returns_in != null) {
-      const left = Math.max(0, Math.ceil(o.returns_in - (Math.max(0, tick - snap.tick) * msPerTick) / 1000));
-      ctx.font = `700 ${Math.round(Math.max(11 * uiScale(), s * 0.7))}px "HUD Condensed", system-ui`;
-      ctx.textAlign = "center";
-      ctx.textBaseline = "top";
-      ctx.lineJoin = "round";
-      ctx.lineWidth = 3;
-      ctx.strokeText(String(left), x, y + s * 0.55);
-      ctx.fillStyle = "#fff";
-      ctx.fillText(String(left), x, y + s * 0.55);
-    }
-    ctx.restore();
+    drawFlag(o, shownAt(carrier, o.pos), snap, tick);
   }
+}
+
+// One flag at `at`: a briefcase (a bomb in Mann vs. Machine), and when dropped the seconds left.
+/** @param {PlacedObjective} o @param {number[]} at @param {Snapshot} snap @param {number} tick */
+function drawFlag(o, [x, y], snap, tick) {
+  const s = OVERLAY ? overlayUnit() * 1.3 : px(48, 17);
+  ctx.save();
+  if (state.map?.startsWith("mvm_")) drawBomb(x, y, s * 0.45, Math.max(1.5, s * 0.1));
+  else {
+    ctx.lineWidth = Math.max(1.5, s * 0.12);
+    ctx.strokeStyle = "#000";
+    ctx.beginPath();
+    ctx.roundRect(x - s * 0.25, y - s * 0.62, s * 0.5, s * 0.36, s * 0.1);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.roundRect(x - s * 0.6, y - s * 0.35, s * 1.2, s * 0.8, s * 0.14);
+    ctx.fillStyle = o.team === "red" || o.team === "blue" ? TEAM[o.team] : NEUTRAL;
+    ctx.fill();
+    ctx.stroke();
+  }
+  if (o.status === "dropped" && o.returns_in != null) {
+    const left = Math.max(0, Math.ceil(o.returns_in - (Math.max(0, tick - snap.tick) * msPerTick) / 1000));
+    ctx.font = `700 ${Math.round(Math.max(11 * uiScale(), s * 0.7))}px "HUD Condensed", system-ui`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "top";
+    ctx.lineJoin = "round";
+    ctx.lineWidth = 3;
+    ctx.strokeText(String(left), x, y + s * 0.55);
+    ctx.fillStyle = "#fff";
+    ctx.fillText(String(left), x, y + s * 0.55);
+  }
+  ctx.restore();
 }

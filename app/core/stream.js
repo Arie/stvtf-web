@@ -134,6 +134,30 @@ function countDown() {
   setTimeout(countDown, COUNTDOWN_MS);
 }
 
+// What each kind of room or state line does on the page; any other line is a game event.
+/** @type {Record<string, (m: unknown) => void>} */
+const ON_LINE = {
+  server: m => onServer(/** @type {import("../../types/stream").ServerLine} */ (m)),
+  status: m => onStatus(/** @type {import("../../types/stream").StatusLine} */ (m)),
+  data_age: m => (state.lastData = performance.now() - /** @type {{ ms: number }} */ (m).ms),
+  snapshot: m => onSnapshot(/** @type {import("../../types/stream").Snapshot} */ (m)),
+  world: () => {},
+  seek: () => {
+    // A room jumped: everything shown is from before it.
+    $("feed").replaceChildren();
+    $("chat").replaceChildren();
+    resetMatch(true, true);
+    sought = true;
+  },
+  draw: m => onDraw(/** @type {import("../../types/stream").DrawLine} */ (m)),
+  marker: m => onMarker(/** @type {import("../../types/stream").MarkerLine} */ (m)),
+  clear: () => onClear(),
+  view: m => viewListeners.forEach(f => f(/** @type {import("../../types/stream").ViewLine} */ (m))),
+  people: m => peopleListeners.forEach(f => f(/** @type {import("../../types/stream").PeopleLine} */ (m))),
+  relay: m => relayListeners.forEach(f => f(/** @type {import("../../types/stream").RelayLine} */ (m))),
+  playback: m => onPlayback(/** @type {import("../../types/stream").PlaybackLine} */ (m)),
+};
+
 /** @param {GameEvent} m Any line of the stream; its `type` tells which. */
 function handle(m) {
   // Feed events from before the page opened: straight into the feed and chat, no map effects.
@@ -143,55 +167,8 @@ function handle(m) {
     else killiconsLoaded.finally(() => feedEvent(m, p));
     return;
   }
-  switch (m.type) {
-    case "server":
-      onServer(/** @type {import("../../types/stream").ServerLine} */ (/** @type {unknown} */ (m)));
-      break;
-    case "status":
-      onStatus(/** @type {import("../../types/stream").StatusLine} */ (/** @type {unknown} */ (m)));
-      break;
-    case "data_age":
-      state.lastData = performance.now() - m.ms;
-      break;
-    case "snapshot":
-      onSnapshot(/** @type {import("../../types/stream").Snapshot} */ (m));
-      break;
-    case "world":
-      break;
-    case "seek":
-      // A room jumped: everything shown is from before it.
-      $("feed").replaceChildren();
-      $("chat").replaceChildren();
-      resetMatch(true, true);
-      sought = true;
-      break;
-    case "draw":
-      onDraw(/** @type {import("../../types/stream").DrawLine} */ (/** @type {unknown} */ (m)));
-      break;
-    case "marker":
-      onMarker(/** @type {import("../../types/stream").MarkerLine} */ (/** @type {unknown} */ (m)));
-      break;
-    case "clear":
-      onClear();
-      break;
-    case "view":
-      for (const f of viewListeners)
-        f(/** @type {import("../../types/stream").ViewLine} */ (/** @type {unknown} */ (m)));
-      break;
-    case "people":
-      for (const f of peopleListeners)
-        f(/** @type {import("../../types/stream").PeopleLine} */ (/** @type {unknown} */ (m)));
-      break;
-    case "relay":
-      for (const f of relayListeners)
-        f(/** @type {import("../../types/stream").RelayLine} */ (/** @type {unknown} */ (m)));
-      break;
-    case "playback":
-      onPlayback(/** @type {import("../../types/stream").PlaybackLine} */ (/** @type {unknown} */ (m)));
-      break;
-    default:
-      state.events.push(m);
-  }
+  if (Object.hasOwn(ON_LINE, m.type)) ON_LINE[m.type](m);
+  else state.events.push(m);
 }
 
 // The server line starts every (re)connect, and follows a map change.

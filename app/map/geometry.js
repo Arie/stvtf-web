@@ -237,7 +237,8 @@ function floorColour(k, t) {
 }
 
 /** @param {Drawing} at @param {Floor[]} floors */
-function drawFloors({ c, X, Y, cut }, floors) {
+function drawFloors(at, floors) {
+  const { c, cut } = at;
   const [zlo, zhi] = heightRange(floors);
   /** @type {{ [kind: string]: CanvasPattern | null }} */
   const patterns = {};
@@ -249,30 +250,36 @@ function drawFloors({ c, X, Y, cut }, floors) {
   for (const f of floors) {
     if (f.z > cut) continue;
     const t = Math.max(0, Math.min(1, (f.z - zlo) / (zhi - zlo || 1)));
-    const k = /** @type {Kind} */ (f.k && f.k in KIND_COLOURS ? f.k : "other"),
-      water = k === "water";
-    c.fillStyle = c.strokeStyle = floorColour(k, t);
-    c.beginPath();
-    for (let i = 0; i < f.p.length; i += 2) (i ? c.lineTo : c.moveTo).call(c, X(f.p[i]), Y(f.p[i + 1]));
-    c.closePath();
-    // Terrain is one smooth surface, so its cells do not shadow each other.
-    c.shadowColor = PLAIN_BG || f.d || water ? "transparent" : SHADOW_COLOUR;
-    c.globalAlpha = water && !PLAIN_BG ? WATER_ALPHA : 1;
-    c.fill();
-    c.shadowColor = "transparent";
-    // The floor's own colour round its edge, so neighbouring polygons leave no hairline seams.
-    c.stroke();
-    if (PLAIN_BG) continue;
-    if (!(k in patterns))
-      patterns[k] = kindTile(k) && c.createPattern(/** @type {HTMLCanvasElement} */ (kindTile(k)), "repeat");
-    if (patterns[k]) {
-      c.fillStyle = patterns[k];
-      c.fill();
-    }
+    drawFloor(at, f, t, patterns);
   }
   c.shadowColor = "transparent";
   c.shadowBlur = c.shadowOffsetX = c.shadowOffsetY = 0;
   c.globalAlpha = 1;
+}
+
+// One floor at height share `t`: its colour, shadow and its kind's pattern over it.
+/** @param {Drawing} at @param {Floor} f @param {number} t @param {{ [kind: string]: CanvasPattern | null }} patterns */
+function drawFloor({ c, X, Y }, f, t, patterns) {
+  const k = /** @type {Kind} */ (f.k && f.k in KIND_COLOURS ? f.k : "other"),
+    water = k === "water";
+  c.fillStyle = c.strokeStyle = floorColour(k, t);
+  c.beginPath();
+  for (let i = 0; i < f.p.length; i += 2) (i ? c.lineTo : c.moveTo).call(c, X(f.p[i]), Y(f.p[i + 1]));
+  c.closePath();
+  // Terrain is one smooth surface, so its cells do not shadow each other.
+  c.shadowColor = PLAIN_BG || f.d || water ? "transparent" : SHADOW_COLOUR;
+  c.globalAlpha = water && !PLAIN_BG ? WATER_ALPHA : 1;
+  c.fill();
+  c.shadowColor = "transparent";
+  // The floor's own colour round its edge, so neighbouring polygons leave no hairline seams.
+  c.stroke();
+  if (PLAIN_BG) return;
+  if (!(k in patterns))
+    patterns[k] = kindTile(k) && c.createPattern(/** @type {HTMLCanvasElement} */ (kindTile(k)), "repeat");
+  if (patterns[k]) {
+    c.fillStyle = patterns[k];
+    c.fill();
+  }
 }
 
 // Walls only where a floor was drawn: the rest are scenery's, out over the background.

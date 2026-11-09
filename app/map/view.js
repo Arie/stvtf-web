@@ -180,42 +180,53 @@ export function teamsTurn(points) {
   return Math.round(-Math.atan2(red[1] - blue[1], red[0] - blue[0]) / quarter) * quarter || 0;
 }
 
-export function frameMap(keepView = false) {
+// The points a framing takes in: the spawn points and the objectives.
+function framedPoints() {
   /** @type {number[][]} */
   const pts = [];
   for (const p of state.spawns?.points || []) pts.push(p.pos);
   for (const o of state.snaps.at(-1)?.objectives || []) if (o.pos) pts.push(o.pos);
+  return pts;
+}
+
+// Centre and scale to show `pts` turned by `rot`, measuring them along the rotated axes.
+/** @param {number[][]} pts @param {number} rot */
+function fitTurned(pts, rot) {
+  const pad = FRAME_PAD,
+    { w, h } = viewArea();
+  const c = Math.cos(rot),
+    sn = Math.sin(rot);
+  const us = pts.map(p => p[0] * c - p[1] * sn),
+    vs = pts.map(p => p[0] * sn + p[1] * c);
+  const u0 = Math.min(...us) - pad,
+    u1 = Math.max(...us) + pad,
+    v0 = Math.min(...vs) - pad,
+    v1 = Math.max(...vs) + pad;
+  const uc = (u0 + u1) / 2,
+    vc = (v0 + v1) / 2;
+  const scale = Math.min(w / (u1 - u0), h / (v1 - v0)) * FIT_OVERLAY;
+  return { rot, cx: uc * c + vc * sn, cy: -uc * sn + vc * c, scale };
+}
+
+// The best framing of `pts` as rotate= asks: teams side by side, upright or a quarter turned
+// (auto), or by the degrees given.
+/** @param {number[][]} pts */
+function bestFit(pts) {
+  const want = OPT.get("rotate") ?? "teams";
+  if (want === "teams") return fitTurned(pts, teamsTurn(state.spawns?.points || []) ?? 0);
+  if (want === "auto") {
+    const upright = fitTurned(pts, 0),
+      turned = fitTurned(pts, Math.PI / 2);
+    return turned.scale > upright.scale * TURN_GAIN ? turned : upright;
+  }
+  return fitTurned(pts, ((Number(want) || 0) * Math.PI) / 180);
+}
+
+export function frameMap(keepView = false) {
+  const pts = framedPoints();
   if (pts.length < 3) return false;
   const v = state.view,
-    pad = FRAME_PAD,
-    { w, h } = viewArea();
-  // Centre and scale for a rotation, measuring the points along the rotated axes.
-  /** @param {number} rot */
-  const fit = rot => {
-    const c = Math.cos(rot),
-      sn = Math.sin(rot);
-    const us = pts.map(p => p[0] * c - p[1] * sn),
-      vs = pts.map(p => p[0] * sn + p[1] * c);
-    const u0 = Math.min(...us) - pad,
-      u1 = Math.max(...us) + pad,
-      v0 = Math.min(...vs) - pad,
-      v1 = Math.max(...vs) + pad;
-    const uc = (u0 + u1) / 2,
-      vc = (v0 + v1) / 2;
-    const scale = Math.min(w / (u1 - u0), h / (v1 - v0)) * FIT_OVERLAY;
-    return { rot, cx: uc * c + vc * sn, cy: -uc * sn + vc * c, scale };
-  };
-  const want = OPT.get("rotate") ?? "teams";
-  let best;
-  if (want === "teams") {
-    best = fit(teamsTurn(state.spawns?.points || []) ?? 0);
-  } else if (want === "auto") {
-    const upright = fit(0),
-      turned = fit(Math.PI / 2);
-    best = turned.scale > upright.scale * TURN_GAIN ? turned : upright;
-  } else {
-    best = fit(((Number(want) || 0) * Math.PI) / 180);
-  }
+    best = bestFit(pts);
   if (!keepView || best.rot !== v.rot)
     Object.assign(v, { rot: best.rot, ...viewCentre(best, best.scale), scale: best.scale });
   state.full = { cx: best.cx, cy: best.cy, scale: best.scale };
@@ -365,22 +376,22 @@ const BG_OPACITY = (v => (Number.isFinite(v) ? String(Math.max(0, Math.min(1, v)
 /** @type {HTMLImageElement | HTMLCanvasElement | null} */
 let bgShown = null,
   bgTransform = "";
+// The picture under the map, and the world corners it spans: the overview (also once it is clear
+// this map has no geometry), or the geometry drawn.
+/** @returns {{ pic: HTMLImageElement | HTMLCanvasElement | null, lo?: number[], hi?: number[] }} */
+function background() {
+  if (state.overview && (state.bg === "overview" || (state.mapData && !state.geoCanvas))) {
+    const { img, b } = state.overview;
+    return { pic: img, lo: [b.boundary_min.x, b.boundary_min.y], hi: [b.boundary_max.x, b.boundary_max.y] };
+  }
+  if (state.geoCanvas) return { pic: state.geoCanvas.canvas, lo: state.geoCanvas.lo, hi: state.geoCanvas.hi };
+  return { pic: null };
+}
+
 /** @param {{ width: number, height: number }} r */
 export function drawBackground(r) {
   ctx.clearRect(0, 0, r.width, r.height);
-  /** @type {HTMLImageElement | HTMLCanvasElement | null} */
-  let pic = null;
-  /** @type {number[] | undefined} */
-  let lo, hi;
-  // The overview also stands in once it is clear this map has no geometry.
-  if (state.overview && (state.bg === "overview" || (state.mapData && !state.geoCanvas))) {
-    const { img, b } = state.overview;
-    pic = img;
-    lo = [b.boundary_min.x, b.boundary_min.y];
-    hi = [b.boundary_max.x, b.boundary_max.y];
-  } else if (state.geoCanvas) {
-    ({ canvas: pic, lo, hi } = state.geoCanvas);
-  }
+  const { pic, lo, hi } = background();
   if (pic !== bgShown) {
     bgBox.replaceChildren(...(pic ? [pic] : []));
     if (pic) pic.style.opacity = BG_OPACITY ?? (OVERLAY && pic !== state.geoCanvas?.canvas ? "0.95" : "");

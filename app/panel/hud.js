@@ -379,25 +379,38 @@ function renderScores(snap) {
 /** @param {Snapshot} snap @param {number} tick */
 export function renderScoreboard(snap, tick) {
   renderScores(snap);
-  const timers = snap.timers || [];
-  const left = /** @param {Timer} t */ t =>
-    t.paused ? t.remaining : t.remaining - (Math.max(0, tick - snap.tick) * msPerTick) / 1000;
-  const main = timers.find(t => t.team === "none") || (timers.length === 1 ? timers[0] : null);
-  const byTeam = /** @param {string} team */ team => timers.find(t => t.team === team && t !== main);
+  const t = timersOf(snap, tick);
   // Like TF2's HUD: the round timer when one is active, else the map's mp_timelimit; with
   // both, the map time goes underneath.
-  const mapLeft = snap.time_left == null ? null : snap.time_left - (Math.max(0, tick - snap.tick) * msPerTick) / 1000;
-  const koth = !main && byTeam("blue") && byTeam("red");
-  if (koth) setHTML($("timer-main"), kothTimers(/** @type {(team: string) => Timer} */ (byTeam), left));
-  else setText("timer-main", mainTimerText(main, mapLeft, left));
-  $("scoreboard").classList.toggle("koth", Boolean(koth));
-  setText("timer-map", mapTimerText(snap, main || koth, mapLeft));
+  if (t.koth) setHTML($("timer-main"), kothTimers(/** @type {(team: string) => Timer} */ (t.byTeam), t.left));
+  else setText("timer-main", mainTimerText(t.main, t.mapLeft, t.left));
+  $("scoreboard").classList.toggle("koth", Boolean(t.koth));
+  setText("timer-map", mapTimerText(snap, t.main || t.koth, t.mapLeft));
   const into = timeIntoRound(snap, tick);
   state.clock = into == null ? "" : mmss(into);
-  const side = /** @param {string} team */ team =>
-    !koth && byTeam(team) ? clock(left(/** @type {Timer} */ (byTeam(team)))) : "";
+  const side = /** @param {string} team */ team => {
+    const timer = t.byTeam(team);
+    return !t.koth && timer ? clock(t.left(timer)) : "";
+  };
   setText("timer-blue", side("blue"));
   setText("timer-red", side("red"));
+  renderRoundLabel(snap, t);
+}
+// The snapshot's timers, run on to `tick`: the main one, each team's, and the map's time left.
+/** @param {Snapshot} snap @param {number} tick */
+function timersOf(snap, tick) {
+  const timers = snap.timers || [];
+  const since = (Math.max(0, tick - snap.tick) * msPerTick) / 1000;
+  const left = /** @param {Timer} t */ t => (t.paused ? t.remaining : t.remaining - since);
+  const main = timers.find(t => t.team === "none") || (timers.length === 1 ? timers[0] : null);
+  const byTeam = /** @param {string} team */ team => timers.find(t => t.team === team && t !== main);
+  const mapLeft = snap.time_left == null ? null : snap.time_left - since;
+  const koth = !main && byTeam("blue") && byTeam("red");
+  return { main, byTeam, left, mapLeft, koth };
+}
+// The round's label, OVERTIME once its timer ran out, and the timer turning red near the end.
+/** @param {Snapshot} snap @param {ReturnType<typeof timersOf>} t */
+function renderRoundLabel(snap, { main, mapLeft, left }) {
   const label = roundLabel(snap, main);
   // A paused round timer is not a paused game (KotH, no match started): it just stands still.
   setText("round-label", label || (main && !main.paused && left(main) <= 0 ? "OVERTIME" : ""));

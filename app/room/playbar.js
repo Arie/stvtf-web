@@ -35,122 +35,166 @@ export function moment(s) {
 }
 
 /**
- * @param {{
+ * @typedef {{
  *   home: URL; send: (c: Control) => unknown; live: (length: number) => void;
  *   replay?: (behind: boolean, p: PlaybackLine) => boolean; room?: boolean;
- * }} o `home`: where the marks are; `send`: a control; `live`: the Live button (a live match's);
- * `replay`: whether the status says replay, from whether playback is behind a live match
+ * }} Options `home`: where the marks are; `send`: a control; `live`: the Live button (a live
+ * match's); `replay`: whether the status says replay, from whether playback is behind a live match
  * (default: that); `room`: a room's, with no slow motion.
  */
+
+/** @param {Options} o */
 export function playbar(o) {
-  const bar = $("roombar"),
-    play = /** @type {HTMLButtonElement} */ ($("rb-play")),
-    time = /** @type {HTMLInputElement} */ ($("rb-time")),
-    speed = /** @type {HTMLSelectElement} */ ($("rb-speed")),
-    shown = $("rb-clock"),
-    live = /** @type {HTMLButtonElement} */ ($("rb-live")),
-    track = $("rb-track");
-  bar.hidden = false;
-  const width = widthOf(track);
-  speed.replaceChildren(
-    ...(o.room ? ROOM_SPEEDS : SPEEDS).map(s =>
-      Object.assign(document.createElement("option"), { value: String(s), textContent: `${s}×` }),
-    ),
-  );
-  /** @type {PlaybackLine | null} */
-  let last = null;
-  let heard = 0,
-    dragging = false,
-    allowed = false,
-    seen = 0;
+  return new Playbar(o);
+}
+
+class Playbar {
+  /** @param {Options} o */
+  constructor(o) {
+    this.o = o;
+    this.play = /** @type {HTMLButtonElement} */ ($("rb-play"));
+    this.time = /** @type {HTMLInputElement} */ ($("rb-time"));
+    this.speed = /** @type {HTMLSelectElement} */ ($("rb-speed"));
+    this.shown = $("rb-clock");
+    this.live = /** @type {HTMLButtonElement} */ ($("rb-live"));
+    this.track = $("rb-track");
+    $("roombar").hidden = false;
+    this.width = widthOf(this.track);
+    this.speed.replaceChildren(
+      ...(o.room ? ROOM_SPEEDS : SPEEDS).map(s =>
+        Object.assign(document.createElement("option"), { value: String(s), textContent: `${s}×` }),
+      ),
+    );
+    /** @type {PlaybackLine | null} The latest playback line, heard at `heardAt`. */
+    this.last = null;
+    this.heardAt = 0;
+    this.dragging = false;
+    this.allowed = false;
+    // How far a live match's timeline shows: as far as this viewer has watched.
+    this.seen = 0;
+    /** @type {{ at: number; since: number } | null} A jump made here, shown until playback confirms it. */
+    this.jumped = null;
+    this.marks = timeline({ track: this.track, home: o.home, clock, length: () => this.length(), jump: null });
+    // Every frame, once the map is drawn: a live match's timeline grows smoothly, and the playhead
+    // moves smoothly.
+    afterDraw.add(() => this.show());
+    this.wire();
+  }
+
+  wire() {
+    const { play, live, speed, time, o } = this;
+    play.onclick = () => this.last && this.control({ paused: !this.last.paused });
+    live.onclick = () => o.live(Math.round(this.length()));
+    speed.onchange = () => this.control({ speed: Number(speed.value) });
+    time.oninput = () => {
+      this.dragging = true;
+      this.show();
+    };
+    time.onchange = () => {
+      this.dragging = false;
+      this.control({ seek: Math.round(Number(time.value)) });
+    };
+    const at = () => this.at(),
+      control = (/** @type {Control} */ c) => this.control(c);
+    shortcuts(() => (this.allowed ? this.last : null), control, at);
+    timesJump(() => this.allowed, control, at);
+  }
+
   // How long the recording is by now: a live match's grows, between playback lines no further
   // than half of LIVE_MS.
-  const length = () => (last ? last.length + (last.live ? Math.min(performance.now() - heard, LIVE_MS / 2) : 0) : 0);
-  // What is kept, from the start, of the map that began at the origin; the clock counts from it.
-  const start = () => last?.start ?? 0,
-    since = (/** @type {number} */ ms) => clock(Math.max(0, ms - (last?.origin ?? 0)));
-  // A jump made here, shown until playback confirms it.
-  /** @type {{ at: number; since: number } | null} */
-  let jumped = null;
-  const at = () => {
-    if (!last) return 0;
-    const from = jumped ?? { at: last.at, since: heard };
-    const ran = last.paused ? 0 : (performance.now() - from.since) * last.speed;
-    return Math.min(length(), Math.max(start(), from.at + ran));
-  };
-  /** @param {Control} c */
-  const control = c => {
-    if (c.seek != null) jumped = { at: c.seek, since: performance.now() };
-    return o.send(c);
-  };
-  const show = () => {
-    if (!last) return;
-    const behind = Boolean(last.live) && length() - at() >= LIVE_MS,
-      atLive = Boolean(last.live) && !last.paused && !behind;
-    const len = Math.max(start() + 1, length());
-    time.min = String(start());
-    time.max = String(len);
-    marks.place(len, width());
-    // A live match's timeline shows only as far as this viewer has watched; a demo's, all of it.
-    if (last.live) seen = Math.max(seen, atLive ? len : at());
-    marks.reveal(last.live ? seen : Infinity);
-    // At live the timeline is all played and the playhead, which could only waver at its end, hides.
-    const now = atLive ? length() : at();
-    if (!dragging) time.value = String(now);
-    track.classList.toggle("at-live", atLive && !dragging);
-    track.style.setProperty("--played", `${(100 * (Number(time.value) - start())) / (len - start())}%`);
-    // The clock as wide as it gets: the timeline stays put.
-    shown.textContent = `${since(dragging ? Number(time.value) : now)} / ${since(len)}`;
-    const widest = `${since(len).length * 2 + 3}ch`;
-    if (shown.style.minWidth !== widest) shown.style.minWidth = widest;
-    live.hidden = !last.live;
-    live.classList.toggle("at", atLive);
-    if (!last.paused) say(o.replay ?? (b => b), behind, last, length() - now);
-  };
-  // Every frame, once the map is drawn: a live match's timeline grows smoothly, and the playhead
-  // moves smoothly.
-  const marks = timeline({ track, home: o.home, clock, length, jump: null });
-  afterDraw.add(show);
-  play.onclick = () => last && control({ paused: !last.paused });
-  live.onclick = () => o.live(Math.round(length()));
-  speed.onchange = () => control({ speed: Number(speed.value) });
-  time.oninput = () => {
-    dragging = true;
-    show();
-  };
-  time.onchange = () => {
-    dragging = false;
-    control({ seek: Math.round(Number(time.value)) });
-  };
-  shortcuts(() => (allowed ? last : null), control, at);
-  timesJump(() => allowed, control, at);
+  length() {
+    const l = this.last;
+    return l ? l.length + (l.live ? Math.min(performance.now() - this.heardAt, LIVE_MS / 2) : 0) : 0;
+  }
 
-  return {
-    control,
-    at,
-    /** Where playback is, from the map's start. */
-    since: () => at() - (last?.origin ?? 0),
-    /** The speed and pause now. */
-    state: () => ({ speed: last?.speed ?? 1, paused: last?.paused ?? false }),
-    /** What playback is now. @param {PlaybackLine} m */
-    heard(m) {
-      [last, heard] = [m, performance.now()];
-      if (jumped && (Math.abs(m.at - jumped.at) < JUMP_MS || heard - jumped.since > JUMP_WAIT_MS)) jumped = null;
-      play.textContent = m.paused ? "▶" : "⏸";
-      play.title = m.paused ? "Play (space)" : "Pause (space)";
-      speed.value = String(m.speed);
-      time.max = String(m.length);
-      marks.heard(m);
-      show();
-    },
-    /** Whether this viewer drives playback. @param {boolean} on */
-    allow(on) {
-      allowed = on;
-      for (const c of [play, time, speed, live]) c.disabled = !on;
-      env.el.classList.toggle("seekable", on);
-      marks.allow(on ? ms => control({ seek: ms }) : null);
-    },
-  };
+  // What is kept, from the start, of the map that began at the origin; the clock counts from it.
+  start() {
+    return this.last?.start ?? 0;
+  }
+
+  /** The clock at `ms`, from the map's start. @param {number} ms */
+  clockAt(ms) {
+    return clock(Math.max(0, ms - (this.last?.origin ?? 0)));
+  }
+
+  /** Where playback is now. */
+  at() {
+    const l = this.last;
+    if (!l) return 0;
+    const from = this.jumped ?? { at: l.at, since: this.heardAt };
+    const ran = l.paused ? 0 : (performance.now() - from.since) * l.speed;
+    return Math.min(this.length(), Math.max(this.start(), from.at + ran));
+  }
+
+  /** @param {Control} c */
+  control(c) {
+    if (c.seek != null) this.jumped = { at: c.seek, since: performance.now() };
+    return this.o.send(c);
+  }
+
+  show() {
+    const l = this.last;
+    if (!l) return;
+    const behind = Boolean(l.live) && this.length() - this.at() >= LIVE_MS,
+      atLive = Boolean(l.live) && !l.paused && !behind;
+    const len = Math.max(this.start() + 1, this.length());
+    // At live the timeline is all played and the playhead, which could only waver at its end, hides.
+    const now = atLive ? this.length() : this.at();
+    this.showTrack(len, now, atLive);
+    // The clock as wide as it gets: the timeline stays put.
+    this.shown.textContent = `${this.clockAt(this.dragging ? Number(this.time.value) : now)} / ${this.clockAt(len)}`;
+    const widest = `${this.clockAt(len).length * 2 + 3}ch`;
+    if (this.shown.style.minWidth !== widest) this.shown.style.minWidth = widest;
+    this.live.hidden = !l.live;
+    this.live.classList.toggle("at", atLive);
+    if (!l.paused) say(this.o.replay ?? (b => b), behind, l, this.length() - now);
+  }
+
+  /** The timeline `len` long, its marks and the playhead at `now`. @param {number} len @param {number} now @param {boolean} atLive */
+  showTrack(len, now, atLive) {
+    const { time, track } = this,
+      l = /** @type {PlaybackLine} */ (this.last);
+    time.min = String(this.start());
+    time.max = String(len);
+    this.marks.place(len, this.width());
+    // A live match's timeline shows only as far as this viewer has watched; a demo's, all of it.
+    if (l.live) this.seen = Math.max(this.seen, atLive ? len : this.at());
+    this.marks.reveal(l.live ? this.seen : Infinity);
+    if (!this.dragging) time.value = String(now);
+    track.classList.toggle("at-live", atLive && !this.dragging);
+    track.style.setProperty("--played", `${(100 * (Number(time.value) - this.start())) / (len - this.start())}%`);
+  }
+
+  /** Where playback is, from the map's start. */
+  since() {
+    return this.at() - (this.last?.origin ?? 0);
+  }
+
+  /** The speed and pause now. */
+  state() {
+    return { speed: this.last?.speed ?? 1, paused: this.last?.paused ?? false };
+  }
+
+  /** What playback is now. @param {PlaybackLine} m */
+  heard(m) {
+    [this.last, this.heardAt] = [m, performance.now()];
+    const j = this.jumped;
+    if (j && (Math.abs(m.at - j.at) < JUMP_MS || this.heardAt - j.since > JUMP_WAIT_MS)) this.jumped = null;
+    this.play.textContent = m.paused ? "▶" : "⏸";
+    this.play.title = m.paused ? "Play (space)" : "Pause (space)";
+    this.speed.value = String(m.speed);
+    this.time.max = String(m.length);
+    this.marks.heard(m);
+    this.show();
+  }
+
+  /** Whether this viewer drives playback. @param {boolean} on */
+  allow(on) {
+    this.allowed = on;
+    for (const c of [this.play, this.time, this.speed, this.live]) c.disabled = !on;
+    env.el.classList.toggle("seekable", on);
+    this.marks.allow(on ? ms => this.control({ seek: ms }) : null);
+  }
 }
 
 // `e`'s width, kept by an observer: read each frame after the bar's changes, it would reflow.

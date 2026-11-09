@@ -31,45 +31,54 @@ function drawSentryAim(b, x, y, s) {
 // sticks out, a teleporter exit gets a ring, and buildings under construction are faint.
 /** @param {Snapshot} snap */
 export function drawBuildings(snap) {
-  for (const b of snap.buildings || []) {
-    const [x, y] = toScreen(b.pos[0], b.pos[1]),
-      s = OVERLAY ? overlayUnit() * 1.9 : px(44, 18);
-    const tag = b.kind === "sentry" && b.mini ? "MS" : (b.kind[0] || "?").toUpperCase() + (b.level || 1);
-    ctx.save();
-    if (b.building) ctx.globalAlpha = 0.55;
-    if (b.kind === "sentry") drawSentryAim(b, x, y, s);
-    // The team colour drains from the top as health drops.
-    const hpf = Math.max(0, Math.min(1, b.hp / (b.max_hp || 1)));
-    const tele = b.kind === "teleporter",
-      shape = () => {
-        ctx.beginPath();
-        if (tele) ctx.arc(x, y, s / 2, 0, Math.PI * 2);
-        else ctx.roundRect(x - s / 2, y - s / 2, s, s, 3);
-      };
-    shape();
-    ctx.fillStyle = "rgba(11,12,14,0.6)";
-    ctx.fill();
-    ctx.save();
-    ctx.clip();
-    ctx.fillStyle = teamColour(b.team);
-    ctx.fillRect(x - s / 2, y + s / 2 - s * hpf, s, s * hpf);
-    ctx.restore();
-    ctx.lineWidth = b.sapped ? 2.5 : 1.5;
-    ctx.strokeStyle = b.sapped ? "#fff" : "#000";
-    ctx.stroke();
-    if (b.kind === "teleporter" && b.entrance === false) {
+  for (const b of snap.buildings || []) drawBuilding(b);
+}
+
+/** @param {Building} b */
+function drawBuilding(b) {
+  const [x, y] = toScreen(b.pos[0], b.pos[1]),
+    s = OVERLAY ? overlayUnit() * 1.9 : px(44, 18);
+  const tag = b.kind === "sentry" && b.mini ? "MS" : (b.kind[0] || "?").toUpperCase() + (b.level || 1);
+  ctx.save();
+  if (b.building) ctx.globalAlpha = 0.55;
+  if (b.kind === "sentry") drawSentryAim(b, x, y, s);
+  // The team colour drains from the top as health drops.
+  const hpf = Math.max(0, Math.min(1, b.hp / (b.max_hp || 1)));
+  const tele = b.kind === "teleporter",
+    shape = () => {
       ctx.beginPath();
-      ctx.arc(x, y, s * 0.72, 0, Math.PI * 2);
-      ctx.strokeStyle = teamColour(b.team, "#fff");
-      ctx.lineWidth = 2;
-      ctx.stroke();
-    }
-    label(tag, x, y, Math.max(9, s * 0.5));
-    if (b.sapped) {
-      ctx.fillStyle = "#fff";
-      ctx.font = `800 ${Math.round(9 * uiScale())}px system-ui`;
-      ctx.fillText("SAPPED", x, y + s / 2 + 7);
-    }
-    ctx.restore();
+      if (tele) ctx.arc(x, y, s / 2, 0, Math.PI * 2);
+      else ctx.roundRect(x - s / 2, y - s / 2, s, s, 3);
+    };
+  shape();
+  ctx.fillStyle = "rgba(11,12,14,0.6)";
+  ctx.fill();
+  ctx.save();
+  ctx.clip();
+  ctx.fillStyle = teamColour(b.team);
+  ctx.fillRect(x - s / 2, y + s / 2 - s * hpf, s, s * hpf);
+  ctx.restore();
+  ctx.lineWidth = b.sapped ? 2.5 : 1.5;
+  ctx.strokeStyle = b.sapped ? "#fff" : "#000";
+  ctx.stroke();
+  drawMarks(b, x, y, s);
+  label(tag, x, y, Math.max(9, s * 0.5));
+  ctx.restore();
+}
+
+// A teleporter exit's ring, and SAPPED under a sapped building.
+/** @param {Building} b @param {number} x @param {number} y @param {number} s */
+function drawMarks(b, x, y, s) {
+  if (b.kind === "teleporter" && b.entrance === false) {
+    ctx.beginPath();
+    ctx.arc(x, y, s * 0.72, 0, Math.PI * 2);
+    ctx.strokeStyle = teamColour(b.team, "#fff");
+    ctx.lineWidth = 2;
+    ctx.stroke();
+  }
+  if (b.sapped) {
+    ctx.fillStyle = "#fff";
+    ctx.font = `800 ${Math.round(9 * uiScale())}px system-ui`;
+    ctx.fillText("SAPPED", x, y + s / 2 + 7);
   }
 }
