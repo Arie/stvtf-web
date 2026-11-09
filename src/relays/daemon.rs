@@ -11,7 +11,7 @@
 //! - `{"op": "follow", "room", "want"}`: where the room is now.
 //! - `{"op": "status", "room"}`: TF2 clients in, whether it stopped, and its page line.
 //! - `{"op": "draw", "room", "beams"}`: lines to show the TF2 clients in, each
-//!   `[x1, y1, z1, x2, y2, z2, r, g, b, seconds, width]`.
+//!   `[x1, y1, z1, x2, y2, z2, r, g, b, seconds, width, speed]`.
 //! - `{"op": "keep", "room", "beams"}`: lines they keep seeing, in place of those before.
 //! - `{"op": "stop", "room"}`: the room ended.
 //!
@@ -119,16 +119,23 @@ enum Request {
 }
 
 /// A [`Beam`] on the wire.
-type BeamLine = [f32; 11];
+type BeamLine = [f32; 12];
 
 fn beam_line(b: &Beam) -> BeamLine {
     let [r, g, bl] = b.rgb.map(f32::from);
-    [b.from[0], b.from[1], b.from[2], b.to[0], b.to[1], b.to[2], r, g, bl, b.life, b.width]
+    [b.from[0], b.from[1], b.from[2], b.to[0], b.to[1], b.to[2], r, g, bl, b.life, b.width, f32::from(b.speed)]
 }
 
 fn beam(l: &BeamLine) -> Beam {
     let byte = |v: f32| v.clamp(0.0, 255.0) as u8;
-    Beam { from: [l[0], l[1], l[2]], to: [l[3], l[4], l[5]], rgb: [byte(l[6]), byte(l[7]), byte(l[8])], life: l[9], width: l[10] }
+    Beam {
+        from: [l[0], l[1], l[2]],
+        to: [l[3], l[4], l[5]],
+        rgb: [byte(l[6]), byte(l[7]), byte(l[8])],
+        life: l[9],
+        width: l[10],
+        speed: byte(l[11]),
+    }
 }
 
 struct Leased {
@@ -467,7 +474,7 @@ mod tests {
 
     #[test]
     fn a_beam_goes_to_the_relay_process_as_it_was() {
-        let b = Beam { from: [1.5, -2.0, 3.0], to: [4.0, 5.0, -6.25], rgb: [255, 128, 0], life: 4.0, width: 3.0 };
+        let b = Beam { from: [1.5, -2.0, 3.0], to: [4.0, 5.0, -6.25], rgb: [255, 128, 0], life: 4.0, width: 3.0, speed: 20 };
         let line: BeamLine = serde_json::from_value(serde_json::to_value(beam_line(&b)).unwrap()).unwrap();
         assert_eq!(beam(&line), b);
     }

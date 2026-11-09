@@ -53,7 +53,7 @@ pub(crate) struct Room {
     /// The permanent marker strokes on the map.
     marker: Mutex<Vec<Kept>>,
     /// The strokes being laid on the floors for the relay, by person and stroke, oldest first.
-    drapes: Mutex<Vec<((u32, u32), crate::maps::drape::Drape)>>,
+    drapes: Mutex<Vec<beams::PenStroke>>,
     /// The marker changed since the relay was last handed it.
     marker_dirty: std::sync::atomic::AtomicBool,
 }

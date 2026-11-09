@@ -146,5 +146,6 @@ impl Room {
         }
         self.tell_relay();
         self.keep_marker_if_changed();
+        self.head_pens();
     }
 }
