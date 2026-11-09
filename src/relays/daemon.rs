@@ -12,6 +12,7 @@
 //! - `{"op": "status", "room"}`: TF2 clients in, whether it stopped, and its page line.
 //! - `{"op": "draw", "room", "beams"}`: lines to show the TF2 clients in, each
 //!   `[x1, y1, z1, x2, y2, z2, r, g, b, seconds, width]`.
+//! - `{"op": "keep", "room", "beams"}`: lines they keep seeing, in place of those before.
 //! - `{"op": "stop", "room"}`: the room ended.
 //!
 //! A `want` is a [`stvtf::relay::Want`] with `age_ms` (how long ago `tick` was wanted) for its
@@ -105,6 +106,10 @@ enum Request {
         room: String,
     },
     Draw {
+        room: String,
+        beams: Vec<BeamLine>,
+    },
+    Keep {
         room: String,
         beams: Vec<BeamLine>,
     },
@@ -222,6 +227,13 @@ fn handle(r: Request, rooms: &Rooms, relays: &Arc<Relays>) -> Value {
             }
             None => json!({ "gone": true }),
         },
+        Request::Keep { room, beams } => match lock(rooms).get_mut(&room) {
+            Some(l) => {
+                l.relay.keep(beams.iter().map(beam).collect());
+                json!({})
+            }
+            None => json!({ "gone": true }),
+        },
         Request::Stop { room } => {
             lock(rooms).remove(&room);
             json!({})
@@ -295,7 +307,7 @@ impl Remote {
         let shared = Arc::new(Shared {
             remote: self.clone(),
             room: room.to_string(),
-            inner: Mutex::new(Inner { clients: 0, stopped: false, line, want: None, beams: Vec::new(), done: None }),
+            inner: Mutex::new(Inner { clients: 0, stopped: false, line, want: None, beams: Vec::new(), kept: None, done: None }),
             wake: Condvar::new(),
         });
         let tending = shared.clone();
@@ -320,6 +332,8 @@ struct Inner {
     /// Not sent yet.
     want: Option<Want>,
     beams: Vec<Beam>,
+    /// The kept beams to hand over, the latest only.
+    kept: Option<Vec<Beam>>,
     done: Option<Done>,
 }
 
@@ -335,16 +349,16 @@ impl Shared {
     fn tend(&self) {
         let mut asked = Instant::now();
         loop {
-            let (want, beams, done) = {
+            let (want, beams, kept, done) = {
                 let mut i = lock(&self.inner);
-                while i.want.is_none() && i.beams.is_empty() && i.done.is_none() {
+                while i.want.is_none() && i.beams.is_empty() && i.kept.is_none() && i.done.is_none() {
                     let left = STATUS_EVERY.saturating_sub(asked.elapsed());
                     if left.is_zero() {
                         break;
                     }
                     i = self.wake.wait_timeout(i, left).unwrap_or_else(PoisonError::into_inner).0;
                 }
-                (i.want.take(), std::mem::take(&mut i.beams), i.done)
+                (i.want.take(), std::mem::take(&mut i.beams), i.kept.take(), i.done)
             };
             match done {
                 Some(Done::End) => {
@@ -359,6 +373,10 @@ impl Shared {
                 if answer.is_ok_and(|a| a.get("gone").is_some()) {
                     lock(&self.inner).stopped = true;
                 }
+            }
+            if let Some(kept) = kept {
+                let kept: Vec<BeamLine> = kept.iter().map(beam_line).collect();
+                let _ = self.remote.call(&json!({ "op": "keep", "room": self.room, "beams": kept }));
             }
             if !beams.is_empty() {
                 let beams: Vec<BeamLine> = beams.iter().map(beam_line).collect();
@@ -408,6 +426,12 @@ impl RemoteRelay {
             i.beams.extend_from_slice(beams);
         }
         drop(i);
+        self.0.wake.notify_all();
+    }
+
+    /// Beams the TF2 clients in keep seeing, in place of those before; only the latest is sent.
+    pub(crate) fn keep(&self, beams: Vec<Beam>) {
+        lock(&self.0.inner).kept = Some(beams);
         self.0.wake.notify_all();
     }
 

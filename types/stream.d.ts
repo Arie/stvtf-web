@@ -177,7 +177,7 @@ export type DrawLine = {
 /** The permanent marker on a room's map, as a page joins. */
 export type MarkerLine = {
   type: "marker";
-  strokes: { stroke: number; by: number; points: [number, number, number][] }[];
+  strokes: { stroke: number; by: number; points: [number, number, number][]; ink?: string }[];
   /** Points the map holds, all strokes together. */
   max?: number;
 };

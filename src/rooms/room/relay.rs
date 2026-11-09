@@ -69,6 +69,8 @@ impl Room {
                     }
                     *lock(&self.relay_sent) = Some(want);
                     *relay = Some(r);
+                    // A new relay has no marker yet.
+                    self.marker_dirty.store(true, std::sync::atomic::Ordering::Relaxed);
                 }
             }
             Ok(None) => {}
@@ -143,6 +145,6 @@ impl Room {
             self.ensure_relay();
         }
         self.tell_relay();
-        self.redraw_marker();
+        self.keep_marker_if_changed();
     }
 }

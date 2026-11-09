@@ -86,6 +86,18 @@ fn strokes_reach_every_page_and_stay_on_the_map() {
 }
 
 #[test]
+fn a_marker_stroke_keeps_the_ink_it_was_drawn_in() {
+    let r = room(1);
+    r.set_ink("me", "#ff0000").unwrap();
+    r.draw(&Draw { stroke: 1, points: vec![[1.0, 0.0, 0.0]], keep: true }, "me").unwrap();
+    r.set_ink("me", "#00ff00").unwrap();
+    r.draw(&Draw { stroke: 1, points: vec![[2.0, 0.0, 0.0]], keep: true }, "me").unwrap();
+    r.draw(&Draw { stroke: 2, points: vec![[3.0, 0.0, 0.0]], keep: true }, "me").unwrap();
+    let inks: Vec<Option<String>> = r.saved().marker.iter().map(|k| k.ink.clone()).collect();
+    assert_eq!(inks, [Some("#ff0000".into()), Some("#00ff00".into())]);
+}
+
+#[test]
 fn marker_stays_for_pages_that_join_until_cleared() {
     let r = room(1);
     let marker = |stroke, x| Draw { stroke, points: vec![[x, 0.0, 0.0]], keep: true };
@@ -94,7 +106,10 @@ fn marker_stays_for_pages_that_join_until_cleared() {
     r.draw(&Draw { stroke: 2, points: vec![[9.0, 9.0, 0.0]], keep: false }, "me").unwrap();
     let joined = |r: &Room| subscribe(&r.hub, false).try_iter().filter(|l| l.contains(r#""type":"marker""#)).collect::<Vec<_>>();
     let kept = joined(&r);
-    assert_eq!(&*kept[0], r#"{"max":8000,"strokes":[{"by":1,"points":[[1.0,0.0,0.0],[2.0,0.0,0.0]],"stroke":1}],"type":"marker"}"#);
+    assert_eq!(
+        &*kept[0],
+        r##"{"max":8000,"strokes":[{"by":1,"ink":"#ffd23f","points":[[1.0,0.0,0.0],[2.0,0.0,0.0]],"stroke":1}],"type":"marker"}"##
+    );
     // Picked up again after a restart.
     let saved: Saved = serde_json::from_str(&serde_json::to_string(&r.saved()).unwrap()).unwrap();
     let again = Room::restore("r2".into(), saved, r.recording.clone());

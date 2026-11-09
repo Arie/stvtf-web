@@ -68,7 +68,7 @@ export function onMarker(m) {
   for (const [id, s] of strokes) if (s.keep && !kept.has(id) && !mine.has(id)) strokes.delete(id);
   for (const k of m.strokes)
     if (!mine.has(k.stroke))
-      strokes.set(k.stroke, { points: k.points, start: -Infinity, ink: inkOf(k.by), keep: true });
+      strokes.set(k.stroke, { points: k.points, start: -Infinity, ink: k.ink ?? inkOf(k.by), keep: true });
 }
 
 export const markerFull = () => keptPoints() >= keptMax;

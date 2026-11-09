@@ -54,8 +54,8 @@ pub(crate) struct Room {
     marker: Mutex<Vec<Kept>>,
     /// The strokes being laid on the floors for the relay, by person and stroke, oldest first.
     drapes: Mutex<Vec<((u32, u32), crate::maps::drape::Drape)>>,
-    /// When the relay was last sent the marker.
-    marker_drawn: Mutex<Option<Instant>>,
+    /// The marker changed since the relay was last handed it.
+    marker_dirty: std::sync::atomic::AtomicBool,
 }
 
 type Leader = (u32, String, String);
@@ -150,7 +150,7 @@ impl Room {
             camera: Mutex::new(None),
             marker: Mutex::new(Vec::new()),
             drapes: Mutex::new(Vec::new()),
-            marker_drawn: Mutex::new(None),
+            marker_dirty: std::sync::atomic::AtomicBool::new(true),
         });
         announce(&room.hub, "marker", &kept_line(&[]));
         let player = room.clone();

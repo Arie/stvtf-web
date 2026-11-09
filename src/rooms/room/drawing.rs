@@ -28,6 +28,9 @@ pub(crate) struct Kept {
     stroke: u32,
     pub(super) by: u32,
     pub(super) points: Vec<[f64; 3]>,
+    /// The ink it was drawn in (`#rrggbb`); none in rooms saved before.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(super) ink: Option<String>,
 }
 
 /// Most permanent marker points on a room's map.
@@ -64,13 +67,16 @@ impl Room {
         if marker.iter().map(|k| k.points.len()).sum::<usize>() + d.points.len() > MAX_KEPT_POINTS {
             bail!("The map is full of marker ({MAX_KEPT_POINTS} points): clear it first.");
         }
-        match marker.iter_mut().find(|k| k.stroke == d.stroke && k.by == by) {
-            Some(k) => k.points.extend(&d.points),
-            None => marker.push(Kept { stroke: d.stroke, by, points: d.points.clone() }),
+        if let Some(k) = marker.iter_mut().find(|k| k.stroke == d.stroke && k.by == by) {
+            k.points.extend(&d.points);
+        } else {
+            let [r, g, b] = self.ink_now(by);
+            let ink = Some(format!("#{r:02x}{g:02x}{b:02x}"));
+            marker.push(Kept { stroke: d.stroke, by, points: d.points.clone(), ink });
         }
         send_keeping(&self.hub, &line, "marker", kept_line(&marker));
         drop(marker);
-        self.draw_in_relay(d, by);
+        self.keep_marker();
         Ok(())
     }
 
@@ -79,7 +85,10 @@ impl Room {
         let by = lock(&self.people).id(guest);
         let mut marker = lock(&self.marker);
         marker.clear();
+        drop(marker);
         self.forget_drapes();
+        self.keep_marker();
+        let marker = lock(&self.marker);
         let line = serde_json::json!({ "type": "clear", "by": by }).to_string().into();
         send_keeping(&self.hub, &line, "marker", kept_line(&marker));
     }

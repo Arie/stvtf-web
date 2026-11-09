@@ -142,6 +142,11 @@ impl LocalRelay {
         self.playback.draw(beams);
     }
 
+    /// Beams the TF2 clients in keep seeing, in place of those before.
+    pub(crate) fn keep(&self, beams: Vec<Beam>) {
+        self.playback.keep(beams);
+    }
+
     /// Whether it stopped on its own (it could not even start), so the room should start another.
     pub(crate) fn stopped(&self) -> bool {
         self.thread.is_finished()
@@ -212,6 +217,14 @@ impl RoomRelay {
         match self {
             RoomRelay::Local(r) => r.draw(beams),
             RoomRelay::Remote(r) => r.draw(beams),
+        }
+    }
+
+    /// Beams the TF2 clients in keep seeing (the marker), in place of those before.
+    pub(crate) fn keep(&self, beams: Vec<Beam>) {
+        match self {
+            RoomRelay::Local(r) => r.keep(beams),
+            RoomRelay::Remote(r) => r.keep(beams),
         }
     }
 
