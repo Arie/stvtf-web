@@ -1,5 +1,6 @@
 //! A room's strokes in TF2: laid on the map's floors (see `maps::drape`) and shown by its relay
 //! as beams, the pen's for as long as pages show it, the marker's sent again before it fades.
+//! A beam cannot be taken back, so the marker's are short-lived: a clear shows within their life.
 
 use super::Room;
 use super::drawing::Draw;
@@ -14,11 +15,11 @@ const INKS: [[u8; 3]; 6] =
     [[0xff, 0xd2, 0x3f], [0x4f, 0xd1, 0xc5], [0xf4, 0x72, 0xb6], [0xa3, 0xe6, 0x35], [0xfb, 0x92, 0x3c], [0xc0, 0x84, 0xfc]];
 /// How long the pen's lines show: as long as pages hold and fade a stroke.
 const PEN_LIFE: f32 = 4.0;
-/// How long the marker's show, and how often they are sent again: before they fade.
-const MARKER_LIFE: f32 = 25.0;
-const MARKER_EVERY: Duration = Duration::from_secs(20);
+/// How long the marker's show, and how often they are sent again: a little before they fade.
+const MARKER_LIFE: f32 = 3.5;
+const MARKER_EVERY: Duration = Duration::from_secs(3);
 /// How wide the lines are, in units.
-const WIDTH: f32 = 3.0;
+const WIDTH: f32 = 5.0;
 /// The most strokes followed at once: more, and the oldest are forgotten.
 const MAX_DRAPES: usize = 64;
 
