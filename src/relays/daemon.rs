@@ -212,40 +212,33 @@ fn handle(r: Request, rooms: &Rooms, relays: &Arc<Relays>) -> Value {
                 Err(e) => json!({ "error": format!("{e:#}") }),
             }
         }
-        Request::Follow { room, want } => match lock(rooms).get_mut(&room) {
-            Some(l) => {
-                l.seen = Instant::now();
-                l.relay.follow(want.want());
-                json!({})
-            }
-            None => json!({ "gone": true }),
-        },
-        Request::Status { room } => match lock(rooms).get_mut(&room) {
-            Some(l) => {
-                l.seen = Instant::now();
-                json!({ "clients": l.relay.clients(), "stopped": l.relay.stopped(), "line": l.relay.line() })
-            }
-            None => json!({ "gone": true }),
-        },
-        Request::Draw { room, beams } => match lock(rooms).get_mut(&room) {
-            Some(l) => {
-                l.relay.draw(&beams.iter().map(beam).collect::<Vec<_>>());
-                json!({})
-            }
-            None => json!({ "gone": true }),
-        },
-        Request::Keep { room, beams } => match lock(rooms).get_mut(&room) {
-            Some(l) => {
-                l.relay.keep(beams.iter().map(beam).collect());
-                json!({})
-            }
-            None => json!({ "gone": true }),
-        },
+        Request::Follow { room, want } => in_room(rooms, &room, |l| {
+            l.seen = Instant::now();
+            l.relay.follow(want.want());
+            json!({})
+        }),
+        Request::Status { room } => in_room(rooms, &room, |l| {
+            l.seen = Instant::now();
+            json!({ "clients": l.relay.clients(), "stopped": l.relay.stopped(), "line": l.relay.line() })
+        }),
+        Request::Draw { room, beams } => in_room(rooms, &room, |l| {
+            l.relay.draw(&beams.iter().map(beam).collect::<Vec<_>>());
+            json!({})
+        }),
+        Request::Keep { room, beams } => in_room(rooms, &room, |l| {
+            l.relay.keep(beams.iter().map(beam).collect());
+            json!({})
+        }),
         Request::Stop { room } => {
             lock(rooms).remove(&room);
             json!({})
         }
     }
+}
+
+/// `f`'s answer for relay `room`, or that it is gone.
+fn in_room(rooms: &Rooms, room: &str, f: impl FnOnce(&mut Leased) -> Value) -> Value {
+    lock(rooms).get_mut(room).map_or_else(|| json!({ "gone": true }), f)
 }
 
 /// stv.tf's end: one connection, shared by its rooms, opened again when it breaks.
