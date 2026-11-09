@@ -18,6 +18,10 @@ const INKS: [[u8; 3]; 6] =
 const PEN_LIFE: f32 = 4.0;
 /// How wide the lines are, in units.
 const WIDTH: f32 = 5.0;
+/// Each line is a fence: the line on the floor, another this much above it, and posts between them
+/// at every corner and at least this often.
+const FENCE: f64 = 40.0;
+const POST_EVERY: f64 = 64.0;
 /// The most strokes followed at once: more, and the oldest are forgotten.
 const MAX_DRAPES: usize = 64;
 
@@ -91,10 +95,27 @@ impl Room {
     }
 }
 
-/// `pieces` as beams of `ink`, shown for `life` seconds.
+/// `pieces` as a fence of beams of `ink` (see [`FENCE`]), shown for `life` seconds.
 fn beams(pieces: &[Piece], ink: [u8; 3], life: f32) -> Vec<Beam> {
-    let f = |p: [f64; 3]| p.map(|v| v as f32);
-    pieces.iter().map(|p| Beam { from: f(p.from), to: f(p.to), rgb: ink, life, width: WIDTH }).collect()
+    let beam = |from: [f64; 3], to: [f64; 3]| Beam { from: from.map(|v| v as f32), to: to.map(|v| v as f32), rgb: ink, life, width: WIDTH };
+    let up = |p: [f64; 3]| [p[0], p[1], p[2] + FENCE];
+    let mut out = Vec::new();
+    let mut posts: Vec<[f64; 3]> = Vec::new();
+    for p in pieces {
+        out.push(beam(p.from, p.to));
+        out.push(beam(up(p.from), up(p.to)));
+        let length = (0..3).map(|k| (p.to[k] - p.from[k]).powi(2)).sum::<f64>().sqrt();
+        let n = (length / POST_EVERY).ceil().max(1.0) as usize;
+        for i in 0..=n {
+            let t = i as f64 / n as f64;
+            let at = [0, 1, 2].map(|k| p.from[k] + (p.to[k] - p.from[k]) * t);
+            if !posts.contains(&at) {
+                posts.push(at);
+            }
+        }
+    }
+    out.extend(posts.into_iter().map(|p| beam(p, up(p))));
+    out
 }
 
 /// `#rrggbb` as its bytes.
@@ -107,6 +128,19 @@ fn rgb(ink: &str) -> Option<[u8; 3]> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    #[allow(clippy::float_cmp)] // whole numbers, exact
+    fn a_line_is_a_fence_with_posts_at_corners_and_along() {
+        let piece = |from, to| Piece { from, to, ms: 0.0 };
+        let got = beams(&[piece([0.0, 0.0, 8.0], [100.0, 0.0, 8.0]), piece([100.0, 0.0, 8.0], [100.0, 50.0, 8.0])], [1, 2, 3], 4.0);
+        let (rails, posts): (Vec<&Beam>, Vec<&Beam>) = got.iter().partition(|b| b.from[2] == b.to[2]);
+        assert_eq!(rails.len(), 4, "the line and the one above it, per piece");
+        assert!(rails.iter().any(|b| b.from == [0.0, 0.0, 48.0] && b.to == [100.0, 0.0, 48.0]));
+        let feet: Vec<[f32; 3]> = posts.iter().map(|b| b.from).collect();
+        assert_eq!(feet, [[0.0, 0.0, 8.0], [50.0, 0.0, 8.0], [100.0, 0.0, 8.0], [100.0, 50.0, 8.0]], "ends shared once, one between");
+        assert!(posts.iter().all(|b| b.to[2] - b.from[2] == 40.0));
+    }
 
     #[test]
     fn inks_are_their_bytes() {
