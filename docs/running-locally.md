@@ -66,4 +66,4 @@ TF2 only plays demos recorded on its current version; a room says so when it can
 - Map backgrounds come from the internet (overviews from demos.tf, map files from serveme.tf's
   public fastdl, cached in `cache/`). Without internet, matches play without them.
 
-`--help` lists every option; [README.md](README.md) has the details.
+`--help` lists every option; [running](running.md) has the details.
