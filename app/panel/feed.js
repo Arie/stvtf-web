@@ -377,7 +377,7 @@ export function feedEvent(ev, p) {
 export function chat(ev, p) {
   const pl = ev.player != null ? p(ev.player) : null;
   const stamp = ev.at != null ? mmss(ev.at) : state.clock;
-  const row = chatRow(ev, pl, stamp ? timeOf(ev, stamp) : "");
+  const row = chatRow(ev, pl, stamp ? timeOf(ev, stamp) : "", playerName(p));
   if (!row) return;
   const d = document.createElement("div");
   if (row.cls) d.className = row.cls;
@@ -386,25 +386,22 @@ export function chat(ev, p) {
 }
 // A chat row's class and HTML: a voice command, a server's text, a player's say, or a notice;
 // none for what the flow layer leaves out.
-/** @param {GameEvent} ev @param {ReturnType<Who>} pl @param {string} time @returns {{ cls?: string; html: string } | null} */
-function chatRow(ev, pl, time) {
+/** @param {GameEvent} ev @param {ReturnType<Who>} pl @param {string} time @param {(id: number) => string} name @returns {{ cls?: string; html: string } | null} */
+function chatRow(ev, pl, time, name) {
   if (ev.type === "voice_command") {
     const text = VOICE[ev.menu]?.[ev.item];
     if (!layerOn("flow") || !pl || !text) return null;
-    return { cls: "voice", html: `${time}${sender(ev, pl)} <span class="w">🔊 ${esc(text)}</span>` };
+    return { cls: "voice", html: `${time}${name(ev.player)} <span class="w">🔊 ${esc(text)}</span>` };
   }
   if (ev.type === "server_text") {
     if (!layerOn("flow") || !ev.text || ev.text.startsWith("#")) return null;
     return { cls: "srvtext", html: time + esc(ev.text) };
   }
   if (pl || ev.name)
-    return { html: `${time}${pl ? sender(ev, pl) : `<span class="w">${esc(ev.name)}</span>`}: ${coloured(ev, pl)}` };
+    return { html: `${time}${pl ? name(ev.player) : `<span class="w">${esc(ev.name)}</span>`}: ${coloured(ev, pl)}` };
   // Server messages (plugins, rcon say) as notices; `say` from the console adds its own prefix.
   return { cls: "notice", html: time + coloured(ev, pl, /^Console: /) };
 }
-// A chat line's sender, by id (a room's note goes on them).
-/** @param {GameEvent} ev @param {NonNullable<ReturnType<Who>>} pl */
-const sender = (ev, pl) => `<span class="who" data-id="${Number(ev.player)}">${who(pl)}</span>`;
 // A chat line in the colours its sender gave it (TF2's colour codes, as plugins use them):
 // `team` is the sender's team colour, null the line's own colour.
 /** @param {GameEvent} ev @param {ReturnType<Who>} pl @param {RegExp} [drop] */
