@@ -2,7 +2,14 @@ use super::assets::APP;
 use super::*;
 use crate::matches::hub::{SharedHub, publish};
 use crate::testing::{TempDir, app, server};
+use crate::web::client::{client_key, is_cloudflare, on_our_network};
+use crate::{App, Matches, TcpListener};
+use flate2::read::GzDecoder;
+use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Instant;
+use stvtf::Line;
+use stvtf::output::{self, PlayerId};
 
 #[test]
 fn a_start_counts_against_a_steam_id_else_an_address() {
@@ -14,13 +21,6 @@ fn a_start_counts_against_a_steam_id_else_an_address() {
     assert_eq!(counted(None, None, ip("192.0.2.1")).as_deref(), Some("ip:192.0.2.1"));
     assert_eq!(counted(None, Some("1"), ip("127.0.0.1")), None, "this machine");
 }
-use crate::web::client::{client_key, is_cloudflare, on_our_network};
-use crate::{App, Matches, TcpListener};
-use flate2::read::GzDecoder;
-use std::path::PathBuf;
-use std::time::Instant;
-use stvtf::Line;
-use stvtf::output::{self, PlayerId};
 
 #[test]
 fn start_links_carry_every_display_toggle() {
