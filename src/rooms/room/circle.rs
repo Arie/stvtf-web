@@ -39,7 +39,17 @@ impl Room {
             let stroke = CIRCLE_IDS | marker.iter().filter(|k| k.circle.is_some()).count() as u32;
             let line = serde_json::json!({ "type": "circle", "by": by, "stroke": stroke, "ink": ink, "at": [x, y, z] });
             let points = vec![[x, y, 0.0]];
-            marker.push(Kept { stroke, by, points, ink: Some(ink), open: false, arc: None, circle: Some([x, y, z]), note: None });
+            marker.push(Kept {
+                stroke,
+                by,
+                points,
+                ink: Some(ink),
+                open: false,
+                arc: None,
+                circle: Some([x, y, z]),
+                note: None,
+                light: None,
+            });
             line.to_string().into()
         })
     }

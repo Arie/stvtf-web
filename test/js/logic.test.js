@@ -30,6 +30,7 @@ import {
 import { arcCount, arcShade, onArc, pendingAt } from "../../app/room/arcs.js";
 import { arcTool } from "../../app/room/tools.js";
 import { circleCount, onCircle } from "../../app/room/circles.js";
+import { lightAt, onLight } from "../../app/room/lights.js";
 import { noteCount, onNote } from "../../app/room/notes.js";
 import { env } from "../../app/core/env.js";
 import { demostfAlias, sameLayout, screenOffset, teamsTurn, toScreen } from "../../app/map/view.js";
@@ -390,6 +391,23 @@ test("circles come with the marker and a circle line, are no strokes, and go wit
   assert.equal(circleCount(), 2);
   onClear();
   assert.equal(circleCount(), 0);
+});
+
+test("the spotlight comes with the marker and a light line, is no stroke, moves and goes with a clear", () => {
+  onClear();
+  onMarker({
+    type: "marker",
+    strokes: [{ stroke: 2 ** 28, by: 1, points: [[5, 5, 0]], ink: "#ff0000", light: [5, 5, 64] }],
+  });
+  assert.deepEqual(lightAt(), [5, 5, 64]);
+  assert.equal(pointsOf(2 ** 28), 0, "not drawn as a stroke");
+  onLight({ type: "light", by: 1, stroke: 2 ** 28, ink: "#00ff00", at: [9, 9, 0] });
+  assert.deepEqual(lightAt(), [9, 9, 0], "where the next click was");
+  onMarker({ type: "marker", strokes: [] });
+  assert.equal(lightAt(), null, "gone with a marker without it");
+  onLight({ type: "light", by: 1, stroke: 2 ** 28, ink: "#00ff00", at: [9, 9, 0] });
+  onClear();
+  assert.equal(lightAt(), null);
 });
 
 test("notes come with the marker and a note line, are no strokes, and go with a clear", () => {

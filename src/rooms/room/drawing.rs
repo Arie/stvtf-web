@@ -44,6 +44,9 @@ pub(crate) struct Kept {
     /// A note's text and player (its `points` are then its spot, on the floor).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(super) note: Option<super::note::Label>,
+    /// The spotlight's spot, on the floor (its `points` are then the click).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(super) light: Option<[f64; 3]>,
 }
 
 /// Most marker points on a room's map.
@@ -86,6 +89,7 @@ impl Room {
                     arc: None,
                     circle: None,
                     note: None,
+                    light: None,
                 });
             }
             line

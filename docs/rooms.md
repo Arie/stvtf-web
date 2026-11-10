@@ -16,6 +16,9 @@ pressed again, it returns to your room on that match. The match's own page never
   another tool. An arc stays, with the marker, until cleared.
 - A circle (◯ or `t`): each click puts a small ring on the floor there, "stand here"; in TF2 a
   ring fence. It stays on for the next, and the circles stay with the marker until cleared.
+- The spotlight (☀ or `f`): a click lights the floor there in your colour, "look here"; the next
+  click moves it. In TF2 it is a light on the floor (one at a time is all a TF2 client shows;
+  not seen with dynamic lights off). It stays with the marker until cleared.
 - A note (T, or `n`): a short text (40 characters) where you click with T on, or where the pointer is with `n`. Over a player (their card in
   the HUD, their name in the events or chat, their dot) it goes on them and follows them (hidden while they are dead); else
   it goes on the floor there. Type it; Enter or clicking away places it, Esc lets it go. In TF2 it is the game's
@@ -89,6 +92,7 @@ seeking and at speed with it.
 | `POST /r/<id>/control` | admin: `{"paused", "speed", "seek"}` (any; `seek` in ms) |
 | `POST /r/<id>/arc` | admin: `{"from": [x, y], "to": [x, y]}`, a jump arc between the floors under them, `from` the launch; 400 with why when there is no floor there, they are too close or the map is not built |
 | `POST /r/<id>/circle` | admin: `{"at": [x, y]}`, a circle on the floor under it; 400 with why when there is no floor there or the map is not built |
+| `POST /r/<id>/light` | admin: `{"at": [x, y]}`, the spotlight on the floor under it, from where it was; 400 with why when there is no floor there or the map is not built |
 | `POST /r/<id>/note` | admin: `{"text", "at": [x, y]}` (on the floor there) or `{"text", "player": <id>}` (following them); 400 with why when it is empty or too long, there is no floor there, the map is not built or the room has its 10 notes |
 | `POST /r/<id>/draw` | admin: `{"stroke": <id>, "points": [[x, y, ms], …]}`, up to 256, ms into the stroke; later points continue it; pages draw at that pace, 40 ms behind |
 
@@ -99,9 +103,10 @@ The room's event stream adds:
 | line | |
 |---|---|
 | `relay` | `connect`, `port`, `password` while it has one; `problem`: why it cannot play |
-| `marker` | the permanent marker: `strokes` (`stroke`, `by`, `points`, `ink`; a jump arc's `arc`, its points `[x, y, z]` from launch to landing; a circle's `circle`, its centre `[x, y, z]`; a note's `note`, its `text` and `player`, its spot the point), `max` (8000 points); on join, empty too |
+| `marker` | the permanent marker: `strokes` (`stroke`, `by`, `points`, `ink`; a jump arc's `arc`, its points `[x, y, z]` from launch to landing; a circle's `circle`, its centre `[x, y, z]`; the spotlight's `light`, its spot `[x, y, z]`; a note's `note`, its `text` and `player`, its spot the point), `max` (8000 points); on join, empty too |
 | `arc` | a jump arc drawn: `stroke`, `by`, `ink`, `points` (`[x, y, z]`, launch to landing) |
 | `circle` | a circle put down: `stroke`, `by`, `ink`, `at` (`[x, y, z]`, its centre on the floor) |
+| `light` | the spotlight put down, in place of where it was: `stroke`, `by`, `ink`, `at` (`[x, y, z]`, on the floor) |
 | `note` | a note put down: `stroke`, `by`, `ink`, `text`, and `at` (`[x, y, z]`, on the floor) or `player` |
 | `clear` | |
 | `view` | as posted, with `by` |

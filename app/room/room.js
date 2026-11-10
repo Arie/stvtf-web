@@ -7,7 +7,7 @@ import { env } from "../core/env.js";
 import { setAutoZoom, setFollow } from "../core/input.js";
 import { EVENTS_URL, openStream, playbackListeners, streamParams, viewListeners } from "../core/stream.js";
 import { drawOwn, markerFull, trimOwn } from "./telestrator.js";
-import { NOTE_MS, arcTool, circleTool, note, worldAt } from "./tools.js";
+import { NOTE_MS, arcTool, circleTool, lightTool, note, worldAt } from "./tools.js";
 import { noteKey, noteTool } from "./notes.js";
 import { closeViewMenu, viewMenu } from "./viewmenu.js";
 import { pushMirror } from "../map/camera.js";
@@ -90,6 +90,7 @@ function roomBar() {
   const marker = /** @type {HTMLButtonElement} */ ($("rb-marker")),
     arc = /** @type {HTMLButtonElement} */ ($("rb-arc")),
     circle = /** @type {HTMLButtonElement} */ ($("rb-circle")),
+    light = /** @type {HTMLButtonElement} */ ($("rb-light")),
     text = /** @type {HTMLButtonElement} */ ($("rb-text")),
     clear = /** @type {HTMLButtonElement} */ ($("rb-clear"));
   const control = (/** @type {import("./playbar.js").Control} */ c) => post("control", c);
@@ -100,8 +101,8 @@ function roomBar() {
     me.admin = on;
     bar.allow(on);
     // A tool in hand is let go, while its button still takes the click.
-    for (const t of [marker, arc, circle, text]) if (!on && t.classList.contains("on")) t.click();
-    for (const c of [marker, arc, circle, text, clear, $("rb-view")])
+    for (const t of [marker, arc, circle, light, text]) if (!on && t.classList.contains("on")) t.click();
+    for (const c of [marker, arc, circle, light, text, clear, $("rb-view")])
       /** @type {HTMLButtonElement} */ (c).disabled = !on;
     $("roombar").title = on ? "" : "The room's admins control playback";
     if (on) $("claim").hidden = true;
@@ -122,15 +123,16 @@ function roomBar() {
   const showPeople = people(allow, showLead);
   inTf2();
   drawing(marker);
-  arcTool(arc, [marker, circle, text]);
-  circleTool(circle, [marker, arc, text]);
-  noteTool(text, [marker, arc, circle]);
+  arcTool(arc, [marker, circle, light, text]);
+  circleTool(circle, [marker, arc, light, text]);
+  lightTool(light, [marker, arc, circle, text]);
+  noteTool(text, [marker, arc, circle, light]);
   noteKey(() => me.admin);
   clear.onclick = () => post("clear", {});
-  // d (or m) takes the marker, a a jump arc, t a circle (n a note, see notes.js); c clears the
-  // drawings; r, b and y pick the ink.
+  // d (or m) takes the marker, a a jump arc, t a circle, f the spotlight (n a note, see
+  // notes.js); c clears the drawings; r, b and y pick the ink.
   /** @type {Record<string, HTMLButtonElement>} */
-  const tools = { d: marker, m: marker, a: arc, t: circle, c: clear };
+  const tools = { d: marker, m: marker, a: arc, t: circle, f: light, c: clear };
   env.keys.addEventListener("keydown", e => {
     const target = /** @type {Element} */ (e.composedPath()[0]);
     const tool = tools[e.key];

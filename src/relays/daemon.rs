@@ -14,6 +14,8 @@
 //!   before, each `[x1, y1, z1, x2, y2, z2, r, g, b, seconds, width, speed]`.
 //! - `{"op": "notes", "room", "notes"}`: text bubbles they keep seeing, in place of those before,
 //!   each a [`stvtf::relay::Note`].
+//! - `{"op": "light", "room", "light"}`: the light they keep seeing, in place of the one before, a
+//!   [`stvtf::relay::Light`]; null puts it out.
 //! - `{"op": "stop", "room"}`: the room ended.
 //!
 //! A `want` is a [`stvtf::relay::Want`] with `age_ms` (how long ago `tick` was wanted) for its
@@ -35,7 +37,7 @@ use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Condvar, Mutex, PoisonError};
 use std::time::{Duration, Instant};
-use stvtf::relay::{Beam, Note, Want};
+use stvtf::relay::{Beam, Light, Note, Want};
 
 /// A relay not asked about for this long is stopped: longer than any deploy takes.
 pub(crate) const LEASE: Duration = Duration::from_mins(2);
@@ -112,6 +114,10 @@ enum Request {
     Notes {
         room: String,
         notes: Vec<Note>,
+    },
+    Light {
+        room: String,
+        light: Option<Light>,
     },
     Stop {
         room: String,
@@ -229,6 +235,10 @@ fn handle(r: Request, rooms: &Rooms, relays: &Arc<Relays>) -> Value {
             l.relay.keep_notes(notes);
             json!({})
         }),
+        Request::Light { room, light } => in_room(rooms, &room, |l| {
+            l.relay.keep_light(light);
+            json!({})
+        }),
         Request::Stop { room } => {
             lock(rooms).remove(&room);
             json!({})
@@ -312,6 +322,9 @@ impl Remote {
                 kept: None,
                 notes: None,
                 notes_given: Vec::new(),
+                light: None,
+                light_given: false,
+                light_due: false,
                 done: None,
             }),
             wake: Condvar::new(),
@@ -343,6 +356,11 @@ struct Inner {
     notes: Option<Vec<Note>>,
     /// The notes last given to hand over: the marker gives them with its every piece.
     notes_given: Vec<Note>,
+    /// The light last given to hand over (the marker gives it with its every piece), whether one
+    /// ever was, and whether it is still to hand over.
+    light: Option<Light>,
+    light_given: bool,
+    light_due: bool,
     done: Option<Done>,
 }
 
@@ -358,16 +376,16 @@ impl Shared {
     fn tend(&self) {
         let mut asked = Instant::now();
         loop {
-            let (want, kept, notes, done) = {
+            let (want, kept, notes, light, done) = {
                 let mut i = lock(&self.inner);
-                while i.want.is_none() && i.kept.is_none() && i.notes.is_none() && i.done.is_none() {
+                while i.want.is_none() && i.kept.is_none() && i.notes.is_none() && !i.light_due && i.done.is_none() {
                     let left = STATUS_EVERY.saturating_sub(asked.elapsed());
                     if left.is_zero() {
                         break;
                     }
                     i = self.wake.wait_timeout(i, left).unwrap_or_else(PoisonError::into_inner).0;
                 }
-                (i.want.take(), i.kept.take(), i.notes.take(), i.done)
+                (i.want.take(), i.kept.take(), i.notes.take(), std::mem::take(&mut i.light_due).then_some(i.light), i.done)
             };
             match done {
                 Some(Done::End) => {
@@ -389,6 +407,9 @@ impl Shared {
             }
             if let Some(notes) = notes {
                 let _ = self.remote.call(&json!({ "op": "notes", "room": self.room, "notes": notes }));
+            }
+            if let Some(light) = light {
+                let _ = self.remote.call(&json!({ "op": "light", "room": self.room, "light": light }));
             }
             if asked.elapsed() >= STATUS_EVERY {
                 asked = Instant::now();
@@ -435,6 +456,20 @@ impl RemoteRelay {
     /// Beams the TF2 clients in keep seeing, in place of those before; only the latest is sent.
     pub(crate) fn keep(&self, beams: Vec<Beam>) {
         lock(&self.0.inner).kept = Some(beams);
+        self.0.wake.notify_all();
+    }
+
+    /// The light the TF2 clients in keep seeing, in place of the one before; only the latest is
+    /// sent, and not the same one again.
+    pub(crate) fn keep_light(&self, light: Option<Light>) {
+        let mut i = lock(&self.0.inner);
+        if i.light_given && i.light == light {
+            return;
+        }
+        i.light = light;
+        i.light_given = true;
+        i.light_due = true;
+        drop(i);
         self.0.wake.notify_all();
     }
 
@@ -487,6 +522,16 @@ mod tests {
         let b = Beam { from: [1.5, -2.0, 3.0], to: [4.0, 5.0, -6.25], rgb: [255, 128, 0], life: 4.0, width: 3.0, speed: 20 };
         let line: BeamLine = serde_json::from_value(serde_json::to_value(beam_line(&b)).unwrap()).unwrap();
         assert_eq!(beam(&line), b);
+    }
+
+    #[test]
+    fn the_light_goes_to_the_relay_process_as_it_was_and_none_puts_it_out() {
+        let light = Light { at: [1.0, 2.0, 3.0], rgb: [255, 128, 0], radius: 500.0, exponent: 5 };
+        let line = json!({ "op": "light", "room": "r", "light": light });
+        let Ok(Request::Light { room, light: got }) = serde_json::from_value(line) else { panic!("not a light request") };
+        assert_eq!((room.as_str(), got), ("r", Some(light)));
+        let out = json!({ "op": "light", "room": "r", "light": null });
+        assert!(matches!(serde_json::from_value(out), Ok(Request::Light { light: None, .. })));
     }
 
     #[test]

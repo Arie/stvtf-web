@@ -23,6 +23,7 @@ import { cartState } from "../map/objectives/payload.js";
 import { onClear, onDraw, onMarker } from "../room/telestrator.js";
 import { onArc } from "../room/arcs.js";
 import { onCircle } from "../room/circles.js";
+import { onLight } from "../room/lights.js";
 import { onNote } from "../room/notes.js";
 import { dropAll, onVoice, streamSwitched, voiceOn, voicePlayback } from "./voice.js";
 import { loadMap } from "../map/view.js";
@@ -162,6 +163,7 @@ const ON_LINE = {
   marker: m => onMarker(/** @type {import("../../types/stream").MarkerLine} */ (m)),
   arc: m => onArc(/** @type {import("../../types/stream").ArcLine} */ (m)),
   circle: m => onCircle(/** @type {import("../../types/stream").CircleLine} */ (m)),
+  light: m => onLight(/** @type {import("../../types/stream").LightLine} */ (m)),
   note: m => onNote(/** @type {import("../../types/stream").NoteLine} */ (m)),
   voice: m => onVoice(/** @type {import("../../types/stream").VoiceLine} */ (m)),
   clear: () => onClear(),

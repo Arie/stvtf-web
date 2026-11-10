@@ -55,7 +55,7 @@ impl Room {
                 all.extend(super::arc::arc_beams(arc, ink, KEPT_LIFE));
                 continue;
             }
-            if k.note.is_some() {
+            if k.note.is_some() || k.light.is_some() {
                 continue;
             }
             if let Some(center) = k.circle {
@@ -89,12 +89,16 @@ impl Room {
     pub(super) fn hand_marker(&self, beams: Option<Vec<Beam>>) {
         self.marker_dirty.store(true, Ordering::Relaxed);
         // Before the relay's lock: the marker's is taken first elsewhere.
-        let notes = super::note::tf2_notes(&lock(&self.marker));
+        let (notes, light) = {
+            let marker = lock(&self.marker);
+            (super::note::tf2_notes(&marker), super::light::tf2_light(&marker))
+        };
         if let Some(beams) = beams
             && let Some(r) = &*lock(&self.relay)
         {
             r.keep(beams);
             r.keep_notes(notes);
+            r.keep_light(light);
             self.marker_dirty.store(false, Ordering::Relaxed);
         }
     }
@@ -217,7 +221,7 @@ pub(super) fn hex([r, g, b]: [u8; 3]) -> String {
 }
 
 /// `#rrggbb` as its bytes.
-fn rgb(ink: &str) -> Option<[u8; 3]> {
+pub(super) fn rgb(ink: &str) -> Option<[u8; 3]> {
     let hex = ink.strip_prefix('#').filter(|h| h.len() == 6)?;
     let at = |i: usize| u8::from_str_radix(hex.get(i..i + 2)?, 16).ok();
     Some([at(0)?, at(2)?, at(4)?])

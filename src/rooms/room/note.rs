@@ -66,7 +66,7 @@ impl Room {
                 "type": "note", "by": by, "stroke": stroke, "ink": ink, "text": label.text, "at": spot, "player": label.player,
             });
             let points = vec![spot.unwrap_or_default()];
-            marker.push(Kept { stroke, by, points, ink: Some(ink), open: false, arc: None, circle: None, note: Some(label) });
+            marker.push(Kept { stroke, by, points, ink: Some(ink), open: false, arc: None, circle: None, note: Some(label), light: None });
             line.to_string().into()
         })
     }

@@ -1,4 +1,4 @@
-// The room's click tools, the jump arc and the circle: armed by their button or key, they take
+// The room's click tools, the jump arc, the circle and the spotlight: armed by their button or key, they take
 // clicks on the map and ask the room to draw, staying armed; Esc, the button again or another tool
 // lets them go.
 import { $, canvas, state } from "../core/core.js";
@@ -61,6 +61,10 @@ export function arcTool(button, others) {
 // The circle: a click puts one there.
 /** @param {HTMLButtonElement} button @param {HTMLButtonElement[]} others */
 export const circleTool = (button, others) => armTool(button, others, at => ask("circle", { at }));
+
+// The spotlight: a click puts it there, from where it was.
+/** @param {HTMLButtonElement} button @param {HTMLButtonElement[]} others */
+export const lightTool = (button, others) => armTool(button, others, at => ask("light", { at }));
 
 // Where on the map a pointer is.
 /** @param {{ clientX: number; clientY: number }} e @returns {[number, number]} */
