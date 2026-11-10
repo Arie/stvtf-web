@@ -41,10 +41,9 @@ pub(super) fn stream(mut s: TcpStream, hub: &SharedHub, gzip: bool, detail: bool
     let rx = subscribe(hub, detail);
     loop {
         match rx.recv_timeout(KEEPALIVE) {
+            // Whatever else is already queued goes out in the same flush.
             Ok(line) => {
-                write!(out, "data: {line}\n\n")?;
-                // Whatever else is already queued goes out in the same flush.
-                for line in rx.try_iter() {
+                for line in std::iter::once(line).chain(rx.try_iter()) {
                     write!(out, "data: {line}\n\n")?;
                 }
             }
