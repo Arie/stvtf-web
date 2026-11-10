@@ -10,7 +10,7 @@ use crate::matches::live_demos::LiveDemos;
 use anyhow::{Result, anyhow, bail};
 use session::{Source, join, record};
 use std::collections::HashMap;
-use std::net::{Ipv4Addr, SocketAddr};
+use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -21,6 +21,8 @@ const UNWATCHED_PLAY: Duration = Duration::from_hours(6);
 pub(crate) const MAKES_ROOM: Duration = Duration::from_mins(3);
 /// Matches one person may have started at once (see [`Sessions::open_as`]).
 pub(crate) const MATCHES_PER_PERSON: usize = 4;
+/// The server of a match that watches none: the demo, a demos.tf demo.
+const NOWHERE: SocketAddr = SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, 0));
 
 mod address;
 mod ids;
@@ -126,8 +128,7 @@ impl Sessions {
         }
         self.check_person(&mut map, by)?;
         self.check_room(&mut map)?;
-        let nowhere = SocketAddr::from((Ipv4Addr::UNSPECIFIED, 0));
-        let mut session = Session::new(demo_id(demo), SharedHub::default(), nowhere, String::new(), owner.map(str::to_string), false);
+        let mut session = Session::new(demo_id(demo), SharedHub::default(), NOWHERE, String::new(), owner.map(str::to_string), false);
         session.demo = Some(demo);
         if let Some(by) = by {
             let _ = session.by.set(by.to_string());
@@ -293,9 +294,7 @@ impl Sessions {
     /// A fixed session at `/w/<id>/` fed by `feed` (a recorded match on a loop, say). It is never
     /// reaped and nothing waits for its thread.
     pub fn pin(&self, id: &str, feed: impl FnOnce(&Session) + Send + 'static) {
-        // It watches no server.
-        let nowhere = SocketAddr::from((Ipv4Addr::UNSPECIFIED, 0));
-        let s = Arc::new(Session::new(id.to_string(), SharedHub::default(), nowhere, String::new(), None, true));
+        let s = Arc::new(Session::new(id.to_string(), SharedHub::default(), NOWHERE, String::new(), None, true));
         let session = s.clone();
         std::thread::spawn(move || feed(&session));
         self.lock().insert(id.to_string(), s);
