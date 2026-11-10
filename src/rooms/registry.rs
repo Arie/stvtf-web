@@ -81,6 +81,11 @@ fn demo_file(demo: u64) -> String {
     format!("demo-{demo}.gz")
 }
 
+/// How long ago a file in the store was written or touched.
+fn age(entry: &std::fs::DirEntry) -> std::io::Result<Duration> {
+    entry.metadata()?.modified().map(|t| SystemTime::now().duration_since(t).unwrap_or_default())
+}
+
 impl Rooms {
     pub(crate) fn new(store: Option<Store>, relays: Option<Arc<Pool>>) -> Rooms {
         Rooms { store, relays, ..Rooms::default() }
@@ -334,8 +339,8 @@ impl Rooms {
         for entry in entries.flatten() {
             let name = entry.file_name().to_string_lossy().into_owned();
             let Some(id) = name.strip_prefix("room-").filter(|id| crate::matches::sessions::is_id(id)) else { continue };
-            let age = entry.metadata().and_then(|m| m.modified()).map(|t| SystemTime::now().duration_since(t).unwrap_or_default());
-            if !age.is_ok_and(|a| a > QUIET && a < STALE) || lock(&self.map).contains_key(id) || lock(&self.unrelayed).contains(id) {
+            let quiet = age(&entry).is_ok_and(|a| a > QUIET && a < STALE);
+            if !quiet || lock(&self.map).contains_key(id) || lock(&self.unrelayed).contains(id) {
                 continue;
             }
             let relayed =
@@ -407,11 +412,10 @@ impl Rooms {
         let Ok(entries) = std::fs::read_dir(&store.dir) else { return };
         for entry in entries.flatten() {
             let name = entry.file_name().to_string_lossy().into_owned();
-            let age = entry.metadata().and_then(|m| m.modified()).map(|t| SystemTime::now().duration_since(t).unwrap_or_default());
             let dem = std::path::Path::new(&name).extension().is_some_and(|e| e == "dem");
             let keep = if name.starts_with("live-") && dem { LIVE_DEMO_KEPT } else { STALE };
             let ours = name.starts_with("room-") || name.starts_with("demo-") || name.starts_with("live-");
-            if ours && age.is_ok_and(|a| a > keep) {
+            if ours && age(&entry).is_ok_and(|a| a > keep) {
                 store.forget(&name);
             }
         }
