@@ -4,6 +4,7 @@
 //! recording does; the rest go with the match, or with the store's sweep of old files.
 
 use crate::lock;
+use crate::matches::sessions::LIVE_PREFIX;
 use std::fs::File;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -24,7 +25,7 @@ pub(crate) struct LiveDemos {
 impl LiveDemos {
     /// Match `id`'s demos in `dir`, with those a process before this one left there.
     pub(crate) fn new(dir: &Path, id: &str) -> Arc<LiveDemos> {
-        let prefix = format!("live-{id}-");
+        let prefix = format!("{LIVE_PREFIX}{id}-");
         let mut parts: Vec<Part> = std::fs::read_dir(dir)
             .into_iter()
             .flatten()
@@ -70,7 +71,7 @@ impl stvtf::demo::Files for LiveDemos {
             remove(&mut parts);
         }
         std::fs::create_dir_all(&self.dir)?;
-        let path = self.dir.join(format!("live-{}-{first_tick}.dem", self.id));
+        let path = self.dir.join(format!("{LIVE_PREFIX}{}-{first_tick}.dem", self.id));
         let file = File::create(&path)?;
         parts.retain(|p| p.path != path);
         parts.push(Part { path, map: map.to_string(), first_tick });

@@ -3,8 +3,7 @@
 
 use crate::lock;
 use crate::matches::recording::Recording;
-use crate::matches::sessions::logged;
-use crate::matches::sessions::{Session, Sessions, Store, Viewer, demo_dem};
+use crate::matches::sessions::{DEMO_PREFIX, LIVE_PREFIX, Session, Sessions, Store, Viewer, demo_dem, logged};
 use crate::relays::pool::{DemoOf, Offer, Pool};
 use crate::rooms::room::{Room, Saved};
 use anyhow::{Result, bail};
@@ -70,15 +69,18 @@ struct SavedRoom {
     by: Option<String>,
 }
 
+/// What the names of a room's files in the store start with.
+const ROOM_PREFIX: &str = "room-";
+
 /// A room's file in the store, its marker's, and a demo's beside the rooms on it.
 fn file(id: &str) -> String {
-    format!("room-{id}")
+    format!("{ROOM_PREFIX}{id}")
 }
 fn marker_file(id: &str) -> String {
-    format!("room-{id}-marker")
+    format!("{}-marker", file(id))
 }
 fn demo_file(demo: u64) -> String {
-    format!("demo-{demo}.gz")
+    format!("{DEMO_PREFIX}{demo}.gz")
 }
 
 /// How long ago a file in the store was written or touched.
@@ -338,7 +340,7 @@ impl Rooms {
         let Ok(entries) = std::fs::read_dir(&store.dir) else { return };
         for entry in entries.flatten() {
             let name = entry.file_name().to_string_lossy().into_owned();
-            let Some(id) = name.strip_prefix("room-").filter(|id| crate::matches::sessions::is_id(id)) else { continue };
+            let Some(id) = name.strip_prefix(ROOM_PREFIX).filter(|id| crate::matches::sessions::is_id(id)) else { continue };
             let quiet = age(&entry).is_ok_and(|a| a > QUIET && a < STALE);
             if !quiet || lock(&self.map).contains_key(id) || lock(&self.unrelayed).contains(id) {
                 continue;
@@ -413,8 +415,8 @@ impl Rooms {
         for entry in entries.flatten() {
             let name = entry.file_name().to_string_lossy().into_owned();
             let dem = std::path::Path::new(&name).extension().is_some_and(|e| e == "dem");
-            let keep = if name.starts_with("live-") && dem { LIVE_DEMO_KEPT } else { STALE };
-            let ours = name.starts_with("room-") || name.starts_with("demo-") || name.starts_with("live-");
+            let keep = if name.starts_with(LIVE_PREFIX) && dem { LIVE_DEMO_KEPT } else { STALE };
+            let ours = [ROOM_PREFIX, DEMO_PREFIX, LIVE_PREFIX].iter().any(|p| name.starts_with(p));
             if ours && age(&entry).is_ok_and(|a| a > keep) {
                 store.forget(&name);
             }

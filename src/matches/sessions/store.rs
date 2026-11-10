@@ -153,14 +153,19 @@ pub(super) fn dem_beside(file: &std::path::Path) -> PathBuf {
     file.with_file_name(format!("{stem}.dem"))
 }
 
+/// What the names of a demos.tf demo's files in the store start with.
+pub(crate) const DEMO_PREFIX: &str = "demo-";
+/// What the names of a live match's files in the store start with.
+pub(crate) const LIVE_PREFIX: &str = "live-";
+
 /// A demos.tf demo's file in the store, kept while a match or room plays it.
 pub(crate) fn demo_dem(demo: u64) -> String {
-    format!("demo-{demo}.dem")
+    format!("{DEMO_PREFIX}{demo}.dem")
 }
 
 /// A live match's recording beside its file.
 pub(crate) fn live_file(id: &str) -> String {
-    format!("live-{id}.gz")
+    format!("{LIVE_PREFIX}{id}.gz")
 }
 
 /// Chunks to the end of file `name`, or all of it anew; the first that fails says so.
