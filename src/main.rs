@@ -12,7 +12,7 @@ mod rooms;
 mod web;
 
 use crate::cli::{DEFAULT_TV_PASSWORD, Options, USAGE, parse_connect};
-use crate::maps::cache::{WARM, demostf_maps, map_geometry_gzip, overview};
+use crate::maps::cache::{demostf_maps, map_geometry_gzip, overview, warm_maps};
 use crate::matches::hub::{SharedHub, watch_into};
 use crate::matches::replay::replay;
 use crate::matches::sessions::Sessions;
@@ -146,7 +146,7 @@ fn warm(app: &App) {
             eprintln!("stvtf-web: overview of {map}: {e}");
         }
     }
-    for name in WARM.lines().filter(|l| !l.is_empty() && !l.starts_with('#')) {
+    for name in warm_maps() {
         let map_lock = app.map_lock(name);
         let _one_at_a_time = lock(&map_lock);
         // Gzipped too: browsers take that, and the JSON is made on the way.

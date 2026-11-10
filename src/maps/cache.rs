@@ -12,13 +12,17 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
-/// The most played maps, built when the server starts.
-pub(crate) const WARM: &str = include_str!("../../maps.txt");
+const WARM: &str = include_str!("../../maps.txt");
 const FASTDL: &str = "https://fastdl.serveme.tf/maps/";
 const MAX_BSP: u64 = 512 << 20;
 const DEMOSTF: &str = "https://maps.demos.tf/";
 const MAX_OVERVIEW: u64 = 8 << 20;
 const DAY: Duration = Duration::from_hours(24);
+
+/// The most played maps, built when the server starts.
+pub(crate) fn warm_maps() -> impl Iterator<Item = &'static str> {
+    WARM.lines().filter(|l| !l.is_empty() && !l.starts_with('#'))
+}
 
 /// Builds a map that is not in the cache yet only when `fetch`: otherwise anyone could have every
 /// map on fastdl downloaded and kept here.
@@ -214,7 +218,7 @@ mod tests {
 
     #[test]
     fn warm_maps_are_valid_names() {
-        let names: Vec<&str> = WARM.lines().filter(|l| !l.is_empty() && !l.starts_with('#')).collect();
+        let names: Vec<&str> = warm_maps().collect();
         assert!(names.len() > 10);
         assert!(names.iter().all(|n| is_name(n, b"_")), "{names:?}");
     }
