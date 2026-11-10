@@ -11,6 +11,8 @@ use stvtf::relay::Note;
 
 /// The most characters a note says.
 const MAX_TEXT: usize = 40;
+/// The most notes kept: each is sent to every TF2 client again and again.
+pub(super) const MAX_NOTES: usize = 10;
 /// Notes' ids, apart from the pages' strokes', arcs' and circles'.
 const NOTE_IDS: u32 = 0x2000_0000;
 /// A bubble at a spot is this high above its floor.
@@ -113,6 +115,19 @@ mod tests {
         let notes = tf2_notes(&r.saved().marker);
         assert_eq!(notes[0].player, Some(12));
         assert_ne!(notes[0].id, 0);
+    }
+
+    #[test]
+    fn a_note_past_the_most_kept_is_refused_until_they_are_cleared() {
+        let (r, _dir) = arc_room();
+        let put = || r.note(&NoteDraw { text: "x".into(), at: None, player: Some(1) }, "me");
+        for _ in 0..MAX_NOTES {
+            put().unwrap();
+        }
+        assert_eq!(put().unwrap_err().to_string(), "At most 10 notes: clear them first.");
+        assert_eq!(r.saved().marker.len(), MAX_NOTES);
+        r.clear("me");
+        put().unwrap();
     }
 
     #[test]

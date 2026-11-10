@@ -1,5 +1,6 @@
 //! Drawing on a room's map: the pen's strokes, and the permanent marker kept until cleared.
 
+use super::note::MAX_NOTES;
 use super::{Room, on_map};
 use crate::lock;
 use crate::matches::hub::{send, send_keeping};
@@ -100,7 +101,8 @@ impl Room {
     }
 
     /// Changes the marker with `change`, which gives the line to tell the pages: refused, the
-    /// marker as it was, when it then holds more points than it may or more than TF2 shows.
+    /// marker as it was, when it then holds more points or notes than it may, or more than TF2
+    /// shows.
     pub(super) fn change_marker(&self, change: impl FnOnce(&mut Vec<Kept>) -> Arc<str>) -> Result<()> {
         let mut marker = lock(&self.marker);
         let before = marker.clone();
@@ -108,6 +110,10 @@ impl Room {
         if marker.iter().map(|k| k.points.len()).sum::<usize>() > MAX_KEPT_POINTS {
             *marker = before;
             bail!("The map is full of marker ({MAX_KEPT_POINTS} points): clear it first.");
+        }
+        if marker.iter().filter(|k| k.note.is_some()).count() > MAX_NOTES {
+            *marker = before;
+            bail!("At most {MAX_NOTES} notes: clear them first.");
         }
         let beams = self.marker_in_tf2(&marker).inspect_err(|_| *marker = before)?;
         send_keeping(&self.hub, &line, "marker", kept_line(&marker));
