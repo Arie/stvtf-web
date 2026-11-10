@@ -47,9 +47,12 @@ impl Room {
     }
 }
 
-/// Pieces the arc is made of, and of those the first that go straight up.
+/// Pieces the arc is made of: the first that go straight up, then those over.
 const PIECES: usize = 16;
 const UP_PIECES: usize = PIECES / 4;
+const OVER_PIECES: usize = PIECES - UP_PIECES;
+/// Halvings in the search for the handles' height: past an `f64`'s precision.
+const HALVINGS: usize = 60;
 /// How much of its climb goes straight up.
 const STRAIGHT: f64 = 1.0 / 3.0;
 /// Where along the way the curve's second handle is, at its height.
@@ -73,8 +76,8 @@ pub(super) fn jump(launch: [f64; 3], land: [f64; 3]) -> Vec<[f64; 3]> {
     let mut out: Vec<[f64; 3]> =
         (0..=UP_PIECES).map(|i| [launch[0], launch[1], launch[2] + (up - launch[2]) * i as f64 / UP_PIECES as f64]).collect();
     let handle = handle_for(up, peak, land[2]);
-    for i in 1..=PIECES - UP_PIECES {
-        let (along, z) = curve(i as f64 / (PIECES - UP_PIECES) as f64, up, handle, land[2]);
+    for i in 1..=OVER_PIECES {
+        let (along, z) = curve(i as f64 / OVER_PIECES as f64, up, handle, land[2]);
         out.push([launch[0] + (land[0] - launch[0]) * along, launch[1] + (land[1] - launch[1]) * along, z]);
     }
     out
@@ -90,11 +93,9 @@ fn curve(t: f64, up: f64, handle: f64, land: f64) -> (f64, f64) {
 
 /// The handles' height that brings the curve's highest point to `peak`.
 fn handle_for(up: f64, peak: f64, land: f64) -> f64 {
-    let top = |handle: f64| {
-        (1..=PIECES - UP_PIECES).map(|i| curve(i as f64 / (PIECES - UP_PIECES) as f64, up, handle, land).1).fold(up, f64::max)
-    };
+    let top = |handle: f64| (1..=OVER_PIECES).map(|i| curve(i as f64 / OVER_PIECES as f64, up, handle, land).1).fold(up, f64::max);
     let (mut lo, mut hi) = (peak, peak + 4.0 * (peak - up) + (peak - land));
-    for _ in 0..60 {
+    for _ in 0..HALVINGS {
         let mid = f64::midpoint(lo, hi);
         if top(mid) < peak { lo = mid } else { hi = mid }
     }
