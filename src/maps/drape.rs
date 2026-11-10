@@ -95,12 +95,9 @@ impl Face {
         if n < 3 {
             return None;
         }
-        let xs = || f.p.iter().step_by(2);
-        let ys = || f.p.iter().skip(1).step_by(2);
-        let at = [xs().sum::<f64>() / n as f64, ys().sum::<f64>() / n as f64];
-        let min = [xs().copied().fold(f64::INFINITY, f64::min), ys().copied().fold(f64::INFINITY, f64::min)];
-        let max = [xs().copied().fold(f64::NEG_INFINITY, f64::max), ys().copied().fold(f64::NEG_INFINITY, f64::max)];
-        Some(Face { p: f.p, min, max, z: f.z, at, g: f.g.unwrap_or_default() })
+        let at = [0, 1].map(|k| f.p.iter().skip(k).step_by(2).sum::<f64>() / n as f64);
+        let [x0, y0, x1, y1] = super::bsp::outline_box(&f.p);
+        Some(Face { p: f.p, min: [x0, y0], max: [x1, y1], z: f.z, at, g: f.g.unwrap_or_default() })
     }
 
     fn height(&self, x: f64, y: f64) -> f64 {

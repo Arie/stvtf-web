@@ -515,7 +515,7 @@ fn without_shallow_water(floors: Vec<Floor>) -> Vec<Floor> {
 }
 
 /// An outline's (`x, y, x, y, …`) lowest x and y and highest x and y.
-fn outline_box(p: &[f64]) -> [f64; 4] {
+pub(super) fn outline_box(p: &[f64]) -> [f64; 4] {
     let bound = |a: usize, init: f64, pick: fn(f64, f64) -> f64| p.iter().skip(a).step_by(2).fold(init, |m, v| pick(m, *v));
     [
         bound(0, f64::INFINITY, f64::min),
