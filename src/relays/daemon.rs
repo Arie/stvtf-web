@@ -323,6 +323,7 @@ impl Remote {
                 beams: Vec::new(),
                 kept: None,
                 notes: None,
+                notes_given: Vec::new(),
                 done: None,
             }),
             wake: Condvar::new(),
@@ -353,6 +354,8 @@ struct Inner {
     kept: Option<Vec<Beam>>,
     /// The notes to hand over, the latest only.
     notes: Option<Vec<Note>>,
+    /// The notes last given to hand over: the marker gives them with its every piece.
+    notes_given: Vec<Note>,
     done: Option<Done>,
 }
 
@@ -462,9 +465,16 @@ impl RemoteRelay {
         self.0.wake.notify_all();
     }
 
-    /// Notes the TF2 clients in keep seeing, in place of those before; only the latest is sent.
+    /// Notes the TF2 clients in keep seeing, in place of those before; only the latest is sent,
+    /// and not the same ones again.
     pub(crate) fn keep_notes(&self, notes: Vec<Note>) {
-        lock(&self.0.inner).notes = Some(notes);
+        let mut i = lock(&self.0.inner);
+        if i.notes_given == notes {
+            return;
+        }
+        i.notes_given.clone_from(&notes);
+        i.notes = Some(notes);
+        drop(i);
         self.0.wake.notify_all();
     }
 
