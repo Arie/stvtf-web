@@ -381,21 +381,26 @@ impl Shared {
             }
             if asked.elapsed() >= STATUS_EVERY {
                 asked = Instant::now();
-                let answer = self.remote.call(&json!({ "op": "status", "room": self.room }));
-                let mut i = lock(&self.inner);
-                match answer {
-                    Ok(a) if a.get("gone").is_some() => i.stopped = true,
-                    Ok(a) => {
-                        i.clients = a.get("clients").and_then(Value::as_u64).unwrap_or(0) as usize;
-                        i.stopped = a.get("stopped").and_then(Value::as_bool).unwrap_or(false);
-                        if let Some(line) = a.get("line") {
-                            i.line = line.clone();
-                        }
-                    }
-                    // The relay process is away (restarting): as it was.
-                    Err(_) => {}
+                self.ask_status();
+            }
+        }
+    }
+
+    /// Asks the relay process how the relay is.
+    fn ask_status(&self) {
+        let answer = self.remote.call(&json!({ "op": "status", "room": self.room }));
+        let mut i = lock(&self.inner);
+        match answer {
+            Ok(a) if a.get("gone").is_some() => i.stopped = true,
+            Ok(a) => {
+                i.clients = a.get("clients").and_then(Value::as_u64).unwrap_or(0) as usize;
+                i.stopped = a.get("stopped").and_then(Value::as_bool).unwrap_or(false);
+                if let Some(line) = a.get("line") {
+                    i.line = line.clone();
                 }
             }
+            // The relay process is away (restarting): as it was.
+            Err(_) => {}
         }
     }
 
