@@ -1,6 +1,6 @@
 //! The visitor: signed in with the site, or a guest by cookie, and where they go back to.
 
-use super::{GUEST_COOKIE, Request, form_decode, token, unix_now};
+use super::{GUEST_COOKIE, Request, form_decode, param, token, unix_now};
 use crate::App;
 use crate::matches::sessions;
 
@@ -41,9 +41,9 @@ pub(super) fn origin(home: &str) -> Option<&str> {
     Some(&home[..home[rest..].find('/').map_or(home.len(), |i| rest + i)])
 }
 
-/// A page of ours to go back to: `wanted` if it is one (a path, not another site), else our home.
-pub(super) fn local_path(wanted: Option<&str>, app: &App) -> String {
-    let path = wanted.map(form_decode).unwrap_or_default();
+/// A page of ours to go back to: `?return=` if it is one (a path, not another site), else our home.
+pub(super) fn return_to(app: &App, request: &Request) -> String {
+    let path = param(&request.query, "return").map(form_decode).unwrap_or_default();
     let ours = path.starts_with(&format!("{}/", app.base)) && !path.starts_with("//") && !path.contains(['\\', '\r', '\n']);
     if ours { path } else { format!("{}/", app.base) }
 }

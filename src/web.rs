@@ -24,7 +24,7 @@ use client::{client_of, counted};
 use events::{stream, too_many_streams, wants_detail};
 use matches::{is_page, list_matches, serve_match, start, start_view};
 use rooms::serve_room;
-use visitor::{local_path, origin, set_cookie, url_encode};
+use visitor::{origin, return_to, set_cookie, url_encode};
 
 const INDEX: &str = include_str!("../app/pages/index.html");
 const LANDING: &str = include_str!("../app/pages/landing.html");
@@ -220,24 +220,18 @@ fn serve_many(
         (path @ ("/" | "/watch"), _) if app.keys.is_some() => front_door(&mut s, app, path)?,
         ("/matches", "GET") if let Some(keys) = &app.keys => list_matches(&mut s, keys, sessions, request)?,
         ("/signin", "GET") if let Some(site) = app.home.as_deref().and_then(origin) => {
-            let back = local_path(param(&request.query, "return"), app);
-            redirect(&mut s, "302 Found", &format!("{site}/stv/sign_in?return={}", url_encode(&back)))?;
+            redirect(&mut s, "302 Found", &format!("{site}/stv/sign_in?return={}", url_encode(&return_to(app, request))))?;
         }
         ("/signed_in", "GET") if let Some(keys) = &app.keys => {
-            let back = local_path(param(&request.query, "return"), app);
             match keys.open_signin(param(&request.query, "t").unwrap_or_default(), unix_now()) {
                 Ok(user) => {
                     let kept = set_cookie(app, USER_COOKIE, &keys.keep(&user, unix_now()), token::SIGNED_IN_FOR);
-                    respond_with(&mut s, "303 See Other", &[("Location", &back), ("Set-Cookie", &kept)], b"")?;
+                    back_with(&mut s, app, request, &kept)?;
                 }
                 Err(e) => refuse(&mut s, "400 Bad Request", &e)?,
             }
         }
-        ("/signout", "GET") => {
-            let back = local_path(param(&request.query, "return"), app);
-            let gone = set_cookie(app, USER_COOKIE, "", 0);
-            respond_with(&mut s, "303 See Other", &[("Location", &back), ("Set-Cookie", &gone)], b"")?;
-        }
+        ("/signout", "GET") => back_with(&mut s, app, request, &set_cookie(app, USER_COOKIE, "", 0))?,
         ("/start", _) => match start(app, sessions, request, client) {
             // <stv-map> asks where the match is instead of following the redirect.
             Ok(m) if param(&request.query, "format") == Some("json") => {
@@ -265,6 +259,11 @@ fn serve_many(
         (path, _) => serve_file(&mut s, app, path, request.gzip)?,
     }
     Ok(())
+}
+
+/// Back to the page `?return=` names, setting `cookie`.
+fn back_with(s: &mut TcpStream, app: &App, request: &Request, cookie: &str) -> std::io::Result<()> {
+    respond_with(s, "303 See Other", &[("Location", &return_to(app, request)), ("Set-Cookie", cookie)], b"")
 }
 
 /// The body of a request, up to [`MAX_REQUEST`] bytes.
