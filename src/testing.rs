@@ -1,6 +1,8 @@
 //! What the tests share: temporary folders, scripted `SourceTV` servers, an app to serve from.
 
 use super::*;
+use stvtf::Line;
+use stvtf::output;
 
 /// A new directory under the system's temporary one, removed when dropped, also when a test fails.
 pub(crate) struct TempDir(PathBuf);
@@ -34,8 +36,6 @@ impl Drop for TempDir {
         let _ = std::fs::remove_dir_all(&self.0);
     }
 }
-use stvtf::Line;
-use stvtf::output;
 
 /// What the stand-in for a server's watcher does.
 struct Script {
