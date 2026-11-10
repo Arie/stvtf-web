@@ -123,7 +123,7 @@ pub(super) fn displacements(data: &[u8], world: &World) -> Result<Vec<Displaceme
     Ok(out)
 }
 
-/// Displacement `d` of `face`, whose grid points count against `points_left`.
+/// Displacement `disp` of `face`, whose grid points count against `points_left`.
 fn read(info: &[u8], verts: &[u8], disp: usize, face: &super::Face, base: [Vec3; 4], points_left: &mut usize) -> Result<Displacement> {
     let o = disp * DISPINFO_SIZE;
     let start = vec3_at(info, o)?;
