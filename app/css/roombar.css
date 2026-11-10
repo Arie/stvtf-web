@@ -43,8 +43,8 @@
 #roombar #rb-pen.on,
 #roombar #rb-marker.on,
 #roombar #rb-arc.on {
-  background: var(--pen);
-  color: var(--shade);
+  background: var(--ink, var(--pen));
+  color: var(--on-ink, var(--shade));
 }
 .stvtf.drawing canvas#c,
 .stvtf.drawing canvas#c:active {

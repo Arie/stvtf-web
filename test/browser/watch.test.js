@@ -310,6 +310,19 @@ test("people in a room see each other and admins make others admin", async () =>
       el => getComputedStyle(el).backgroundColor === "rgb(0, 255, 0)",
     ),
   );
+  // The pen, on, shows the ink.
+  const penShows = (/** @type {string} */ colour) =>
+    until(
+      page,
+      c => getComputedStyle(/** @type {Element} */ (document.getElementById("rb-pen"))).backgroundColor === c,
+      colour,
+    );
+  await page.keyboard.press("d");
+  await penShows("rgb(0, 255, 0)");
+  await page.keyboard.press("r");
+  await penShows("rgb(208, 69, 63)");
+  await page.keyboard.press("y");
+  await penShows("rgb(0, 255, 0)");
   assert.deepEqual([...errors, ...viewer.errors], []);
   await viewer.page.close();
   await page.close();

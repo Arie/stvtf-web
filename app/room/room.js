@@ -11,7 +11,7 @@ import { pendingAt, setPending } from "./arcs.js";
 import { pushMirror } from "../map/camera.js";
 import { HOME, IN_ROOM, me, names, post } from "./home.js";
 import { copyLink, copyText } from "./copy.js";
-import { people, signedIn } from "./people.js";
+import { inkKey, people, signedIn } from "./people.js";
 import { inTf2 } from "./intf2.js";
 import { RoomView, latestView, morePoints, sender } from "./roomview.js";
 import { focusOf, screenOffset, viewArea } from "../map/view.js";
@@ -119,14 +119,15 @@ function roomBar() {
   drawing(pen, marker);
   arcTool(arc, [pen, marker]);
   clear.onclick = () => post("clear", {});
-  // d takes the pen, m the marker, a a jump arc; c clears the drawings.
+  // d takes the pen, m the marker, a a jump arc; c clears the drawings; r, b and y pick the ink.
   /** @type {Record<string, HTMLButtonElement>} */
   const tools = { d: pen, m: marker, a: arc, c: clear };
   env.keys.addEventListener("keydown", e => {
     const target = /** @type {Element} */ (e.composedPath()[0]);
     const tool = tools[e.key];
-    if (!tool || !me.admin || e.ctrlKey || e.metaKey || e.altKey || target.closest?.("input, select, textarea")) return;
-    tool.click();
+    if (!me.admin || e.ctrlKey || e.metaKey || e.altKey || target.closest?.("input, select, textarea")) return;
+    if (tool) tool.click();
+    else if (!inkKey(e.key)) return;
     e.preventDefault();
   });
 }

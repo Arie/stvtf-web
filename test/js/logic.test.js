@@ -16,7 +16,17 @@ import {
 import { command, steamid64 } from "../../app/embed/embed.js";
 import { layerOn } from "../../app/core/layers.js";
 import { labelCorner } from "../../app/map/spawns.js";
-import { drawOwn, markerFull, onClear, onDraw, onMarker, pointsOf, trimOwn } from "../../app/room/telestrator.js";
+import {
+  drawOwn,
+  inkByKey,
+  markerFull,
+  onClear,
+  onDraw,
+  onInk,
+  onMarker,
+  pointsOf,
+  trimOwn,
+} from "../../app/room/telestrator.js";
 import { arcCount, arcShade, onArc, pendingAt } from "../../app/room/arcs.js";
 import { arcTool } from "../../app/room/room.js";
 import { env } from "../../app/core/env.js";
@@ -421,4 +431,26 @@ test("the arc tool stays armed after an arc, for the next one", () => {
   assert.ok(arc.classList.contains("on") && env.el.classList.contains("drawing"), "still armed");
   arc.onclick?.();
   assert.ok(!arc.classList.contains("on") && !env.el.classList.contains("drawing"), "let go by its button");
+});
+
+test("r and b take a team's ink, y one's own back", () => {
+  const red = "#d0453f",
+    blu = "#4f8fc0";
+  assert.deepEqual(inkByKey("r", "#ffd23f", null), { ink: red, own: "#ffd23f" });
+  assert.deepEqual(inkByKey("b", red, "#ffd23f"), { ink: blu, own: "#ffd23f" }, "from one team's to the other's");
+  assert.deepEqual(inkByKey("y", blu, "#ffd23f"), { ink: "#ffd23f", own: "#ffd23f" });
+  assert.deepEqual(inkByKey("r", red, "#ffd23f"), { ink: null, own: "#ffd23f" }, "red already");
+  assert.deepEqual(
+    inkByKey("y", "#00ff00", "#ffd23f"),
+    { ink: null, own: "#00ff00" },
+    "picked since: that is one's own",
+  );
+  assert.deepEqual(inkByKey("y", red, null), { ink: null, own: null }, "none to go back to");
+});
+
+test("a tool that is on reads on its ink", () => {
+  assert.equal(onInk("#ffd23f"), "#0b0c0e");
+  assert.equal(onInk("#4f8fc0"), "#0b0c0e");
+  assert.equal(onInk("#d0453f"), "#ffffff");
+  assert.equal(onInk("#000000"), "#ffffff");
 });

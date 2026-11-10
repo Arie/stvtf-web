@@ -7,7 +7,8 @@ pressed again, it returns to your room on that match. The match's own page never
 - The opener owns it and is its first admin. Admins make others admin; the owner stays one.
 - Admins pause (space), set speed (¼× to 4×) and seek (← → by 5 s); everyone sees the same.
 - The pen (✎ or `d`) draws on the map for everyone, the room's overlay too, for a few seconds.
-  Each admin picks a colour by the swatch after their name.
+  Each admin picks a colour by the swatch after their name; `r` draws in red, `b` in blu, `y` in
+  their own again (kept in the browser). A tool that is on shows in that colour.
 - A jump arc (↷ or `a`): two clicks, where the jump starts and where it lands, draw a rocket or
   sticky jump between the floors under them, straight up then over and down, shaded dark to
   bright by its height, in TF2 too. The tool stays on for the next arc, until Esc, its button or

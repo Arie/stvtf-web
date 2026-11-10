@@ -2,11 +2,13 @@
 import { $ } from "../core/core.js";
 import { env } from "../core/env.js";
 import { peopleListeners, streamParams } from "../core/stream.js";
-import { inkOf, setInks } from "./telestrator.js";
+import { INK_KEYS, inkByKey, inkOf, onInk, setInks } from "./telestrator.js";
 import { me, names, post } from "./home.js";
 
 // Where a name is kept between visits.
 const NAME_KEY = "name";
+// One's own pen colour, while a team's is taken.
+const INK_KEY = "ink";
 
 // Who is in the room, with the viewer's own name to set; admins make others admin or not.
 /**
@@ -29,6 +31,7 @@ export function people(allow, changed) {
     const self = m.people.find(p => p.id === me.id);
     if (self && self.admin !== me.admin) allow(self.admin);
     setInks(m.people);
+    showInk();
     names.clear();
     for (const p of m.people) names.set(p.id, p.name);
     changed();
@@ -117,7 +120,7 @@ function personName(p, name) {
 function penColour(p) {
   if (p.id === me.id) {
     const pick = Object.assign(document.createElement("input"), { type: "color", className: "ink" });
-    pick.title = "Your pen colour";
+    pick.title = "Your pen colour (r: red, b: blu, y: yours again)";
     pick.value = inkOf(p.id);
     pick.onchange = () => post("ink", { ink: pick.value });
     return pick;
@@ -125,6 +128,29 @@ function penColour(p) {
   const ink = Object.assign(document.createElement("i"), { className: "ink", title: "Their pen colour" });
   ink.style.background = inkOf(p.id);
   return ink;
+}
+
+// A tool that is on shows one's pen colour.
+function showInk() {
+  const ink = inkOf(me.id);
+  env.el.style.setProperty("--ink", ink);
+  env.el.style.setProperty("--on-ink", onInk(ink));
+}
+
+// Whether `key` was an ink key.
+/** @param {string} key */
+export function inkKey(key) {
+  if (!INK_KEYS.includes(key)) return false;
+  let kept = null;
+  try {
+    kept = env.storage ? localStorage.getItem(INK_KEY) : null;
+  } catch {}
+  const { ink, own } = inkByKey(key, inkOf(me.id), kept);
+  try {
+    if (env.storage && own && own !== kept) localStorage.setItem(INK_KEY, own);
+  } catch {}
+  if (ink) post("ink", { ink });
+  return true;
 }
 
 /** @param {string} steamid */

@@ -1,6 +1,6 @@
 // A room's telestrator: admins' strokes in map coordinates. Pen fades after a few seconds;
 // marker stays until cleared.
-import { INK, ctx, uiScale } from "../core/core.js";
+import { INK, TEAM, ctx, uiScale } from "../core/core.js";
 import { toScreen } from "../map/view.js";
 import { arcsFromMarker, clearArcs, drawArcs } from "./arcs.js";
 /** @typedef {import("../../types/stream").DrawLine} DrawLine */
@@ -20,6 +20,33 @@ export function setInks(people) {
 }
 /** @param {number} by */
 export const inkOf = by => picked.get(by) ?? INKS[(Math.max(1, by) - 1) % INKS.length];
+
+// r and b take a team's ink, y one's own back.
+/** @type {Record<string, string>} */
+const TEAM_INKS = { r: TEAM.red, b: TEAM.blue };
+export const INK_KEYS = ["r", "b", "y"];
+// The ink a key takes, if any, and one's own to remember.
+/** @param {string} key @param {string} now @param {string | null} own */
+export function inkByKey(key, now, own) {
+  if (!Object.values(TEAM_INKS).includes(now)) own = now;
+  const ink = key === "y" ? own : TEAM_INKS[key];
+  return { ink: ink && ink !== now ? ink : null, own };
+}
+
+/** @param {string} hex */
+function luminance(hex) {
+  const [r, g, b] = [1, 3, 5].map(i => {
+    const c = parseInt(hex.slice(i, i + 2), 16) / 255;
+    return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  });
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+// What reads best on an ink: the dark, or white.
+/** @param {string} ink */
+export function onInk(ink) {
+  const l = luminance(ink) + 0.05;
+  return l / (luminance(INK) + 0.05) >= 1.05 / l ? INK : "#ffffff";
+}
 
 // Others' strokes show this far behind, so their points come in time to be drawn at the pace
 // they were drawn instead of in jumps as each piece arrives.
