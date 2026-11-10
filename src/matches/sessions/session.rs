@@ -338,10 +338,10 @@ pub(super) fn record(s: &Arc<Session>, store: Option<&Store>, resume: bool) {
                 Err(std::sync::mpsc::RecvTimeoutError::Timeout) => continue,
                 Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
             };
-            let Ok(mut stamped) = serde_json::from_str::<stvtf::output::Stamped>(&json) else { continue };
             if json.contains(r#""history":true"#) {
                 continue;
             }
+            let Ok(mut stamped) = serde_json::from_str::<stvtf::output::Stamped>(&json) else { continue };
             stamped.time = Some(std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_millis() as u64));
             let _ = recording.push(&stamped, &json);
         }
