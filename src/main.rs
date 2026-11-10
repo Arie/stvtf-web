@@ -47,12 +47,14 @@ fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
     m.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
-/// How often the sessions are reaped, and every how many rounds of that they are saved (5 s).
+/// How often the sessions and rooms are reaped: one housekeeping round.
 const HOUSEKEEPING: Duration = Duration::from_millis(250);
-/// Housekeeping rounds between sweeps of old files: five minutes.
-const SWEEP_ROUNDS: u64 = 1200;
+/// Rounds between saves of the matches: five seconds.
 const PERSIST_ROUNDS: u64 = 20;
+/// Rounds between saves of the rooms: a second.
 const ROOM_PERSIST_ROUNDS: u64 = 4;
+/// Rounds between sweeps of old files: five minutes.
+const SWEEP_ROUNDS: u64 = 1200;
 
 /// What the server watches: one match at `/`, or any number at `/w/<id>/`.
 enum Matches {
