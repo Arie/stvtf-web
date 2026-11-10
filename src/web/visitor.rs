@@ -3,6 +3,7 @@
 use super::{GUEST_COOKIE, Request, form_decode, param, token, unix_now};
 use crate::App;
 use crate::matches::sessions;
+use crate::rooms::people::steam_key;
 
 /// How long a guest cookie lasts: who one is in rooms, kept across visits.
 const GUEST_FOR: std::time::Duration = std::time::Duration::from_hours(365 * 24);
@@ -25,7 +26,7 @@ pub(super) struct Who {
 pub(super) fn who(app: &App, request: &Request) -> Who {
     let user = app.keys.as_ref().zip(request.user.as_deref()).and_then(|(k, c)| k.kept(c, unix_now()));
     if let Some(user) = user {
-        return Who { key: format!("{}{}", crate::rooms::people::STEAM, user.uid), cookie: None, user: Some(user) };
+        return Who { key: steam_key(&user.uid), cookie: None, user: Some(user) };
     }
     if let Some(g) = &request.guest {
         return Who { key: g.clone(), cookie: None, user: None };

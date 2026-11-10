@@ -2,6 +2,7 @@
 
 use super::token;
 use crate::matches::sessions;
+use crate::rooms::people::steam_key;
 use std::net::IpAddr;
 
 /// Only a proxy on our own network (kamal-proxy) is believed about who the client is.
@@ -87,7 +88,7 @@ pub(super) fn counted(user: Option<&token::User>, steam: Option<&str>, client: I
         return None;
     }
     if let Some(id) = steam.or(user.map(|u| u.uid.as_str())) {
-        return Some(format!("{}{id}", crate::rooms::people::STEAM));
+        return Some(steam_key(id));
     }
     Some(format!("ip:{client}"))
 }

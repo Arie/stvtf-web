@@ -7,7 +7,12 @@ use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 
 /// How a user signed in with the site is known: this and their Steam id.
-pub(crate) const STEAM: &str = "steam:";
+const STEAM: &str = "steam:";
+
+/// The key a user signed in with Steam id `id` is known by.
+pub(crate) fn steam_key(id: &str) -> String {
+    format!("{STEAM}{id}")
+}
 
 /// The longest name, in characters.
 const MAX_NAME: usize = 32;
