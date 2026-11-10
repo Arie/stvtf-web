@@ -11,6 +11,13 @@ import { after, before, test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright-core";
 
+// Picks a view from the room bar's view menu.
+/** @param {import("playwright-core").Page} page @param {string} mode */
+async function choose(page, mode) {
+  await page.click("#rb-view");
+  await page.click(`#rb-viewmenu button[data-mode="${mode}"]`);
+}
+
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const MAP = "cp_gullywash_f9";
 const BIN = path.join(ROOT, "target/debug/stvtf-web");
@@ -333,7 +340,7 @@ test("an admin clicking a player has everyone follow them", async () => {
   await page.goto(base);
   await page.click("#roomopen");
   await page.waitForURL(/\/r\/[0-9a-f]{32}\/$/, { timeout: WAIT });
-  await until(page, () => !(/** @type {HTMLSelectElement} */ (document.getElementById("rb-view")).disabled));
+  await until(page, () => !(/** @type {HTMLButtonElement} */ (document.getElementById("rb-view")).disabled));
   const viewer = await open();
   await viewer.page.goto(page.url());
   await until(page, () => document.querySelectorAll("#hud-blue .card").length > 0);
@@ -347,7 +354,7 @@ test("an admin clicking a player has everyone follow them", async () => {
     n => document.getElementById("follow-name").textContent === n && !document.getElementById("follow").hidden,
     name,
   );
-  assert.equal(await viewer.page.$eval("#rb-view", el => el.value), "follow");
+  assert.equal(await viewer.page.$eval("#rb-view", el => /** @type {HTMLElement} */ (el).dataset.mode), "follow");
   await viewer.page.click("#follow-stop");
   assert.equal(await viewer.page.$eval("#follow", el => el.hidden), false, "a viewer cannot stop following");
   // The admin scrolls in on them: so does everyone.
@@ -369,9 +376,9 @@ test("admins take the view over by choosing or moving it", async () => {
   await other.page.goto(page.url());
   await until(page, () => document.querySelectorAll("#peoplelist button").length === 1);
   await page.click("#peoplelist button");
-  await until(other.page, () => !(/** @type {HTMLSelectElement} */ (document.getElementById("rb-view")).disabled));
-  await page.selectOption("#rb-view", "admin");
-  await until(other.page, () => document.getElementById("rb-view").value === "admin");
+  await until(other.page, () => !(/** @type {HTMLButtonElement} */ (document.getElementById("rb-view")).disabled));
+  await choose(page, "admin");
+  await until(other.page, () => document.getElementById("rb-view")?.dataset.mode === "admin");
   // Slow requests, as in a browser whose connections are busy: the leading admin's camera moves
   // still arrive after the other one took over.
   await page.route("**/view", r => setTimeout(() => r.continue(), 300));
@@ -379,19 +386,24 @@ test("admins take the view over by choosing or moving it", async () => {
   await page.mouse.down();
   const panning = page.mouse.move(700, 450, { steps: 60 });
   await page.waitForTimeout(150);
-  await other.page.selectOption("#rb-view", "free");
+  await choose(other.page, "free");
   await panning;
   await page.mouse.up();
   await page.waitForTimeout(1000);
-  for (const p of [page, other.page]) assert.equal(await p.$eval("#rb-view", el => el.value), "free");
+  for (const p of [page, other.page])
+    assert.equal(await p.$eval("#rb-view", el => /** @type {HTMLElement} */ (el).dataset.mode), "free");
   await page.unroute("**/view");
-  await page.selectOption("#rb-view", "admin");
+  await choose(page, "admin");
   await until(other.page, () => document.getElementById("rb-lead").textContent === "by Guest 1");
   // The other admin moving the view by hand takes it over, and the first moving it takes it back.
   await other.page.mouse.move(400, 300);
   await other.page.mouse.wheel(0, -200);
   await until(page, () => document.getElementById("rb-lead").textContent === "by Guest 2");
-  assert.equal(await page.$eval("#rb-view", el => el.value), "admin", "moving it keeps the view");
+  assert.equal(
+    await page.$eval("#rb-view", el => /** @type {HTMLElement} */ (el).dataset.mode),
+    "admin",
+    "moving it keeps the view",
+  );
   await page.mouse.move(400, 300);
   await page.mouse.down();
   await page.mouse.move(450, 330, { steps: 5 });
@@ -415,9 +427,9 @@ test("the leader switching from their view to auto zoom stays on auto zoom", asy
   await page.waitForURL(/\/r\/[0-9a-f]{32}\/$/, { timeout: WAIT });
   const viewer = await open();
   await viewer.page.goto(page.url());
-  await until(page, () => !(/** @type {HTMLSelectElement} */ (document.getElementById("rb-view")).disabled));
-  await page.selectOption("#rb-view", "admin");
-  await until(viewer.page, () => document.getElementById("rb-view").value === "admin");
+  await until(page, () => !(/** @type {HTMLButtonElement} */ (document.getElementById("rb-view")).disabled));
+  await choose(page, "admin");
+  await until(viewer.page, () => document.getElementById("rb-view")?.dataset.mode === "admin");
   // The camera moving does not touch the menu, which would flicker while open.
   await page.evaluate(() => {
     window.menuChanges = 0;
@@ -440,18 +452,18 @@ test("the leader switching from their view to auto zoom stays on auto zoom", asy
   await page.mouse.down();
   const panning = page.mouse.move(700, 450, { steps: 40 });
   await page.waitForTimeout(150);
-  await page.selectOption("#rb-view", "auto");
+  await choose(page, "auto");
   await panning;
   await page.mouse.up();
   const seen = [];
   for (let i = 0; i < 10; i++) {
-    seen.push(await viewer.page.$eval("#rb-view", el => el.value));
+    seen.push(await viewer.page.$eval("#rb-view", el => /** @type {HTMLElement} */ (el).dataset.mode));
     await page.waitForTimeout(150);
   }
   // Once on auto zoom, it never goes back.
   const from = seen.indexOf("auto");
   assert.ok(from >= 0 && seen.slice(from).every(v => v === "auto"), seen.join(" "));
-  assert.equal(await page.$eval("#rb-view", el => el.value), "auto");
+  assert.equal(await page.$eval("#rb-view", el => /** @type {HTMLElement} */ (el).dataset.mode), "auto");
   await until(page, () => document.getElementById("autozoom").hidden);
   assert.deepEqual([...errors, ...viewer.errors], []);
   await viewer.page.close();
@@ -465,13 +477,13 @@ test("an admin's view is by hand, for them too, until they click a player", asyn
   await page.waitForURL(/\/r\/[0-9a-f]{32}\/$/, { timeout: WAIT });
   const viewer = await open();
   await viewer.page.goto(page.url());
-  await until(page, () => !(/** @type {HTMLSelectElement} */ (document.getElementById("rb-view")).disabled));
-  await page.selectOption("#rb-view", "auto");
+  await until(page, () => !(/** @type {HTMLButtonElement} */ (document.getElementById("rb-view")).disabled));
+  await choose(page, "auto");
   await until(page, () => document.getElementById("autozoom").hidden);
-  await page.selectOption("#rb-view", "admin");
+  await choose(page, "admin");
   // Auto zoom is off for the admin: its button shows.
   await until(page, () => !document.getElementById("autozoom").hidden);
-  await until(viewer.page, () => document.getElementById("rb-view").value === "admin");
+  await until(viewer.page, () => document.getElementById("rb-view")?.dataset.mode === "admin");
   await until(page, () => document.querySelectorAll("#hud-red .card").length > 0);
   await page.click("#hud-red .card");
   const name = await until(
@@ -483,7 +495,7 @@ test("an admin's view is by hand, for them too, until they click a player", asyn
     n => !document.getElementById("follow").hidden && document.getElementById("follow-name").textContent === n,
     name,
   );
-  await page.selectOption("#rb-view", "admin");
+  await choose(page, "admin");
   await until(page, () => document.getElementById("follow").hidden);
   assert.deepEqual([...errors, ...viewer.errors], []);
   await viewer.page.close();

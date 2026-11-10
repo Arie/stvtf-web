@@ -65,13 +65,16 @@
       <button id="rb-arc" title="Jump arc: click where the jump starts, then where it lands (a)">↷</button>
       <button id="rb-circle" title="Circle: click where someone should stand (t)">◯</button>
       <button id="rb-clear" title="Clear all drawings (c)">⌫</button>
-      <select id="rb-view" aria-label="How everyone sees the map" title="How everyone sees the map">
-        <option value="free" title="Everyone moves their own camera">Free</option>
-        <option value="auto">Auto zoom</option>
-        <option value="follow" id="rb-follow" hidden disabled>Following</option>
-        <option value="admin">Admin's view</option>
-      </select>
-      <span id="rb-lead" hidden></span>
+      <span id="rb-viewbox">
+        <button id="rb-view" aria-haspopup="menu" aria-expanded="false" data-mode="free" title="How everyone sees the map">👁 Free</button>
+        <span id="rb-viewmenu" role="menu" hidden>
+          <span id="rb-lead" hidden></span>
+          <button data-mode="free" class="on" title="Everyone moves their own camera">Free</button>
+          <button data-mode="auto">Auto zoom</button>
+          <button data-mode="follow" id="rb-follow" hidden disabled>Following</button>
+          <button data-mode="admin">Admin's view</button>
+        </span>
+      </span>
       <span id="rb-note" role="status" hidden></span>
     </div>
     <div id="bgtoggle" hidden title="g"><button data-bg="overview" class="on">Overview</button><button data-bg="geometry">Geometry</button></div>

@@ -9,6 +9,7 @@ import { EVENTS_URL, openStream, playbackListeners, streamParams, viewListeners 
 import { drawOwn, markerFull, trimOwn } from "./telestrator.js";
 import { NOTE_MS, arcTool, circleTool, note, worldAt } from "./tools.js";
 import { noteKey } from "./notes.js";
+import { viewMenu } from "./viewmenu.js";
 import { pushMirror } from "../map/camera.js";
 import { HOME, IN_ROOM, me, names, post } from "./home.js";
 import { copyLink, copyText } from "./copy.js";
@@ -303,9 +304,12 @@ function act(fx) {
   if (fx.auto !== undefined) setAutoZoom(fx.auto);
 }
 
+// Sets the view the room bar shows (see viewmenu.js), once it is there.
+/** @type {(mode: string) => void} */
+let showView = () => {};
+
 // Who leads a view of someone's player or camera, and whom it follows. Only what changed: a
-// camera view comes in many times a second, and touching the menu while it is open would pull
-// its highlight back.
+// camera view comes in many times a second.
 function showLead() {
   const v = views.line,
     who = $("rb-lead");
@@ -315,8 +319,11 @@ function showLead() {
   say(who, `by ${v.by === me.id ? "you" : (names.get(v.by) ?? "an admin")}`);
   const following = v.mode === "follow" ? (state.players.get(v.player)?.name ?? "a player") : "";
   say($("rb-follow"), `Following ${following}`);
-  const choose = /** @type {HTMLSelectElement} */ ($("rb-view"));
-  if (choose.value !== v.mode) choose.value = v.mode;
+  $("rb-follow").hidden = v.mode !== "follow";
+  const view = $("rb-view"),
+    title = `How everyone sees the map${who.hidden ? "" : `: ${who.textContent}`}`;
+  if (view.title !== title) view.title = title;
+  showView(v.mode);
 }
 
 /** @param {boolean} on */
@@ -338,13 +345,12 @@ function roomView() {
     act(fx);
     showLead();
   });
-  const choose = /** @type {HTMLSelectElement} */ ($("rb-view"));
-  choose.onchange = () => {
-    const chosen = views.choose(choose.value, camera);
+  showView = viewMenu(mode => {
+    const chosen = views.choose(mode, camera);
     if (!chosen) return;
     act(chosen.fx);
     send(chosen.send);
-  };
+  });
   setInterval(() => {
     const s = views.tick(seen(), camera);
     if (!s) return;

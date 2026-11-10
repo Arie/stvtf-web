@@ -40,6 +40,50 @@
 #roombar select {
   padding: 0 6px;
 }
+/* The view: its button, and its menu opening upward over the map. */
+#rb-viewbox {
+  position: relative;
+}
+#roombar #rb-view {
+  width: auto;
+  padding: 0 8px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+#rb-viewmenu {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 150px;
+  padding: 4px;
+  border-radius: 6px;
+  background: var(--shade-90);
+  box-shadow: 0 2px 10px #0008;
+}
+#rb-viewmenu[hidden] {
+  display: none;
+}
+#roombar #rb-viewmenu button {
+  width: auto;
+  height: 28px;
+  padding: 0 10px;
+  font-size: 13px;
+  text-align: left;
+  background: transparent;
+}
+#roombar #rb-viewmenu button:hover:not(:disabled) {
+  background: #ffffff26;
+}
+#roombar #rb-viewmenu button:disabled {
+  cursor: default;
+}
+#rb-viewmenu #rb-lead {
+  padding: 2px 10px;
+  font-size: 11px;
+}
 #roombar #rb-speed {
   width: 34px;
   font-size: 12px;
@@ -47,7 +91,8 @@
 #roombar #rb-pen.on,
 #roombar #rb-marker.on,
 #roombar #rb-arc.on,
-#roombar #rb-circle.on {
+#roombar #rb-circle.on,
+#roombar #rb-viewmenu button.on {
   background: var(--ink, var(--pen));
   color: var(--on-ink, var(--shade));
 }
