@@ -119,9 +119,9 @@ function roomBar() {
   drawing(pen, marker);
   arcTool(arc, [pen, marker]);
   clear.onclick = () => post("clear", {});
-  // d takes the pen, m the marker, a a jump arc.
+  // d takes the pen, m the marker, a a jump arc; c clears the drawings.
   /** @type {Record<string, HTMLButtonElement>} */
-  const tools = { d: pen, m: marker, a: arc };
+  const tools = { d: pen, m: marker, a: arc, c: clear };
   env.keys.addEventListener("keydown", e => {
     const target = /** @type {Element} */ (e.composedPath()[0]);
     const tool = tools[e.key];
