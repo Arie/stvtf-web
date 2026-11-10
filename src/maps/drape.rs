@@ -74,8 +74,8 @@ struct Geometry {
     bounds: Option<[[f64; 3]; 2]>,
 }
 
-/// The overview leaves out floors above `bounds`' top less this plus that (`app/map/geometry.js`).
-const GEOMETRY_PAD: f64 = 1536.0;
+/// The overview leaves out floors above `bounds`' top less the geometry's pad plus this
+/// (`app/map/geometry.js`'s `ROOF_ABOVE`).
 const ROOF_ABOVE: f64 = 400.0;
 
 /// One floor: its outline, its box, and its height as a plane.
@@ -134,22 +134,22 @@ impl Ground {
     /// The floors of the map geometry JSON served on `/map/NAME`.
     pub(crate) fn from_json(json: &[u8]) -> Result<Self> {
         let g: Geometry = serde_json::from_slice(json)?;
-        let roof = g.bounds.map_or(f64::INFINITY, |[_, hi]| hi[2] - GEOMETRY_PAD + ROOF_ABOVE);
-        Ok(Ground { roof, ..Self::new(g.floors.into_iter().chain(g.props).collect()) })
+        let roof = g.bounds.map_or(f64::INFINITY, |[_, hi]| hi[2] - f64::from(super::bsp::PAD) + ROOF_ABOVE);
+        Ok(Self::new(g.floors.into_iter().chain(g.props).collect(), roof))
     }
 
-    fn new(floors: Vec<Floor>) -> Self {
+    fn new(floors: Vec<Floor>, roof: f64) -> Self {
         let faces: Vec<Face> = floors.into_iter().filter_map(Face::new).collect();
         let lo = |k: usize| faces.iter().map(|f| f.min[k]).fold(f64::INFINITY, f64::min);
         let hi = |k: usize| faces.iter().map(|f| f.max[k]).fold(f64::NEG_INFINITY, f64::max);
         if faces.is_empty() {
-            return Ground { faces, origin: [0.0, 0.0], w: 0, h: 0, cells: Vec::new(), roof: f64::INFINITY };
+            return Ground { faces, origin: [0.0, 0.0], w: 0, h: 0, cells: Vec::new(), roof };
         }
         let origin = [lo(0), lo(1)];
         let along = |k: usize| (((hi(k) - origin[k]) / CELL).floor() as usize + 1).min(MAX_CELLS);
         let (w, h) = (along(0), along(1).min(MAX_CELLS / along(0)).max(1));
         let mut cells = vec![Vec::new(); w * h];
-        let mut g = Ground { faces: Vec::new(), origin, w, h, cells: Vec::new(), roof: f64::INFINITY };
+        let mut g = Ground { faces: Vec::new(), origin, w, h, cells: Vec::new(), roof };
         let mut left = MAX_IN_CELLS;
         for (i, f) in faces.iter().enumerate() {
             let ([x0, y0], [x1, y1]) = (g.cell(f.min), g.cell(f.max));

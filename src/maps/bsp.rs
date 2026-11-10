@@ -24,7 +24,7 @@ mod reach;
 mod track;
 
 /// Room around the points, packs and spawns that frame the playable area.
-const PAD: f32 = 1536.0;
+pub(crate) const PAD: f32 = 1536.0;
 /// A face is a floor when its normal points up at least this much (within about 45°), a wall
 /// when it is within this of horizontal (within about 17° of upright).
 const FLOOR_MIN_NORMAL_Z: f32 = 0.7;

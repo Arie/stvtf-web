@@ -101,7 +101,7 @@ impl Rooms {
     /// Lets `room` be relayed to TF2 clients, from where `demo_of` says its demos are.
     fn offer(&self, room: &Room, demo_of: Option<DemoOf>) {
         if let (Some(relays), Some(demo_of)) = (&self.relays, demo_of) {
-            room.offer_relay(Offer { relays: relays.clone(), demo_of, maps: self.maps.clone() });
+            room.offer_relay(Offer { relays: relays.clone(), demo_of });
         }
     }
 
@@ -208,6 +208,7 @@ impl Rooms {
             bail!("too many watching on their own");
         }
         let room = Room::start_at(crate::matches::sessions::random_id(), owner, recording, at, speed, paused);
+        self.give_maps(&room);
         self.opened_by(&room.id, by);
         if from.demo_id().is_none() && !from.is_pinned() {
             self.watch(&room.id, from, &Source::Live(from.id.clone()));

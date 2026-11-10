@@ -171,9 +171,14 @@ impl Room {
         self.ground()
     }
 
+    /// Where the maps' geometry is kept, for the floors the room draws on.
+    pub(crate) fn set_maps(&self, cache: std::path::PathBuf) {
+        let _ = self.maps.set(cache);
+    }
+
     /// The floors of the map the room plays, once built.
     pub(super) fn ground(&self) -> Option<Arc<Ground>> {
-        let maps = self.maps.get().or_else(|| self.offer.get()?.maps.as_ref())?;
+        let maps = self.maps.get()?;
         let map = lock(&self.hub).map.clone()?;
         drape::ground(maps, &map)
     }

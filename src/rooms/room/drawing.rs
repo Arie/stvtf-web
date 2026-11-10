@@ -72,17 +72,27 @@ impl Room {
             send(&self.hub, &line);
             return Ok(());
         }
+        let ink = Some(super::beams::hex(self.ink_now(by)));
+        self.change_marker(|marker| {
+            if let Some(k) = marker.iter_mut().find(|k| k.stroke == d.stroke && k.by == by) {
+                k.points.extend(&d.points);
+                k.open = !d.end;
+            } else if !d.points.is_empty() {
+                marker.push(Kept { stroke: d.stroke, by, points: d.points.clone(), ink, open: !d.end, arc: None });
+            }
+            line
+        })
+    }
+
+    /// Changes the marker with `change`, which gives the line to tell the pages: refused, the
+    /// marker as it was, when it then holds more points than it may or more than TF2 shows.
+    pub(super) fn change_marker(&self, change: impl FnOnce(&mut Vec<Kept>) -> Arc<str>) -> Result<()> {
         let mut marker = lock(&self.marker);
-        if marker.iter().map(|k| k.points.len()).sum::<usize>() + d.points.len() > MAX_KEPT_POINTS {
-            bail!("The map is full of marker ({MAX_KEPT_POINTS} points): clear it first.");
-        }
         let before = marker.clone();
-        if let Some(k) = marker.iter_mut().find(|k| k.stroke == d.stroke && k.by == by) {
-            k.points.extend(&d.points);
-            k.open = !d.end;
-        } else if !d.points.is_empty() {
-            let ink = Some(super::beams::hex(self.ink_now(by)));
-            marker.push(Kept { stroke: d.stroke, by, points: d.points.clone(), ink, open: !d.end, arc: None });
+        let line = change(&mut marker);
+        if marker.iter().map(|k| k.points.len()).sum::<usize>() > MAX_KEPT_POINTS {
+            *marker = before;
+            bail!("The map is full of marker ({MAX_KEPT_POINTS} points): clear it first.");
         }
         let beams = self.marker_in_tf2(&marker).inspect_err(|_| *marker = before)?;
         send_keeping(&self.hub, &line, "marker", kept_line(&marker));

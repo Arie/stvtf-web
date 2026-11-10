@@ -4,10 +4,9 @@
 
 use super::Room;
 use super::beams::{beam, heads, hex};
-use super::drawing::{Kept, MAX_KEPT_POINTS, kept_line};
+use super::drawing::Kept;
 use crate::lock;
 use crate::maps::drape::Piece;
-use crate::matches::hub::send_keeping;
 use anyhow::{Result, bail};
 use serde::Deserialize;
 use stvtf::relay::Beam;
@@ -38,21 +37,13 @@ impl Room {
         let points = jump(from, to);
         let by = lock(&self.people).id(guest);
         let ink = hex(self.ink_now(by));
-        let mut marker = lock(&self.marker);
-        if marker.iter().map(|k| k.points.len()).sum::<usize>() + 2 > MAX_KEPT_POINTS {
-            bail!("The map is full of marker ({MAX_KEPT_POINTS} points): clear it first.");
-        }
-        let before = marker.clone();
-        let stroke = ARC_IDS | marker.iter().filter(|k| k.arc.is_some()).count() as u32;
-        let clicks = vec![[a.from[0], a.from[1], 0.0], [a.to[0], a.to[1], 0.0]];
-        let kept = Kept { stroke, by, points: clicks, ink: Some(ink.clone()), open: false, arc: Some(points.clone()) };
-        marker.push(kept);
-        let beams = self.marker_in_tf2(&marker).inspect_err(|_| *marker = before)?;
-        let line = serde_json::json!({ "type": "arc", "by": by, "stroke": stroke, "ink": ink, "points": points });
-        send_keeping(&self.hub, &line.to_string().into(), "marker", kept_line(&marker));
-        drop(marker);
-        self.hand_marker(beams);
-        Ok(())
+        self.change_marker(|marker| {
+            let stroke = ARC_IDS | marker.iter().filter(|k| k.arc.is_some()).count() as u32;
+            let line = serde_json::json!({ "type": "arc", "by": by, "stroke": stroke, "ink": ink, "points": points });
+            let clicks = vec![[a.from[0], a.from[1], 0.0], [a.to[0], a.to[1], 0.0]];
+            marker.push(Kept { stroke, by, points: clicks, ink: Some(ink), open: false, arc: Some(points) });
+            line.to_string().into()
+        })
     }
 }
 
@@ -69,19 +60,14 @@ const HANDLE: f64 = 0.6;
 const RISES: [(f64, f64); 4] = [(0.0, 64.0), (400.0, 100.0), (800.0, 170.0), (1100.0, 220.0)];
 
 fn rise(distance: f64) -> f64 {
-    let last = RISES[RISES.len() - 1];
-    if distance >= last.0 {
-        return last.1;
-    }
     RISES
         .windows(2)
         .find(|w| distance < w[1].0)
-        .map_or(RISES[0].1, |w| w[0].1 + (w[1].1 - w[0].1) * (distance - w[0].0) / (w[1].0 - w[0].0))
+        .map_or(RISES[RISES.len() - 1].1, |w| w[0].1 + (w[1].1 - w[0].1) * (distance - w[0].0) / (w[1].0 - w[0].0))
 }
 
-/// The arc from launch `a` to landing `b`, up or down: its points, the ends those spots.
-pub(super) fn jump(a: [f64; 3], b: [f64; 3]) -> Vec<[f64; 3]> {
-    let (launch, land) = (a, b);
+/// The arc from `launch` to `land`, up or down: its points, the ends those spots.
+pub(super) fn jump(launch: [f64; 3], land: [f64; 3]) -> Vec<[f64; 3]> {
     let peak = launch[2].max(land[2]) + rise((land[0] - launch[0]).hypot(land[1] - launch[1]));
     let up = launch[2] + (peak - launch[2]) * STRAIGHT;
     let mut out: Vec<[f64; 3]> =
@@ -124,7 +110,7 @@ const BRIGHT: f64 = 0.74;
 /// A jump arc's beams: a piece each, shaded by its end's height, and an arrowhead where it lands.
 pub(super) fn arc_beams(points: &[[f64; 3]], ink: [u8; 3], life: f32) -> Vec<Beam> {
     let lifted: Vec<[f64; 3]> = points.iter().map(|p| [p[0], p[1], p[2] + ARC_LIFT]).collect();
-    let (Some(first), Some(_)) = (lifted.first(), lifted.last()) else { return Vec::new() };
+    let Some(first) = lifted.first() else { return Vec::new() };
     let peak = lifted.iter().map(|p| p[2]).fold(first[2], f64::max);
     let height = |z: f64| if peak > first[2] { (z - first[2]) / (peak - first[2]) } else { 0.0 };
     let mut out: Vec<Beam> = lifted.windows(2).map(|w| beam(w[0], w[1], shade(ink, height(w[1][2])), life, 0)).collect();
@@ -142,12 +128,11 @@ pub(super) fn shade(ink: [u8; 3], height: f64) -> [u8; 3] {
     let was = f64::midpoint(top, bottom);
     let saturation = if chroma > 0.0 { chroma / (1.0 - (2.0 * was - 1.0).abs()) } else { 0.0 };
     // The hue's sixth, from whichever channel is strongest (as bytes: exact).
-    let [r8, g8, b8] = ink;
     let sixth = if chroma <= 0.0 {
         0.0
-    } else if r8 >= g8 && r8 >= b8 {
+    } else if red >= green && red >= blue {
         ((green - blue) / chroma).rem_euclid(6.0)
-    } else if g8 >= b8 {
+    } else if green >= blue {
         (blue - red) / chroma + 2.0
     } else {
         (red - green) / chroma + 4.0

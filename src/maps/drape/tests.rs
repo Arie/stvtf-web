@@ -23,12 +23,12 @@ fn lines(pieces: &[Piece]) -> Vec<Vec<[f64; 3]>> {
 }
 
 fn drape(floors: Vec<Floor>, points: &[[f64; 3]]) -> Vec<Vec<[f64; 3]>> {
-    lines(&Drape::new().push(&Ground::new(floors), points))
+    lines(&Drape::new().push(&Ground::new(floors, f64::INFINITY), points))
 }
 
 #[test]
 fn a_flat_floor_is_one_straight_piece_above_it() {
-    let got = Drape::new().push(&Ground::new(vec![floor(-64.0, -64.0, 1024.0, 64.0, 100.0, None)]), &along(512.0));
+    let got = Drape::new().push(&Ground::new(vec![floor(-64.0, -64.0, 1024.0, 64.0, 100.0, None)], f64::INFINITY), &along(512.0));
     assert_eq!(got, vec![Piece { from: [0.0, 0.0, 108.0], to: [512.0, 0.0, 108.0], ms: 160.0 }]);
 }
 
@@ -75,7 +75,7 @@ fn a_crate_top_too_small_to_matter_is_left_out() {
 
 #[test]
 fn a_stroke_in_pieces_carries_on() {
-    let ground = Ground::new(vec![floor(-64.0, -64.0, 1024.0, 64.0, 0.0, None)]);
+    let ground = Ground::new(vec![floor(-64.0, -64.0, 1024.0, 64.0, 0.0, None)], f64::INFINITY);
     let mut d = Drape::new();
     let points = along(512.0);
     let mut got = d.push(&ground, &points[..8]);
@@ -85,8 +85,11 @@ fn a_stroke_in_pieces_carries_on() {
 
 #[test]
 fn off_the_map_nothing_is_drawn() {
-    assert_eq!(Drape::new().push(&Ground::new(Vec::new()), &along(512.0)), []);
-    assert_eq!(Drape::new().push(&Ground::new(vec![floor(0.0, 0.0, 64.0, 64.0, 0.0, None)]), &[[1e5, 1e5, 0.0], [1e5, -1e5, 9.0]]), []);
+    assert_eq!(Drape::new().push(&Ground::new(Vec::new(), f64::INFINITY), &along(512.0)), []);
+    assert_eq!(
+        Drape::new().push(&Ground::new(vec![floor(0.0, 0.0, 64.0, 64.0, 0.0, None)], f64::INFINITY), &[[1e5, 1e5, 0.0], [1e5, -1e5, 9.0]]),
+        []
+    );
 }
 
 #[test]

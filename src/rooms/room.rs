@@ -258,13 +258,6 @@ impl Room {
 #[cfg(test)]
 mod tests;
 pub(crate) use arc::ArcDraw;
-
-impl Room {
-    /// Where the maps' geometry is kept, for the floors the room draws on.
-    pub(crate) fn set_maps(&self, cache: std::path::PathBuf) {
-        let _ = self.maps.set(cache);
-    }
-}
 pub(crate) use drawing::{Draw, Kept};
 pub(crate) use play::Control;
 pub(crate) use view::ViewPost;

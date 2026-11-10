@@ -273,8 +273,6 @@ pub(crate) type DemoOf = Arc<dyn Fn(u32) -> Option<PathBuf> + Send + Sync>;
 pub(crate) struct Offer {
     pub(crate) relays: Arc<Pool>,
     pub(crate) demo_of: DemoOf,
-    /// Where the maps' geometry is kept, to draw strokes on their floors.
-    pub(crate) maps: Option<PathBuf>,
 }
 
 #[cfg(test)]
