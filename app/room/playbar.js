@@ -52,6 +52,11 @@ export function playbar(o) {
 /** @param {number[]} speeds @param {number} now */
 export const nextSpeed = (speeds, now) => speeds.find(s => s > now) ?? speeds[0];
 
+// The speed a click steps from at `now`: the one asked for a moment ago, until playback has it (a
+// second click comes before the first is heard), or else the one `heard`.
+/** @param {number} heard @param {{ speed: number; since: number } | null} asked @param {number} now */
+export const speedNow = (heard, asked, now) => (asked && now - asked.since < JUMP_WAIT_MS ? asked.speed : heard);
+
 /** @param {number} s */
 export const speedLabel = s => `${{ 0.25: "¼", 0.5: "½" }[s] ?? s}×`;
 
@@ -77,6 +82,8 @@ class Playbar {
     this.seen = 0;
     /** @type {{ at: number; since: number } | null} A jump made here, shown until playback confirms it. */
     this.jumped = null;
+    /** @type {{ speed: number; since: number } | null} A speed asked for here, until playback has it. */
+    this.asked = null;
     this.marks = timeline({ track: this.track, home: o.home, clock, length: () => this.length(), jump: null });
     // Every frame, once the map is drawn: a live match's timeline grows smoothly, and the playhead
     // moves smoothly.
@@ -88,7 +95,12 @@ class Playbar {
     const { play, live, speed, time, o } = this;
     play.onclick = () => this.last && this.control({ paused: !this.last.paused });
     live.onclick = () => o.live(Math.round(this.length()));
-    speed.onclick = () => this.control({ speed: nextSpeed(this.speeds, this.last?.speed ?? 1) });
+    speed.onclick = () => {
+      const now = performance.now();
+      const next = nextSpeed(this.speeds, speedNow(this.last?.speed ?? 1, this.asked, now));
+      this.asked = { speed: next, since: now };
+      this.control({ speed: next });
+    };
     time.oninput = () => {
       this.dragging = true;
       this.show();
@@ -183,6 +195,7 @@ class Playbar {
     [this.last, this.heardAt] = [m, performance.now()];
     const j = this.jumped;
     if (j && (Math.abs(m.at - j.at) < JUMP_MS || this.heardAt - j.since > JUMP_WAIT_MS)) this.jumped = null;
+    if (m.speed === this.asked?.speed) this.asked = null;
     this.play.textContent = m.paused ? "▶" : "⏸";
     this.play.title = m.paused ? "Play (space)" : "Pause (space)";
     this.speed.textContent = speedLabel(m.speed);

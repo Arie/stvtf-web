@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { clock, moment, nextSpeed, speedLabel } from "../../app/room/playbar.js";
+import { clock, moment, nextSpeed, speedLabel, speedNow } from "../../app/room/playbar.js";
 
 test("a moment reads back what the clock writes", () => {
   for (const ms of [0, 754_000, 3_723_000]) assert.equal(moment(clock(ms)), ms);
@@ -13,4 +13,10 @@ test("the speed button steps up through the speeds and round again", () => {
   assert.equal(nextSpeed([1, 2, 4], 4), 1, "round again");
   assert.equal(nextSpeed([1, 2, 4], 0.5), 1, "from one it does not have");
   assert.deepEqual([0.25, 0.5, 1, 4].map(speedLabel), ["¼×", "½×", "1×", "4×"]);
+});
+
+test("a second click on the speed steps on from the first, before playback has it", () => {
+  assert.equal(speedNow(1, null, 0), 1);
+  assert.equal(speedNow(1, { speed: 2, since: 0 }, 100), 2, "asked a moment ago");
+  assert.equal(speedNow(1, { speed: 2, since: 0 }, 10_000), 1, "never heard: refused, or lost");
 });
