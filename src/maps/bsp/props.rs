@@ -7,7 +7,7 @@
 
 use super::format::{LUMP_GAME_LUMP, bytes, i32_at, index_at, lump, u16_at, unpack, vec3_at};
 use super::material::Kind;
-use super::{Bounds, FLOOR_MIN_NORMAL_Z, Floor, Vec3, cross, gradient};
+use super::{Bounds, FLOOR_MIN_NORMAL_Z, Floor, Vec3, cross, gradient, outline};
 use anyhow::{Result, bail};
 use std::collections::HashMap;
 use std::io::Read;
@@ -142,8 +142,7 @@ pub(super) fn prop_floors(data: &[u8], bounds: Option<Bounds>, stands: impl Fn(f
             let corners = [place(&t[0..3]), place(&t[3..6]), place(&t[6..9])];
             let Some(normal) = upward_normal(&corners) else { continue };
             let z = corners.iter().map(|q| q[2]).sum::<f32>() / 3.0;
-            let pts = corners.iter().flat_map(|q| [round1(q[0]), round1(q[1])]).collect();
-            out.push(Floor { z: round1(z), p: pts, k: Kind::Other, d: false, g: gradient(normal) });
+            out.push(Floor { z: round1(z), p: outline(&corners), k: Kind::Other, d: false, g: gradient(normal) });
             if out.len() >= MAX_FLOORS {
                 return out;
             }

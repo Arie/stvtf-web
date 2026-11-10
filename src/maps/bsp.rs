@@ -249,6 +249,16 @@ impl World {
             .collect::<Result<_>>()?;
         Ok(Some(Face { pts, plane, normal_z, texture, disp }))
     }
+
+    /// What texture `texture` is made of; Other for one not in the table.
+    fn kind(&self, texture: usize) -> Kind {
+        self.textures.get(texture).map_or(Kind::Other, |t| material::kind(t))
+    }
+}
+
+/// Points seen from above as an outline (`x, y, x, y, …`), to a tenth of a unit.
+fn outline(pts: &[Vec3]) -> Vec<f64> {
+    pts.iter().flat_map(|p| [round1(p[0]), round1(p[1])]).collect()
 }
 
 /// How far up a cell of a displacement faces, as a unit normal's z, turned to the same side as
@@ -377,13 +387,12 @@ fn faces(world: &World, map: &Entities, bounds: Option<Bounds>, disps: &[displac
             continue;
         }
         if let Some(d) = disps.iter().find(|d| d.face == f) {
+            let k = world.kind(d.texture);
             for cell in d.cells() {
-                let kind = world.textures.get(d.texture).map_or(Kind::Other, |t| material::kind(t));
-                let c = cell.map(|p| p[2]).iter().sum::<f32>() / 4.0;
                 match cell_normal_z(&cell, &d.plane) {
                     z if z > FLOOR_MIN_NORMAL_Z => {
-                        let p: Vec<f64> = cell.iter().flat_map(|p| [round1(p[0]), round1(p[1])]).collect();
-                        floors.push((c, Floor { z: round1(c), p, k: kind, d: true, g: gradient(cell_normal(&cell)) }));
+                        let c = cell.map(|p| p[2]).iter().sum::<f32>() / 4.0;
+                        floors.push((c, Floor { z: round1(c), p: outline(&cell), k, d: true, g: gradient(cell_normal(&cell)) }));
                         if bounds.is_none() {
                             floor_pts.extend(cell);
                         }
@@ -393,10 +402,8 @@ fn faces(world: &World, map: &Entities, bounds: Option<Bounds>, disps: &[displac
                 }
             }
         } else if face.normal_z > FLOOR_MIN_NORMAL_Z {
-            let p: Vec<f64> = face.pts.iter().flat_map(|p| [round1(p[0]), round1(p[1])]).collect();
-            let k = world.textures.get(face.texture).map_or(Kind::Other, |t| material::kind(t));
             let g = gradient([face.plane[0], face.plane[1], face.plane[2]]);
-            floors.push((centre[2], Floor { z: round1(centre[2]), p, k, d: false, g }));
+            floors.push((centre[2], Floor { z: round1(centre[2]), p: outline(&face.pts), k: world.kind(face.texture), d: false, g }));
             if bounds.is_none() {
                 floor_pts.extend(face.pts);
             }
