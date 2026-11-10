@@ -1,7 +1,7 @@
 // A room's notes: a short text at a spot on the map, or on a player (following their dot), in
 // the drawer's ink, kept until cleared; in TF2 the game's text bubble. `n` puts one where the
 // pointer is: on the player under it (a HUD card, a name in the events or chat, a dot), or else
-// at that spot; then the text, Enter to place it.
+// at that spot; then the text, placed on Enter or clicking away.
 import { INK, ctx, state, uiScale } from "../core/core.js";
 import { env } from "../core/env.js";
 import { playerAt } from "../core/input.js";
@@ -97,27 +97,29 @@ export function noteKey(allowed) {
   });
 }
 
-// A text box at the pointer; Enter asks the room for the note `where` says, Esc lets it go.
+// A text box at the pointer: Enter or clicking away asks the room for the note `where` says (the
+// Steam overlay's browser passes no Enter), Esc lets it go.
 /** @param {{ at: [number, number] } | { player: number }} where */
 function ask(where) {
   const box = document.createElement("input");
   const frame = env.el.getBoundingClientRect();
-  Object.assign(box, { className: "note-input", maxLength: MAX_TEXT, placeholder: "Note, then Enter" });
+  Object.assign(box, { className: "note-input", maxLength: MAX_TEXT, placeholder: "Note" });
   Object.assign(box.style, { left: `${pointer.x - frame.left}px`, top: `${pointer.y - frame.top}px` });
-  const done = () => box.remove();
+  let cancelled = false;
   box.addEventListener("keydown", e => {
     e.stopPropagation();
-    if (e.key === "Escape") done();
-    if (e.key !== "Enter") return;
+    if (e.key === "Escape") cancelled = true;
+    if (e.key === "Escape" || e.key === "Enter") box.blur();
+  });
+  box.addEventListener("blur", () => {
     const text = box.value.trim();
-    done();
-    if (text)
+    box.remove();
+    if (text && !cancelled)
       post("note", { text, ...where }).then(
         async r => r.ok || note(await r.text()),
         () => {},
       );
   });
-  box.addEventListener("blur", done);
   env.el.append(box);
   box.focus();
 }
