@@ -22,6 +22,14 @@ mod view;
 
 pub(crate) const SPEEDS: [f64; 5] = [0.25, 0.5, 1.0, 2.0, 4.0];
 
+/// Coordinates pages may send: well past any map (Source's reach 16384).
+const MAP_REACH: f64 = 1e6;
+
+/// Whether `v` is a coordinate pages may send.
+fn on_map(v: f64) -> bool {
+    v.is_finite() && v.abs() < MAP_REACH
+}
+
 pub(crate) struct Room {
     pub(crate) id: String,
     pub(crate) hub: SharedHub,

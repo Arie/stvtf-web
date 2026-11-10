@@ -1,6 +1,6 @@
 //! Drawing on a room's map: the pen's strokes, and the permanent marker kept until cleared.
 
-use super::Room;
+use super::{Room, on_map};
 use crate::lock;
 use crate::matches::hub::{send, send_keeping};
 use anyhow::{Result, bail};
@@ -59,7 +59,7 @@ impl Room {
         if (d.points.is_empty() && !d.end) || d.points.len() > MAX_POINTS {
             bail!("1 to {MAX_POINTS} points, or none at a stroke's end");
         }
-        if !d.points.iter().all(|&[x, y, t]| [x, y].iter().all(|v| v.is_finite() && v.abs() < 1e6) && (0.0..=MAX_STROKE_MS).contains(&t)) {
+        if !d.points.iter().all(|&[x, y, t]| on_map(x) && on_map(y) && (0.0..=MAX_STROKE_MS).contains(&t)) {
             bail!("points must be on a map, in a stroke's time");
         }
         let by = lock(&self.people).id(guest);

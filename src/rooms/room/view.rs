@@ -1,7 +1,7 @@
 //! How everyone in a room sees the map, as an admin sets it.
 
-use super::Room;
 use super::play::kind;
+use super::{Room, on_map};
 use crate::lock;
 use crate::matches::hub::announce;
 use anyhow::{Result, bail};
@@ -49,10 +49,10 @@ impl Room {
     /// Admin `guest` sets how everyone sees the map.
     pub(crate) fn set_view(&self, post: &ViewPost, guest: &str) -> Result<()> {
         let view = &post.view;
-        let on_map = |vs: &[f64], w: f64, h: f64| vs.iter().all(|v| v.is_finite() && v.abs() < 1e6) && w > 0.0 && h > 0.0;
+        let area = |vs: &[f64], w: f64, h: f64| vs.iter().all(|&v| on_map(v)) && w > 0.0 && h > 0.0;
         let fits = match *view {
-            View::Admin { cx, cy, w, h, rot } => on_map(&[cx, cy, w, h, rot], w, h),
-            View::Follow { w: Some(w), h: Some(h), .. } => on_map(&[w, h], w, h),
+            View::Admin { cx, cy, w, h, rot } => area(&[cx, cy, w, h, rot], w, h),
+            View::Follow { w: Some(w), h: Some(h), .. } => area(&[w, h], w, h),
             View::Follow { w: None, h: None, .. } | View::Free | View::Auto => true,
             View::Follow { .. } => false,
         };
