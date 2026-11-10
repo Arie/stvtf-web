@@ -463,6 +463,7 @@ impl Drop for RemoteRelay {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::relays::pool::tests::{free_port, want};
     use crate::testing::TempDir;
 
     #[test]
@@ -470,6 +471,33 @@ mod tests {
         let b = Beam { from: [1.5, -2.0, 3.0], to: [4.0, 5.0, -6.25], rgb: [255, 128, 0], life: 4.0, width: 3.0, speed: 20 };
         let line: BeamLine = serde_json::from_value(serde_json::to_value(beam_line(&b)).unwrap()).unwrap();
         assert_eq!(beam(&line), b);
+    }
+
+    /// A relay process with one port, serving on a socket in `dir` once this returns.
+    fn serving(dir: &TempDir, lease: Duration) -> (PathBuf, u16) {
+        let socket = dir.join("relay.sock");
+        let port = free_port();
+        let relays = Relays::new("127.0.0.1", [port]);
+        let s = socket.clone();
+        std::thread::spawn(move || serve(&s, &relays, lease));
+        let until = Instant::now() + Duration::from_secs(5);
+        while !socket.exists() {
+            assert!(Instant::now() < until, "no socket");
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        (socket, port)
+    }
+
+    /// Room `room`'s relay, once a port is free again.
+    fn start_when_free(remote: &Arc<Remote>, room: &str, was: Option<&Was>) -> RemoteRelay {
+        let until = Instant::now() + Duration::from_secs(5);
+        loop {
+            if let Some(r) = remote.start(room, &want(), was).unwrap() {
+                return r;
+            }
+            assert!(Instant::now() < until, "the port never came back");
+            std::thread::sleep(Duration::from_millis(20));
+        }
     }
 
     #[test]
@@ -494,16 +522,7 @@ mod tests {
     #[test]
     fn nothing_waits_on_a_relay_in_the_relay_process() {
         let dir = TempDir::new("relay-nowait");
-        let socket = dir.join("relay.sock");
-        let port = std::net::UdpSocket::bind("0.0.0.0:0").unwrap().local_addr().unwrap().port();
-        let s = socket.clone();
-        let relays = Relays::new("127.0.0.1", [port]);
-        std::thread::spawn(move || serve(&s, &relays, LEASE));
-        let until = Instant::now() + Duration::from_secs(5);
-        while !socket.exists() {
-            assert!(Instant::now() < until, "no socket");
-            std::thread::sleep(Duration::from_millis(10));
-        }
+        let (socket, _) = serving(&dir, LEASE);
         let remote = Remote::new(&socket);
         let r = remote.start("room", &want(), None).unwrap().unwrap();
         // As a hung relay process would.
@@ -518,23 +537,10 @@ mod tests {
         r.end();
     }
 
-    fn want() -> Want {
-        Want { demo: "nowhere.dem".into(), tick: 0, at: Instant::now(), paused: false, speed: 1.0, from_start: false, camera: None }
-    }
-
     #[test]
     fn a_room_finds_its_relay_again_and_ends_it() {
         let dir = TempDir::new("relay-daemon");
-        let socket = dir.join("relay.sock");
-        let port = std::net::UdpSocket::bind("0.0.0.0:0").unwrap().local_addr().unwrap().port();
-        let relays = Relays::new("127.0.0.1", [port]);
-        let s = socket.clone();
-        std::thread::spawn(move || serve(&s, &relays, Duration::from_secs(1)));
-        let until = Instant::now() + Duration::from_secs(5);
-        while !socket.exists() {
-            assert!(Instant::now() < until, "no socket");
-            std::thread::sleep(Duration::from_millis(10));
-        }
+        let (socket, port) = serving(&dir, Duration::from_secs(1));
         let remote = Remote::new(&socket);
         let a = remote.start("room-a", &want(), None).unwrap().unwrap();
         assert_eq!(a.line()["connect"], format!("127.0.0.1:{port}"));
@@ -547,25 +553,11 @@ mod tests {
         assert_eq!(a.clients(), 0);
         // Ended, its port is free for another room.
         again.end();
-        let until = Instant::now() + Duration::from_secs(5);
-        let b = loop {
-            if let Some(b) = next.start("room-b", &want(), None).unwrap() {
-                break b;
-            }
-            assert!(Instant::now() < until, "the port never came back");
-            std::thread::sleep(Duration::from_millis(20));
-        };
+        let b = start_when_free(&next, "room-b", None);
         // Started again with what it was on, as after a restart of the relay process.
         let was = Was::of_line(&b.line()).unwrap();
         b.end();
-        let until = Instant::now() + Duration::from_secs(5);
-        let b = loop {
-            if let Some(b) = next.start("room-b2", &want(), Some(&was)).unwrap() {
-                break b;
-            }
-            assert!(Instant::now() < until, "the port never came back");
-            std::thread::sleep(Duration::from_millis(20));
-        };
+        let b = start_when_free(&next, "room-b2", Some(&was));
         assert_eq!(Was::of_line(&b.line()), Some(was));
         // Not asked about for a lease, it goes.
         drop(b);

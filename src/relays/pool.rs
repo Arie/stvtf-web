@@ -276,9 +276,14 @@ pub(crate) struct Offer {
 }
 
 #[cfg(test)]
-mod tests {
+pub(super) mod tests {
     use super::*;
     use std::time::Instant;
+
+    /// A UDP port nothing has just now.
+    pub(crate) fn free_port() -> u16 {
+        std::net::UdpSocket::bind("0.0.0.0:0").unwrap().local_addr().unwrap().port()
+    }
 
     /// Two UDP ports nothing has just now.
     fn free_ports() -> [u16; 2] {
@@ -297,7 +302,7 @@ mod tests {
         assert_eq!(r.bound().port, free, "the free one, not the taken one again");
     }
 
-    fn want() -> Want {
+    pub(crate) fn want() -> Want {
         Want { demo: "nowhere.dem".into(), tick: 0, at: Instant::now(), paused: false, speed: 1.0, from_start: false, camera: None }
     }
 
