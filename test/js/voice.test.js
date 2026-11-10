@@ -64,3 +64,27 @@ test("a team's mute covers its players, one can be let through, and swap hears t
   v.toggleMuted(red);
   assert.equal(v.isMuted(red), false);
 });
+
+test("mute all mutes both teams though nobody was heard, and keeps one's own mutes", async () => {
+  const { state } = await import("../../app/core/core.js");
+  const v = await import("../../app/core/voice.js");
+  const red = "[U:1:41]";
+  state.players = new Map([[41, /** @type {any} */ ({ id: 41, steamid: red, team: "red" })]]);
+  v.setTeamMuted("red", false);
+  v.setTeamMuted("blue", true);
+  v.setMuted(red, true);
+  assert.equal(v.allMuted(), false, "RED is not");
+  v.muteEveryone(!v.allMuted());
+  assert.deepEqual([v.isTeamMuted("red"), v.isTeamMuted("blue"), v.allMuted()], [true, true, true]);
+  v.setTeamMuted("red", false);
+  assert.equal(v.isMuted(red), true, "their own mute kept");
+  v.setMuted(red, false);
+});
+
+test("a switch of stream (back to live) plays voice again", async () => {
+  const v = await import("../../app/core/voice.js");
+  v.voicePlayback({ paused: true, speed: 1 });
+  assert.equal(v.voicePlaying(), false);
+  v.streamSwitched();
+  assert.equal(v.voicePlaying(), true);
+});

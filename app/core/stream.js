@@ -24,7 +24,7 @@ import { onClear, onDraw, onMarker } from "../room/telestrator.js";
 import { onArc } from "../room/arcs.js";
 import { onCircle } from "../room/circles.js";
 import { onNote } from "../room/notes.js";
-import { dropAll, onVoice, voiceOn, voicePlayback } from "./voice.js";
+import { dropAll, onVoice, streamSwitched, voiceOn, voicePlayback } from "./voice.js";
 import { loadMap } from "../map/view.js";
 /** @typedef {import("../../types/stream").GameEvent} GameEvent */
 /** @typedef {import("../../types/stream").StreamMessage} StreamMessage */
@@ -56,7 +56,10 @@ let eventsUrl = EVENTS_URL;
 /** @param {string} [from] */
 export function openStream(from) {
   es?.close();
-  if (from) eventsUrl = from;
+  if (from) {
+    eventsUrl = from;
+    streamSwitched();
+  }
   const url = new URL(eventsUrl);
   if (detailNeeded()) url.searchParams.set("detail", "1");
   if (voiceOn()) url.searchParams.set("voice", "1");

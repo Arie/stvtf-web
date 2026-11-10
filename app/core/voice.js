@@ -11,6 +11,10 @@ import { env } from "./env.js";
 const LEAD = 0.1;
 // How long a speaker counts as talking after their last frame, in milliseconds.
 const TALK_MS = 400;
+// The most seconds of a speaker queued ahead (past it, after a stall, frames are dropped), and the
+// most speakers (a client that claims a new SteamID each packet makes a new one each time).
+const MAX_AHEAD = 1,
+  MAX_SPEAKERS = 64;
 // What the browser keeps: whether voice is on, and the mutes and volumes.
 const ON_KEY = "voice",
   PREFS_KEY = "voice-prefs";
@@ -95,24 +99,27 @@ function forget(id) {
   const s = speakers.get(id);
   if (!s) return;
   drop(s);
-  if (s.decoder?.state !== "closed") s.decoder?.close();
+  s.gain?.disconnect();
   speakers.delete(id);
 }
 
-// What is queued of `s` stops, and its decoder starts afresh.
+// What is queued of `s` stops, and its decoder goes (a new one starts afresh).
 /** @param {Speaker} s */
 function drop(s) {
   for (const q of s.queued) q.stop();
   s.queued.clear();
   s.at = 0;
-  if (s.decoder?.state === "configured") s.decoder.reset();
+  if (s.decoder && s.decoder.state !== "closed") s.decoder.close();
   s.decoder = null;
 }
 
-/** @param {VoiceLine} m */
+// The speaker of `m`, ready to decode, at the level their mutes say now (a team's changes); none
+// past the most speakers, or with a decoder that will not take the line.
+/** @param {VoiceLine} m @returns {Speaker | null} */
 function speaker(m) {
   let s = speakers.get(m.steamid);
   if (!s) {
+    if (speakers.size >= MAX_SPEAKERS) return null;
     s = { steamid: m.steamid, player: null, decoder: null, gain: null, at: 0, n: 0, last: 0, queued: new Set() };
     speakers.set(m.steamid, s);
   }
@@ -120,12 +127,18 @@ function speaker(m) {
   if (audio && !s.gain) {
     s.gain = audio.createGain();
     s.gain.connect(audio.destination);
-    level(s);
   }
+  level(s);
   if (!s.decoder || s.decoder.state === "closed") {
     const self = s;
-    s.decoder = new AudioDecoder({ output: d => play(self, d), error: () => (self.decoder = null) });
-    s.decoder.configure({ codec: "opus", sampleRate: m.rate, numberOfChannels: 1 });
+    const decoder = new AudioDecoder({ output: d => play(self, d), error: () => (self.decoder = null) });
+    try {
+      decoder.configure({ codec: "opus", sampleRate: m.rate, numberOfChannels: 1 });
+    } catch {
+      decoder.close();
+      return null;
+    }
+    s.decoder = decoder;
   }
   return s;
 }
@@ -137,7 +150,8 @@ function level(s) {
 
 /** @param {Speaker} s @param {AudioData} data */
 function play(s, data) {
-  if (!audio || !s.gain || !playing) return data.close();
+  // Not playing, or so far behind (a stall, a burst) that it would run late: dropped.
+  if (!audio || !s.gain || !playing || s.at - audio.currentTime > MAX_AHEAD) return data.close();
   const buffer = audio.createBuffer(1, data.numberOfFrames, data.sampleRate);
   data.copyTo(buffer.getChannelData(0), { planeIndex: 0, format: "f32-planar" });
   data.close();
@@ -153,8 +167,9 @@ function play(s, data) {
 
 /** @param {VoiceLine} m */
 export function onVoice(m) {
-  if (!voiceOn() || !audio || !playing) return;
+  if (!voiceOn() || !audio || !playing || !(m.rate > 0)) return;
   const s = speaker(m);
+  if (!s) return;
   s.last = performance.now();
   for (const f of m.frames) {
     const data = Uint8Array.from(atob(f), c => c.charCodeAt(0));
@@ -170,6 +185,15 @@ export function voicePlayback(m) {
   if (now === playing) return;
   playing = now;
   if (!now) dropAll();
+}
+
+export const voicePlaying = () => playing;
+
+// The page's stream switched (one's own playback, and back to live, which says nothing of
+// playback): as playing, at 1×, nothing of the old one queued.
+export function streamSwitched() {
+  playing = true;
+  dropAll();
 }
 
 // A seek or a jump: what is queued was of before it.
@@ -245,17 +269,23 @@ export function setTeamMuted(team, muted) {
   remuted();
 }
 
-// Everyone muted (both teams, and those heard on neither), or nobody (one's own mutes of those
-// heard lifted too).
+// Whether everyone is muted: both teams, and those heard on neither.
+export function allMuted() {
+  if (!mutedTeams.has("red") || !mutedTeams.has("blue")) return false;
+  return [...speakers.keys()].every(id => isMuted(id));
+}
+
+// Everyone muted (both teams, and those heard on neither: one's own mutes kept), or nobody (one's
+// own mutes of those heard lifted too).
 /** @param {boolean} muted */
 export function muteEveryone(muted) {
-  mutedTeams.clear();
   letThrough.clear();
-  if (muted) mutedTeams.add("red").add("blue");
-  for (const s of speakers.values()) {
-    const onTeam = ["red", "blue"].includes(teamOf(s.steamid) ?? "");
-    prefs.muted = prefs.muted.filter(id => id !== s.steamid);
-    if (muted && !onTeam) prefs.muted.push(s.steamid);
+  if (muted) {
+    mutedTeams.add("red").add("blue");
+    for (const id of speakers.keys()) if (!isMuted(id)) prefs.muted.push(id);
+  } else {
+    mutedTeams.clear();
+    prefs.muted = prefs.muted.filter(id => !speakers.has(id));
   }
   savePrefs();
   remuted();
