@@ -102,7 +102,6 @@ fn decode(id: u64, demo: &[u8], snapshot_hz: f32) -> Result<Vec<u8>> {
 /// Plays demos.tf demo `id` into `hub` once, holding still while `play` says nobody watches,
 /// until it ends or `stop`; `keep_demo` gets the demo file once fetched, `keep` the output once
 /// decoded.
-#[allow(clippy::too_many_arguments)]
 pub(crate) fn play(
     hub: &SharedHub,
     id: u64,
