@@ -117,6 +117,10 @@ impl Room {
                 all.extend(super::arc::arc_beams(arc, ink, KEPT_LIFE));
                 continue;
             }
+            if let Some(center) = k.circle {
+                all.extend(super::circle::circle_beams(center, ink, KEPT_LIFE));
+                continue;
+            }
             let pieces = Drape::new().push(ground, &k.points);
             all.extend(beams(&pieces, ink, KEPT_LIFE));
             if let Some(&[x, y, _]) = k.points.last().filter(|_| !k.open) {

@@ -9,7 +9,7 @@ use super::{
 };
 use crate::App;
 use crate::matches::sessions::{Session, Sessions, logged};
-use crate::rooms::room::{ArcDraw, Control, Draw, Room, ViewPost};
+use crate::rooms::room::{ArcDraw, CircleDraw, Control, Draw, Room, ViewPost};
 use anyhow::Result;
 use std::io::{BufReader, Take};
 use std::net::{IpAddr, TcpStream};
@@ -158,13 +158,14 @@ fn change(
         }
         "claim" => respond(s, "403 Forbidden", TEXT, b"Only the site's streamers make themselves admin."),
         "name" => done(s, json_body::<Name>(reader, request).map(|n| room.rename(guest, &n.name))),
-        "control" | "draw" | "arc" | "clear" | "admin" | "view" | "ink" if !room.is_admin(guest) => {
+        "control" | "draw" | "arc" | "circle" | "clear" | "admin" | "view" | "ink" if !room.is_admin(guest) => {
             respond(s, "403 Forbidden", TEXT, b"Only the room's admins do that.")
         }
         "view" => done(s, json_body::<ViewPost>(reader, request).and_then(|v| room.set_view(&v, guest))),
         "ink" => done(s, json_body::<Ink>(reader, request).and_then(|i| room.set_ink(guest, &i.ink))),
         "draw" => done(s, json_body::<Draw>(reader, request).and_then(|d| room.draw(&d, guest))),
         "arc" => done(s, json_body::<ArcDraw>(reader, request).and_then(|a| room.arc(&a, guest))),
+        "circle" => done(s, json_body::<CircleDraw>(reader, request).and_then(|c| room.circle(&c, guest))),
         "clear" => {
             room.clear(guest);
             respond(s, "204 No Content", TEXT, b"")

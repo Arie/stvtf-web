@@ -42,7 +42,8 @@
 }
 #roombar #rb-pen.on,
 #roombar #rb-marker.on,
-#roombar #rb-arc.on {
+#roombar #rb-arc.on,
+#roombar #rb-circle.on {
   background: var(--ink, var(--pen));
   color: var(--on-ink, var(--shade));
 }
@@ -273,6 +274,7 @@
 .stvtf.watch #rb-pen,
 .stvtf.watch #rb-marker,
 .stvtf.watch #rb-arc,
+.stvtf.watch #rb-circle,
 .stvtf.watch #rb-clear,
 .stvtf.watch #rb-view,
 .stvtf.watch #rb-lead {

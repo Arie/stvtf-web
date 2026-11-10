@@ -196,6 +196,7 @@ export type MarkerLine = {
     points: [number, number, number][];
     ink?: string;
     arc?: [number, number, number][];
+    circle?: [number, number, number];
   }[];
   /** Points the map holds, all strokes together. */
   max?: number;
@@ -203,6 +204,9 @@ export type MarkerLine = {
 
 /** A jump arc an admin drew: its points from launch to landing, in the drawer's ink. */
 export type ArcLine = { type: "arc"; by: number; stroke: number; ink: string; points: [number, number, number][] };
+
+/** A circle an admin put down: its centre on the floor, in the drawer's ink. */
+export type CircleLine = { type: "circle"; by: number; stroke: number; ink: string; at: [number, number, number] };
 
 /** An admin wiped the room's map. */
 export type ClearLine = { type: "clear"; by: number };
@@ -246,6 +250,7 @@ export type StreamMessage =
   | DrawLine
   | MarkerLine
   | ArcLine
+  | CircleLine
   | ClearLine
   | PeopleLine
   | ViewLine

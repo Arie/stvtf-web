@@ -40,6 +40,9 @@ pub(crate) struct Kept {
     /// A jump arc's points, launch to landing (its `points` are then the two clicks).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(super) arc: Option<Vec<[f64; 3]>>,
+    /// A circle's centre, on the floor (its `points` are then the click).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(super) circle: Option<[f64; 3]>,
 }
 
 /// Most permanent marker points on a room's map.
@@ -78,7 +81,7 @@ impl Room {
                 k.points.extend(&d.points);
                 k.open = !d.end;
             } else if !d.points.is_empty() {
-                marker.push(Kept { stroke: d.stroke, by, points: d.points.clone(), ink, open: !d.end, arc: None });
+                marker.push(Kept { stroke: d.stroke, by, points: d.points.clone(), ink, open: !d.end, arc: None, circle: None });
             }
             line
         })

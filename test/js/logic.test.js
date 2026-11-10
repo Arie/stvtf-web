@@ -28,7 +28,8 @@ import {
   trimOwn,
 } from "../../app/room/telestrator.js";
 import { arcCount, arcShade, onArc, pendingAt } from "../../app/room/arcs.js";
-import { arcTool } from "../../app/room/room.js";
+import { arcTool } from "../../app/room/tools.js";
+import { circleCount, onCircle } from "../../app/room/circles.js";
 import { env } from "../../app/core/env.js";
 import { demostfAlias, sameLayout, screenOffset, teamsTurn, toScreen } from "../../app/map/view.js";
 
@@ -375,6 +376,20 @@ test("jump arcs come with the marker and an arc line, are no strokes, and go wit
   assert.equal(arcCount(), 2);
   onClear();
   assert.equal(arcCount(), 0);
+});
+
+test("circles come with the marker and a circle line, are no strokes, and go with a clear", () => {
+  onClear();
+  onMarker({
+    type: "marker",
+    strokes: [{ stroke: 2 ** 30, by: 1, points: [[5, 5, 0]], ink: "#ff0000", circle: [5, 5, 64] }],
+  });
+  assert.equal(circleCount(), 1);
+  assert.equal(pointsOf(2 ** 30), 0, "not drawn as a stroke");
+  onCircle({ type: "circle", by: 1, stroke: 2 ** 30 + 1, ink: "#00ff00", at: [9, 9, 0] });
+  assert.equal(circleCount(), 2);
+  onClear();
+  assert.equal(circleCount(), 0);
 });
 
 test("picking the pen with the arc tool armed leaves the map in drawing mode", () => {

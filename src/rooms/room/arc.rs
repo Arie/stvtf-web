@@ -41,7 +41,7 @@ impl Room {
             let stroke = ARC_IDS | marker.iter().filter(|k| k.arc.is_some()).count() as u32;
             let line = serde_json::json!({ "type": "arc", "by": by, "stroke": stroke, "ink": ink, "points": points });
             let clicks = vec![[a.from[0], a.from[1], 0.0], [a.to[0], a.to[1], 0.0]];
-            marker.push(Kept { stroke, by, points: clicks, ink: Some(ink), open: false, arc: Some(points) });
+            marker.push(Kept { stroke, by, points: clicks, ink: Some(ink), open: false, arc: Some(points), circle: None });
             line.to_string().into()
         })
     }

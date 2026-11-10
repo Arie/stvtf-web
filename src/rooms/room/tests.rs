@@ -310,7 +310,7 @@ fn a_room_behind_a_live_match_that_ended_skips_to_its_end() {
 }
 
 /// A room on `cp_test`, whose geometry has a floor at 0 by x 0..512 and one at 200 by x 1000..1512.
-fn arc_room() -> (Arc<Room>, crate::testing::TempDir) {
+pub(super) fn arc_room() -> (Arc<Room>, crate::testing::TempDir) {
     let dir = crate::testing::TempDir::new("arcs");
     let floor = |x: f64, z: f64| serde_json::json!({ "z": z, "p": [x, 0.0, x + 512.0, 0.0, x + 512.0, 512.0, x, 512.0] });
     let geometry = serde_json::json!({ "floors": [floor(0.0, 0.0), floor(1000.0, 200.0)], "bounds": [[0, 0, -100], [1600, 600, 2000]] });

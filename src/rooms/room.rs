@@ -15,6 +15,7 @@ use std::sync::{Arc, Condvar, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 mod arc;
 mod beams;
+mod circle;
 mod drawing;
 mod play;
 mod relay;
@@ -265,6 +266,7 @@ impl Room {
 #[cfg(test)]
 mod tests;
 pub(crate) use arc::ArcDraw;
+pub(crate) use circle::CircleDraw;
 pub(crate) use drawing::{Draw, Kept};
 pub(crate) use play::Control;
 pub(crate) use view::ViewPost;

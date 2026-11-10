@@ -7,14 +7,14 @@ import { env } from "../core/env.js";
 import { setAutoZoom, setFollow } from "../core/input.js";
 import { EVENTS_URL, openStream, playbackListeners, streamParams, viewListeners } from "../core/stream.js";
 import { drawOwn, markerFull, trimOwn } from "./telestrator.js";
-import { pendingAt, setPending } from "./arcs.js";
+import { NOTE_MS, arcTool, circleTool, note, worldAt } from "./tools.js";
 import { pushMirror } from "../map/camera.js";
 import { HOME, IN_ROOM, me, names, post } from "./home.js";
 import { copyLink, copyText } from "./copy.js";
 import { inkKey, people, signedIn } from "./people.js";
 import { inTf2 } from "./intf2.js";
 import { RoomView, latestView, morePoints, sender } from "./roomview.js";
-import { focusOf, screenOffset, viewArea } from "../map/view.js";
+import { focusOf, viewArea } from "../map/view.js";
 /** @typedef {import("../../types/stream").PlaybackLine} PlaybackLine */
 
 // The closest a stroke's points are, in pixels.
@@ -88,6 +88,7 @@ function roomBar() {
   const pen = /** @type {HTMLButtonElement} */ ($("rb-pen")),
     marker = /** @type {HTMLButtonElement} */ ($("rb-marker")),
     arc = /** @type {HTMLButtonElement} */ ($("rb-arc")),
+    circle = /** @type {HTMLButtonElement} */ ($("rb-circle")),
     clear = /** @type {HTMLButtonElement} */ ($("rb-clear"));
   const control = (/** @type {import("./playbar.js").Control} */ c) => post("control", c);
   const bar = playbar({ home: HOME, send: control, live: end => control({ seek: end, paused: false }), room: true });
@@ -96,9 +97,10 @@ function roomBar() {
   const allow = on => {
     me.admin = on;
     bar.allow(on);
-    for (const c of [pen, marker, arc, clear, $("rb-view")]) /** @type {HTMLButtonElement} */ (c).disabled = !on;
+    for (const c of [pen, marker, arc, circle, clear, $("rb-view")])
+      /** @type {HTMLButtonElement} */ (c).disabled = !on;
     $("roombar").title = on ? "" : "The room's admins control playback";
-    for (const t of [pen, marker, arc]) if (!on && t.classList.contains("on")) t.click();
+    for (const t of [pen, marker, arc, circle]) if (!on && t.classList.contains("on")) t.click();
     if (on) $("claim").hidden = true;
     setViewAdmin(on);
   };
@@ -117,11 +119,12 @@ function roomBar() {
   const showPeople = people(allow, showLead);
   inTf2();
   drawing(pen, marker);
-  arcTool(arc, [pen, marker]);
+  arcTool(arc, [pen, marker, circle]);
+  circleTool(circle, [pen, marker, arc]);
   clear.onclick = () => post("clear", {});
-  // d takes the pen, m the marker, a a jump arc; c clears the drawings; r, b and y pick the ink.
+  // d takes the pen, m the marker, a a jump arc, t a circle; c clears the drawings; r, b and y pick the ink.
   /** @type {Record<string, HTMLButtonElement>} */
-  const tools = { d: pen, m: marker, a: arc, c: clear };
+  const tools = { d: pen, m: marker, a: arc, t: circle, c: clear };
   env.keys.addEventListener("keydown", e => {
     const target = /** @type {Element} */ (e.composedPath()[0]);
     const tool = tools[e.key];
@@ -268,65 +271,6 @@ function drawing(pen, marker) {
   };
   for (const type of ["pointerup", "pointercancel"]) canvas.addEventListener(type, end);
 }
-
-// The jump arc tool: armed by its button, it takes two clicks on the map, the launch then the
-// landing, and asks the room for the arc, staying armed; Esc or another tool lets it go.
-/** @param {HTMLButtonElement} button @param {HTMLButtonElement[]} others */
-export function arcTool(button, others) {
-  // Let go of the arc, leaving the drawing mode to whatever has it.
-  const disarm = () => {
-    button.classList.toggle("on", false);
-    setPending(null);
-  };
-  const arm = (/** @type {boolean} */ on) => {
-    disarm();
-    button.classList.toggle("on", on);
-    env.el.classList.toggle("drawing", on);
-  };
-  button.onclick = () => {
-    for (const o of others) if (o.classList.contains("on")) o.click();
-    arm(!button.classList.contains("on"));
-  };
-  for (const o of others) o.addEventListener("click", disarm);
-  env.keys.addEventListener("keydown", e => e.key === "Escape" && button.classList.contains("on") && arm(false));
-  canvas.addEventListener(
-    "pointerdown",
-    e => {
-      if (!button.classList.contains("on") || e.button !== 0) return;
-      e.preventDefault();
-      e.stopImmediatePropagation();
-      const at = worldAt(e),
-        from = pendingAt();
-      if (!from) return void setPending(at);
-      setPending(null);
-      post("arc", { from, to: at }).then(
-        async r => r.ok || note(await r.text()),
-        () => {},
-      );
-    },
-    { capture: true },
-  );
-}
-
-// Where on the map a pointer is.
-/** @param {PointerEvent} e @returns {[number, number]} */
-function worldAt(e) {
-  const r = canvas.getBoundingClientRect();
-  const [dx, dy] = screenOffset(e.clientX - r.left - r.width / 2, e.clientY - r.top - r.height / 2, state.view.scale);
-  return [Math.round(state.view.cx + dx), Math.round(state.view.cy + dy)];
-}
-
-// Why something did not happen, in the room bar for a moment.
-/** @param {string} text */
-function note(text) {
-  const el = $("rb-note");
-  Object.assign(el, { textContent: text, hidden: false });
-  clearTimeout(noteTimer);
-  noteTimer = setTimeout(() => (el.hidden = true), NOTE_MS);
-}
-const NOTE_MS = 5000;
-/** @type {ReturnType<typeof setTimeout> | undefined} */
-let noteTimer;
 
 // How everyone sees the map, as its admins set it (see roomview.js for the rules), on this page.
 // This page among its admin's pages (two tabs, say): a page leads, not a person.
