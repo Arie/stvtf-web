@@ -212,18 +212,21 @@ fn a_room_plays_on_from_one_chunk_into_the_next() {
     r.stop();
 }
 
+/// A live match's recording of `n` lines, 100 ms apart.
+fn live(n: u64) -> Arc<Recording> {
+    let rec = Arc::new(Recording::live());
+    let text = r#"{"type":"stalemate","tick":5}"#;
+    for i in 0..n {
+        let mut stamped: stvtf::output::Stamped = serde_json::from_str(text).unwrap();
+        stamped.time = Some(1_700_000_000_000 + i * 100);
+        rec.push(&stamped, text).unwrap();
+    }
+    rec
+}
+
 #[test]
 fn catching_up_with_a_live_match_plays_on_at_1x() {
-    let rec = Arc::new(Recording::live());
-    let mut time = 1_700_000_000_000;
-    for _ in 0..10 {
-        let text = r#"{"type":"stalemate","tick":5}"#;
-        let mut stamped: stvtf::output::Stamped = serde_json::from_str(text).unwrap();
-        stamped.time = Some(time);
-        rec.push(&stamped, text).unwrap();
-        time += 100;
-    }
-    let r = Room::start("r".into(), "me", rec);
+    let r = Room::start("r".into(), "me", live(10));
     let _w = r.join("me", None, None, true);
     r.control(&Control { seek: Some(0), speed: Some(4.0), ..Control::default() }).unwrap();
     until("live again", || lock(&r.state).at >= 900);
@@ -295,15 +298,7 @@ fn only_listed_speeds_pass() {
 
 #[test]
 fn a_room_behind_a_live_match_that_ended_skips_to_its_end() {
-    let rec = Arc::new(Recording::live());
-    let mut time = 1_700_000_000_000;
-    for _ in 0..300 {
-        let text = r#"{"type":"stalemate","tick":5}"#;
-        let mut stamped: stvtf::output::Stamped = serde_json::from_str(text).unwrap();
-        stamped.time = Some(time);
-        rec.push(&stamped, text).unwrap();
-        time += 100;
-    }
+    let rec = live(300);
     let r = Room::start("r".into(), "me", rec.clone());
     let _w = r.join("me", None, None, true);
     r.control(&Control { seek: Some(1_000), ..Control::default() }).unwrap();
