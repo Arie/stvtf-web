@@ -182,8 +182,10 @@ fn post(app: &App, path: &str, cookie: &str, body: &str) -> String {
     request_to(app, send.as_bytes()).1
 }
 
+/// `path`, with `cookie` unless it is empty.
 fn get(app: &App, path: &str, cookie: &str) -> String {
-    request_to(app, format!("GET {path} HTTP/1.1\r\nCookie: {cookie}\r\n\r\n").as_bytes()).1
+    let cookie = if cookie.is_empty() { String::new() } else { format!("Cookie: {cookie}\r\n") };
+    request_to(app, format!("GET {path} HTTP/1.1\r\n{cookie}\r\n").as_bytes()).1
 }
 
 /// Opens a room on the demo: its page and the owner's cookie.
@@ -364,17 +366,17 @@ fn post_watch(app: &App, connect: &str) -> String {
 #[test]
 fn many_matches_start_from_a_connect_string() {
     let app = app(Matches::Many(Sessions::new(false, 4, 20.0)));
-    assert!(request_to(&app, b"GET / HTTP/1.1\r\n\r\n").1.contains("<form"));
+    assert!(get(&app, "/", "").contains("<form"));
     let response = post_watch(&app, "connect+192.0.2.1%3A27020%3B+password+%22tv%22");
     assert!(response.starts_with("HTTP/1.1 303"), "{response}");
     let location = response.lines().find_map(|l| l.strip_prefix("Location: ")).unwrap().to_string();
     assert!(location.starts_with("/w/") && location.ends_with('/'), "{location}");
     assert_eq!(post_watch(&app, "192.0.2.1:27020+tv").lines().find_map(|l| l.strip_prefix("Location: ")), Some(location.as_str()));
-    let page = request_to(&app, format!("GET {location} HTTP/1.1\r\n\r\n").as_bytes()).1;
+    let page = get(&app, &location, "");
     assert!(page.starts_with("HTTP/1.1 200") && page.contains("/main.js\""), "{page}");
-    let bare = request_to(&app, format!("GET {} HTTP/1.1\r\n\r\n", location.trim_end_matches('/')).as_bytes()).1;
+    let bare = get(&app, location.trim_end_matches('/'), "");
     assert!(bare.starts_with("HTTP/1.1 308"), "{bare}");
-    assert!(request_to(&app, b"GET /w/nope/ HTTP/1.1\r\n\r\n").1.starts_with("HTTP/1.1 404"));
+    assert!(get(&app, "/w/nope/", "").starts_with("HTTP/1.1 404"));
     // A delay after the last /, for the page and the overlay.
     for (rest, status) in [
         ("5", "200"),
@@ -386,7 +388,7 @@ fn many_matches_start_from_a_connect_string() {
         ("overlay/", "404"),
         ("x", "404"),
     ] {
-        let page = request_to(&app, format!("GET {location}{rest} HTTP/1.1\r\n\r\n").as_bytes()).1;
+        let page = get(&app, &format!("{location}{rest}"), "");
         assert!(page.starts_with(&format!("HTTP/1.1 {status}")), "{rest}: {page}");
     }
     sessions_of(&app).stop_all();
@@ -414,26 +416,26 @@ fn behind_a_site_matches_start_only_from_its_tokens() {
     let mut app = app(Matches::Many(Sessions::new(false, 4, 20.0)));
     app.base = "/live".into();
     app.keys = Some(Arc::new(token::Keys::from_hex(&key).unwrap()));
-    assert!(request_to(&app, b"GET / HTTP/1.1\r\n\r\n").1.starts_with("HTTP/1.1 403"));
+    assert!(get(&app, "/", "").starts_with("HTTP/1.1 403"));
     assert!(post_watch(&app, "192.0.2.1%3A27020+tv").starts_with("HTTP/1.1 403"));
     app.home = Some("https://serveme.tf/stv".into());
-    let home = request_to(&app, b"GET / HTTP/1.1\r\n\r\n").1;
+    let home = get(&app, "/", "");
     assert!(home.starts_with("HTTP/1.1 302") && home.contains("Location: https://serveme.tf/stv\r\n"), "{home}");
     assert!(post_watch(&app, "192.0.2.1%3A27020+tv").starts_with("HTTP/1.1 403"));
     let exp = unix_now() + 60;
     let t = token::seal(&key, &format!(r#"{{"connect":"connect 192.0.2.1:27020; password \"tv\"","owner":"u1","exp":{exp}}}"#), [3; 12]);
-    let response = request_to(&app, format!("GET /start?t={t} HTTP/1.1\r\n\r\n").as_bytes()).1;
+    let response = get(&app, &format!("/start?t={t}"), "");
     let location = response.lines().find_map(|l| l.strip_prefix("Location: ")).unwrap_or_default().to_string();
     assert!(location.starts_with("/live/w/") && location.ends_with('/'), "{response}");
-    let page = request_to(&app, format!("GET {} HTTP/1.1\r\n\r\n", &location[5..]).as_bytes()).1;
+    let page = get(&app, &location[5..], "");
     assert!(page.contains(r#"<base href="/live/">"#), "{page}");
-    let overlay = request_to(&app, format!("GET /start?t={t}&view=overlay&delay=4.5&names=1&x=y&score=%0d HTTP/1.1\r\n\r\n").as_bytes()).1;
+    let overlay = get(&app, &format!("/start?t={t}&view=overlay&delay=4.5&names=1&x=y&score=%0d"), "");
     assert!(overlay.contains(&format!("Location: {location}overlay/4.5?names=1\r\n")), "{overlay}");
-    let late = request_to(&app, format!("GET /start?t={t}&delay=99 HTTP/1.1\r\n\r\n").as_bytes()).1;
+    let late = get(&app, &format!("/start?t={t}&delay=99"), "");
     assert!(late.contains(&format!("Location: {location}\r\n")), "{late}");
-    let json = request_to(&app, format!("GET /start?t={t}&format=json HTTP/1.1\r\n\r\n").as_bytes()).1;
+    let json = get(&app, &format!("/start?t={t}&format=json"), "");
     assert!(json.contains(&format!(r#"{{"page":"{location}"}}"#)) && json.contains("Access-Control-Allow-Origin: *"), "{json}");
-    assert!(request_to(&app, b"GET /start?t=bogus HTTP/1.1\r\n\r\n").1.starts_with("HTTP/1.1 400"));
+    assert!(get(&app, "/start?t=bogus", "").starts_with("HTTP/1.1 400"));
     sessions_of(&app).stop_all();
 }
 
@@ -441,11 +443,11 @@ fn behind_a_site_matches_start_only_from_its_tokens() {
 fn the_site_lists_the_matches_with_a_list_token() {
     let key = "11".repeat(32);
     let mut app = app(Matches::Many(Sessions::new(false, 4, 20.0)));
-    assert!(request_to(&app, b"GET /matches HTTP/1.1\r\n\r\n").1.starts_with("HTTP/1.1 404"), "only behind a site");
+    assert!(get(&app, "/matches", "").starts_with("HTTP/1.1 404"), "only behind a site");
     app.keys = Some(Arc::new(token::Keys::from_hex(&key).unwrap()));
     let exp = unix_now() + 60;
     let start = token::seal(&key, &format!(r#"{{"connect":"192.0.2.1:27020 tv","reservation":5,"exp":{exp}}}"#), [4; 12]);
-    assert!(request_to(&app, format!("GET /start?t={start} HTTP/1.1\r\n\r\n").as_bytes()).1.starts_with("HTTP/1.1 303"));
+    assert!(get(&app, &format!("/start?t={start}"), "").starts_with("HTTP/1.1 303"));
     let list = token::seal(&key, &format!(r#"{{"list":true,"exp":{exp}}}"#), [5; 12]);
     for refused in [String::new(), format!("Authorization: Bearer {start}\r\n"), "Authorization: Bearer bogus\r\n".into()] {
         let response = request_to(&app, format!("GET /matches HTTP/1.1\r\n{refused}\r\n").as_bytes()).1;
@@ -456,7 +458,7 @@ fn the_site_lists_the_matches_with_a_list_token() {
     let body: serde_json::Value = serde_json::from_str(response.split("\r\n\r\n").nth(1).unwrap()).unwrap();
     assert_eq!(body["matches"][0]["reservation"], 5);
     assert_eq!(body["matches"][0]["server"], "192.0.2.1:27020");
-    assert!(request_to(&app, format!("GET /start?t={list} HTTP/1.1\r\n\r\n").as_bytes()).1.starts_with("HTTP/1.1 400"));
+    assert!(get(&app, &format!("/start?t={list}"), "").starts_with("HTTP/1.1 400"));
     sessions_of(&app).stop_all();
 }
 
@@ -807,13 +809,13 @@ fn with_many_matches_only_a_map_being_watched_is_built() {
     let m = sessions.get("demo").unwrap();
     let mut app = app(Matches::Many(sessions));
     app.cache = dir.to_path_buf();
-    let refused = request_to(&app, b"GET /map/cp_watched HTTP/1.1\r\n\r\n").1;
+    let refused = get(&app, "/map/cp_watched", "");
     assert!(refused.starts_with("HTTP/1.1 404") && refused.contains("no match is on"), "{refused}");
     assert!(bsp.exists(), "not built");
     publish(&m.hub, &server("cp_elsewhere"));
-    assert!(request_to(&app, b"GET /map/cp_watched HTTP/1.1\r\n\r\n").1.contains("no match is on"));
+    assert!(get(&app, "/map/cp_watched", "").contains("no match is on"));
     publish(&m.hub, &server("cp_watched"));
-    let tried = request_to(&app, b"GET /map/cp_watched HTTP/1.1\r\n\r\n").1;
+    let tried = get(&app, "/map/cp_watched", "");
     assert!(tried.starts_with("HTTP/1.1 404") && !tried.contains("no match is on"), "{tried}");
     assert!(!bsp.exists(), "built, and dropped when it turned out broken");
 }
@@ -826,14 +828,14 @@ fn a_backpack_name_cannot_leave_its_folder() {
     std::fs::write(root.join("secret.webp"), b"secret").unwrap();
     let mut a = app(Matches::One(SharedHub::default()));
     a.backpack = backpack;
-    let response = request_to(&a, b"GET /backpack/../secret.webp HTTP/1.1\r\n\r\n").1;
+    let response = get(&a, "/backpack/../secret.webp", "");
     assert!(response.starts_with("HTTP/1.1 404") && !response.contains("secret"), "{response}");
 }
 
 #[test]
 fn a_match_no_longer_watched_says_where_to_start_it_again() {
     let mut a = app(Matches::Many(Sessions::new(false, 1, 20.0)));
-    let gone = |a: &App| request_to(a, b"GET /w/nope/ HTTP/1.1\r\n\r\n").1;
+    let gone = |a: &App| get(a, "/w/nope/", "");
     let page = gone(&a);
     assert!(page.starts_with("HTTP/1.1 404") && page.contains(HTML) && page.contains("paste its connect string"), "{page}");
     a.keys = Some(Arc::new(token::Keys::from_hex(&"00".repeat(32)).unwrap()));
