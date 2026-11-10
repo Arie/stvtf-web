@@ -36,10 +36,13 @@ pub(crate) fn replay(hub: &SharedHub, path: &Path, play: &dyn Fn() -> bool) -> R
 /// Plays the file once at its recorded speed; returns how many lines it skipped (see [`play_lines`]).
 fn play_once(hub: &SharedHub, path: &Path, play: &dyn Fn() -> bool) -> Result<usize> {
     static NEVER: AtomicBool = AtomicBool::new(false);
+    play_lines(hub, open(path)?, &path.display().to_string(), play, &NEVER)
+}
+
+/// A saved stvtf output's lines, gunzipped if it ends in `.gz`.
+pub(crate) fn open(path: &Path) -> Result<Box<dyn Read>> {
     let file = std::fs::File::open(path).with_context(|| format!("opening {}", path.display()))?;
-    let reader: Box<dyn Read> =
-        if path.extension().is_some_and(|e| e == "gz") { Box::new(flate2::read::GzDecoder::new(file)) } else { Box::new(file) };
-    play_lines(hub, reader, &path.display().to_string(), play, &NEVER)
+    Ok(if path.extension().is_some_and(|e| e == "gz") { Box::new(flate2::read::GzDecoder::new(file)) } else { Box::new(file) })
 }
 
 /// Plays saved stvtf output once at its recorded speed, until it ends or `stop`. A line that does

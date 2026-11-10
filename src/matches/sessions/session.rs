@@ -5,6 +5,7 @@ use crate::lock;
 use crate::matches::hub::{SharedHub, Summary, subscribe};
 use crate::matches::live_demos::LiveDemos;
 use crate::matches::recording::Recording;
+use crate::matches::replay;
 use crate::relays::pool::DemoOf;
 use anyhow::{Result, bail};
 use serde::Serialize;
@@ -178,14 +179,7 @@ impl Session {
         }
         let name = self.label();
         let read = match &*source {
-            Some(Source::File(path)) => {
-                let file = std::fs::File::open(path)?;
-                if path.extension().is_some_and(|e| e == "gz") {
-                    Recording::read(flate2::read::GzDecoder::new(file), &name)?
-                } else {
-                    Recording::read(file, &name)?
-                }
-            }
+            Some(Source::File(path)) => Recording::read(replay::open(path)?, &name)?,
             Some(Source::Output(gz)) => Recording::read(flate2::read::GzDecoder::new(gz.as_slice()), &name)?,
             None if self.demo.is_some() => bail!("the demo is still being fetched"),
             None => bail!("a live match has no recording"),
