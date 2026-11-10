@@ -6,7 +6,7 @@ use crate::testing::watch;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::sync::atomic::AtomicBool;
-use std::sync::mpsc::{Receiver, SyncSender, TrySendError, sync_channel};
+use std::sync::mpsc::{Receiver, SyncSender, sync_channel};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use stvtf::Line;
@@ -346,9 +346,7 @@ pub(crate) fn publish(hub: &SharedHub, line: &Line) {
     }
     // A browser that cannot keep up is dropped; it reconnects and resyncs from the latest state.
     let detail = route == Route::Detail;
-    h.clients.retain(|c| {
-        (detail && !c.detail) || !matches!(c.tx.try_send(json.clone()), Err(TrySendError::Full(_) | TrySendError::Disconnected(_)))
-    });
+    h.clients.retain(|c| (detail && !c.detail) || c.tx.try_send(json.clone()).is_ok());
 }
 
 /// Watches a `SourceTV` server into `hub` until `stop`, recording it as `demos` if given; a watch
@@ -420,9 +418,7 @@ pub(crate) fn send_keeping(hub: &SharedHub, json: &Arc<str>, kind: &'static str,
 
 /// A room's line of type `kind`, to every page now and (the latest of each kind) on join.
 pub(crate) fn announce(hub: &SharedHub, kind: &'static str, json: &Arc<str>) {
-    let mut h = lock(hub);
-    h.room.insert(kind, json.clone());
-    h.clients.retain(|c| c.tx.try_send(json.clone()).is_ok());
+    send_keeping(hub, json, kind, json.clone());
 }
 
 #[cfg(test)]
