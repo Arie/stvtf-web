@@ -81,13 +81,13 @@ const SEED_UP: f32 = 40.0;
 const SEED_TRIES: [isize; 4] = [0, 1, -1, 2];
 /// Floors are sampled this far apart, and kept with reached space this high above.
 const FLOOR_SAMPLE_STEP: f64 = 48.0;
+const ABOVE_FLOOR: (f64, f64) = (8.0, 168.0);
 /// The most samples along x or y of a floor: a bigger floor's are further apart. Real floors
 /// have at most about 25.
 const MAX_SAMPLES_ALONG: f64 = 64.0;
 /// Samples times outline points the floors of a map may use together (real maps use about
 /// 500 000): a crafted map's floors after that are kept.
 const MAX_FLOOR_WORK: usize = 1 << 26;
-const ABOVE_FLOOR: (f64, f64) = (8.0, 168.0);
 /// How close to a floor's outline a sample may be outside it.
 const OUTLINE_SLACK: f64 = 1.0;
 /// How many cells the mask grows by around the reached space, so floors at its edge stay whole.
