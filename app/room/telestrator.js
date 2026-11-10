@@ -1,16 +1,12 @@
-// A room's telestrator: admins' strokes in map coordinates. Pen fades after a few seconds;
-// marker stays until cleared.
+// A room's telestrator: admins' marker strokes in map coordinates, there until cleared.
 import { INK, TEAM, ctx, uiScale } from "../core/core.js";
 import { toScreen } from "../map/view.js";
 import { arcsFromMarker, clearArcs, drawArcs } from "./arcs.js";
 import { circlesFromMarker, clearCircles, drawCircles } from "./circles.js";
 import { clearNotes, drawNotes, notesFromMarker } from "./notes.js";
 /** @typedef {import("../../types/stream").DrawLine} DrawLine */
-/** @typedef {{ stroke: number; points: [number, number, number][]; by?: number; keep?: boolean }} Piece */
+/** @typedef {{ stroke: number; points: [number, number, number][]; by?: number }} Piece */
 
-// A stroke shows this long after its last point, then fades out over FADE_MS.
-const HOLD_MS = 3000,
-  FADE_MS = 1000;
 // A colour per admin, by their number in the room: the owner's (1) first.
 export const INKS = ["#ffd23f", "#4fd1c5", "#f472b6", "#a3e635", "#fb923c", "#c084fc"];
 // The colours admins picked, by their number.
@@ -55,7 +51,7 @@ export function onInk(ink) {
 const BEHIND_MS = 40;
 
 // A stroke's points ([x, y, ms into the stroke]), and when its start shows here.
-/** @type {Map<number, { points: [number, number, number][]; start: number; ink: string; keep: boolean }>} */
+/** @type {Map<number, { points: [number, number, number][]; start: number; ink: string }>} */
 const strokes = new Map();
 // Strokes drawn on this page: shown as drawn, and their echo from the room skipped.
 /** @type {Set<number>} */
@@ -79,7 +75,6 @@ function addPoints(m, behind) {
     points: [],
     start: performance.now() + behind - first,
     ink: inkOf(m.by ?? 1),
-    keep: m.keep === true,
   };
   s.points.push(...m.points);
   strokes.set(m.stroke, s);
@@ -97,17 +92,17 @@ export function onMarker(m) {
   circlesFromMarker(m.strokes);
   notesFromMarker(m.strokes);
   const kept = new Set(m.strokes.map(k => k.stroke));
-  for (const [id, s] of strokes) if (s.keep && !kept.has(id) && !mine.has(id)) strokes.delete(id);
+  for (const id of strokes.keys()) if (!kept.has(id) && !mine.has(id)) strokes.delete(id);
   for (const k of m.strokes)
     if (!mine.has(k.stroke) && !k.arc && !k.circle && !k.note)
-      strokes.set(k.stroke, { points: k.points, start: -Infinity, ink: k.ink ?? inkOf(k.by), keep: true });
+      strokes.set(k.stroke, { points: k.points, start: -Infinity, ink: k.ink ?? inkOf(k.by) });
 }
 
 export const markerFull = () => keptPoints() >= keptMax;
 
 function keptPoints() {
   let n = 0;
-  for (const s of strokes.values()) if (s.keep) n += s.points.length;
+  for (const s of strokes.values()) n += s.points.length;
   return n;
 }
 
@@ -140,17 +135,10 @@ export function drawStrokes(now = performance.now()) {
   const w = STROKE_PX * uiScale();
   ctx.save();
   ctx.lineCap = ctx.lineJoin = "round";
-  for (const [id, s] of strokes) {
-    // Drawn up to now; it fades from when its last point showed.
+  for (const s of strokes.values()) {
+    // Drawn up to now.
     const shown = s.points.filter(p => s.start + p[2] <= now);
     if (!shown.length) continue;
-    const age = now - (s.start + shown[shown.length - 1][2]);
-    if (!s.keep && age > HOLD_MS + FADE_MS && shown.length === s.points.length) {
-      strokes.delete(id);
-      mine.delete(id);
-      continue;
-    }
-    ctx.globalAlpha = s.keep ? 1 : Math.max(0, Math.min(1, 1 - (age - HOLD_MS) / FADE_MS));
     ctx.beginPath();
     for (const [i, [x, y]] of shown.entries()) {
       const [sx, sy] = toScreen(x, y);

@@ -87,8 +87,7 @@ function roomBar() {
   // A room's link, to send.
   // The room's link, to send, by its name.
   copyLink("Copy the room's link, to send", () => new URL(location.pathname, location.origin));
-  const pen = /** @type {HTMLButtonElement} */ ($("rb-pen")),
-    marker = /** @type {HTMLButtonElement} */ ($("rb-marker")),
+  const marker = /** @type {HTMLButtonElement} */ ($("rb-marker")),
     arc = /** @type {HTMLButtonElement} */ ($("rb-arc")),
     circle = /** @type {HTMLButtonElement} */ ($("rb-circle")),
     text = /** @type {HTMLButtonElement} */ ($("rb-text")),
@@ -101,8 +100,8 @@ function roomBar() {
     me.admin = on;
     bar.allow(on);
     // A tool in hand is let go, while its button still takes the click.
-    for (const t of [pen, marker, arc, circle, text]) if (!on && t.classList.contains("on")) t.click();
-    for (const c of [pen, marker, arc, circle, text, clear, $("rb-view")])
+    for (const t of [marker, arc, circle, text]) if (!on && t.classList.contains("on")) t.click();
+    for (const c of [marker, arc, circle, text, clear, $("rb-view")])
       /** @type {HTMLButtonElement} */ (c).disabled = !on;
     $("roombar").title = on ? "" : "The room's admins control playback";
     if (on) $("claim").hidden = true;
@@ -122,16 +121,16 @@ function roomBar() {
     );
   const showPeople = people(allow, showLead);
   inTf2();
-  drawing(pen, marker);
-  arcTool(arc, [pen, marker, circle, text]);
-  circleTool(circle, [pen, marker, arc, text]);
-  noteTool(text, [pen, marker, arc, circle]);
+  drawing(marker);
+  arcTool(arc, [marker, circle, text]);
+  circleTool(circle, [marker, arc, text]);
+  noteTool(text, [marker, arc, circle]);
   noteKey(() => me.admin);
   clear.onclick = () => post("clear", {});
-  // d takes the pen, m the marker, a a jump arc, t a circle (n a note, see notes.js); c clears the
+  // d (or m) takes the marker, a a jump arc, t a circle (n a note, see notes.js); c clears the
   // drawings; r, b and y pick the ink.
   /** @type {Record<string, HTMLButtonElement>} */
-  const tools = { d: pen, m: marker, a: arc, t: circle, c: clear };
+  const tools = { d: marker, m: marker, a: arc, t: circle, c: clear };
   env.keys.addEventListener("keydown", e => {
     const target = /** @type {Element} */ (e.composedPath()[0]);
     const tool = tools[e.key];
@@ -215,19 +214,12 @@ function watchBar() {
   setInterval(shared, SHARED_MS);
 }
 
-// Pen and marker: while one is on, dragging draws instead of panning. Pen fades; marker stays.
-/** @param {HTMLButtonElement} pen @param {HTMLButtonElement} marker */
-function drawing(pen, marker) {
-  /** @type {{ id: number; last: [number, number] | null; began: number; keep: boolean } | null} */
+// The marker: while it is on, dragging draws instead of panning; what it draws stays until cleared.
+/** @param {HTMLButtonElement} marker */
+function drawing(marker) {
+  /** @type {{ id: number; last: [number, number] | null; began: number } | null} */
   let stroke = null;
-  for (const [tool, other] of [
-    [pen, marker],
-    [marker, pen],
-  ])
-    tool.onclick = () => {
-      other.classList.remove("on");
-      env.el.classList.toggle("drawing", tool.classList.toggle("on"));
-    };
+  marker.onclick = () => env.el.classList.toggle("drawing", marker.classList.toggle("on"));
   // Points the room took of each stroke, and strokes it refused (the map full, or more than TF2 shows).
   /** @type {Map<number, number>} */
   const taken = new Map();
@@ -252,28 +244,26 @@ function drawing(pen, marker) {
     stroke.last = [x, y];
     /** @type {[number, number, number]} */
     const point = [...worldAt(e), Math.round(performance.now() - stroke.began)];
-    const keep = stroke.keep || undefined;
-    drawOwn({ stroke: stroke.id, points: [point], by: me.id, keep });
-    send({ stroke: stroke.id, points: [point], keep });
+    drawOwn({ stroke: stroke.id, points: [point], by: me.id });
+    send({ stroke: stroke.id, points: [point] });
   };
   canvas.addEventListener(
     "pointerdown",
     e => {
-      const keep = marker.classList.contains("on");
-      if (!(keep || pen.classList.contains("on")) || e.button !== 0) return;
+      if (!marker.classList.contains("on") || e.button !== 0) return;
       // Before the view's own handlers: no panning, following or mouse events while drawing.
       e.preventDefault();
       e.stopImmediatePropagation();
-      if (keep && markerFull()) return note("The map is full of marker: clear it first.");
+      if (markerFull()) return note("The map is full of marker: clear it first.");
       canvas.setPointerCapture(e.pointerId);
-      stroke = { id: Math.floor(Math.random() * 2 ** 31), last: null, began: performance.now(), keep };
+      stroke = { id: Math.floor(Math.random() * 2 ** 31), last: null, began: performance.now() };
       add(e);
     },
     { capture: true },
   );
   canvas.addEventListener("pointermove", add);
   const end = () => {
-    if (stroke) send({ stroke: stroke.id, points: [], keep: stroke.keep || undefined, end: true });
+    if (stroke) send({ stroke: stroke.id, points: [], end: true });
     stroke = null;
   };
   for (const type of ["pointerup", "pointercancel"]) canvas.addEventListener(type, end);

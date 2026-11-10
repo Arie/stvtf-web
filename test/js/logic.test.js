@@ -327,8 +327,8 @@ test("a page that comes back has the marker as the room has it", () => {
     [0, 0, 0],
     [1, 1, 8],
   ];
-  onDraw({ type: "draw", stroke: 10, by: 2, points: [pts[0]], keep: true });
-  onDraw({ type: "draw", stroke: 11, by: 2, points: pts, keep: true });
+  onDraw({ type: "draw", stroke: 10, by: 2, points: [pts[0]] });
+  onDraw({ type: "draw", stroke: 11, by: 2, points: pts });
   onMarker({ type: "marker", strokes: [{ stroke: 10, by: 2, points: pts }] });
   assert.equal(pointsOf(10), 2, "the whole stroke");
   assert.equal(pointsOf(11), 0, "cleared meanwhile");
@@ -342,7 +342,6 @@ test("a marker stroke the full map refused is trimmed to what the room took", ()
   drawOwn({
     stroke: 2,
     by: 1,
-    keep: true,
     points: [
       [0, 0, 0],
       [1, 1, 8],
@@ -407,7 +406,7 @@ test("notes come with the marker and a note line, are no strokes, and go with a 
   assert.equal(noteCount(), 0);
 });
 
-test("picking the pen with the arc tool armed leaves the map in drawing mode", () => {
+test("picking the marker with the arc tool armed leaves the map in drawing mode", () => {
   // A room bar button: its own onclick, then whatever else listens, as a browser runs them.
   const button = () => {
     /** @type {(() => void)[]} */
@@ -426,14 +425,14 @@ test("picking the pen with the arc tool armed leaves the map in drawing mode", (
     return b;
   };
   const arc = button(),
-    pen = button();
-  pen.onclick = () => env.el.classList.toggle("drawing", pen.classList.toggle("on"));
-  arcTool(/** @type {any} */ (arc), [/** @type {any} */ (pen)]);
+    marker = button();
+  marker.onclick = () => env.el.classList.toggle("drawing", marker.classList.toggle("on"));
+  arcTool(/** @type {any} */ (arc), [/** @type {any} */ (marker)]);
   arc.click();
   assert.ok(env.el.classList.contains("drawing"), "armed");
-  pen.click();
-  assert.ok(pen.classList.contains("on") && !arc.classList.contains("on"));
-  assert.ok(env.el.classList.contains("drawing"), "still drawing, with the pen");
+  marker.click();
+  assert.ok(marker.classList.contains("on") && !arc.classList.contains("on"));
+  assert.ok(env.el.classList.contains("drawing"), "still drawing, with the marker");
 });
 
 test("the arc tool stays armed after an arc, for the next one", () => {

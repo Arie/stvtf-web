@@ -137,11 +137,6 @@ impl LocalRelay {
         self.bound().relay().clients()
     }
 
-    /// Shows `beams` to the TF2 clients in.
-    pub(crate) fn draw(&self, beams: &[Beam]) {
-        self.playback.draw(beams);
-    }
-
     /// Beams the TF2 clients in keep seeing, in place of those before.
     pub(crate) fn keep(&self, beams: Vec<Beam>) {
         self.playback.keep(beams);
@@ -215,14 +210,6 @@ impl RoomRelay {
         match self {
             RoomRelay::Local(r) => r.follow(want),
             RoomRelay::Remote(r) => r.follow(&want),
-        }
-    }
-
-    /// Shows `beams` to the TF2 clients in.
-    pub(crate) fn draw(&self, beams: &[Beam]) {
-        match self {
-            RoomRelay::Local(r) => r.draw(beams),
-            RoomRelay::Remote(r) => r.draw(beams),
         }
     }
 

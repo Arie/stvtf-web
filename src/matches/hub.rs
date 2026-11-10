@@ -414,11 +414,6 @@ pub(crate) fn restore(hub: &SharedHub, mut from: Hub) {
     h.clients.retain(|c| lines.iter().all(|l| c.tx.try_send(l.clone()).is_ok()));
 }
 
-/// A line to every page now, not kept.
-pub(crate) fn send(hub: &SharedHub, json: &Arc<str>) {
-    lock(hub).clients.retain(|c| c.tx.try_send(json.clone()).is_ok());
-}
-
 /// A line to every page now; joiners get `kept` as the room's `kind` line instead.
 pub(crate) fn send_keeping(hub: &SharedHub, json: &Arc<str>, kind: &'static str, kept: Arc<str>) {
     let mut h = lock(hub);

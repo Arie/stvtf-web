@@ -1,10 +1,10 @@
-//! A room's strokes in TF2: laid on the map's floors (see `maps::drape`) and shown by its relay
-//! as beams: the pen's once, for as long as pages show it; the marker's kept by the relay (which
-//! shows them again before they fade), handed it whole whenever the marker changes. A beam cannot
-//! be taken back, so a cleared marker goes within the relay's refresh.
+//! A room's marker in TF2: laid on the map's floors (see `maps::drape`) and shown by its relay
+//! as beams, which it keeps (showing them again before they fade), handed it whole whenever the
+//! marker changes. A beam cannot be taken back, so a cleared marker goes within the relay's
+//! refresh.
 
 use super::Room;
-use super::drawing::{Draw, Kept};
+use super::drawing::Kept;
 use crate::lock;
 use crate::maps::drape::{self, Drape, Ground, Piece};
 use anyhow::{Result, bail};
@@ -15,8 +15,6 @@ use stvtf::relay::Beam;
 /// The pages' inks for those who picked none (`app/room/telestrator.js`).
 const INKS: [[u8; 3]; 6] =
     [[0xff, 0xd2, 0x3f], [0x4f, 0xd1, 0xc5], [0xf4, 0x72, 0xb6], [0xa3, 0xe6, 0x35], [0xfb, 0x92, 0x3c], [0xc0, 0x84, 0xfc]];
-/// How long the pen's lines show: as long as pages hold and fade a stroke.
-const PEN_LIFE: f32 = 4.0;
 /// How wide the lines are, in units.
 const WIDTH: f32 = 5.0;
 /// Each line is a fence: the line on the floor, another this much above it, and posts between them
@@ -28,75 +26,15 @@ const SCROLL: u8 = 20;
 /// The arrowhead at a finished stroke's end: its wings' length and angle off the line.
 pub(super) const HEAD: f64 = 96.0;
 pub(super) const HEAD_ANGLE: f64 = 30.0;
-/// The most strokes followed at once: more, and the oldest are forgotten.
-const MAX_DRAPES: usize = 64;
-/// The most beams of the marker, and of one pen stroke, shown in TF2: what the relay keeps up
-/// with, and what a client takes; past that a stroke shows on the pages only.
+/// The most beams of the marker shown in TF2: what the relay keeps up with, and what a client
+/// takes.
 const MAX_MARKER_BEAMS: usize = 1200;
-const MAX_PEN_BEAMS: usize = 1000;
 
 /// The marker's beams' life: the relay shows kept beams again as they run out, for as long as it
 /// sets.
 const KEPT_LIFE: f32 = 0.0;
 
-/// A pen stroke being laid on the floors: by whom, which, and where its lines end now.
-pub(super) struct PenStroke {
-    key: (u32, u32),
-    drape: Drape,
-    ends: Vec<Piece>,
-    /// Beams shown so far.
-    shown: usize,
-}
-
-impl PenStroke {
-    fn new(key: (u32, u32)) -> Self {
-        PenStroke { key, drape: Drape::new(), ends: Vec::new(), shown: 0 }
-    }
-
-    /// The beams for the stroke's next piece `d`, in `ink`; refused once the stroke is more than
-    /// TF2 shows, its end aside.
-    fn push(&mut self, ground: &Ground, d: &Draw, ink: [u8; 3]) -> Result<Vec<Beam>> {
-        let pieces = self.drape.push(ground, &d.points);
-        if let Some(&[x, y, _]) = d.points.last() {
-            self.ends = ends(&pieces, [x, y]);
-        }
-        let mut out = beams(&pieces, ink, PEN_LIFE);
-        if d.end {
-            out.extend(heads(&self.ends, ink, PEN_LIFE));
-        } else if self.shown + out.len() > MAX_PEN_BEAMS {
-            bail!("TF2 cannot show a longer stroke: lift the pen.");
-        }
-        self.shown += out.len();
-        Ok(out)
-    }
-}
-
 impl Room {
-    /// Shows a piece of a pen stroke by person `by` to the TF2 clients in its relay; refused once
-    /// the stroke is more than TF2 shows (its end aside), so pages stop it there too.
-    pub(super) fn draw_in_relay(&self, d: &Draw, by: u32) -> Result<()> {
-        let Some(ground) = self.ground_for_relay() else { return Ok(()) };
-        let ink = self.ink_now(by);
-        let key = (by, d.stroke);
-        let beams = {
-            let mut drapes = lock(&self.drapes);
-            let i = drapes.iter().position(|s| s.key == key).unwrap_or_else(|| {
-                if drapes.len() >= MAX_DRAPES {
-                    drapes.remove(0);
-                }
-                drapes.push(PenStroke::new(key));
-                drapes.len() - 1
-            });
-            drapes[i].push(&ground, d, ink)?
-        };
-        if !beams.is_empty()
-            && let Some(r) = &*lock(&self.relay)
-        {
-            r.draw(&beams);
-        }
-        Ok(())
-    }
-
     /// `marker` as TF2 shows it, while TF2 clients are in to see it; refused when it is more than
     /// TF2 shows.
     pub(super) fn marker_in_tf2(&self, marker: &[Kept]) -> Result<Option<Vec<Beam>>> {
@@ -166,11 +104,6 @@ impl Room {
         if self.marker_dirty.load(Ordering::Relaxed) {
             self.keep_marker();
         }
-    }
-
-    /// The strokes followed so far are done with: the map was wiped.
-    pub(super) fn forget_drapes(&self) {
-        lock(&self.drapes).clear();
     }
 
     /// The map's floors, when TF2 clients are in the relay to show strokes to.
@@ -324,23 +257,6 @@ mod tests {
             head.iter().filter(|b| b.to == [100.0, 0.0, 8.0]).map(|b| b.from.map(|v| (v * 10.0).round() / 10.0)).collect();
         assert_eq!(tips, [[16.9, 48.0, 8.0], [16.9, -48.0, 8.0]], "back along the line, 30° off it");
         assert!(beams(&pieces[..1], [1, 2, 3], 4.0).iter().filter(|b| b.speed > 0).all(|b| b.to[0] > b.from[0]), "running its way");
-    }
-
-    #[test]
-    fn a_pen_stroke_longer_than_tf2_shows_is_refused_but_its_end_is_not() {
-        let ground = Ground::from_json(br#"{"floors":[{"z":0,"p":[0,-200,100000,-200,100000,200,0,200]}]}"#).unwrap();
-        let mut s = PenStroke::new((1, 1));
-        // A zigzag: a corner, and so a post, at every point.
-        let zigzag = |from: usize| (from..from + 64).map(|i| [i as f64 * 32.0, if i % 2 == 0 { -64.0 } else { 64.0 }, 0.0]).collect();
-        let piece = |from, end| Draw { stroke: 1, points: zigzag(from), keep: false, end };
-        let mut from = 0;
-        while s.push(&ground, &piece(from, false), [1, 2, 3]).is_ok() {
-            from += 64;
-            assert!(from < 64 * 100, "never refused");
-        }
-        assert!(s.shown <= MAX_PEN_BEAMS, "{} shown", s.shown);
-        let end = s.push(&ground, &Draw { stroke: 1, points: Vec::new(), keep: false, end: true }, [1, 2, 3]).unwrap();
-        assert!(!end.is_empty(), "the arrowhead");
     }
 
     #[test]

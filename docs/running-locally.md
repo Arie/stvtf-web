@@ -37,7 +37,7 @@ Open `http://192.168.1.10:8080/` and paste a SourceTV connect string, such as
 its own link, `/w/<id>/`, to send to others.
 
 - **Watch together** on a match page opens a room, with you as its admin: pause, jump around the
-  timeline, draw on the map (`d` for the pen, `m` for the permanent marker), and click a player
+  timeline, draw on the map (`d`), and click a player
   to have everyone follow them.
 - **In TF2**: a room shows a `connect …` line and an *Open in TF2* link. TF2 clients there see
   what the room shows, paused and jumping with it; with `spec_autodirector 1` their camera

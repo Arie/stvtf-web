@@ -234,7 +234,7 @@ test("the owner draws on the map and everyone in the room sees it", async () => 
   await page.goto(base);
   await page.click("#roomopen");
   await page.waitForURL(/\/r\/[0-9a-f]{32}\/$/, { timeout: WAIT });
-  await until(page, () => !(/** @type {HTMLButtonElement} */ (document.getElementById("rb-pen")).disabled));
+  await until(page, () => !(/** @type {HTMLButtonElement} */ (document.getElementById("rb-marker")).disabled));
   // No slow motion in a room (TF2 shows it as a stutter): 1×, then 2×.
   await until(page, () => document.getElementById("rb-speed")?.title === "Speed 1×: 2× next");
   const viewer = await open();
@@ -248,7 +248,11 @@ test("the owner draws on the map and everyone in the room sees it", async () => 
     assert.equal(await viewer.page.$eval(id, el => getComputedStyle(el).userSelect), "text", `${id} copies`);
   assert.equal(await viewer.page.$eval("#app", el => el.classList.contains("seekable")), false);
   await page.keyboard.press("d");
-  assert.equal(await page.$eval("#c", el => getComputedStyle(el).cursor), "crosshair", "the pen shows as a crosshair");
+  assert.equal(
+    await page.$eval("#c", el => getComputedStyle(el).cursor),
+    "crosshair",
+    "the marker shows as a crosshair",
+  );
   await page.mouse.move(300, 300);
   await page.mouse.down();
   for (let i = 1; i <= 20; i++) await page.mouse.move(300 + i * 10, 300 + i * 5);
@@ -273,9 +277,8 @@ test("the marker stays, for those who come later too, until an admin clears it",
   await page.mouse.down();
   for (let i = 1; i <= 20; i++) await page.mouse.move(300 + i * 10, 300 + i * 5);
   await page.mouse.up();
-  // Past when a pen's stroke has faded.
-  await page.waitForTimeout(4500);
-  assert.ok((await ink(page)) > clean + 100, "the marker stays");
+  await page.waitForTimeout(500);
+  assert.ok((await ink(page)) > clean + 100, "the marker shows");
   const later = await open();
   await later.page.goto(page.url());
   await until(later.page, m => document.getElementById("map").textContent === m, MAP);
@@ -317,19 +320,19 @@ test("people in a room see each other and admins make others admin", async () =>
       el => getComputedStyle(el).backgroundColor === "rgb(0, 255, 0)",
     ),
   );
-  // The pen, on, shows the ink.
-  const penShows = (/** @type {string} */ colour) =>
+  // The marker, on, shows the ink.
+  const markerShows = (/** @type {string} */ colour) =>
     until(
       page,
-      c => getComputedStyle(/** @type {Element} */ (document.getElementById("rb-pen"))).backgroundColor === c,
+      c => getComputedStyle(/** @type {Element} */ (document.getElementById("rb-marker"))).backgroundColor === c,
       colour,
     );
   await page.keyboard.press("d");
-  await penShows("rgb(0, 255, 0)");
+  await markerShows("rgb(0, 255, 0)");
   await page.keyboard.press("r");
-  await penShows("rgb(208, 69, 63)");
+  await markerShows("rgb(208, 69, 63)");
   await page.keyboard.press("y");
-  await penShows("rgb(0, 255, 0)");
+  await markerShows("rgb(0, 255, 0)");
   assert.deepEqual([...errors, ...viewer.errors], []);
   await viewer.page.close();
   await page.close();
@@ -538,7 +541,7 @@ test("a viewer of a match page goes back on their own", async () => {
     page,
     () => !document.getElementById("roombar").hidden && document.getElementById("rb-clock").textContent,
   );
-  assert.equal(await page.$eval("#rb-pen", el => getComputedStyle(el).display), "none", "no room controls");
+  assert.equal(await page.$eval("#rb-marker", el => getComputedStyle(el).display), "none", "no room controls");
   const box = await page.$eval("#rb-track", e => {
     const r = e.getBoundingClientRect();
     return [r.x, r.y, r.width];

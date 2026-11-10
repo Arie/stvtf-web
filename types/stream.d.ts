@@ -183,8 +183,6 @@ export type DrawLine = {
   stroke: number;
   points: [number, number, number][];
   by?: number;
-  /** Permanent marker: stays until cleared. */
-  keep?: boolean;
 };
 
 /** The permanent marker on a room's map, as a page joins. */

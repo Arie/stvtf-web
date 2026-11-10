@@ -10,9 +10,8 @@
 //!   every port is taken.
 //! - `{"op": "follow", "room", "want"}`: where the room is now.
 //! - `{"op": "status", "room"}`: TF2 clients in, whether it stopped, and its page line.
-//! - `{"op": "draw", "room", "beams"}`: lines to show the TF2 clients in, each
-//!   `[x1, y1, z1, x2, y2, z2, r, g, b, seconds, width, speed]`.
-//! - `{"op": "keep", "room", "beams"}`: lines they keep seeing, in place of those before.
+//! - `{"op": "keep", "room", "beams"}`: lines the TF2 clients in keep seeing, in place of those
+//!   before, each `[x1, y1, z1, x2, y2, z2, r, g, b, seconds, width, speed]`.
 //! - `{"op": "notes", "room", "notes"}`: text bubbles they keep seeing, in place of those before,
 //!   each a [`stvtf::relay::Note`].
 //! - `{"op": "stop", "room"}`: the room ended.
@@ -48,8 +47,6 @@ const ANSWER: Duration = Duration::from_millis(500);
 const STATUS_EVERY: Duration = Duration::from_millis(500);
 /// How long a relay process that did not answer is left alone.
 const AWAY: Duration = Duration::from_secs(2);
-/// The most beams waiting to go to the relay process: more are dropped.
-const MAX_BEAMS_WAITING: usize = 4096;
 
 /// A [`Want`] on the wire.
 #[derive(Serialize, Deserialize)]
@@ -107,10 +104,6 @@ enum Request {
     },
     Status {
         room: String,
-    },
-    Draw {
-        room: String,
-        beams: Vec<BeamLine>,
     },
     Keep {
         room: String,
@@ -228,10 +221,6 @@ fn handle(r: Request, rooms: &Rooms, relays: &Arc<Relays>) -> Value {
             l.seen = Instant::now();
             json!({ "clients": l.relay.clients(), "stopped": l.relay.stopped(), "line": l.relay.line() })
         }),
-        Request::Draw { room, beams } => in_room(rooms, &room, |l| {
-            l.relay.draw(&beams.iter().map(beam).collect::<Vec<_>>());
-            json!({})
-        }),
         Request::Keep { room, beams } => in_room(rooms, &room, |l| {
             l.relay.keep(beams.iter().map(beam).collect());
             json!({})
@@ -320,7 +309,6 @@ impl Remote {
                 stopped: false,
                 line,
                 want: None,
-                beams: Vec::new(),
                 kept: None,
                 notes: None,
                 notes_given: Vec::new(),
@@ -349,7 +337,6 @@ struct Inner {
     line: Value,
     /// Not sent yet.
     want: Option<Want>,
-    beams: Vec<Beam>,
     /// The kept beams to hand over, the latest only.
     kept: Option<Vec<Beam>>,
     /// The notes to hand over, the latest only.
@@ -371,16 +358,16 @@ impl Shared {
     fn tend(&self) {
         let mut asked = Instant::now();
         loop {
-            let (want, beams, kept, notes, done) = {
+            let (want, kept, notes, done) = {
                 let mut i = lock(&self.inner);
-                while i.want.is_none() && i.beams.is_empty() && i.kept.is_none() && i.notes.is_none() && i.done.is_none() {
+                while i.want.is_none() && i.kept.is_none() && i.notes.is_none() && i.done.is_none() {
                     let left = STATUS_EVERY.saturating_sub(asked.elapsed());
                     if left.is_zero() {
                         break;
                     }
                     i = self.wake.wait_timeout(i, left).unwrap_or_else(PoisonError::into_inner).0;
                 }
-                (i.want.take(), std::mem::take(&mut i.beams), i.kept.take(), i.notes.take(), i.done)
+                (i.want.take(), i.kept.take(), i.notes.take(), i.done)
             };
             match done {
                 Some(Done::End) => {
@@ -402,10 +389,6 @@ impl Shared {
             }
             if let Some(notes) = notes {
                 let _ = self.remote.call(&json!({ "op": "notes", "room": self.room, "notes": notes }));
-            }
-            if !beams.is_empty() {
-                let beams: Vec<BeamLine> = beams.iter().map(beam_line).collect();
-                let _ = self.remote.call(&json!({ "op": "draw", "room": self.room, "beams": beams }));
             }
             if asked.elapsed() >= STATUS_EVERY {
                 asked = Instant::now();
@@ -446,16 +429,6 @@ impl RemoteRelay {
     /// Where the room is now; only the latest is sent.
     pub(crate) fn follow(&self, want: &Want) {
         lock(&self.0.inner).want = Some(want.clone());
-        self.0.wake.notify_all();
-    }
-
-    /// Shows `beams` to the TF2 clients in; those not sent yet go with them.
-    pub(crate) fn draw(&self, beams: &[Beam]) {
-        let mut i = lock(&self.0.inner);
-        if i.beams.len() + beams.len() <= MAX_BEAMS_WAITING {
-            i.beams.extend_from_slice(beams);
-        }
-        drop(i);
         self.0.wake.notify_all();
     }
 

@@ -92,7 +92,6 @@
   width: 34px;
   font-size: 12px;
 }
-#roombar #rb-pen.on,
 #roombar #rb-marker.on,
 #roombar #rb-arc.on,
 #roombar #rb-circle.on,
@@ -325,7 +324,6 @@
   bottom: 70px;
 }
 /* A match page's own timeline: playback only, no room controls. */
-.stvtf.watch #rb-pen,
 .stvtf.watch #rb-marker,
 .stvtf.watch #rb-arc,
 .stvtf.watch #rb-circle,

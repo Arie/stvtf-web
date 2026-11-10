@@ -495,7 +495,7 @@ mod tests {
         let m = sessions.get("demo").unwrap();
         let r = rooms.open(&m, m.recording().unwrap(), "me", None).unwrap();
         r.control(&crate::rooms::room::Control { paused: Some(true), ..Default::default() }).unwrap();
-        r.draw(&crate::rooms::room::Draw { stroke: 1, points: vec![[5.0, 5.0, 0.0]; 100], keep: true, end: false }, "me").unwrap();
+        r.draw(&crate::rooms::room::Draw { stroke: 1, points: vec![[5.0, 5.0, 0.0]; 100], end: false }, "me").unwrap();
         rooms.persist();
         let file_of = |name: String| dir.join("store").join(name);
         let inode = |name: String| std::fs::metadata(file_of(name)).unwrap().ino();
@@ -509,7 +509,7 @@ mod tests {
         let touched = std::fs::metadata(file_of(file(&r.id))).unwrap().modified().unwrap();
         assert!(touched > old + Duration::from_secs(60));
         // More marker: its file only.
-        r.draw(&crate::rooms::room::Draw { stroke: 2, points: vec![[6.0, 6.0, 0.0]], keep: true, end: false }, "me").unwrap();
+        r.draw(&crate::rooms::room::Draw { stroke: 2, points: vec![[6.0, 6.0, 0.0]], end: false }, "me").unwrap();
         rooms.persist();
         assert_eq!(inode(file(&r.id)), room);
         assert_ne!(inode(marker_file(&r.id)), marker);

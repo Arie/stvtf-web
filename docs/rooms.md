@@ -6,13 +6,14 @@ pressed again, it returns to your room on that match. The match's own page never
 
 - The opener owns it and is its first admin. Admins make others admin; the owner stays one.
 - Admins pause (space), set speed (the speed button steps 1×, 2×, 4×) and seek (← → by 5 s); everyone sees the same.
-- The pen (✎ or `d`) draws on the map for everyone, the room's overlay too, for a few seconds.
+- The marker (✒︎, `d` or `m`) draws on the map for everyone, the room's overlay too, until
+  cleared (⌫ or `c`); in TF2 a fence along the floors, with an arrowhead at its end.
   Each admin picks a colour by the swatch after their name; `r` draws in red, `b` in blu, `y` in
   their own again (kept in the browser). A tool that is on shows in that colour.
 - A jump arc (↷ or `a`): two clicks, where the jump starts and where it lands, draw a rocket or
   sticky jump between the floors under them, straight up then over and down, shaded dark to
   bright by its height; in TF2 too, there in the drawer's colour throughout. The tool stays on for the next arc, until Esc, its button or
-  another tool. An arc stays, with the marker (✒︎ or `m`), until cleared (⌫ or `c`).
+  another tool. An arc stays, with the marker, until cleared.
 - A circle (◯ or `t`): each click puts a small ring on the floor there, "stand here"; in TF2 a
   ring fence. It stays on for the next, and the circles stay with the marker until cleared.
 - A note (T, or `n`): a short text (40 characters) where you click with T on, or where the pointer is with `n`. Over a player (their card in
