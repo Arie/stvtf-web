@@ -1,7 +1,7 @@
 //! A match's page, timeline and private playbacks, and starting one from a site's link.
 
 use super::client::counted;
-use super::events::{stream, too_many_streams, wants_detail};
+use super::events::{stream, too_many_streams, wants_detail, wants_voice};
 use super::rooms::{open_room, opened};
 use super::token::Source;
 use super::visitor::{Who, who};
@@ -55,7 +55,7 @@ pub(super) fn serve_match(
         (Some(m), "events") => match app.stream_slot(client) {
             Some(_slot) => {
                 let _viewer = Viewer::new(m.clone());
-                stream(s, &m.hub, request.gzip, wants_detail(&request.query))?;
+                stream(s, &m.hub, request.gzip, wants_detail(&request.query), wants_voice(&request.query))?;
             }
             None => too_many_streams(&mut s)?,
         },

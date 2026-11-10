@@ -39,6 +39,10 @@ newest data. A map change clears everything from the old map.
 `round_selected`, `teleported`, `building_removed`, `building_detonated`, `det_stickies`,
 `npc_damage`, `upgrade`). They are not kept in history.
 
+`?voice=1` (rooms' `/r/<id>/events` too) adds the players' voice: `voice` lines, each the speaker
+(`player`, `steamid`), its `rate` and its Opus `frames` in base64 (see stvtf's README). A page asks
+for them once its viewer turns voice on. They are not kept in history.
+
 ## Camera
 
 Keeps every living player in view, tightly: quick when one leaves the view, gentle for a fresh

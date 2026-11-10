@@ -143,6 +143,8 @@ struct Client {
     tx: SyncSender<Arc<str>>,
     /// Whether the page asked for detail lines.
     detail: bool,
+    /// Whether it asked for the players' voice.
+    voice: bool,
 }
 
 /// A player's name and team, as last seen in a snapshot.
@@ -167,6 +169,8 @@ enum Route {
     Feed,
     /// Only for pages that ask (`?detail=1`); never kept.
     Detail,
+    /// The players' voice: only for pages that ask (`?voice=1`), never kept.
+    Voice,
     /// Passed on and not kept.
     Live,
 }
@@ -251,6 +255,7 @@ fn route(line: &Line) -> Route {
         | Line::SentryShot(_)
         | Line::Airblast(_)
         | Line::Reflect(_) => Route::Live,
+        Line::Voice(_) => Route::Voice,
     }
 }
 
@@ -345,8 +350,8 @@ pub(crate) fn publish(hub: &SharedHub, line: &Line) {
         _ => {}
     }
     // A browser that cannot keep up is dropped; it reconnects and resyncs from the latest state.
-    let detail = route == Route::Detail;
-    h.clients.retain(|c| (detail && !c.detail) || c.tx.try_send(json.clone()).is_ok());
+    let (detail, voice) = (route == Route::Detail, route == Route::Voice);
+    h.clients.retain(|c| (detail && !c.detail) || (voice && !c.voice) || c.tx.try_send(json.clone()).is_ok());
 }
 
 /// Watches a `SourceTV` server into `hub` until `stop`, recording it as `demos` if given; a watch
@@ -370,12 +375,17 @@ pub(crate) fn watch_into(
 }
 
 pub(crate) fn subscribe(hub: &SharedHub, detail: bool) -> Receiver<Arc<str>> {
+    subscribe_to(hub, detail, false)
+}
+
+/// A page's lines, with the detail lines and the players' voice if it asks for them.
+pub(crate) fn subscribe_to(hub: &SharedHub, detail: bool, voice: bool) -> Receiver<Arc<str>> {
     let (tx, rx) = sync_channel(PAGE_QUEUE);
     let mut h = lock(hub);
     for line in join_lines(&h) {
         let _ = tx.try_send(line);
     }
-    h.clients.push(Client { tx, detail });
+    h.clients.push(Client { tx, detail, voice });
     rx
 }
 
@@ -591,6 +601,19 @@ pub(crate) mod tests {
         assert_eq!(types(&detail), ["heal", "kill"]);
         assert_eq!(hub.lock().unwrap().history.len(), 1);
         assert_eq!(types(&subscribe(&hub, true)), ["kill"], "detail is not replayed");
+    }
+
+    #[test]
+    fn voice_reaches_only_pages_that_asked_and_is_not_kept() {
+        let hub = SharedHub::default();
+        let (plain, detail, voice) = (subscribe(&hub, false), subscribe(&hub, true), subscribe_to(&hub, false, true));
+        let said = output::Voice { tick: 1, player: None, steamid: "[U:1:2]".into(), rate: 24000, frames: vec!["aA==".into()] };
+        publish(&hub, &Line::Voice(said));
+        publish(&hub, &kill(2, 3, 4));
+        assert_eq!(types(&plain), ["kill"]);
+        assert_eq!(types(&detail), ["kill"], "detail is not voice");
+        assert_eq!(types(&voice), ["voice", "kill"]);
+        assert_eq!(types(&subscribe_to(&hub, false, true)), ["kill"], "voice is not replayed");
     }
 
     #[test]

@@ -21,7 +21,7 @@ mod visitor;
 pub(crate) use assets::app_version;
 use assets::serve_file;
 use client::{client_of, counted};
-use events::{stream, too_many_streams, wants_detail};
+use events::{stream, too_many_streams, wants_detail, wants_voice};
 use matches::{is_page, list_matches, serve_match, start, start_view};
 use rooms::serve_room;
 use visitor::{origin, return_to, set_cookie, url_encode};
@@ -198,7 +198,7 @@ fn serve_one(mut s: TcpStream, app: &App, hub: &SharedHub, request: &Request, cl
     match request.path.as_str() {
         p if p == "/index.html" || p.strip_prefix('/').is_some_and(is_page) => respond(&mut s, "200 OK", HTML, &app.page(INDEX))?,
         "/events" => match app.stream_slot(client) {
-            Some(_slot) => stream(s, hub, request.gzip, wants_detail(&request.query))?,
+            Some(_slot) => stream(s, hub, request.gzip, wants_detail(&request.query), wants_voice(&request.query))?,
             None => too_many_streams(&mut s)?,
         },
         path => serve_file(&mut s, app, path, request.gzip)?,

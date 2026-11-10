@@ -1,7 +1,7 @@
 //! A room's page, event stream and controls, and opening one.
 
 use super::client::counted;
-use super::events::{stream, too_many_streams, wants_detail};
+use super::events::{stream, too_many_streams, wants_detail, wants_voice};
 use super::matches::is_page;
 use super::visitor::{Who, origin, who};
 use super::{
@@ -116,7 +116,7 @@ pub(super) fn serve_room(
                 let listed = param(&request.query, "overlay") != Some("1");
                 let site = who.user.as_ref().map(|u| u.name.as_str());
                 let _watching = room.join(&who.key, name.as_deref(), site, listed);
-                stream(s, &room.hub, request.gzip, wants_detail(&request.query))?;
+                stream(s, &room.hub, request.gzip, wants_detail(&request.query), wants_voice(&request.query))?;
             }
             None => too_many_streams(&mut s)?,
         },

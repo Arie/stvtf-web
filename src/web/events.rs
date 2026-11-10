@@ -1,7 +1,7 @@
 //! A page's event stream: a hub's lines as Server-Sent Events.
 
 use super::{TEXT, param, respond, write_head};
-use crate::matches::hub::{SharedHub, subscribe};
+use crate::matches::hub::{SharedHub, subscribe_to};
 use anyhow::Result;
 use flate2::Compression;
 use flate2::write::GzEncoder;
@@ -27,10 +27,14 @@ pub(super) fn wants_detail(query: &str) -> bool {
     param(query, "detail") == Some("1")
 }
 
+pub(super) fn wants_voice(query: &str) -> bool {
+    param(query, "voice") == Some("1")
+}
+
 /// A match's events to one browser, until it goes away.
 /// Snapshots are about 17 a second of very similar JSON: gzip, flushed after each batch so nothing
 /// waits, brings a viewer from about 95 KB/s down to a few.
-pub(super) fn stream(mut s: TcpStream, hub: &SharedHub, gzip: bool, detail: bool) -> Result<()> {
+pub(super) fn stream(mut s: TcpStream, hub: &SharedHub, gzip: bool, detail: bool, voice: bool) -> Result<()> {
     let mut headers = vec![("Content-Type", "text/event-stream"), ("Cache-Control", "no-cache"), ("X-Accel-Buffering", "no")];
     if gzip {
         headers.push(("Content-Encoding", "gzip"));
@@ -38,7 +42,7 @@ pub(super) fn stream(mut s: TcpStream, hub: &SharedHub, gzip: bool, detail: bool
     write_head(&mut s, "200 OK", &headers)?;
     let mut out: Box<dyn Write> = if gzip { Box::new(GzEncoder::new(s, Compression::new(STREAM_GZIP))) } else { Box::new(s) };
     write!(out, "retry: {}\n\n", RECONNECT_AFTER.as_millis())?;
-    let rx = subscribe(hub, detail);
+    let rx = subscribe_to(hub, detail, voice);
     loop {
         match rx.recv_timeout(KEEPALIVE) {
             // Whatever else is already queued goes out in the same flush.
