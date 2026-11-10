@@ -8,7 +8,7 @@ use super::{
     HTML, INDEX, JSON, Request, TEXT, done, form_decode, json_body, not_found, param, refuse, respond, respond_marks, respond_with,
 };
 use crate::App;
-use crate::matches::sessions::{Session, Sessions};
+use crate::matches::sessions::{Session, Sessions, logged};
 use crate::rooms::room::{ArcDraw, Control, Draw, Room, ViewPost};
 use anyhow::Result;
 use std::io::{BufReader, Take};
@@ -61,7 +61,7 @@ pub(super) fn open_room(
         Ok(r) => r,
         Err(e) => return Ok(refuse(s, "409 Conflict", &e)?),
     };
-    eprintln!("stvtf-web: room {} opened on match {}", &room.id[..8], &m.id[..m.id.len().min(8)]);
+    eprintln!("stvtf-web: room {} opened on match {}", logged(&room.id), logged(&m.id));
     opened(s, app, &room.id, cookie.as_deref())
 }
 

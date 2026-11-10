@@ -3,9 +3,9 @@
 
 use crate::lock;
 use crate::matches::recording::Recording;
+use crate::matches::sessions::logged;
 use crate::matches::sessions::{Session, Sessions, Store, Viewer, demo_dem};
 use crate::relays::pool::{DemoOf, Offer, Pool};
-use crate::rooms::logged;
 use crate::rooms::room::{Room, Saved};
 use anyhow::{Result, bail};
 use serde::{Deserialize, Serialize};

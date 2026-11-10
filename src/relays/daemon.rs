@@ -23,6 +23,7 @@
 //! alone for [`AWAY`].
 
 use crate::lock;
+use crate::matches::sessions::logged;
 use crate::relays::pool::{LocalRelay, Relays, Was};
 use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
@@ -159,7 +160,7 @@ pub(crate) fn serve(socket: &Path, relays: &Arc<Relays>, lease: Duration) -> Res
             lock(&reaped).retain(|room, l| {
                 let keep = l.seen.elapsed() < lease && !l.relay.stopped();
                 if !keep {
-                    eprintln!("stvtf-web: relay of room {} stopped", &room[..8.min(room.len())]);
+                    eprintln!("stvtf-web: relay of room {} stopped", logged(room));
                 }
                 keep
             });

@@ -4,6 +4,7 @@ use super::play::State;
 use super::{Room, Saved};
 use crate::lock;
 use crate::matches::hub::announce;
+use crate::matches::sessions::logged;
 use crate::relays::pool::{Offer, RoomRelay};
 use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
@@ -79,7 +80,7 @@ impl Room {
                 let why = format!("{e:#}");
                 let mut failed = lock(&self.relay_failed);
                 if failed.as_ref().is_none_or(|(_, before)| *before != why) {
-                    eprintln!("stvtf-web: room {}: {why}", crate::rooms::logged(&self.id));
+                    eprintln!("stvtf-web: room {}: {why}", logged(&self.id));
                 }
                 *failed = Some((Instant::now(), why));
             }

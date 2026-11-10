@@ -7,6 +7,14 @@ use std::fmt::Write as _;
 /// A match id: this many random bytes, as hex in links and file names.
 pub(super) const ID_BYTES: usize = 16;
 
+/// How much of a match's or room's id the log shows.
+const LOGGED_ID: usize = 8;
+
+/// Id `id` as the log names it.
+pub(crate) fn logged(id: &str) -> &str {
+    id.get(..LOGGED_ID).unwrap_or(id)
+}
+
 /// Demo `demo`'s match id, the same each time it is opened: its page's link lasts.
 pub(crate) fn demo_id(demo: u64) -> String {
     format!("d{demo}")
