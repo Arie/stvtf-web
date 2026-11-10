@@ -48,7 +48,8 @@ for them once its viewer turns voice on. They are not kept in history.
 When the match carries the players' voice (the server relays it to SourceTV), 🔇 by the map's
 Overview/Geometry switch turns it on (kept in the browser; a browser plays sound only after a
 click). It opens the speakers list: voice off, mute all, ⇄ swap (hear the other team, mute this
-one), and RED and BLU each with a team mute and who on it was heard, each with a mute and a volume.
+one), RED and BLU each with a team mute and everyone on it now, heard or not, and the rest heard;
+each with a mute and a volume.
 A team's mute covers its players to come too, for this page; one's own mutes are kept in the
 browser by SteamID, across matches. Everyone heard has a 🔊 on their HUD card (🔇 muted), faint
 while silent and lit while they talk; a talking or muted player's dot has the same badge. A click

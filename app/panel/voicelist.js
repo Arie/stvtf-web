@@ -1,6 +1,7 @@
 // The speakers list's content (see panel/speakers.js): voice off, mute all and swap the teams
-// heard; then everyone heard, by team (RED, BLU, the rest), each team with its mute, each speaker
-// with theirs and a volume. Who talks is lit, and so is their team's name.
+// heard; then RED and BLU with everyone on them now, heard or not, and the rest heard; each team
+// with its mute, each person with theirs and a volume. Who talks is lit, and so is their team's
+// name.
 import { state } from "../core/core.js";
 import * as voice from "../core/voice.js";
 
@@ -34,28 +35,44 @@ function row(s) {
   return el;
 }
 
+/** @typedef {{ steamid: string; player: number | null }} Person */
+
+// Who is listed, by team: RED's and BLU's players now (bots aside), then the rest heard.
+/** @returns {{ team: string; name: string; people: Person[] }[]} */
+function groups() {
+  /** @type {Map<string, Person[]>} */
+  const by = new Map(TEAMS.map(t => [t.team, []]));
+  for (const p of state.players.values())
+    if ((p.team === "red" || p.team === "blue") && p.steamid && p.steamid !== "BOT")
+      by.get(p.team)?.push({ steamid: p.steamid, player: p.id });
+  for (const s of voice.speakersHeard()) {
+    const team = voice.teamOf(s.steamid);
+    if (team !== "red" && team !== "blue") by.get("")?.push(s);
+  }
+  return TEAMS.map(t => ({ ...t, people: by.get(t.team) ?? [] }));
+}
+
+// What the list shows, to know when to build it anew.
+/** @param {ReturnType<typeof groups>} gs */
+const shape = gs => gs.map(g => `${g.team}:${g.people.map(p => p.steamid).join(",")}`).join("|");
+
 /** @param {HTMLElement} list */
 export function renderList(list) {
   // Not under a slider being dragged: it would come loose. Once let go, the list catches up.
   if (list.querySelector("input[type=range]:active")) return void (list.dataset.stale = "1");
   delete list.dataset.stale;
-  const heard = voice.speakersHeard();
+  const gs = groups();
+  list.dataset.shape = shape(gs);
   const head = document.createElement("div");
   head.className = "vhead";
   head.append(button("Voice off", { act: "off" }));
-  const anyHeard =
-    heard.some(s => !voice.isMuted(s.steamid)) || !voice.isTeamMuted("red") || !voice.isTeamMuted("blue");
-  head.append(button(anyHeard ? "Mute all" : "Unmute all", { act: "all" }));
+  head.append(button(voice.allMuted() ? "Unmute all" : "Mute all", { act: "all" }));
   head.append(button("⇄ Swap", { act: "swap" }, "Hear the other team, mute this one"));
   /** @type {HTMLElement[]} */
   const parts = [head];
-  for (const { team, name } of TEAMS) {
-    const of = heard.filter(
-      s =>
-        (voice.teamOf(s.steamid) ?? "") === team || (!team && !["red", "blue"].includes(voice.teamOf(s.steamid) ?? "")),
-    );
+  for (const { team, name, people } of gs) {
     // The teams always, to mute one before anyone on it talks; the rest once heard.
-    if (!of.length && !team) continue;
+    if (!people.length && !team) continue;
     const group = document.createElement("div");
     group.className = `vteam t-${team || "none"}`;
     group.dataset.team = team;
@@ -64,17 +81,17 @@ export function renderList(list) {
       const muted = voice.isTeamMuted(team);
       group.append(button(muted ? "Unmute team" : "Mute team", { team }));
     }
-    parts.push(group, ...of.map(row));
+    parts.push(group, ...people.map(row));
   }
   list.replaceChildren(...parts);
   markTalking(list);
 }
 
-// Lights who talks, and their team's name; anew when someone new was heard.
+// Lights who talks, and their team's name; the list anew when who is in it changed.
 /** @param {HTMLElement} list */
 export function markTalking(list) {
   const heard = voice.speakersHeard();
-  if (list.dataset.stale || list.querySelectorAll(".vrow").length !== heard.length) renderList(list);
+  if (list.dataset.stale || list.dataset.shape !== shape(groups())) renderList(list);
   /** @type {Set<string>} */
   const teams = new Set();
   for (const s of heard) {
@@ -98,7 +115,7 @@ export function chooseIn(at) {
     voice.setVoice(false);
     return true;
   }
-  if (act === "all") voice.muteEveryone(voice.speakersHeard().some(s => !voice.isMuted(s.steamid)));
+  if (act === "all") voice.muteEveryone(!voice.allMuted());
   else if (act === "swap") voice.swapTeams();
   else if (team) voice.setTeamMuted(team, !voice.isTeamMuted(team));
   else if (mute) voice.toggleMuted(mute);
