@@ -156,9 +156,8 @@ fn read(info: &[u8], verts: &[u8], disp: usize, face: &super::Face, base: [Vec3;
 mod tests {
     use super::*;
     use crate::maps::bsp::contains_point as contains;
-    use crate::maps::bsp::format::{LUMP_LENGTH, lump_entry};
     use crate::maps::bsp::geometry;
-    use crate::maps::bsp::tests::{swiftwater, swiftwater_built};
+    use crate::maps::bsp::tests::{replace_lump, swiftwater, swiftwater_built};
     use std::collections::HashMap;
 
     /// The share of boundary grid points that other displacements share (same x, y to the unit)
@@ -254,16 +253,12 @@ mod tests {
     #[test]
     fn absurd_displacement_power_is_skipped_not_a_panic() {
         let Some(mut data) = swiftwater() else { return };
-        // Every dispinfo gets power 30; the rewritten lump goes, unpacked, at the end.
+        // Every dispinfo gets power 30.
         let mut info = lump(&data, LUMP_DISPINFO).unwrap();
         for rec in info.as_chunks_mut::<DISPINFO_SIZE>().0 {
             rec[DISPINFO_POWER..DISPINFO_POWER + 4].copy_from_slice(&30i32.to_le_bytes());
         }
-        let h = lump_entry(LUMP_DISPINFO);
-        let (ofs, len) = (data.len() as i32, info.len() as i32);
-        data.extend_from_slice(&info);
-        data[h..h + 4].copy_from_slice(&ofs.to_le_bytes());
-        data[h + LUMP_LENGTH..h + LUMP_LENGTH + 4].copy_from_slice(&len.to_le_bytes());
+        replace_lump(&mut data, LUMP_DISPINFO, &info);
         assert!(displacements(&data, &World::read(&data).unwrap()).unwrap().is_empty());
         assert!(geometry(&data).is_ok());
     }

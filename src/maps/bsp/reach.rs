@@ -683,8 +683,7 @@ fn within(pts: &[[f64; 2]], q: [f64; 2]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::maps::bsp::format::{LUMP_LENGTH, lump_entry};
-    use crate::maps::bsp::tests::{map, process, process_built, swiftwater_built};
+    use crate::maps::bsp::tests::{map, process, process_built, replace_lump, swiftwater_built};
     use crate::maps::bsp::{Bounds, contains_point as contains, geometry};
 
     #[test]
@@ -745,11 +744,7 @@ mod tests {
         for side in sides.as_chunks_mut::<BRUSHSIDE_SIZE>().0 {
             side[BRUSHSIDE_PLANE..BRUSHSIDE_PLANE + 2].fill(0);
         }
-        let h = lump_entry(LUMP_BRUSHSIDES);
-        let (ofs, len) = (data.len() as i32, sides.len() as i32);
-        data.extend_from_slice(&sides);
-        data[h..h + 4].copy_from_slice(&ofs.to_le_bytes());
-        data[h + LUMP_LENGTH..h + LUMP_LENGTH + 4].copy_from_slice(&len.to_le_bytes());
+        replace_lump(&mut data, LUMP_BRUSHSIDES, &sides);
         let t = std::time::Instant::now();
         let g = geometry(&data).unwrap();
         eprintln!("{:.2?}, {} floors", t.elapsed(), g.floors.len());

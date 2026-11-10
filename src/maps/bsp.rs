@@ -618,6 +618,15 @@ pub(crate) mod tests {
         b[o..o + 4].copy_from_slice(&v.to_le_bytes());
     }
 
+    /// Points lump `index` at `contents`, appended unpacked to `data`.
+    pub(super) fn replace_lump(data: &mut Vec<u8>, index: usize, contents: &[u8]) {
+        let h = lump_entry(index);
+        let (ofs, len) = (data.len() as i32, contents.len() as i32);
+        data.extend_from_slice(contents);
+        set_i32(data, h + LUMP_OFFSET, ofs);
+        set_i32(data, h + LUMP_LENGTH, len);
+    }
+
     // Broken maps must be an error, not a panic: a panic while serving `/map/NAME` used to
     // poison the lock around map loading and break every later map request.
     #[test]
@@ -666,17 +675,13 @@ pub(crate) mod tests {
     #[test]
     fn faces_sharing_edges_are_an_error() {
         let Some(mut data) = process() else { return };
-        // Every face claims the same 65535 edges; the rewritten lump goes, unpacked, at the end.
+        // Every face claims the same 65535 edges.
         let mut faces = lump(&data, LUMP_FACES).unwrap();
         for face in faces.as_chunks_mut::<FACE_SIZE>().0 {
             face[FACE_FIRST_EDGE..FACE_NUM_EDGES].fill(0);
             face[FACE_NUM_EDGES..FACE_TEXINFO].copy_from_slice(&u16::MAX.to_le_bytes());
         }
-        let h = lump_entry(LUMP_FACES);
-        let (ofs, len) = (data.len() as i32, faces.len() as i32);
-        data.extend_from_slice(&faces);
-        set_i32(&mut data, h, ofs);
-        set_i32(&mut data, h + LUMP_LENGTH, len);
+        replace_lump(&mut data, LUMP_FACES, &faces);
         assert!(geometry(&data).unwrap_err().to_string().contains("more edges"));
     }
 
