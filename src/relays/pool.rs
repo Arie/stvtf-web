@@ -158,12 +158,13 @@ impl LocalRelay {
 
     /// What pages show: the console line to connect, and why it cannot play, if it cannot.
     pub(crate) fn line(&self) -> serde_json::Value {
+        let Bound { pool, port, .. } = self.bound();
         serde_json::json!({
             "type": "relay",
-            "connect": format!("{}:{}", self.bound().pool.host, self.bound().port),
-            "port": self.bound().port,
+            "connect": format!("{}:{port}", pool.host),
+            "port": port,
             // For the steam:// link, which takes an address and no name.
-            "address": self.bound().pool.ip.as_ref().map(|ip| format!("{ip}:{}", self.bound().port)),
+            "address": pool.ip.as_ref().map(|ip| format!("{ip}:{port}")),
             "password": self.password,
             "problem": self.playback.problem(),
         })
