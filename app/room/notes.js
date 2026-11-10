@@ -72,7 +72,8 @@ function tag(n, x, y, s) {
   label(n.text, x, y, size, { colour: "#fff", weight: "700" });
 }
 
-// The pointer, for `n`: where it is and over what.
+// The pointer, for `n`: where it is and over what (as it last moved: `n` looks again, the events
+// and chat scroll under it).
 /** @type {{ x: number; y: number; target: Element | null }} */
 const pointer = { x: 0, y: 0, target: null };
 
@@ -91,6 +92,7 @@ export function noteKey(allowed) {
     const target = /** @type {Element} */ (e.composedPath()[0]);
     if (e.key !== "n" || !allowed() || e.ctrlKey || e.metaKey || e.altKey) return;
     if (target.closest?.("input, select, textarea")) return;
+    if (pointer.target) pointer.target = env.root.elementFromPoint(pointer.x, pointer.y);
     if (!pointer.target?.closest?.("canvas") && playerAt(pointer.x, pointer.y, pointer.target) == null) return;
     e.preventDefault();
     noteHere();
