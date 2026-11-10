@@ -72,6 +72,10 @@ test("chat does not trust what a server sends", () => {
     safe(chatRow(ev));
 });
 
+test("a chat line names its sender by id, for a note on them", () => {
+  assert.ok(chatRow({ type: "chat", player: 3, text: "hi" }).includes('class="who" data-id="3"'));
+});
+
 test("a chat colour is only ever a colour", () => {
   assert.ok(
     chatRow({ type: "chat", player: 3, parts: [{ c: "FF0000", t: "red" }] }).includes(

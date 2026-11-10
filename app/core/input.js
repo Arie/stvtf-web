@@ -147,6 +147,12 @@ export function setFollow(id) {
 }
 /** @param {number} cx @param {number} cy */
 function followAt(cx, cy) {
+  const id = dotAt(cx, cy);
+  if (id != null) setFollow(id);
+}
+// The living player whose dot is under the pointer at cx, cy, if one is.
+/** @param {number} cx @param {number} cy @returns {number | null} */
+function dotAt(cx, cy) {
   const r = canvas.getBoundingClientRect();
   /** @type {Player | null} */
   let best = null,
@@ -160,7 +166,15 @@ function followAt(cx, cy) {
       bestD = d;
     }
   }
-  if (best) setFollow(best.id);
+  return best?.id ?? null;
+}
+// The player under the pointer at cx, cy over `target`: a HUD card, a name in the events or
+// chat, or a dot on the map.
+/** @param {number} cx @param {number} cy @param {Element | null} target @returns {number | null} */
+export function playerAt(cx, cy, target) {
+  const named = /** @type {HTMLElement | null} */ (target?.closest?.(".card[data-id], .who[data-id]") ?? null);
+  if (named) return Number(named.dataset.id);
+  return target === canvas ? dotAt(cx, cy) : null;
 }
 for (const id of ["hud-blue", "hud-red"]) {
   $(id).addEventListener("click", e => {

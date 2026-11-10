@@ -43,6 +43,9 @@ pub(crate) struct Kept {
     /// A circle's centre, on the floor (its `points` are then the click).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(super) circle: Option<[f64; 3]>,
+    /// A note's text and player (its `points` are then its spot, on the floor).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(super) note: Option<super::note::Label>,
 }
 
 /// Most permanent marker points on a room's map.
@@ -81,7 +84,16 @@ impl Room {
                 k.points.extend(&d.points);
                 k.open = !d.end;
             } else if !d.points.is_empty() {
-                marker.push(Kept { stroke: d.stroke, by, points: d.points.clone(), ink, open: !d.end, arc: None, circle: None });
+                marker.push(Kept {
+                    stroke: d.stroke,
+                    by,
+                    points: d.points.clone(),
+                    ink,
+                    open: !d.end,
+                    arc: None,
+                    circle: None,
+                    note: None,
+                });
             }
             line
         })

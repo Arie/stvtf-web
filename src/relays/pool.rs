@@ -12,7 +12,7 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
-use stvtf::relay::{Beam, Playback, Relay, RelayConfig, Want};
+use stvtf::relay::{Beam, Note, Playback, Relay, RelayConfig, Want};
 
 /// TF2 clients a room takes at once.
 const SLOTS: usize = 24;
@@ -147,6 +147,11 @@ impl LocalRelay {
         self.playback.keep(beams);
     }
 
+    /// Notes the TF2 clients in keep seeing, in place of those before.
+    pub(crate) fn keep_notes(&self, notes: Vec<Note>) {
+        self.playback.keep_notes(notes);
+    }
+
     /// Whether it stopped on its own (it could not even start), so the room should start another.
     pub(crate) fn stopped(&self) -> bool {
         self.thread.is_finished()
@@ -226,6 +231,14 @@ impl RoomRelay {
         match self {
             RoomRelay::Local(r) => r.keep(beams),
             RoomRelay::Remote(r) => r.keep(beams),
+        }
+    }
+
+    /// Notes the TF2 clients in keep seeing, in place of those before.
+    pub(crate) fn keep_notes(&self, notes: Vec<Note>) {
+        match self {
+            RoomRelay::Local(r) => r.keep_notes(notes),
+            RoomRelay::Remote(r) => r.keep_notes(notes),
         }
     }
 

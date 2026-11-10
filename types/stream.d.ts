@@ -197,6 +197,7 @@ export type MarkerLine = {
     ink?: string;
     arc?: [number, number, number][];
     circle?: [number, number, number];
+    note?: { text: string; player?: number };
   }[];
   /** Points the map holds, all strokes together. */
   max?: number;
@@ -207,6 +208,17 @@ export type ArcLine = { type: "arc"; by: number; stroke: number; ink: string; po
 
 /** A circle an admin put down: its centre on the floor, in the drawer's ink. */
 export type CircleLine = { type: "circle"; by: number; stroke: number; ink: string; at: [number, number, number] };
+
+/** A note an admin put down: at a spot on the floor, or on a player (user id), in the drawer's ink. */
+export type NoteLine = {
+  type: "note";
+  by: number;
+  stroke: number;
+  ink: string;
+  text: string;
+  at: [number, number, number] | null;
+  player: number | null;
+};
 
 /** An admin wiped the room's map. */
 export type ClearLine = { type: "clear"; by: number };
@@ -251,6 +263,7 @@ export type StreamMessage =
   | MarkerLine
   | ArcLine
   | CircleLine
+  | NoteLine
   | ClearLine
   | PeopleLine
   | ViewLine

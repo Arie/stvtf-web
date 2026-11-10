@@ -30,6 +30,7 @@ import {
 import { arcCount, arcShade, onArc, pendingAt } from "../../app/room/arcs.js";
 import { arcTool } from "../../app/room/tools.js";
 import { circleCount, onCircle } from "../../app/room/circles.js";
+import { noteCount, onNote } from "../../app/room/notes.js";
 import { env } from "../../app/core/env.js";
 import { demostfAlias, sameLayout, screenOffset, teamsTurn, toScreen } from "../../app/map/view.js";
 
@@ -390,6 +391,20 @@ test("circles come with the marker and a circle line, are no strokes, and go wit
   assert.equal(circleCount(), 2);
   onClear();
   assert.equal(circleCount(), 0);
+});
+
+test("notes come with the marker and a note line, are no strokes, and go with a clear", () => {
+  onClear();
+  onMarker({
+    type: "marker",
+    strokes: [{ stroke: 2 ** 29, by: 1, points: [[5, 5, 0]], ink: "#ff0000", note: { text: "lobby" } }],
+  });
+  assert.equal(noteCount(), 1);
+  assert.equal(pointsOf(2 ** 29), 0, "not drawn as a stroke");
+  onNote({ type: "note", by: 1, stroke: 2 ** 29 + 1, ink: "#00ff00", text: "watch", at: null, player: 3 });
+  assert.equal(noteCount(), 2);
+  onClear();
+  assert.equal(noteCount(), 0);
 });
 
 test("picking the pen with the arc tool armed leaves the map in drawing mode", () => {

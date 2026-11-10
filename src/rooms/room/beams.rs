@@ -117,6 +117,9 @@ impl Room {
                 all.extend(super::arc::arc_beams(arc, ink, KEPT_LIFE));
                 continue;
             }
+            if k.note.is_some() {
+                continue;
+            }
             if let Some(center) = k.circle {
                 all.extend(super::circle::circle_beams(center, ink, KEPT_LIFE));
                 continue;
@@ -147,10 +150,13 @@ impl Room {
     /// once it can.
     pub(super) fn hand_marker(&self, beams: Option<Vec<Beam>>) {
         self.marker_dirty.store(true, Ordering::Relaxed);
+        // Before the relay's lock: the marker's is taken first elsewhere.
+        let notes = super::note::tf2_notes(&lock(&self.marker));
         if let Some(beams) = beams
             && let Some(r) = &*lock(&self.relay)
         {
             r.keep(beams);
+            r.keep_notes(notes);
             self.marker_dirty.store(false, Ordering::Relaxed);
         }
     }

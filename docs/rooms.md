@@ -15,6 +15,10 @@ pressed again, it returns to your room on that match. The match's own page never
   another tool. An arc stays, with the marker (✒︎ or `m`), until cleared (⌫ or `c`).
 - A circle (◯ or `t`): each click puts a small ring on the floor there, "stand here"; in TF2 a
   ring fence. It stays on for the next, and the circles stay with the marker until cleared.
+- A note (`n`): a short text (40 characters) where the pointer is. Over a player (their card in
+  the HUD, their name in the events or chat, their dot) it goes on them and follows them; else
+  it goes on the floor there. Type it, Enter places it, Esc lets it go. In TF2 it is the game's
+  text bubble, shown again after every full update. Notes stay with the marker until cleared.
 - People are listed by the name they give (kept in the browser) or Guest N, known by the
   `stvtf_guest` cookie (pages only see numbers), or by Steam id when [signed in](site.md#sign-in).
 
@@ -84,6 +88,7 @@ seeking and at speed with it.
 | `POST /r/<id>/control` | admin: `{"paused", "speed", "seek"}` (any; `seek` in ms) |
 | `POST /r/<id>/arc` | admin: `{"from": [x, y], "to": [x, y]}`, a jump arc between the floors under them, `from` the launch; 400 with why when there is no floor there, they are too close or the map is not built |
 | `POST /r/<id>/circle` | admin: `{"at": [x, y]}`, a circle on the floor under it; 400 with why when there is no floor there or the map is not built |
+| `POST /r/<id>/note` | admin: `{"text", "at": [x, y]}` (on the floor there) or `{"text", "player": <id>}` (following them); 400 with why when it is empty or too long, there is no floor there or the map is not built |
 | `POST /r/<id>/draw` | admin: `{"stroke": <id>, "points": [[x, y, ms], …]}`, up to 256, ms into the stroke; later points continue it; pages draw at that pace, 40 ms behind |
 
 ## Stream lines
@@ -93,9 +98,10 @@ The room's event stream adds:
 | line | |
 |---|---|
 | `relay` | `connect`, `port`, `password` while it has one; `problem`: why it cannot play |
-| `marker` | the permanent marker: `strokes` (`stroke`, `by`, `points`, `ink`; a jump arc's `arc`, its points `[x, y, z]` from launch to landing; a circle's `circle`, its centre `[x, y, z]`), `max` (8000 points); on join, empty too |
+| `marker` | the permanent marker: `strokes` (`stroke`, `by`, `points`, `ink`; a jump arc's `arc`, its points `[x, y, z]` from launch to landing; a circle's `circle`, its centre `[x, y, z]`; a note's `note`, its `text` and `player`, its spot the point), `max` (8000 points); on join, empty too |
 | `arc` | a jump arc drawn: `stroke`, `by`, `ink`, `points` (`[x, y, z]`, launch to landing) |
 | `circle` | a circle put down: `stroke`, `by`, `ink`, `at` (`[x, y, z]`, its centre on the floor) |
+| `note` | a note put down: `stroke`, `by`, `ink`, `text`, and `at` (`[x, y, z]`, on the floor) or `player` |
 | `clear` | |
 | `view` | as posted, with `by` |
 | `people` | `id`, `name`, `admin`, `owner`, `signed`, and `ink`, `steamid` when set |

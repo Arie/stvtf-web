@@ -8,6 +8,7 @@ import { setAutoZoom, setFollow } from "../core/input.js";
 import { EVENTS_URL, openStream, playbackListeners, streamParams, viewListeners } from "../core/stream.js";
 import { drawOwn, markerFull, trimOwn } from "./telestrator.js";
 import { NOTE_MS, arcTool, circleTool, note, worldAt } from "./tools.js";
+import { noteKey } from "./notes.js";
 import { pushMirror } from "../map/camera.js";
 import { HOME, IN_ROOM, me, names, post } from "./home.js";
 import { copyLink, copyText } from "./copy.js";
@@ -121,8 +122,10 @@ function roomBar() {
   drawing(pen, marker);
   arcTool(arc, [pen, marker, circle]);
   circleTool(circle, [pen, marker, arc]);
+  noteKey(() => me.admin);
   clear.onclick = () => post("clear", {});
-  // d takes the pen, m the marker, a a jump arc, t a circle; c clears the drawings; r, b and y pick the ink.
+  // d takes the pen, m the marker, a a jump arc, t a circle (n a note, see notes.js); c clears the
+  // drawings; r, b and y pick the ink.
   /** @type {Record<string, HTMLButtonElement>} */
   const tools = { d: pen, m: marker, a: arc, t: circle, c: clear };
   env.keys.addEventListener("keydown", e => {

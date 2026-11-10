@@ -4,6 +4,7 @@ import { INK, TEAM, ctx, uiScale } from "../core/core.js";
 import { toScreen } from "../map/view.js";
 import { arcsFromMarker, clearArcs, drawArcs } from "./arcs.js";
 import { circlesFromMarker, clearCircles, drawCircles } from "./circles.js";
+import { clearNotes, drawNotes, notesFromMarker } from "./notes.js";
 /** @typedef {import("../../types/stream").DrawLine} DrawLine */
 /** @typedef {{ stroke: number; points: [number, number, number][]; by?: number; keep?: boolean }} Piece */
 
@@ -94,10 +95,11 @@ export function onMarker(m) {
   keptMax = m.max ?? Infinity;
   arcsFromMarker(m.strokes);
   circlesFromMarker(m.strokes);
+  notesFromMarker(m.strokes);
   const kept = new Set(m.strokes.map(k => k.stroke));
   for (const [id, s] of strokes) if (s.keep && !kept.has(id) && !mine.has(id)) strokes.delete(id);
   for (const k of m.strokes)
-    if (!mine.has(k.stroke) && !k.arc && !k.circle)
+    if (!mine.has(k.stroke) && !k.arc && !k.circle && !k.note)
       strokes.set(k.stroke, { points: k.points, start: -Infinity, ink: k.ink ?? inkOf(k.by), keep: true });
 }
 
@@ -122,6 +124,7 @@ export function trimOwn(stroke, n) {
 export function onClear() {
   clearArcs();
   clearCircles();
+  clearNotes();
   strokes.clear();
   mine.clear();
 }
@@ -132,6 +135,7 @@ export const STROKE_PX = 4,
 export function drawStrokes(now = performance.now()) {
   drawArcs();
   drawCircles();
+  drawNotes();
   if (!strokes.size) return;
   const w = STROKE_PX * uiScale();
   ctx.save();

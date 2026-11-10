@@ -391,17 +391,20 @@ function chatRow(ev, pl, time) {
   if (ev.type === "voice_command") {
     const text = VOICE[ev.menu]?.[ev.item];
     if (!layerOn("flow") || !pl || !text) return null;
-    return { cls: "voice", html: `${time}${who(pl)} <span class="w">🔊 ${esc(text)}</span>` };
+    return { cls: "voice", html: `${time}${sender(ev, pl)} <span class="w">🔊 ${esc(text)}</span>` };
   }
   if (ev.type === "server_text") {
     if (!layerOn("flow") || !ev.text || ev.text.startsWith("#")) return null;
     return { cls: "srvtext", html: time + esc(ev.text) };
   }
   if (pl || ev.name)
-    return { html: `${time}${pl ? who(pl) : `<span class="w">${esc(ev.name)}</span>`}: ${coloured(ev, pl)}` };
+    return { html: `${time}${pl ? sender(ev, pl) : `<span class="w">${esc(ev.name)}</span>`}: ${coloured(ev, pl)}` };
   // Server messages (plugins, rcon say) as notices; `say` from the console adds its own prefix.
   return { cls: "notice", html: time + coloured(ev, pl, /^Console: /) };
 }
+// A chat line's sender, by id (a room's note goes on them).
+/** @param {GameEvent} ev @param {NonNullable<ReturnType<Who>>} pl */
+const sender = (ev, pl) => `<span class="who" data-id="${Number(ev.player)}">${who(pl)}</span>`;
 // A chat line in the colours its sender gave it (TF2's colour codes, as plugins use them):
 // `team` is the sender's team colour, null the line's own colour.
 /** @param {GameEvent} ev @param {ReturnType<Who>} pl @param {RegExp} [drop] */

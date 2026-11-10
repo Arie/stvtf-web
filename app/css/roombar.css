@@ -301,3 +301,17 @@
   background: #ffffff1f;
   color: #fff;
 }
+
+/* A note's text, typed where `n` was pressed. */
+.stvtf .note-input {
+  position: absolute;
+  z-index: 20;
+  transform: translate(-50%, -50%);
+  width: 22ch;
+  padding: 4px 6px;
+  font: 600 14px system-ui;
+  color: #fff;
+  background: var(--shade, #0b0c0e);
+  border: 2px solid var(--ink, var(--pen));
+  border-radius: 4px;
+}

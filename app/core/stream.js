@@ -23,6 +23,7 @@ import { cartState } from "../map/objectives/payload.js";
 import { onClear, onDraw, onMarker } from "../room/telestrator.js";
 import { onArc } from "../room/arcs.js";
 import { onCircle } from "../room/circles.js";
+import { onNote } from "../room/notes.js";
 import { loadMap } from "../map/view.js";
 /** @typedef {import("../../types/stream").GameEvent} GameEvent */
 /** @typedef {import("../../types/stream").StreamMessage} StreamMessage */
@@ -155,6 +156,7 @@ const ON_LINE = {
   marker: m => onMarker(/** @type {import("../../types/stream").MarkerLine} */ (m)),
   arc: m => onArc(/** @type {import("../../types/stream").ArcLine} */ (m)),
   circle: m => onCircle(/** @type {import("../../types/stream").CircleLine} */ (m)),
+  note: m => onNote(/** @type {import("../../types/stream").NoteLine} */ (m)),
   clear: () => onClear(),
   view: m => viewListeners.forEach(f => f(/** @type {import("../../types/stream").ViewLine} */ (m))),
   people: m => peopleListeners.forEach(f => f(/** @type {import("../../types/stream").PeopleLine} */ (m))),

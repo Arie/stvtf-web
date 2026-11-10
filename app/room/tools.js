@@ -63,7 +63,7 @@ export function arcTool(button, others) {
 export const circleTool = (button, others) => armTool(button, others, at => ask("circle", { at }));
 
 // Where on the map a pointer is.
-/** @param {PointerEvent} e @returns {[number, number]} */
+/** @param {{ clientX: number; clientY: number }} e @returns {[number, number]} */
 export function worldAt(e) {
   const r = canvas.getBoundingClientRect();
   const [dx, dy] = screenOffset(e.clientX - r.left - r.width / 2, e.clientY - r.top - r.height / 2, state.view.scale);
