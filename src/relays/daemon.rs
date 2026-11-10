@@ -300,10 +300,7 @@ impl Remote {
     /// it can; None when every port is taken.
     pub(crate) fn start(self: &Arc<Self>, room: &str, want: &Want, was: Option<&Was>) -> Result<Option<RemoteRelay>> {
         let answer = self.call(&json!({ "op": "start", "room": room, "want": WantLine::of(want), "was": was }))?;
-        let line = answer.get("line").cloned().unwrap_or(Value::Null);
-        if line.is_null() {
-            return Ok(None);
-        }
+        let Some(line) = answer.get("line").filter(|l| !l.is_null()).cloned() else { return Ok(None) };
         let shared = Arc::new(Shared {
             remote: self.clone(),
             room: room.to_string(),
