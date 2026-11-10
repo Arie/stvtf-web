@@ -196,12 +196,10 @@ struct World {
 }
 
 /// A face of the world as seen from above: its corners, its plane (normal and distance, facing
-/// out), how far its normal points up, its texture's index in the texture table and its
-/// displacement, if it has one.
+/// out), its texture's index in the texture table and its displacement, if it has one.
 struct Face {
     pts: Vec<Vec3>,
     plane: [f32; 4],
-    normal_z: f32,
     texture: usize,
     disp: Option<usize>,
 }
@@ -237,7 +235,6 @@ impl World {
         }
         let sign = if side == 0 { 1.0 } else { -1.0 };
         let plane = plane_at(&self.planes, plane)?.map(|v| sign * v);
-        let normal_z = plane[2];
         let disp = usize::try_from(i16_at(&self.faces, o + FACE_DISPINFO)?).ok();
         let pts = (first_edge..first_edge + num_edges)
             .map(|e| {
@@ -247,7 +244,7 @@ impl World {
                 vec3_at(&self.verts, usize::from(u16_at(&self.edges, eo)?) * VERTEX_SIZE)
             })
             .collect::<Result<_>>()?;
-        Ok(Some(Face { pts, plane, normal_z, texture, disp }))
+        Ok(Some(Face { pts, plane, texture, disp }))
     }
 
     /// What texture `texture` is made of; Other for one not in the table.
@@ -401,13 +398,13 @@ fn faces(world: &World, map: &Entities, bounds: Option<Bounds>, disps: &[displac
                     _ => {}
                 }
             }
-        } else if face.normal_z > FLOOR_MIN_NORMAL_Z {
+        } else if face.plane[2] > FLOOR_MIN_NORMAL_Z {
             let g = gradient([face.plane[0], face.plane[1], face.plane[2]]);
             floors.push((centre[2], Floor { z: round1(centre[2]), p: outline(&face.pts), k: world.kind(face.texture), d: false, g }));
             if bounds.is_none() {
                 floor_pts.extend(face.pts);
             }
-        } else if face.normal_z.abs() < WALL_MAX_NORMAL_Z {
+        } else if face.plane[2].abs() < WALL_MAX_NORMAL_Z {
             walls.extend(wall(&face.pts));
         }
     }
