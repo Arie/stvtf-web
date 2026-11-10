@@ -10,7 +10,8 @@ pressed again, it returns to your room on that match. The match's own page never
   Each admin picks a colour by the swatch after their name.
 - A jump arc (↷ or `a`): two clicks, where the jump starts and where it lands, draw a rocket or
   sticky jump between the floors under them, straight up then over and down, shaded dark to
-  bright by its height, in TF2 too. It stays, with the marker (✒︎ or `m`), until cleared.
+  bright by its height, in TF2 too. The tool stays on for the next arc, until Esc, its button or
+  another tool. An arc stays, with the marker (✒︎ or `m`), until cleared.
 - People are listed by the name they give (kept in the browser) or Guest N, known by the
   `stvtf_guest` cookie (pages only see numbers), or by Steam id when [signed in](site.md#sign-in).
 

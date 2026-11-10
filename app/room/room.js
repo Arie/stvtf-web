@@ -269,7 +269,7 @@ function drawing(pen, marker) {
 }
 
 // The jump arc tool: armed by its button, it takes two clicks on the map, the launch then the
-// landing, and asks the room for the arc between them; Esc or another tool lets it go.
+// landing, and asks the room for the arc, staying armed; Esc or another tool lets it go.
 /** @param {HTMLButtonElement} button @param {HTMLButtonElement[]} others */
 export function arcTool(button, others) {
   // Let go of the arc, leaving the drawing mode to whatever has it.
@@ -297,7 +297,7 @@ export function arcTool(button, others) {
       const at = worldAt(e),
         from = pendingAt();
       if (!from) return void setPending(at);
-      arm(false);
+      setPending(null);
       post("arc", { from, to: at }).then(
         async r => r.ok || note(await r.text()),
         () => {},

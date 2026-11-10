@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   byClass,
+  canvas,
   msPerTick,
   observeTick,
   optOn,
@@ -16,7 +17,7 @@ import { command, steamid64 } from "../../app/embed/embed.js";
 import { layerOn } from "../../app/core/layers.js";
 import { labelCorner } from "../../app/map/spawns.js";
 import { drawOwn, markerFull, onClear, onDraw, onMarker, pointsOf, trimOwn } from "../../app/room/telestrator.js";
-import { arcCount, arcShade, onArc } from "../../app/room/arcs.js";
+import { arcCount, arcShade, onArc, pendingAt } from "../../app/room/arcs.js";
 import { arcTool } from "../../app/room/room.js";
 import { env } from "../../app/core/env.js";
 import { demostfAlias, sameLayout, screenOffset, teamsTurn, toScreen } from "../../app/map/view.js";
@@ -393,4 +394,31 @@ test("picking the pen with the arc tool armed leaves the map in drawing mode", (
   pen.click();
   assert.ok(pen.classList.contains("on") && !arc.classList.contains("on"));
   assert.ok(env.el.classList.contains("drawing"), "still drawing, with the pen");
+});
+
+test("the arc tool stays armed after an arc, for the next one", () => {
+  const classes = new Set();
+  const arc = {
+    classList: {
+      contains: (/** @type {string} */ c) => classes.has(c),
+      toggle: (/** @type {string} */ c, on = !classes.has(c)) => (on ? classes.add(c) : classes.delete(c), on),
+    },
+    /** @type {null | (() => void)} */
+    onclick: null,
+  };
+  /** @type {(e: any) => void} */
+  let down = () => {};
+  const listen = canvas.addEventListener;
+  canvas.addEventListener = (/** @type {string} */ _type, /** @type {any} */ f) => (down = f);
+  arcTool(/** @type {any} */ (arc), []);
+  canvas.addEventListener = listen;
+  arc.onclick?.();
+  const click = () => down({ button: 0, clientX: 0, clientY: 0, preventDefault() {}, stopImmediatePropagation() {} });
+  click();
+  assert.ok(pendingAt(), "the launch waits for its landing");
+  click();
+  assert.equal(pendingAt(), null);
+  assert.ok(arc.classList.contains("on") && env.el.classList.contains("drawing"), "still armed");
+  arc.onclick?.();
+  assert.ok(!arc.classList.contains("on") && !env.el.classList.contains("drawing"), "let go by its button");
 });
