@@ -438,14 +438,7 @@ mod tests {
     #[test]
     fn a_live_recording_grows_and_its_open_chunk_plays() {
         let r = Recording::live();
-        let mut time = 1_700_000_000_000;
-        for _ in 0..30 {
-            let text = r#"{"type":"stalemate","tick":5}"#;
-            let mut stamped: Stamped = serde_json::from_str(text).unwrap();
-            stamped.time = Some(time);
-            r.push(&stamped, text).unwrap();
-            time += 500;
-        }
+        live_lines(&r, 30, 1_700_000_000_000);
         // 0 to 14.5 s: a closed chunk, and an open one of 10 lines (10 to 14.5 s) so far.
         assert_eq!((r.length(), r.chunks(), r.is_live()), (14_500, 2, true));
         assert_eq!(r.chunk(1).unwrap().len(), 10);
@@ -467,16 +460,18 @@ mod tests {
         time
     }
 
+    /// A sink that keeps what it gets in `saved`, as the file would.
+    fn to(saved: &Arc<Mutex<Vec<u8>>>) -> Sink {
+        let saved = saved.clone();
+        Box::new(move |save: &Save| match save {
+            Save::Add(gz) => lock(&saved).extend_from_slice(gz),
+            Save::All(gz) => *lock(&saved) = gz.clone(),
+        })
+    }
+
     #[test]
     fn a_live_recording_saves_its_chunks_and_goes_on_from_them() {
         let saved = Arc::new(Mutex::new(Vec::new()));
-        let to = |saved: &Arc<Mutex<Vec<u8>>>| -> Sink {
-            let saved = saved.clone();
-            Box::new(move |save: &Save| match save {
-                Save::Add(gz) => lock(&saved).extend_from_slice(gz),
-                Save::All(gz) => *lock(&saved) = gz.clone(),
-            })
-        };
         let r = Recording::live_to(to(&saved));
         let time = live_lines(&r, 45, 1_700_000_000_000);
         // 0 to 22 s: two chunks closed and saved, the third open.
@@ -506,13 +501,6 @@ mod tests {
     fn a_new_map_starts_a_live_recording_over() {
         use crate::testing::server;
         let saved = Arc::new(Mutex::new(Vec::new()));
-        let to = |saved: &Arc<Mutex<Vec<u8>>>| -> Sink {
-            let saved = saved.clone();
-            Box::new(move |save: &Save| match save {
-                Save::Add(gz) => lock(&saved).extend_from_slice(gz),
-                Save::All(gz) => *lock(&saved) = gz.clone(),
-            })
-        };
         let r = Recording::live_to(to(&saved));
         let t0 = 1_700_000_000_000;
         push_at(&r, &server("cp_one"), t0);
@@ -538,13 +526,6 @@ mod tests {
     fn a_live_recording_keeps_the_last_hours() {
         use crate::testing::server;
         let saved = Arc::new(Mutex::new(Vec::new()));
-        let to = |saved: &Arc<Mutex<Vec<u8>>>| -> Sink {
-            let saved = saved.clone();
-            Box::new(move |save: &Save| match save {
-                Save::Add(gz) => lock(&saved).extend_from_slice(gz),
-                Save::All(gz) => *lock(&saved) = gz.clone(),
-            })
-        };
         let r = Recording::live_to(to(&saved));
         let t0 = 1_700_000_000_000;
         push_at(&r, &server("cp_long"), t0);
