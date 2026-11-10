@@ -152,6 +152,11 @@ fn respond_cached(s: &mut TcpStream, ctype: &str, body: &[u8]) -> std::io::Resul
     respond_with(s, "200 OK", &[("Content-Type", ctype), ("Cache-Control", &max_age)], body)
 }
 
+/// `status`, with why as text.
+fn refuse(s: &mut TcpStream, status: &str, why: &anyhow::Error) -> std::io::Result<()> {
+    respond(s, status, TEXT, format!("{why:#}").as_bytes())
+}
+
 fn not_found(s: &mut TcpStream) -> std::io::Result<()> {
     respond(s, "404 Not Found", TEXT, b"not found")
 }
@@ -216,7 +221,7 @@ fn serve_many(
                     let kept = format!("stvtf_user={}; {}", keys.keep(&user, unix_now()), cookie_attributes(app, token::SIGNED_IN_FOR));
                     respond_with(&mut s, "303 See Other", &[("Location", &back), ("Set-Cookie", &kept)], b"")?;
                 }
-                Err(e) => respond(&mut s, "400 Bad Request", TEXT, format!("{e:#}").as_bytes())?,
+                Err(e) => refuse(&mut s, "400 Bad Request", &e)?,
             }
         }
         ("/signout", "GET") => {
@@ -231,7 +236,7 @@ fn serve_many(
                 respond(&mut s, "200 OK", JSON, serde_json::json!({ "page": page }).to_string().as_bytes())?;
             }
             Ok(m) => app.redirect(&mut s, "303 See Other", &format!("/w/{}/{}", m.id, start_view(&request.query)))?,
-            Err(e) => respond(&mut s, "400 Bad Request", TEXT, format!("{e:#}").as_bytes())?,
+            Err(e) => refuse(&mut s, "400 Bad Request", &e)?,
         },
         ("/", "GET") => respond(&mut s, "200 OK", HTML, &app.page(&landing("")))?,
         ("/watch", "POST") if request.length as u64 > MAX_REQUEST => {
@@ -275,7 +280,7 @@ fn json_body<T: serde::de::DeserializeOwned>(reader: &mut BufReader<Take<TcpStre
 fn done(s: &mut TcpStream, done: Result<()>) -> std::io::Result<()> {
     match done {
         Ok(()) => respond(s, "204 No Content", TEXT, b""),
-        Err(e) => respond(s, "400 Bad Request", TEXT, format!("{e:#}").as_bytes()),
+        Err(e) => refuse(s, "400 Bad Request", &e),
     }
 }
 

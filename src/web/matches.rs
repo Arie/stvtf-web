@@ -5,7 +5,9 @@ use super::events::{stream, too_many_streams, wants_detail};
 use super::rooms::{open_room, opened};
 use super::token::Source;
 use super::visitor::{Who, who};
-use super::{HTML, INDEX, JSON, MAX_DELAY_S, Request, TEXT, json_body, landing, not_found, param, respond, respond_with, token, unix_now};
+use super::{
+    HTML, INDEX, JSON, MAX_DELAY_S, Request, TEXT, json_body, landing, not_found, param, refuse, respond, respond_with, token, unix_now,
+};
 use crate::matches::sessions;
 use crate::matches::sessions::{Session, Sessions, Viewer};
 use crate::{App, lock};
@@ -84,13 +86,13 @@ pub(super) fn rewind(
     let Some(recording) = m.ready() else { return Ok(respond(s, "409 Conflict", TEXT, b"No timeline yet.")?) };
     let r = match json_body::<Rewind>(reader, request) {
         Ok(r) => r,
-        Err(e) => return Ok(respond(s, "400 Bad Request", TEXT, format!("{e:#}").as_bytes())?),
+        Err(e) => return Ok(refuse(s, "400 Bad Request", &e)?),
     };
     let Who { key: guest, cookie, user } = who(app, request);
     let by = counted(user.as_ref(), None, client);
     match app.rooms.open_private(m, recording, &guest, r.at, r.speed.unwrap_or(1.0), r.paused, by.as_deref()) {
         Ok(room) => opened(s, app, &room.id, cookie.as_deref()),
-        Err(e) => Ok(respond(s, "503 Service Unavailable", TEXT, format!("{e:#}").as_bytes())?),
+        Err(e) => Ok(refuse(s, "503 Service Unavailable", &e)?),
     }
 }
 

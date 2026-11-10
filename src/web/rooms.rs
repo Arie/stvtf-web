@@ -4,7 +4,7 @@ use super::client::counted;
 use super::events::{stream, too_many_streams, wants_detail};
 use super::matches::is_page;
 use super::visitor::{Who, origin, who};
-use super::{HTML, INDEX, JSON, Request, TEXT, done, form_decode, json_body, not_found, param, respond, respond_with};
+use super::{HTML, INDEX, JSON, Request, TEXT, done, form_decode, json_body, not_found, param, refuse, respond, respond_with};
 use crate::App;
 use crate::matches::sessions::{Session, Sessions};
 use crate::rooms::room::{ArcDraw, Control, Draw, Room, ViewPost};
@@ -53,11 +53,11 @@ pub(super) fn open_room(
     }
     let recording = match m.recording() {
         Ok(r) => r,
-        Err(e) => return Ok(respond(s, "409 Conflict", TEXT, format!("{e:#}").as_bytes())?),
+        Err(e) => return Ok(refuse(s, "409 Conflict", &e)?),
     };
     let room = match app.rooms.open(m, recording, &guest, counted(user.as_ref(), None, client).as_deref()) {
         Ok(r) => r,
-        Err(e) => return Ok(respond(s, "409 Conflict", TEXT, format!("{e:#}").as_bytes())?),
+        Err(e) => return Ok(refuse(s, "409 Conflict", &e)?),
     };
     eprintln!("stvtf-web: room {} opened on match {}", &room.id[..8], &m.id[..m.id.len().min(8)]);
     opened(s, app, &room.id, cookie.as_deref())
