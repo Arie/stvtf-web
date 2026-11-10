@@ -37,7 +37,7 @@ pub(super) fn who(app: &App, request: &Request) -> Who {
 
 /// The site's address, from where `/` sends visitors (`--home`): its scheme and host.
 pub(super) fn origin(home: &str) -> Option<&str> {
-    let rest = home.find("://")? + 3;
+    let rest = home.find("://")? + "://".len();
     Some(&home[..home[rest..].find('/').map_or(home.len(), |i| rest + i)])
 }
 
