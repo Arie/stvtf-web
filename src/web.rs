@@ -3,7 +3,7 @@
 use crate::matches::hub::SharedHub;
 use crate::matches::recording::Mark;
 use crate::matches::sessions;
-use crate::matches::sessions::{Session, Sessions};
+use crate::matches::sessions::Sessions;
 use crate::{App, Matches};
 use anyhow::{Result, bail};
 use std::io::{BufRead, BufReader, Read, Take, Write};
@@ -215,7 +215,6 @@ fn serve_many(
     request: &Request,
     client: IpAddr,
 ) -> Result<()> {
-    let started = |s: &mut TcpStream, m: &Session| app.redirect(s, "303 See Other", &format!("/w/{}/", m.id));
     match (request.path.as_str(), request.method.as_str()) {
         (path @ ("/" | "/watch"), _) if app.keys.is_some() => front_door(&mut s, app, path)?,
         ("/matches", "GET") if let Some(keys) = &app.keys => list_matches(&mut s, keys, sessions, request)?,
@@ -250,7 +249,7 @@ fn serve_many(
             let form = String::from_utf8_lossy(&body);
             let line = param(&form, "connect").map(form_decode).unwrap_or_default();
             match sessions.open_as(counted(None, None, client).as_deref(), &line, None, None) {
-                Ok(m) => started(&mut s, &m)?,
+                Ok(m) => app.redirect(&mut s, "303 See Other", &format!("/w/{}/", m.id))?,
                 Err(e) => respond(&mut s, "400 Bad Request", HTML, &app.page(&landing(&format!("{e:#}"))))?,
             }
         }
