@@ -11,8 +11,8 @@ use serde::Serialize;
 
 use super::displacement::Displacement;
 use super::format::{
-    LUMP_BRUSHES, LUMP_BRUSHSIDES, LUMP_LEAFBRUSHES, LUMP_LEAFS, LUMP_MODELS, LUMP_NODES, LUMP_PLANES, PLANE_DIST, PLANE_SIZE, f32_at,
-    i32_at, index_at, lump, u16_at, vec3_at,
+    LUMP_BRUSHES, LUMP_BRUSHSIDES, LUMP_LEAFBRUSHES, LUMP_LEAFS, LUMP_MODELS, LUMP_NODES, LUMP_PLANES, i32_at, index_at, lump, plane_at,
+    u16_at,
 };
 use super::{Bounds, FLOOR_MIN_NORMAL_Z, Vec3, crosses};
 
@@ -281,11 +281,7 @@ impl Lumps {
         let (first, num) = (index_at(&self.brushes, o + BRUSH_FIRST_SIDE)?, index_at(&self.brushes, o + BRUSH_NUM_SIDES)?);
         *sides_left = sides_left.checked_sub(num).ok_or_else(|| anyhow!("brushes have more than {MAX_BRUSH_SIDES} sides"))?;
         let planes = (first..first + num)
-            .map(|s| {
-                let p = usize::from(u16_at(&self.sides, s * BRUSHSIDE_SIZE + BRUSHSIDE_PLANE)?) * PLANE_SIZE;
-                let n = vec3_at(&self.planes, p)?;
-                Ok([n[0], n[1], n[2], f32_at(&self.planes, p + PLANE_DIST)?])
-            })
+            .map(|s| plane_at(&self.planes, usize::from(u16_at(&self.sides, s * BRUSHSIDE_SIZE + BRUSHSIDE_PLANE)?)))
             .collect::<Result<_>>()?;
         Ok(Brush { planes, contents: i32_at(&self.brushes, o + BRUSH_CONTENTS)? })
     }

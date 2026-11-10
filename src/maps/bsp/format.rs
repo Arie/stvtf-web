@@ -49,7 +49,7 @@ pub(super) const LZMA_HEADER: usize = 17;
 pub(super) const F32_SIZE: usize = 4;
 pub(super) const U16_SIZE: usize = 2;
 /// Record sizes and field offsets of the lumps read (`dplane_t`, `dface_t`, …).
-pub(super) const PLANE_SIZE: usize = 20;
+const PLANE_SIZE: usize = 20;
 pub(super) const VERTEX_SIZE: usize = 12;
 pub(super) const EDGE_SIZE: usize = 4;
 pub(super) const SURFEDGE_SIZE: usize = 4;
@@ -65,7 +65,7 @@ pub(super) const FACE_FIRST_EDGE: usize = 4;
 pub(super) const FACE_NUM_EDGES: usize = 8;
 pub(super) const FACE_TEXINFO: usize = 10;
 pub(super) const FACE_DISPINFO: usize = 12;
-pub(super) const PLANE_DIST: usize = 12;
+const PLANE_DIST: usize = 12;
 pub(super) const MODEL_SIZE: usize = 48;
 pub(super) const MODEL_MINS: usize = 0;
 pub(super) const MODEL_MAXS: usize = 12;
@@ -92,6 +92,12 @@ pub(super) fn f32_at(b: &[u8], o: usize) -> Result<f32> {
 /// Three floats in a row: a point or a direction.
 pub(super) fn vec3_at(b: &[u8], o: usize) -> Result<Vec3> {
     Ok([f32_at(b, o)?, f32_at(b, o + F32_SIZE)?, f32_at(b, o + 2 * F32_SIZE)?])
+}
+/// Plane `index` of the planes lump: its normal and distance.
+pub(super) fn plane_at(planes: &[u8], index: usize) -> Result<[f32; 4]> {
+    let o = index * PLANE_SIZE;
+    let n = vec3_at(planes, o)?;
+    Ok([n[0], n[1], n[2], f32_at(planes, o + PLANE_DIST)?])
 }
 /// An offset, count or index stored as an i32; negative ones are an error.
 pub(super) fn index_at(b: &[u8], o: usize) -> Result<usize> {

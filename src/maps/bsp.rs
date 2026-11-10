@@ -8,8 +8,8 @@ use entities::{Entities, cap_areas, packs, playable_bounds, spawns};
 use format::{
     EDGE_SIZE, FACE_DISPINFO, FACE_FIRST_EDGE, FACE_NUM_EDGES, FACE_SIDE, FACE_SIZE, FACE_TEXINFO, LUMP_EDGES, LUMP_FACES, LUMP_PLANES,
     LUMP_SURFEDGES, LUMP_TEXDATA, LUMP_TEXDATA_STRING_DATA, LUMP_TEXDATA_STRING_TABLE, LUMP_TEXINFO, LUMP_VERTEXES, MODEL_FIRST_FACE,
-    MODEL_NUM_FACES, PLANE_DIST, PLANE_SIZE, SKIP_FLAGS, STRING_TABLE_ENTRY, SURFEDGE_SIZE, TEXDATA_NAME, TEXDATA_SIZE, TEXINFO_FLAGS,
-    TEXINFO_SIZE, TEXINFO_TEXDATA, U16_SIZE, VERTEX_SIZE, bytes, f32_at, i16_at, i32_at, index_at, lump, u16_at, vec3_at,
+    MODEL_NUM_FACES, SKIP_FLAGS, STRING_TABLE_ENTRY, SURFEDGE_SIZE, TEXDATA_NAME, TEXDATA_SIZE, TEXINFO_FLAGS, TEXINFO_SIZE,
+    TEXINFO_TEXDATA, U16_SIZE, VERTEX_SIZE, bytes, i16_at, i32_at, index_at, lump, plane_at, u16_at, vec3_at,
 };
 use material::Kind;
 use serde::Serialize;
@@ -236,8 +236,7 @@ impl World {
             return Ok(None);
         }
         let sign = if side == 0 { 1.0 } else { -1.0 };
-        let normal = vec3_at(&self.planes, plane * PLANE_SIZE)?;
-        let plane = [sign * normal[0], sign * normal[1], sign * normal[2], sign * f32_at(&self.planes, plane * PLANE_SIZE + PLANE_DIST)?];
+        let plane = plane_at(&self.planes, plane)?.map(|v| sign * v);
         let normal_z = plane[2];
         let disp = usize::try_from(i16_at(&self.faces, o + FACE_DISPINFO)?).ok();
         let pts = (first_edge..first_edge + num_edges)
