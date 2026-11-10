@@ -51,9 +51,14 @@ impl LiveDemos {
 
     /// Deletes them all: the match ended.
     pub(crate) fn forget(&self) {
-        for p in lock(&self.parts).drain(..) {
-            let _ = std::fs::remove_file(p.path);
-        }
+        remove(&mut lock(&self.parts));
+    }
+}
+
+/// Deletes `parts`' files and forgets them.
+fn remove(parts: &mut Vec<Part>) {
+    for p in parts.drain(..) {
+        let _ = std::fs::remove_file(p.path);
     }
 }
 
@@ -62,9 +67,7 @@ impl stvtf::demo::Files for LiveDemos {
         let mut parts = lock(&self.parts);
         // Another map, or the server's ticks started over (a restart): the ones before go.
         if parts.last().is_some_and(|p| p.map != map || p.first_tick > first_tick) {
-            for p in parts.drain(..) {
-                let _ = std::fs::remove_file(p.path);
-            }
+            remove(&mut parts);
         }
         std::fs::create_dir_all(&self.dir)?;
         let path = self.dir.join(format!("live-{}-{first_tick}.dem", self.id));
