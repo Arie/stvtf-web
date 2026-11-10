@@ -7,7 +7,7 @@ import { env } from "../core/env.js";
 import { setAutoZoom, setFollow } from "../core/input.js";
 import { EVENTS_URL, openStream, playbackListeners, streamParams, viewListeners } from "../core/stream.js";
 import { drawOwn, markerFull, trimOwn } from "./telestrator.js";
-import { setPending } from "./arcs.js";
+import { pendingAt, setPending } from "./arcs.js";
 import { pushMirror } from "../map/camera.js";
 import { HOME, IN_ROOM, me, names, post } from "./home.js";
 import { copyLink, copyText } from "./copy.js";
@@ -239,13 +239,8 @@ function drawing(pen, marker) {
       y = e.clientY - r.top;
     if (stroke.last && Math.hypot(x - stroke.last[0], y - stroke.last[1]) < MIN_STEP_PX) return;
     stroke.last = [x, y];
-    const [dx, dy] = screenOffset(x - r.width / 2, y - r.height / 2, state.view.scale);
     /** @type {[number, number, number]} */
-    const point = [
-      Math.round(state.view.cx + dx),
-      Math.round(state.view.cy + dy),
-      Math.round(performance.now() - stroke.began),
-    ];
+    const point = [...worldAt(e), Math.round(performance.now() - stroke.began)];
     const keep = stroke.keep || undefined;
     drawOwn({ stroke: stroke.id, points: [point], by: me.id, keep });
     send({ stroke: stroke.id, points: [point], keep });
@@ -277,23 +272,21 @@ function drawing(pen, marker) {
 // landing, and asks the room for the arc between them; Esc or another tool lets it go.
 /** @param {HTMLButtonElement} button @param {HTMLButtonElement[]} others */
 export function arcTool(button, others) {
-  /** @type {[number, number] | null} */
-  let first = null;
+  // Let go of the arc, leaving the drawing mode to whatever has it.
+  const disarm = () => {
+    button.classList.toggle("on", false);
+    setPending(null);
+  };
   const arm = (/** @type {boolean} */ on) => {
+    disarm();
     button.classList.toggle("on", on);
     env.el.classList.toggle("drawing", on);
-    first = setPending(null);
   };
   button.onclick = () => {
     for (const o of others) if (o.classList.contains("on")) o.click();
     arm(!button.classList.contains("on"));
   };
-  // Another tool taken: only the arc's own state goes, the drawing mode is that tool's.
-  for (const o of others)
-    o.addEventListener("click", () => {
-      button.classList.toggle("on", false);
-      first = setPending(null);
-    });
+  for (const o of others) o.addEventListener("click", disarm);
   env.keys.addEventListener("keydown", e => e.key === "Escape" && button.classList.contains("on") && arm(false));
   canvas.addEventListener(
     "pointerdown",
@@ -301,9 +294,9 @@ export function arcTool(button, others) {
       if (!button.classList.contains("on") || e.button !== 0) return;
       e.preventDefault();
       e.stopImmediatePropagation();
-      const at = worldAt(e);
-      if (!first) return void (first = setPending(at));
-      const from = first;
+      const at = worldAt(e),
+        from = pendingAt();
+      if (!from) return void setPending(at);
       arm(false);
       post("arc", { from, to: at }).then(
         async r => r.ok || note(await r.text()),

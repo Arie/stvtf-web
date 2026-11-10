@@ -1,6 +1,6 @@
 // A room's telestrator: admins' strokes in map coordinates. Pen fades after a few seconds;
 // marker stays until cleared.
-import { ctx, uiScale } from "../core/core.js";
+import { INK, ctx, uiScale } from "../core/core.js";
 import { toScreen } from "../map/view.js";
 import { arcsFromMarker, clearArcs, drawArcs } from "./arcs.js";
 /** @typedef {import("../../types/stream").DrawLine} DrawLine */
@@ -11,7 +11,6 @@ const HOLD_MS = 3000,
   FADE_MS = 1000;
 // A colour per admin, by their number in the room: the owner's (1) first.
 export const INKS = ["#ffd23f", "#4fd1c5", "#f472b6", "#a3e635", "#fb923c", "#c084fc"];
-const EDGE = "#0b0c0e";
 // The colours admins picked, by their number.
 /** @type {Map<number, string>} */
 const picked = new Map();
@@ -98,7 +97,7 @@ export function onClear() {
 }
 
 // A stroke's width at the 1080p size, and what its dark edge adds to it.
-const STROKE_PX = 4,
+export const STROKE_PX = 4,
   EDGE_PX = 3;
 export function drawStrokes(now = performance.now()) {
   drawArcs();
@@ -125,7 +124,7 @@ export function drawStrokes(now = performance.now()) {
     }
     // A lone point is a dot.
     if (shown.length === 1) ctx.lineTo(...toScreen(shown[0][0], shown[0][1]));
-    ctx.strokeStyle = EDGE;
+    ctx.strokeStyle = INK;
     ctx.lineWidth = w + EDGE_PX;
     ctx.stroke();
     ctx.strokeStyle = s.ink;
