@@ -72,6 +72,11 @@ fn other_sites_get_the_kill_icons_with_crits_under_a_version() {
     assert!(css.starts_with("HTTP/1.1 200") && css.contains(".killicon-quake_rl") && css.contains(".killicon.crit"), "{css}");
 }
 
+fn sessions_of(app: &App) -> &Sessions {
+    let Matches::Many(sessions) = &app.matches else { panic!("one match, not many") };
+    sessions
+}
+
 /// A server with a pinned demo rooms can play, and the folder its recording is in.
 fn demo_app() -> (App, TempDir) {
     let dir = TempDir::new("rooms");
@@ -282,7 +287,7 @@ fn a_match_page_has_a_timeline() {
     };
     assert!(timeline.contains(r#""length":750"#) && timeline.contains(r#""live":false"#), "{timeline}");
     assert!(get(&app, "/w/demo/marks?from=0", "").ends_with(r#"{"all":0,"marks":[]}"#));
-    let Matches::Many(sessions) = &app.matches else { unreachable!() };
+    let sessions = sessions_of(&app);
     let m = sessions.open("192.0.2.1:27020 tv", None, None).unwrap();
     assert!(get(&app, &format!("/w/{}/timeline", m.id), "").contains(r#""live":true"#));
     sessions.stop_all();
@@ -307,7 +312,7 @@ fn a_viewer_goes_back_on_their_own() {
 #[test]
 fn a_live_match_opens_a_room_that_records_it_from_then_on() {
     let app = app(Matches::Many(Sessions::new(false, 2, 20.0)));
-    let Matches::Many(sessions) = &app.matches else { unreachable!() };
+    let sessions = sessions_of(&app);
     let m = sessions.open("192.0.2.1:27020 tv", None, None).unwrap();
     publish(&m.hub, &server("cp_process_f12"));
     assert!(get(&app, &format!("/w/{}/room", m.id), "").starts_with("HTTP/1.1 200"));
@@ -334,7 +339,7 @@ fn a_live_match_opens_a_room_that_records_it_from_then_on() {
 #[test]
 fn an_ended_live_match_is_at_its_end() {
     let app = app(Matches::Many(Sessions::new(false, 2, 20.0)));
-    let Matches::Many(sessions) = &app.matches else { unreachable!() };
+    let sessions = sessions_of(&app);
     let m = sessions.open("192.0.2.1:27020 tv", None, None).unwrap();
     let rec = m.recording().unwrap();
     let stalemate = serde_json::from_str::<Line>(r#"{"type":"stalemate","tick":500}"#).unwrap();
@@ -384,9 +389,7 @@ fn many_matches_start_from_a_connect_string() {
         let page = request_to(&app, format!("GET {location}{rest} HTTP/1.1\r\n\r\n").as_bytes()).1;
         assert!(page.starts_with(&format!("HTTP/1.1 {status}")), "{rest}: {page}");
     }
-    if let Matches::Many(s) = &app.matches {
-        s.stop_all();
-    }
+    sessions_of(&app).stop_all();
 }
 
 #[test]
@@ -402,9 +405,7 @@ fn a_form_after_long_headers_still_starts_a_match() {
     assert!(response.starts_with("HTTP/1.1 303"), "{response}");
     let huge = format!("POST /watch HTTP/1.1\r\nContent-Length: {}\r\n\r\n", 17 << 10);
     assert!(request_to(&app, huge.as_bytes()).1.starts_with("HTTP/1.1 413"));
-    if let Matches::Many(s) = &app.matches {
-        s.stop_all();
-    }
+    sessions_of(&app).stop_all();
 }
 
 #[test]
@@ -433,9 +434,7 @@ fn behind_a_site_matches_start_only_from_its_tokens() {
     let json = request_to(&app, format!("GET /start?t={t}&format=json HTTP/1.1\r\n\r\n").as_bytes()).1;
     assert!(json.contains(&format!(r#"{{"page":"{location}"}}"#)) && json.contains("Access-Control-Allow-Origin: *"), "{json}");
     assert!(request_to(&app, b"GET /start?t=bogus HTTP/1.1\r\n\r\n").1.starts_with("HTTP/1.1 400"));
-    if let Matches::Many(s) = &app.matches {
-        s.stop_all();
-    }
+    sessions_of(&app).stop_all();
 }
 
 #[test]
@@ -458,9 +457,7 @@ fn the_site_lists_the_matches_with_a_list_token() {
     assert_eq!(body["matches"][0]["reservation"], 5);
     assert_eq!(body["matches"][0]["server"], "192.0.2.1:27020");
     assert!(request_to(&app, format!("GET /start?t={list} HTTP/1.1\r\n\r\n").as_bytes()).1.starts_with("HTTP/1.1 400"));
-    if let Matches::Many(s) = &app.matches {
-        s.stop_all();
-    }
+    sessions_of(&app).stop_all();
 }
 
 #[test]
