@@ -159,7 +159,7 @@ impl Keys {
 
 /// A token as the site makes them, for tests.
 #[cfg(test)]
-pub fn seal(key_hex: &str, json: &str, nonce: [u8; 12]) -> String {
+pub fn seal(key_hex: &str, json: &str, nonce: [u8; NONCE_BYTES]) -> String {
     let keys = Keys::from_hex(key_hex).unwrap();
     let mut raw = nonce.to_vec();
     raw.extend(keys.0.encrypt(Nonce::from_slice(&nonce), json.as_bytes()).unwrap());
@@ -171,7 +171,7 @@ mod tests {
     use super::*;
 
     const KEY: &str = "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f";
-    fn seal(json: &str, nonce: [u8; 12]) -> String {
+    fn seal(json: &str, nonce: [u8; NONCE_BYTES]) -> String {
         super::seal(KEY, json, nonce)
     }
 
