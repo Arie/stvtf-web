@@ -3,10 +3,9 @@
 //! drawing one in a room: two clicks, launch then landing, kept with the marker.
 
 use super::Room;
-use super::beams::{beam, heads, hex};
+use super::beams::{HEAD, HEAD_ANGLE, beam, hex};
 use super::drawing::Kept;
 use crate::lock;
-use crate::maps::drape::Piece;
 use anyhow::{Result, bail};
 use serde::Deserialize;
 use stvtf::relay::Beam;
@@ -110,9 +109,29 @@ pub(super) fn arc_beams(points: &[[f64; 3]], ink: [u8; 3], life: f32) -> Vec<Bea
     let lifted: Vec<[f64; 3]> = points.iter().map(|p| [p[0], p[1], p[2] + ARC_LIFT]).collect();
     let mut out: Vec<Beam> = lifted.windows(2).map(|w| beam(w[0], w[1], ink, life, 0)).collect();
     if let [.., from, to] = lifted.as_slice() {
-        out.extend(heads(&[Piece { from: *from, to: *to, ms: 0.0 }], ink, life));
+        out.extend(arc_head(*from, *to, ink, life));
     }
     out
+}
+
+/// The arrowhead at the end of an arc's last piece, `from` to `to`: two wings back along it, one
+/// above and one below, in the upright plane the arc is in, so it points as the jump comes down.
+fn arc_head(from: [f64; 3], to: [f64; 3], ink: [u8; 3], life: f32) -> Vec<Beam> {
+    let unit = |v: [f64; 3]| {
+        let len = (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt();
+        (len > 1e-6).then(|| v.map(|x| x / len))
+    };
+    let Some(d) = unit([to[0] - from[0], to[1] - from[1], to[2] - from[2]]) else { return Vec::new() };
+    // Up, less its part along the line: square to it, in the upright plane through it.
+    let Some(n) = unit([-d[2] * d[0], -d[2] * d[1], 1.0 - d[2] * d[2]]) else { return Vec::new() };
+    [-1.0, 1.0]
+        .into_iter()
+        .map(|side: f64| {
+            let (s, c) = (side * HEAD_ANGLE).to_radians().sin_cos();
+            let tip: [f64; 3] = std::array::from_fn(|k| to[k] + HEAD * (-d[k] * c + n[k] * s));
+            beam(tip, to, ink, life, 0)
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -173,7 +192,30 @@ mod tests {
     fn an_arc_is_a_beam_per_piece_and_an_arrowhead() {
         let arc = jump([0.0, 0.0, 0.0], [300.0, 0.0, 200.0]);
         let beams = arc_beams(&arc, [255, 0, 0], 2.0);
-        assert_eq!(beams.len(), 16 + 6, "a beam per piece, then the arrowhead's");
+        assert_eq!(beams.len(), 16 + 2, "a beam per piece, then the arrowhead's wings");
         assert!(beams.iter().all(|b| b.rgb == [255, 0, 0]), "in its ink, whatever its height");
+    }
+
+    #[test]
+    fn the_arrowhead_points_along_the_last_piece_in_the_arcs_upright_plane() {
+        // Across the map diagonally, coming down onto the landing.
+        let arc = jump([0.0, 0.0, 200.0], [300.0, 400.0, 0.0]);
+        let beams = arc_beams(&arc, [255, 0, 0], 2.0);
+        let f = |p: [f32; 3]| p.map(f64::from);
+        let [.., a, b] = arc.as_slice() else { panic!() };
+        let d = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+        let len = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt();
+        for w in &beams[16..] {
+            let (tip, at) = (f(w.from), f(w.to));
+            let back = [tip[0] - at[0], tip[1] - at[1], tip[2] - at[2]];
+            let blen = (back[0] * back[0] + back[1] * back[1] + back[2] * back[2]).sqrt();
+            // Off the line backward by the head's angle.
+            let cos = -(back[0] * d[0] + back[1] * d[1] + back[2] * d[2]) / (blen * len);
+            assert!((cos - (30f64).to_radians().cos()).abs() < 1e-3, "{cos}");
+            // Not sideways: in the upright plane through the launch and the landing.
+            let side = back[0] * 400.0 - back[1] * 300.0;
+            assert!(side.abs() < 1e-3, "{side}");
+        }
+        assert!((beams[16].from[2] - beams[17].from[2]).abs() > 1.0, "one wing above the line, one below");
     }
 }

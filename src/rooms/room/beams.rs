@@ -26,8 +26,8 @@ const POST_EVERY: f64 = 64.0;
 /// How fast the lines' texture runs toward the stroke's end, showing which way it goes.
 const SCROLL: u8 = 20;
 /// The arrowhead at a finished stroke's end: its wings' length and angle off the line.
-const HEAD: f64 = 96.0;
-const HEAD_ANGLE: f64 = 30.0;
+pub(super) const HEAD: f64 = 96.0;
+pub(super) const HEAD_ANGLE: f64 = 30.0;
 /// The most strokes followed at once: more, and the oldest are forgotten.
 const MAX_DRAPES: usize = 64;
 /// The most beams of the marker, and of one pen stroke, shown in TF2: what the relay keeps up
