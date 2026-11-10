@@ -268,6 +268,30 @@
 #voicelist input[type="range"] {
   width: 70px;
 }
-#voicelist .vempty {
+#voicelist .vteam {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  padding: 2px 0 2px 6px;
+  border-left: 3px solid var(--dim);
+}
+#voicelist .vteam.t-red {
+  border-color: var(--red);
+}
+#voicelist .vteam.t-blue {
+  border-color: var(--blue);
+}
+#voicelist .vtname {
+  flex: 1;
   color: var(--dim);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+#voicelist .vteam.talking .vtname {
+  color: #fff;
+}
+#voicelist .vteam button {
+  height: 20px;
+  padding: 0 8px;
 }

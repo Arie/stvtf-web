@@ -3,7 +3,7 @@
 // after the other as they come. Who talks, and the viewer's mutes and volumes (kept in the
 // browser, by SteamID, across matches). Off until the viewer turns it on: a browser plays sound
 // only after a click. Pausing, seeking or another speed than 1× drops what is queued.
-import { OVERLAY } from "./core.js";
+import { OVERLAY, state } from "./core.js";
 import { env } from "./env.js";
 /** @typedef {import("../../types/stream").VoiceLine} VoiceLine */
 
@@ -155,14 +155,12 @@ function play(s, data) {
 export function onVoice(m) {
   if (!voiceOn() || !audio || !playing) return;
   const s = speaker(m);
-  const was = talking(s);
   s.last = performance.now();
   for (const f of m.frames) {
     const data = Uint8Array.from(atob(f), c => c.charCodeAt(0));
     // 20 ms frames: their timestamps need only go up.
     s.decoder?.decode(new EncodedAudioChunk({ type: "key", timestamp: s.n++ * 20_000, data }));
   }
-  if (!was) voiceListeners.forEach(f => f());
 }
 
 // Playback paused, went on, or changed speed: only playing at 1× has voice.
@@ -182,10 +180,10 @@ export function dropAll() {
 /** @param {Speaker} s */
 const talking = s => performance.now() - s.last < TALK_MS;
 
-// Whether player `id` is talking (and not muted), for their card and their dot.
+// Whether player `id` is talking, muted or not, for their card and their dot.
 /** @param {number} id */
 export function isTalking(id) {
-  for (const s of speakers.values()) if (s.player === id && talking(s) && !isMuted(s.steamid)) return true;
+  for (const s of speakers.values()) if (s.player === id && talking(s)) return true;
   return false;
 }
 
@@ -194,8 +192,81 @@ export function speakersHeard() {
   return [...speakers.values()].map(s => ({ steamid: s.steamid, player: s.player, talking: talking(s) }));
 }
 
+// Teams muted, for this page (another match has other players), and those let through anyway.
+/** @type {Set<string>} */
+const mutedTeams = new Set();
+/** @type {Set<string>} */
+const letThrough = new Set();
+
+// The team of whoever has `steamid` in the match, if anyone does.
 /** @param {string} steamid */
-export const isMuted = steamid => prefs.muted.includes(steamid);
+export function teamOf(steamid) {
+  for (const p of state.players.values()) if (p.steamid === steamid) return p.team;
+  return null;
+}
+
+// Whether `steamid` is muted: by the viewer (kept), or with their team (unless let through).
+/** @param {string} steamid */
+export function isMuted(steamid) {
+  if (prefs.muted.includes(steamid)) return true;
+  const team = teamOf(steamid);
+  return team != null && mutedTeams.has(team) && !letThrough.has(steamid);
+}
+
+/** @param {string} team */
+export const isTeamMuted = team => mutedTeams.has(team);
+
+// After a change of mutes: every speaker at their level, and the page told.
+function remuted() {
+  for (const s of speakers.values()) level(s);
+  voiceListeners.forEach(f => f());
+}
+
+// A click on someone: muted, they are heard (their own mute lifted, or let through their team's);
+// heard, their own mute.
+/** @param {string} steamid */
+export function toggleMuted(steamid) {
+  if (!isMuted(steamid)) {
+    letThrough.delete(steamid);
+    return setMuted(steamid, true);
+  }
+  if (prefs.muted.includes(steamid)) setMuted(steamid, false);
+  if (isMuted(steamid)) letThrough.add(steamid);
+  remuted();
+}
+
+// Mutes or unmutes `team`, all its players: muting it again takes back those let through.
+/** @param {string} team @param {boolean} muted */
+export function setTeamMuted(team, muted) {
+  if (muted) {
+    mutedTeams.add(team);
+    for (const id of [...letThrough]) if (teamOf(id) === team) letThrough.delete(id);
+  } else mutedTeams.delete(team);
+  remuted();
+}
+
+// Everyone muted (both teams, and those heard on neither), or nobody (one's own mutes of those
+// heard lifted too).
+/** @param {boolean} muted */
+export function muteEveryone(muted) {
+  mutedTeams.clear();
+  letThrough.clear();
+  if (muted) mutedTeams.add("red").add("blue");
+  for (const s of speakers.values()) {
+    const onTeam = ["red", "blue"].includes(teamOf(s.steamid) ?? "");
+    prefs.muted = prefs.muted.filter(id => id !== s.steamid);
+    if (muted && !onTeam) prefs.muted.push(s.steamid);
+  }
+  savePrefs();
+  remuted();
+}
+
+// The other team heard: one muted, the two swap; neither or both, RED is heard and BLU muted.
+export function swapTeams() {
+  const hearRed = !(mutedTeams.has("blue") && !mutedTeams.has("red"));
+  setTeamMuted("red", !hearRed);
+  setTeamMuted("blue", hearRed);
+}
 /** @param {string} steamid */
 export const volumeOf = steamid => prefs.volume[steamid] ?? 1;
 
@@ -204,9 +275,7 @@ export function setMuted(steamid, muted) {
   prefs.muted = prefs.muted.filter(id => id !== steamid);
   if (muted) prefs.muted.push(steamid);
   savePrefs();
-  const s = speakers.get(steamid);
-  if (s) level(s);
-  voiceListeners.forEach(f => f());
+  remuted();
 }
 
 /** @param {string} steamid @param {number} volume 0 to 1 */
@@ -217,6 +286,10 @@ export function setVolume(steamid, volume) {
   const s = speakers.get(steamid);
   if (s) level(s);
 }
+
+// Whether `steamid` has talked since the page turned voice on.
+/** @param {string} steamid */
+export const hasSpoken = steamid => speakers.has(steamid);
 
 // The SteamID of player `id`, while they are a speaker heard.
 /** @param {number} id */

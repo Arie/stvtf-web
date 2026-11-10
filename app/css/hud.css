@@ -504,13 +504,35 @@
   color: var(--dim);
 }
 
-/* A player talking, or muted (panel/speakers.js): a click on it mutes or unmutes them. */
-.card .vc {
+/* A player talking, or muted (panel/speakers.js), on the class icon's corner: a click on it mutes
+   or unmutes them. Ids, to outdo the cards' own placing of their children. */
+#hud-blue .card > .vc,
+#hud-red .card > .vc {
   position: absolute;
-  top: 1px;
-  right: 3px;
-  z-index: 1;
-  font-size: 11px;
+  left: 25px;
+  bottom: 2px;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border: 1.5px solid #fff;
+  border-radius: 50%;
+  background: #0b0c0ee0;
+  font-size: 10px;
   line-height: 1;
   cursor: pointer;
+}
+#hud-blue .card > .vc:empty,
+#hud-red .card > .vc:empty {
+  display: none;
+}
+#hud-blue .card > .vc.muted,
+#hud-red .card > .vc.muted {
+  border-color: #e05a4f;
+}
+/* Heard before, not talking now: faint, still there to mute. */
+#hud-blue .card > .vc.quiet,
+#hud-red .card > .vc.quiet {
+  opacity: 0.35;
 }
