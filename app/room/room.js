@@ -9,7 +9,7 @@ import { EVENTS_URL, openStream, playbackListeners, streamParams, viewListeners 
 import { drawOwn, markerFull, trimOwn } from "./telestrator.js";
 import { NOTE_MS, arcTool, circleTool, note, worldAt } from "./tools.js";
 import { noteKey, noteTool } from "./notes.js";
-import { viewMenu } from "./viewmenu.js";
+import { closeViewMenu, viewMenu } from "./viewmenu.js";
 import { pushMirror } from "../map/camera.js";
 import { HOME, IN_ROOM, me, names, post } from "./home.js";
 import { copyLink, copyText } from "./copy.js";
@@ -331,6 +331,7 @@ function showLead() {
 
 /** @param {boolean} on */
 function setViewAdmin(on) {
+  if (!on) closeViewMenu();
   act(views.setAdmin(on, seen()));
   showLead();
 }

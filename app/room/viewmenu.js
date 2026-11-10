@@ -8,6 +8,9 @@ import { env } from "../core/env.js";
 /** @type {Record<string, string>} */
 const SHORT = { free: "Free", auto: "Auto", follow: "Follow", admin: "Admin" };
 
+// Closes the menu, once it is there: its button went off under it (an admin no more).
+export let closeViewMenu = () => {};
+
 /** @param {(mode: string) => void} chosen @returns {(mode: string) => void} sets the view shown */
 export function viewMenu(chosen) {
   const button = /** @type {HTMLButtonElement} */ ($("rb-view")),
@@ -17,12 +20,13 @@ export function viewMenu(chosen) {
     button.setAttribute("aria-expanded", String(on));
     $("roombar").classList.toggle("menu", on);
   };
+  closeViewMenu = () => open(false);
   button.onclick = () => open(menu.hidden !== false);
   menu.addEventListener("click", e => {
     const item = /** @type {HTMLButtonElement | null} */ (
       /** @type {Element} */ (e.target).closest("button[data-mode]")
     );
-    if (!item || item.disabled) return;
+    if (!item || item.disabled || button.disabled) return;
     open(false);
     chosen(item.dataset.mode ?? "free");
   });
