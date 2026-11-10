@@ -315,7 +315,7 @@ impl Hub {
 
     /// A feed line, kept in the history with the names it uses and its time into the round.
     fn keep(&mut self, line: &Line) {
-        let interval = self.tick_interval.unwrap_or_else(default_tick_interval);
+        let interval = self.tick_interval();
         let at = self.round_clock.zip(line.tick()).map(|((tick, time), at)| {
             let seconds = time + (f64::from(at) - f64::from(tick)) * interval;
             round1(seconds).max(0.0)
@@ -384,7 +384,7 @@ pub(crate) fn subscribe(hub: &SharedHub, detail: bool) -> Receiver<Arc<str>> {
 /// What a page joins with.
 fn join_lines(h: &Hub) -> Vec<Arc<str>> {
     // The snapshot goes before the history so the page knows the players' names.
-    let mut lines: Vec<Arc<str>> = [&h.status, &h.server, &h.world, &h.snapshot].into_iter().flatten().chain(&h.history).cloned().collect();
+    let mut lines: Vec<Arc<str>> = h.state().chain(&h.history).cloned().collect();
     if let Some(age) = h.data_age() {
         let age = DataAge { ms: age.as_millis() as u64 };
         lines.push(serde_json::to_string(&age).expect("a number serializes").into());
