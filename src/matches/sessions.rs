@@ -168,19 +168,11 @@ impl Sessions {
         if map.values().filter(|s| !s.pinned).count() < self.max {
             return Ok(());
         }
-        let unwatched = map
-            .values()
-            .filter(|s| !s.pinned)
-            .filter_map(|s| lock(&s.idle_since).filter(|t| t.elapsed() >= MAKES_ROOM).map(|t| (t, s.id.clone())))
-            .min_by_key(|(t, _)| *t)
-            .and_then(|(_, id)| map.remove(&id));
-        match unwatched {
-            Some(s) => {
-                self.end(&s, "making room");
-                Ok(())
-            }
-            None => bail!("already watching {} matches, the most this server does", self.max),
-        }
+        let Some(s) = longest_unwatched(map.values().filter(|s| !s.pinned)).and_then(|id| map.remove(&id)) else {
+            bail!("already watching {} matches, the most this server does", self.max);
+        };
+        self.end(&s, "making room");
+        Ok(())
     }
 
     /// Whether `by` may start another match: fewer than [`MATCHES_PER_PERSON`] of theirs, or one
@@ -192,18 +184,11 @@ impl Sessions {
         if theirs.len() < MATCHES_PER_PERSON {
             return Ok(());
         }
-        let unwatched = theirs
-            .iter()
-            .filter_map(|s| lock(&s.idle_since).filter(|t| t.elapsed() >= MAKES_ROOM).map(|t| (t, s.id.clone())))
-            .min_by_key(|(t, _)| *t)
-            .and_then(|(_, id)| map.remove(&id));
-        match unwatched {
-            Some(s) => {
-                self.end(&s, "making room for its starter's next");
-                Ok(())
-            }
-            None => bail!("You are watching {MATCHES_PER_PERSON} matches already: close one first."),
-        }
+        let Some(s) = longest_unwatched(theirs).and_then(|id| map.remove(&id)) else {
+            bail!("You are watching {MATCHES_PER_PERSON} matches already: close one first.");
+        };
+        self.end(&s, "making room for its starter's next");
+        Ok(())
     }
 
     /// Watches `server` as session `id`.
@@ -355,6 +340,15 @@ impl Sessions {
             }
         }
     }
+}
+
+/// The id of the one of `sessions` nobody has watched the longest, for [`MAKES_ROOM`] at least.
+fn longest_unwatched<'a>(sessions: impl IntoIterator<Item = &'a Arc<Session>>) -> Option<String> {
+    sessions
+        .into_iter()
+        .filter_map(|s| lock(&s.idle_since).filter(|t| t.elapsed() >= MAKES_ROOM).map(|t| (t, s.id.clone())))
+        .min_by_key(|(t, _)| *t)
+        .map(|(_, id)| id)
 }
 
 #[cfg(test)]
