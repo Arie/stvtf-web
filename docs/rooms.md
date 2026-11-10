@@ -5,7 +5,7 @@ demo, `--demo`/`--demos`) opens one at `/r/<id>/` (overlay `/r/<id>/overlay`) an
 pressed again, it returns to your room on that match. The match's own page never changes.
 
 - The opener owns it and is its first admin. Admins make others admin; the owner stays one.
-- Admins pause (space), set speed (¼× to 4×) and seek (← → by 5 s); everyone sees the same.
+- Admins pause (space), set speed (the speed button steps 1×, 2×, 4×) and seek (← → by 5 s); everyone sees the same.
 - The pen (✎ or `d`) draws on the map for everyone, the room's overlay too, for a few seconds.
   Each admin picks a colour by the swatch after their name; `r` draws in red, `b` in blu, `y` in
   their own again (kept in the browser). A tool that is on shows in that colour.
@@ -15,7 +15,7 @@ pressed again, it returns to your room on that match. The match's own page never
   another tool. An arc stays, with the marker (✒︎ or `m`), until cleared (⌫ or `c`).
 - A circle (◯ or `t`): each click puts a small ring on the floor there, "stand here"; in TF2 a
   ring fence. It stays on for the next, and the circles stay with the marker until cleared.
-- A note (`n`): a short text (40 characters) where the pointer is. Over a player (their card in
+- A note (T, or `n`): a short text (40 characters) where you click with T on, or where the pointer is with `n`. Over a player (their card in
   the HUD, their name in the events or chat, their dot) it goes on them and follows them (hidden while they are dead); else
   it goes on the floor there. Type it; Enter or clicking away places it, Esc lets it go. In TF2 it is the game's
   text bubble, shown again after every full update. Notes stay with the marker until cleared.

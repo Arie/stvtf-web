@@ -8,7 +8,7 @@ import { setAutoZoom, setFollow } from "../core/input.js";
 import { EVENTS_URL, openStream, playbackListeners, streamParams, viewListeners } from "../core/stream.js";
 import { drawOwn, markerFull, trimOwn } from "./telestrator.js";
 import { NOTE_MS, arcTool, circleTool, note, worldAt } from "./tools.js";
-import { noteKey } from "./notes.js";
+import { noteKey, noteTool } from "./notes.js";
 import { viewMenu } from "./viewmenu.js";
 import { pushMirror } from "../map/camera.js";
 import { HOME, IN_ROOM, me, names, post } from "./home.js";
@@ -91,6 +91,7 @@ function roomBar() {
     marker = /** @type {HTMLButtonElement} */ ($("rb-marker")),
     arc = /** @type {HTMLButtonElement} */ ($("rb-arc")),
     circle = /** @type {HTMLButtonElement} */ ($("rb-circle")),
+    text = /** @type {HTMLButtonElement} */ ($("rb-text")),
     clear = /** @type {HTMLButtonElement} */ ($("rb-clear"));
   const control = (/** @type {import("./playbar.js").Control} */ c) => post("control", c);
   const bar = playbar({ home: HOME, send: control, live: end => control({ seek: end, paused: false }), room: true });
@@ -99,10 +100,10 @@ function roomBar() {
   const allow = on => {
     me.admin = on;
     bar.allow(on);
-    for (const c of [pen, marker, arc, circle, clear, $("rb-view")])
+    for (const c of [pen, marker, arc, circle, text, clear, $("rb-view")])
       /** @type {HTMLButtonElement} */ (c).disabled = !on;
     $("roombar").title = on ? "" : "The room's admins control playback";
-    for (const t of [pen, marker, arc, circle]) if (!on && t.classList.contains("on")) t.click();
+    for (const t of [pen, marker, arc, circle, text]) if (!on && t.classList.contains("on")) t.click();
     if (on) $("claim").hidden = true;
     setViewAdmin(on);
   };
@@ -121,8 +122,9 @@ function roomBar() {
   const showPeople = people(allow, showLead);
   inTf2();
   drawing(pen, marker);
-  arcTool(arc, [pen, marker, circle]);
-  circleTool(circle, [pen, marker, arc]);
+  arcTool(arc, [pen, marker, circle, text]);
+  circleTool(circle, [pen, marker, arc, text]);
+  noteTool(text, [pen, marker, arc, circle]);
   noteKey(() => me.admin);
   clear.onclick = () => post("clear", {});
   // d takes the pen, m the marker, a a jump arc, t a circle (n a note, see notes.js); c clears the

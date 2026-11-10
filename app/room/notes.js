@@ -1,13 +1,14 @@
 // A room's notes: a short text at a spot on the map, or on a player (following their dot), in
 // the drawer's ink, kept until cleared; in TF2 the game's text bubble. `n` puts one where the
 // pointer is: on the player under it (a HUD card, a name in the events or chat, a dot), or else
-// at that spot; then the text, placed on Enter or clicking away.
+// at that spot; so does a click with the note button (T) on. Then the text, placed on Enter or
+// clicking away.
 import { INK, ctx, state, uiScale } from "../core/core.js";
 import { env } from "../core/env.js";
 import { playerAt } from "../core/input.js";
 import { label, toScreen } from "../map/view.js";
 import { post } from "./home.js";
-import { note, worldAt } from "./tools.js";
+import { armTool, note, worldAt } from "./tools.js";
 /** @typedef {import("../../types/stream").NoteLine} NoteLine */
 
 // The most characters a note says (src/rooms/room/note.rs).
@@ -90,12 +91,24 @@ export function noteKey(allowed) {
     const target = /** @type {Element} */ (e.composedPath()[0]);
     if (e.key !== "n" || !allowed() || e.ctrlKey || e.metaKey || e.altKey) return;
     if (target.closest?.("input, select, textarea")) return;
-    const player = playerAt(pointer.x, pointer.y, pointer.target);
-    const onMap = pointer.target?.closest?.("canvas");
-    if (player == null && !onMap) return;
+    if (!pointer.target?.closest?.("canvas") && playerAt(pointer.x, pointer.y, pointer.target) == null) return;
     e.preventDefault();
-    ask(player == null ? { at: worldAt({ clientX: pointer.x, clientY: pointer.y }) } : { player });
+    noteHere();
   });
+}
+
+// The note button: armed, a click on the map puts a note there, or on the player whose dot it is.
+/** @param {HTMLButtonElement} button @param {HTMLButtonElement[]} others */
+export const noteTool = (button, others) =>
+  armTool(button, others, (_, e) => {
+    Object.assign(pointer, { x: e.clientX, y: e.clientY, target: /** @type {Element} */ (e.composedPath()[0]) });
+    noteHere();
+  });
+
+// A note where the pointer is: on the player under it, or else at that spot.
+function noteHere() {
+  const player = playerAt(pointer.x, pointer.y, pointer.target);
+  ask(player == null ? { at: worldAt({ clientX: pointer.x, clientY: pointer.y }) } : { player });
 }
 
 // A text box at the pointer: Enter or clicking away asks the room for the note `where` says (the

@@ -9,8 +9,8 @@ import { post } from "./home.js";
 
 // A tool on `button`: `click` takes each click on the map while armed, `reset` forgets a click
 // half done. Picking one of `others` lets it go, leaving the drawing mode to that one.
-/** @param {HTMLButtonElement} button @param {HTMLButtonElement[]} others @param {(at: [number, number]) => void} click */
-function armTool(button, others, click, reset = () => {}) {
+/** @param {HTMLButtonElement} button @param {HTMLButtonElement[]} others @param {(at: [number, number], e: PointerEvent) => void} click */
+export function armTool(button, others, click, reset = () => {}) {
   const disarm = () => {
     button.classList.toggle("on", false);
     reset();
@@ -32,7 +32,7 @@ function armTool(button, others, click, reset = () => {}) {
       if (!button.classList.contains("on") || e.button !== 0) return;
       e.preventDefault();
       e.stopImmediatePropagation();
-      click(worldAt(e));
+      click(worldAt(e), e);
     },
     { capture: true },
   );

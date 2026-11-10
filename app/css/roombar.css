@@ -92,6 +92,7 @@
 #roombar #rb-marker.on,
 #roombar #rb-arc.on,
 #roombar #rb-circle.on,
+#roombar #rb-text.on,
 #roombar #rb-viewmenu button.on {
   background: var(--ink, var(--pen));
   color: var(--on-ink, var(--shade));
@@ -324,6 +325,7 @@
 .stvtf.watch #rb-marker,
 .stvtf.watch #rb-arc,
 .stvtf.watch #rb-circle,
+.stvtf.watch #rb-text,
 .stvtf.watch #rb-clear,
 .stvtf.watch #rb-view,
 .stvtf.watch #rb-lead {
