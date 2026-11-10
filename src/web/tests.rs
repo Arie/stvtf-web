@@ -99,7 +99,7 @@ fn signed_in(app: &App, key: &str, json: &str) -> String {
     let t = token::seal(key, &format!(r#"{{"signin":{json},"exp":{}}}"#, unix_now() + 60), [5; 12]);
     let back = get(app, &format!("/signed_in?t={t}&return=/r/x/"), "");
     assert!(back.starts_with("HTTP/1.1 303") && back.contains("Location: /r/x/"), "{back}");
-    let cookie = back.split("Set-Cookie: ").nth(1).unwrap().split(';').next().unwrap().to_string();
+    let cookie = cookie_of(&back);
     assert!(back.contains("HttpOnly; SameSite=Lax; Secure"), "{back}");
     cookie
 }
@@ -141,7 +141,7 @@ fn someone_signed_in_is_their_steam_id_in_a_room_and_a_streamer_makes_themselves
     let (app, key, _dir) = site_app();
     let owner = signed_in(&app, &key, r#"{"uid":"7656","name":"Arie","streamer":false}"#);
     let opened = post(&app, "/w/demo/room", &owner, "");
-    let page = opened.split(r#""page":""#).nth(1).unwrap().split('"').next().unwrap().to_string();
+    let page = page_of(&opened);
     let me = get(&app, &format!("{page}me"), &owner);
     assert!(me.ends_with(r#"{"admin":true,"id":1,"signed":true,"signin":true,"streamer":false}"#), "{me}");
     // The same user from another browser (no guest cookie) is still the owner.
@@ -162,6 +162,16 @@ fn someone_signed_in_is_their_steam_id_in_a_room_and_a_streamer_makes_themselves
     assert!(post(&app, &format!("{page}claim"), &forged, "").starts_with("HTTP/1.1 403"));
 }
 
+/// The `page` a response's JSON sends the browser to.
+fn page_of(response: &str) -> String {
+    response.split(r#""page":""#).nth(1).unwrap().split('"').next().unwrap().to_string()
+}
+
+/// The cookie a response sets, without its attributes.
+fn cookie_of(response: &str) -> String {
+    response.split("Set-Cookie: ").nth(1).unwrap().split(';').next().unwrap().to_string()
+}
+
 fn post(app: &App, path: &str, cookie: &str, body: &str) -> String {
     let send = format!("POST {path} HTTP/1.1\r\nCookie: {cookie}\r\nContent-Length: {}\r\n\r\n{body}", body.len());
     request_to(app, send.as_bytes()).1
@@ -175,9 +185,9 @@ fn get(app: &App, path: &str, cookie: &str) -> String {
 fn open_room(app: &App) -> (String, String) {
     let opened = post(app, "/w/demo/room", "", "");
     assert!(opened.starts_with("HTTP/1.1 201"), "{opened}");
-    let cookie = opened.split("Set-Cookie: ").nth(1).unwrap().split(';').next().unwrap().to_string();
+    let cookie = cookie_of(&opened);
     assert!(opened.contains("HttpOnly; SameSite=Lax"), "{opened}");
-    let page = opened.split(r#""page":""#).nth(1).unwrap().split('"').next().unwrap().to_string();
+    let page = page_of(&opened);
     (page, cookie)
 }
 
@@ -287,8 +297,8 @@ fn a_viewer_goes_back_on_their_own() {
     }
     let back = post(&app, "/w/demo/rewind", "", r#"{"at":500,"speed":2,"paused":true}"#);
     assert!(back.starts_with("HTTP/1.1 201") && back.contains("Set-Cookie: stvtf_guest="), "{back}");
-    let page = back.split(r#""page":""#).nth(1).unwrap().split('"').next().unwrap().to_string();
-    let cookie = back.split("Set-Cookie: ").nth(1).unwrap().split(';').next().unwrap().to_string();
+    let page = page_of(&back);
+    let cookie = cookie_of(&back);
     assert!(get(&app, &format!("{page}me"), &cookie).contains(r#""admin":true"#), "theirs to control");
     assert_eq!(app.rooms.shared_count(), 0, "not counted as a room");
     assert!(post(&app, "/w/demo/rewind", "", r#"{"at":"soon"}"#).starts_with("HTTP/1.1 400"));
@@ -303,7 +313,7 @@ fn a_live_match_opens_a_room_that_records_it_from_then_on() {
     assert!(get(&app, &format!("/w/{}/room", m.id), "").starts_with("HTTP/1.1 200"));
     let opened = post(&app, &format!("/w/{}/room", m.id), "", "");
     assert!(opened.starts_with("HTTP/1.1 201"), "{opened}");
-    let page = opened.split(r#""page":""#).nth(1).unwrap().split('"').next().unwrap().to_string();
+    let page = page_of(&opened);
     let id = page.trim_start_matches("/r/").trim_end_matches('/');
     let room = app.rooms.get(id, sessions).unwrap();
     let _watching = room.join("me", None, None, true);
