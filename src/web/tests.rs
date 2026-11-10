@@ -32,15 +32,26 @@ fn start_links_carry_every_display_toggle() {
 }
 
 /// Runs `serve` on one connection, with `send` written by the client; returns serve's result and the response.
-fn request_to(app: &App, send: &[u8]) -> (Result<()>, String) {
+fn exchange(app: &App, send: &[u8]) -> (Result<()>, Vec<u8>) {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let mut client = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
     let (server, _) = listener.accept().unwrap();
     client.write_all(send).unwrap();
     let result = serve(server, app);
-    let mut response = String::new();
-    let _ = client.read_to_string(&mut response);
+    let mut response = Vec::new();
+    let _ = client.read_to_end(&mut response);
     (result, response)
+}
+
+fn request_to(app: &App, send: &[u8]) -> (Result<()>, String) {
+    let (result, response) = exchange(app, send);
+    (result, String::from_utf8_lossy(&response).into_owned())
+}
+
+/// A response's head, and its body, which may be binary.
+fn head_and_body(response: &[u8]) -> (String, &[u8]) {
+    let end = response.windows(4).position(|w| w == b"\r\n\r\n").unwrap();
+    (String::from_utf8_lossy(&response[..end]).into_owned(), &response[end + 4..])
 }
 
 fn request(send: &[u8]) -> (Result<()>, String) {
@@ -526,12 +537,8 @@ fn serves_the_page_and_its_modules_under_the_version() {
                 path.push(part);
             }
         }
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        let mut client = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
-        write!(client, "GET /{} HTTP/1.1\r\nHost: x\r\n\r\n", path.join("/")).unwrap();
-        serve(listener.accept().unwrap().0, &a).unwrap();
-        let mut font = Vec::new();
-        client.read_to_end(&mut font).unwrap();
+        let (result, font) = exchange(&a, format!("GET /{} HTTP/1.1\r\nHost: x\r\n\r\n", path.join("/")).as_bytes());
+        result.unwrap();
         assert!(font.starts_with(b"HTTP/1.1 200 OK"), "{link}");
     }
     assert!(get(&format!("/app/{v}/missing.js")).starts_with("HTTP/1.1 404"));
@@ -566,14 +573,10 @@ fn map_geometry_is_gzipped_for_browsers_that_take_it() {
     let mut a = app(Matches::One(SharedHub::default()));
     a.cache = dir.to_path_buf();
     let get = |accept: &str| {
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        let mut client = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
-        write!(client, "GET /map/cp_test HTTP/1.1\r\nHost: x\r\n{accept}\r\n").unwrap();
-        serve(listener.accept().unwrap().0, &a).unwrap();
-        let mut response = Vec::new();
-        client.read_to_end(&mut response).unwrap();
-        let split = response.windows(4).position(|w| w == b"\r\n\r\n").unwrap();
-        (String::from_utf8(response[..split].to_vec()).unwrap(), response[split + 4..].to_vec())
+        let (result, response) = exchange(&a, format!("GET /map/cp_test HTTP/1.1\r\nHost: x\r\n{accept}\r\n").as_bytes());
+        result.unwrap();
+        let (head, body) = head_and_body(&response);
+        (head, body.to_vec())
     };
     let (head, body) = get("Accept-Encoding: br, gzip;q=0.9\r\n");
     assert!(
@@ -833,15 +836,9 @@ fn a_match_no_longer_watched_says_where_to_start_it_again() {
 
 /// The head of a response, which may have a binary body.
 fn head_of(app: &App, path: &str) -> String {
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    let mut client = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
-    let (server, _) = listener.accept().unwrap();
-    write!(client, "GET {path} HTTP/1.1\r\n\r\n").unwrap();
-    serve(server, app).unwrap();
-    let mut response = Vec::new();
-    client.read_to_end(&mut response).unwrap();
-    let end = response.windows(4).position(|w| w == b"\r\n\r\n").unwrap();
-    String::from_utf8_lossy(&response[..end]).into_owned()
+    let (result, response) = exchange(app, format!("GET {path} HTTP/1.1\r\n\r\n").as_bytes());
+    result.unwrap();
+    head_and_body(&response).0
 }
 
 #[test]
