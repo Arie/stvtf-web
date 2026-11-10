@@ -22,6 +22,10 @@ const ICONS: [(&str, &[u8]); 9] = [
 const FNV_OFFSET_BASIS: u64 = 0xcbf2_9ce4_8422_2325;
 const FNV_PRIME: u64 = 0x0100_0000_01b3;
 
+/// How long other sites keep `/embed/v1/stv-map.js`, which names the build: a deploy reaches them
+/// this soon.
+const LOADER_CACHE_FOR: std::time::Duration = std::time::Duration::from_mins(5);
+
 /// The page's files, pictures and maps.
 pub(super) fn serve_file(s: &mut TcpStream, app: &App, path: &str, gzip: bool) -> std::io::Result<()> {
     match path {
@@ -47,7 +51,8 @@ pub(super) fn serve_file(s: &mut TcpStream, app: &App, path: &str, gzip: bool) -
         // A fixed address for other sites, loading this build's viewer.
         "/embed/v1/stv-map.js" => {
             let loader = format!("export * from \"../../app/{}/stv-map.js\";\n", app_version());
-            respond_with(s, "200 OK", &[("Content-Type", JS), ("Cache-Control", "max-age=300")], loader.as_bytes())
+            let max_age = format!("max-age={}", LOADER_CACHE_FOR.as_secs());
+            respond_with(s, "200 OK", &[("Content-Type", JS), ("Cache-Control", &max_age)], loader.as_bytes())
         }
         "/examples/embed.html" => respond(s, "200 OK", HTML, include_bytes!("../../examples/embed.html")),
         "/examples/tf2pugs.html" => respond(s, "200 OK", HTML, include_bytes!("../../examples/tf2pugs.html")),
