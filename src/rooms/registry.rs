@@ -5,6 +5,7 @@ use crate::lock;
 use crate::matches::recording::Recording;
 use crate::matches::sessions::{Session, Sessions, Store, Viewer, demo_dem};
 use crate::relays::pool::{DemoOf, Offer, Pool};
+use crate::rooms::logged;
 use crate::rooms::room::{Room, Saved};
 use anyhow::{Result, bail};
 use serde::{Deserialize, Serialize};
@@ -284,7 +285,7 @@ impl Rooms {
         lock(&self.sources).insert(id.to_string(), saved.source);
         self.opened_by(id, saved.by.as_deref());
         map.insert(id.to_string(), room.clone());
-        eprintln!("stvtf-web: room {} picked up", &id[..8]);
+        eprintln!("stvtf-web: room {} picked up", logged(id));
         Some(room)
     }
 
@@ -308,7 +309,7 @@ impl Rooms {
             .and_then(|plain| self.put_changed(store, &file(&room.id), &plain))
             .and_then(|()| self.put_changed(store, &marker_file(&room.id), &serde_json::to_vec(&marker)?));
         if let Err(e) = written {
-            eprintln!("stvtf-web: saving room {}: {e:#}", &room.id[..8]);
+            eprintln!("stvtf-web: saving room {}: {e:#}", logged(&room.id));
         }
     }
 
@@ -393,7 +394,7 @@ impl Rooms {
                 store.forget(&demo_file(demo));
             }
         }
-        eprintln!("stvtf-web: room {} ended", &id[..8.min(id.len())]);
+        eprintln!("stvtf-web: room {} ended", logged(id));
     }
 
     /// Drops saved rooms nobody came back for, demos no room plays, and the files of live matches
