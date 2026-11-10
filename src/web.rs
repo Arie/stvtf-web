@@ -23,7 +23,7 @@ use client::{client_of, counted};
 use events::{stream, too_many_streams, wants_detail};
 use matches::{is_page, list_matches, serve_match, start, start_view};
 use rooms::serve_room;
-use visitor::{cookie_attributes, local_path, origin, url_encode};
+use visitor::{local_path, origin, set_cookie, url_encode};
 
 const INDEX: &str = include_str!("../app/pages/index.html");
 const LANDING: &str = include_str!("../app/pages/landing.html");
@@ -35,6 +35,10 @@ const JSON: &str = "application/json";
 const WEBP: &str = "image/webp";
 const SVG: &str = "image/svg+xml";
 const TTF: &str = "font/ttf";
+
+/// Who the browser is, to the rooms; and who signed in with the site, still sealed.
+const GUEST_COOKIE: &str = "stvtf_guest";
+const USER_COOKIE: &str = "stvtf_user";
 
 /// Request line and headers together; the pages send far less.
 const MAX_REQUEST: u64 = 16 << 10;
@@ -64,9 +68,9 @@ struct Request {
     forwarded: Vec<IpAddr>,
     /// An `Authorization: Bearer` token.
     bearer: Option<String>,
-    /// The `stvtf_guest` cookie: who the browser is, to the rooms.
+    /// The [`GUEST_COOKIE`].
     guest: Option<String>,
-    /// The `stvtf_user` cookie: who signed in with the site, still sealed.
+    /// The [`USER_COOKIE`].
     user: Option<String>,
 }
 
@@ -105,13 +109,17 @@ fn read_request(reader: &mut impl BufRead) -> Result<Request> {
         } else if name.eq_ignore_ascii_case("authorization") {
             request.bearer = value.trim().strip_prefix("Bearer ").map(|t| t.trim().to_string());
         } else if name.eq_ignore_ascii_case("cookie") {
-            let guest = value.split(';').find_map(|c| c.trim().strip_prefix("stvtf_guest="));
-            request.guest = guest.filter(|g| sessions::is_id(g)).map(str::to_string);
-            request.user = value.split(';').find_map(|c| c.trim().strip_prefix("stvtf_user=")).map(str::to_string);
+            request.guest = cookie(value, GUEST_COOKIE).filter(|g| sessions::is_id(g)).map(str::to_string);
+            request.user = cookie(value, USER_COOKIE).map(str::to_string);
         } else if name.eq_ignore_ascii_case("accept-encoding") {
             request.gzip = value.split(',').any(|e| e.split(';').next().is_some_and(|e| e.trim().eq_ignore_ascii_case("gzip")));
         }
     }
+}
+
+/// Cookie `name`'s value in a `Cookie` header.
+fn cookie<'a>(header: &'a str, name: &str) -> Option<&'a str> {
+    header.split(';').find_map(|c| c.trim().strip_prefix(name)?.strip_prefix('='))
 }
 
 /// A query string's or form's value for `name`, undecoded.
@@ -218,7 +226,7 @@ fn serve_many(
             let back = local_path(param(&request.query, "return"), app);
             match keys.open_signin(param(&request.query, "t").unwrap_or_default(), unix_now()) {
                 Ok(user) => {
-                    let kept = format!("stvtf_user={}; {}", keys.keep(&user, unix_now()), cookie_attributes(app, token::SIGNED_IN_FOR));
+                    let kept = set_cookie(app, USER_COOKIE, &keys.keep(&user, unix_now()), token::SIGNED_IN_FOR);
                     respond_with(&mut s, "303 See Other", &[("Location", &back), ("Set-Cookie", &kept)], b"")?;
                 }
                 Err(e) => refuse(&mut s, "400 Bad Request", &e)?,
@@ -226,7 +234,7 @@ fn serve_many(
         }
         ("/signout", "GET") => {
             let back = local_path(param(&request.query, "return"), app);
-            let gone = format!("stvtf_user=; {}", cookie_attributes(app, 0));
+            let gone = set_cookie(app, USER_COOKIE, "", 0);
             respond_with(&mut s, "303 See Other", &[("Location", &back), ("Set-Cookie", &gone)], b"")?;
         }
         ("/start", _) => match start(app, sessions, request, client) {

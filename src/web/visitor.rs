@@ -1,17 +1,17 @@
 //! The visitor: signed in with the site, or a guest by cookie, and where they go back to.
 
-use super::{Request, form_decode, token, unix_now};
+use super::{GUEST_COOKIE, Request, form_decode, token, unix_now};
 use crate::App;
 use crate::matches::sessions;
 
 /// How long a guest cookie lasts: who one is in rooms, kept across visits.
 const GUEST_FOR: std::time::Duration = std::time::Duration::from_hours(365 * 24);
 
-/// A cookie's attributes, lasting `seconds`: only for us, never to scripts, and over HTTPS when
-/// a site is in front.
-pub(super) fn cookie_attributes(app: &App, seconds: u64) -> String {
+/// A `Set-Cookie` for `name`, lasting `seconds`: only for us, never to scripts, and over HTTPS
+/// when a site is in front.
+pub(super) fn set_cookie(app: &App, name: &str, value: &str, seconds: u64) -> String {
     let secure = if app.keys.is_some() { "; Secure" } else { "" };
-    format!("Path={}/; Max-Age={seconds}; HttpOnly; SameSite=Lax{secure}", app.base)
+    format!("{name}={value}; Path={}/; Max-Age={seconds}; HttpOnly; SameSite=Lax{secure}", app.base)
 }
 
 /// Who is asking, to the rooms: the user signed in with the site, by their Steam id, or the
@@ -31,7 +31,7 @@ pub(super) fn who(app: &App, request: &Request) -> Who {
         return Who { key: g.clone(), cookie: None, user: None };
     }
     let g = sessions::random_id();
-    let cookie = format!("stvtf_guest={g}; {}", cookie_attributes(app, GUEST_FOR.as_secs()));
+    let cookie = set_cookie(app, GUEST_COOKIE, &g, GUEST_FOR.as_secs());
     Who { key: g, cookie: Some(cookie), user: None }
 }
 
