@@ -70,10 +70,10 @@ function cards() {
 /** @param {number} id @returns {{ muted: boolean; talking: boolean } | null} */
 function voiceState(id) {
   const steamid = state.players.get(id)?.steamid;
-  if (!steamid) return null;
+  if (!steamid || !voice.voiceOn()) return null;
   const muted = voice.isMuted(steamid);
-  if (!muted && (!voice.voiceOn() || !voice.hasSpoken(steamid))) return null;
-  return { muted, talking: voice.voiceOn() && voice.isTalking(id) };
+  if (!muted && !voice.hasSpoken(steamid)) return null;
+  return { muted, talking: voice.isTalking(id) };
 }
 
 /** @param {HTMLElement} card */

@@ -1,7 +1,7 @@
 // A speaker badge on a player's dot: while they talk, and while muted (crossed out), as on their
 // HUD card; a click on it mutes or unmutes them (panel/speakers.js). See core/voice.js.
 import { ctx } from "../core/core.js";
-import { isMuted, isTalking } from "../core/voice.js";
+import { isMuted, isTalking, voiceOn } from "../core/voice.js";
 /** @typedef {import("../../types/stream").Player} Player */
 
 // The badge's size against the dot's, and the least it is in pixels. It sits on the dot's right,
@@ -21,6 +21,7 @@ let shown = [];
 /** @param {{ p: Player; x: number; y: number; rad: number }[]} dots */
 export function drawVoiceBadges(dots) {
   shown = [];
+  if (!voiceOn()) return;
   for (const { p, x, y, rad } of dots) {
     const muted = Boolean(p.steamid) && isMuted(p.steamid),
       talking = isTalking(p.id);
