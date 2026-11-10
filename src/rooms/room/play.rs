@@ -1,6 +1,5 @@
 //! The player: a room's recording played in time, paused, sped up and sought.
 
-use super::view::View;
 use super::{Room, SPEEDS};
 use crate::lock;
 use crate::matches::hub::{announce, publish, restore};
@@ -61,16 +60,6 @@ pub(crate) struct Control {
     pub(crate) paused: Option<bool>,
     pub(crate) speed: Option<f64>,
     pub(crate) seek: Option<u64>,
-}
-
-/// What kind of view `v` is.
-pub(super) fn kind(v: &View) -> &'static str {
-    match v {
-        View::Free => "free",
-        View::Auto => "auto",
-        View::Follow { .. } => "follow",
-        View::Admin { .. } => "admin",
-    }
 }
 
 /// Real time to wait out `gap` milliseconds of play at `speed`.

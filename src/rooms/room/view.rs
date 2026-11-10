@@ -1,6 +1,5 @@
 //! How everyone in a room sees the map, as an admin sets it.
 
-use super::play::kind;
 use super::{Room, on_map};
 use crate::lock;
 use crate::matches::hub::announce;
@@ -26,6 +25,18 @@ pub(crate) enum View {
     },
     /// Everyone seeing what the admin sees: the map area `w` by `h` round `cx`, `cy`, turned by `rot`.
     Admin { cx: f64, cy: f64, w: f64, h: f64, rot: f64 },
+}
+
+impl View {
+    /// What kind of view it is.
+    fn kind(&self) -> &'static str {
+        match self {
+            View::Free => "free",
+            View::Auto => "auto",
+            View::Follow { .. } => "follow",
+            View::Admin { .. } => "admin",
+        }
+    }
 }
 
 /// A view as an admin's page sends it: `take` when they chose it, which sets the kind of view;
@@ -64,11 +75,11 @@ impl Room {
         }
         let by = lock(&self.people).id(guest);
         let mut leader = lock(&self.leader);
-        let kind = kind(view).to_string();
-        if !post.take && leader.as_ref().is_none_or(|(_, _, now)| *now != kind) {
+        let kind = view.kind();
+        if !post.take && leader.as_ref().is_none_or(|(_, _, now)| now != kind) {
             return Ok(());
         }
-        *leader = Some((by, post.page.clone(), kind));
+        *leader = Some((by, post.page.clone(), kind.to_string()));
         let mut line = serde_json::to_value(view)?;
         line["type"] = "view".into();
         line["by"] = by.into();
