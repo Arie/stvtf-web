@@ -5,7 +5,7 @@
 //! from `props.txt.gz`: the upward faces of each stock prop model's collision mesh, made from
 //! TF2's VPKs by `script/model-bounds.mjs`. A map's own models (in its pakfile) are left out.
 
-use super::format::{LUMP_GAME_LUMP, bytes, i32_at, index_at, lump, u16_at, unpack, vec3_at};
+use super::format::{I32_SIZE, LUMP_GAME_LUMP, U16_SIZE, bytes, i32_at, index_at, lump, u16_at, unpack, vec3_at};
 use super::material::Kind;
 use super::{Bounds, FLOOR_MIN_NORMAL_Z, Floor, Vec3, cross, gradient, outline};
 use anyhow::{Result, bail};
@@ -79,7 +79,8 @@ fn props(data: &[u8]) -> Result<Vec<Prop>> {
     let dir = lump(data, LUMP_GAME_LUMP)?;
     let count = index_at(&dir, 0)?;
     for i in 0..count.min(MAX_PROPS) {
-        let e = 4 + i * GAME_LUMP_SIZE;
+        // After the count of game lumps.
+        let e = I32_SIZE + i * GAME_LUMP_SIZE;
         if i32_at(&dir, e)? != SPRP {
             continue;
         }
@@ -96,22 +97,23 @@ fn read_props(b: &[u8], version: u16) -> Result<Vec<Prop>> {
     let names = index_at(b, 0)?.min(MAX_PROPS);
     let dict: Vec<String> = (0..names)
         .map(|i| {
-            let raw: [u8; NAME_SIZE] = bytes(b, 4 + i * NAME_SIZE)?;
+            let raw: [u8; NAME_SIZE] = bytes(b, I32_SIZE + i * NAME_SIZE)?;
             let end = raw.iter().position(|&c| c == 0).unwrap_or(NAME_SIZE);
             Ok(String::from_utf8_lossy(&raw[..end]).to_ascii_lowercase().replace('\\', "/"))
         })
         .collect::<Result<_>>()?;
-    let leaves_at = 4 + names * NAME_SIZE;
-    let props_at = leaves_at + 4 + index_at(b, leaves_at)? * 2;
+    // Each list is a count and its entries: names, the leaves props are in (u16s), props.
+    let leaves_at = I32_SIZE + names * NAME_SIZE;
+    let props_at = leaves_at + I32_SIZE + index_at(b, leaves_at)? * U16_SIZE;
     let count = index_at(b, props_at)?.min(MAX_PROPS);
-    let rest = b.len().saturating_sub(props_at + 4);
+    let rest = b.len().saturating_sub(props_at + I32_SIZE);
     let size = match rest.checked_div(count) {
         Some(s) if s >= MIN_PROP_SIZE && rest.is_multiple_of(count) => s,
         _ => prop_size(version).ok_or_else(|| anyhow::anyhow!("static props of version {version}"))?,
     };
     let mut out = Vec::new();
     for i in 0..count {
-        let o = props_at + 4 + i * size;
+        let o = props_at + I32_SIZE + i * size;
         let [solid] = bytes(b, o + PROP_SOLID)?;
         let Some(model) = dict.get(usize::from(u16_at(b, o + PROP_TYPE)?)) else { continue };
         if solid != SOLID_NONE {

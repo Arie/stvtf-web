@@ -11,8 +11,8 @@ use serde::Serialize;
 
 use super::displacement::Displacement;
 use super::format::{
-    LUMP_BRUSHES, LUMP_BRUSHSIDES, LUMP_LEAFBRUSHES, LUMP_LEAFS, LUMP_MODELS, LUMP_NODES, LUMP_PLANES, i32_at, index_at, lump, plane_at,
-    u16_at,
+    I32_SIZE, LUMP_BRUSHES, LUMP_BRUSHSIDES, LUMP_LEAFBRUSHES, LUMP_LEAFS, LUMP_MODELS, LUMP_NODES, LUMP_PLANES, i32_at, index_at, lump,
+    plane_at, u16_at,
 };
 use super::{Bounds, FLOOR_MIN_NORMAL_Z, Vec3, crosses};
 
@@ -248,7 +248,7 @@ impl Lumps {
                 if !std::mem::replace(seen, true) {
                     stack.extend([
                         i32_at(&self.nodes, node * NODE_SIZE + NODE_CHILDREN)?,
-                        i32_at(&self.nodes, node * NODE_SIZE + NODE_CHILDREN + 4)?,
+                        i32_at(&self.nodes, node * NODE_SIZE + NODE_CHILDREN + I32_SIZE)?,
                     ]);
                 }
                 continue;

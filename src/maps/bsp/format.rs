@@ -47,6 +47,7 @@ pub(super) const LZMA_PROPERTIES: usize = 12;
 pub(super) const LZMA_HEADER: usize = 17;
 /// The sizes of the fields read.
 pub(super) const F32_SIZE: usize = 4;
+pub(super) const I32_SIZE: usize = 4;
 pub(super) const U16_SIZE: usize = 2;
 /// Record sizes and field offsets of the lumps read (`dplane_t`, `dface_t`, …).
 const PLANE_SIZE: usize = 20;
