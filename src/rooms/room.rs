@@ -26,7 +26,6 @@ pub(crate) struct Room {
     pub(crate) id: String,
     pub(crate) hub: SharedHub,
     people: Mutex<People>,
-    /// The number of the admin who set the view last by choosing it.
     /// The admin's number, page and the kind of view it chose, when one did.
     leader: Mutex<Option<Leader>>,
     /// The latest view line, to save.
