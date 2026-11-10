@@ -6,7 +6,8 @@ use super::rooms::{open_room, opened};
 use super::token::Source;
 use super::visitor::{Who, who};
 use super::{
-    HTML, INDEX, JSON, MAX_DELAY_S, Request, TEXT, json_body, landing, not_found, param, refuse, respond, respond_with, token, unix_now,
+    HTML, INDEX, JSON, MAX_DELAY_S, Request, TEXT, json_body, landing, not_found, param, redirect, refuse, respond, respond_with, token,
+    unix_now,
 };
 use crate::matches::sessions;
 use crate::matches::sessions::{Session, Sessions, Viewer};
@@ -35,7 +36,7 @@ pub(super) fn serve_match(
         {
             let at = moment(&request.query, "t").map(|t| format!("&at={t}")).unwrap_or_default();
             let to = format!("{home}?connect=https%3A%2F%2Fdemos.tf%2F{demo}{at}");
-            respond_with(&mut s, "303 See Other", &[("Location", &to)], b"")?;
+            redirect(&mut s, "303 See Other", &to)?;
         }
         (None, _) if app.keys.is_some() => {
             respond(&mut s, "404 Not Found", TEXT, b"That match is no longer being watched; open it again from the site.")?;
