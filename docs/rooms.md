@@ -16,7 +16,7 @@ pressed again, it returns to your room on that match. The match's own page never
 - A circle (◯ or `t`): each click puts a small ring on the floor there, "stand here"; in TF2 a
   ring fence. It stays on for the next, and the circles stay with the marker until cleared.
 - A note (`n`): a short text (40 characters) where the pointer is. Over a player (their card in
-  the HUD, their name in the events or chat, their dot) it goes on them and follows them; else
+  the HUD, their name in the events or chat, their dot) it goes on them and follows them (hidden while they are dead); else
   it goes on the floor there. Type it; Enter or clicking away places it, Esc lets it go. In TF2 it is the game's
   text bubble, shown again after every full update. Notes stay with the marker until cleared.
 - People are listed by the name they give (kept in the browser) or Guest N, known by the

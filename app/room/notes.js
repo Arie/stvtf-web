@@ -43,7 +43,8 @@ export function drawNotes() {
   const s = uiScale();
   ctx.save();
   for (const n of notes.values()) {
-    const p = n.player == null ? null : state.lastPlayers.find(q => q.id === n.player);
+    // On a player while they are alive, as TF2 shows it.
+    const p = n.player == null ? null : state.lastPlayers.find(q => q.id === n.player && q.alive);
     const where = n.at ?? p?.pos;
     if (!where) continue;
     const [x, y] = toScreen(where[0], where[1]);
