@@ -50,10 +50,14 @@
   font-size: 12px;
   white-space: nowrap;
 }
+/* Open, over the panels beside the bar too (the chat, the overview toggle). */
+#roombar.menu {
+  z-index: 30;
+}
 #rb-viewmenu {
   position: absolute;
   bottom: calc(100% + 6px);
-  left: 0;
+  right: 0;
   display: flex;
   flex-direction: column;
   gap: 2px;

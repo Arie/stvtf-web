@@ -15,6 +15,7 @@ export function viewMenu(chosen) {
   const open = (/** @type {boolean} */ on) => {
     menu.hidden = !on;
     button.setAttribute("aria-expanded", String(on));
+    $("roombar").classList.toggle("menu", on);
   };
   button.onclick = () => open(menu.hidden !== false);
   menu.addEventListener("click", e => {
