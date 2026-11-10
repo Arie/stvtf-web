@@ -240,8 +240,7 @@ impl Sessions {
 
     /// Watches the match saved as `id` again, or drops its file if it cannot be read.
     fn pick_up(&self, map: &mut HashMap<String, Arc<Session>>, store: &Store, id: &str) -> Option<Arc<Session>> {
-        let saved = std::fs::read(store.path(id)).map_err(anyhow::Error::from).and_then(|d| store.load(&d));
-        let Ok(saved) = saved else {
+        let Ok(saved) = store.load(id) else {
             eprintln!("stvtf-web: dropping unreadable saved match {id}");
             store.forget(id);
             return None;

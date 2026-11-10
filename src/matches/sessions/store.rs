@@ -84,10 +84,7 @@ impl Store {
             history,
             by: s.by.get().cloned(),
         };
-        let plain = serde_json::to_vec(&saved)?;
-        std::fs::create_dir_all(&self.dir)?;
-        let data = self.keys.as_ref().map_or_else(|| plain.clone(), |k| k.seal(&plain));
-        write_atomic(&self.path(&s.id), &data)?;
+        self.put(&s.id, &serde_json::to_vec(&saved)?)?;
         *last_saved = Some(changes);
         Ok(())
     }
@@ -141,12 +138,9 @@ impl Store {
         })
     }
 
-    pub(super) fn load(&self, data: &[u8]) -> Result<SavedMatch> {
-        let plain = match &self.keys {
-            Some(k) => k.unseal(data)?,
-            None => data.to_vec(),
-        };
-        Ok(serde_json::from_slice(&plain)?)
+    /// The match `save` wrote as `id`.
+    pub(super) fn load(&self, id: &str) -> Result<SavedMatch> {
+        Ok(serde_json::from_slice(&self.take(id)?)?)
     }
 }
 
