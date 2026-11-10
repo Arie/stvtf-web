@@ -125,11 +125,10 @@ impl Session {
             let d = d.clone();
             return Some(Arc::new(move |tick| d.at(tick)));
         }
-        if let Some(Source::File(file)) = &*lock(&self.source) {
-            let path = dem_beside(file);
-            return Some(Arc::new(move |_| path.exists().then(|| path.clone())));
-        }
-        let path = store?.dir.join(demo_dem(self.demo?));
+        let path = match &*lock(&self.source) {
+            Some(Source::File(file)) => dem_beside(file),
+            _ => store?.dir.join(demo_dem(self.demo?)),
+        };
         Some(Arc::new(move |_| path.exists().then(|| path.clone())))
     }
 
