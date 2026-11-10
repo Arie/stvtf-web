@@ -24,7 +24,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
-use stvtf::watch::{self};
+use stvtf::watch;
 
 /// How long a match nobody watches keeps its `SourceTV` connection.
 const LINGER: Duration = Duration::from_secs(180);
@@ -381,10 +381,8 @@ mod testing;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::matches::hub::{SharedHub, publish};
-    use crate::testing::TempDir;
-    use crate::testing::{app, server};
-    use crate::web::MAX_STREAMS_PER_CLIENT;
+    use crate::matches::hub::publish;
+    use crate::testing::{TempDir, app, server};
 
     #[test]
     fn connections_are_capped() {
