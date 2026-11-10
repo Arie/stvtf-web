@@ -254,7 +254,7 @@ impl Recording {
     }
 
     /// A live recording going on from the chunks `saved` (as a sink got them), to `sink`.
-    pub(crate) fn resume(saved: impl Read, sink: Sink) -> Result<Recording> {
+    pub(crate) fn resume(saved: impl Read, mut sink: Sink) -> Result<Recording> {
         let r = Recording::live();
         {
             let mut inner = lock(&r.inner);
@@ -278,11 +278,7 @@ impl Recording {
             inner.fresh = true;
             // A file from before that went on to a new map: it starts over too.
             if cut {
-                let mut sink = sink;
                 sink(&Save::All(inner.file()?));
-                *lock(&r.sink) = Some(sink);
-                drop(inner);
-                return Ok(r);
             }
         }
         *lock(&r.sink) = Some(sink);
