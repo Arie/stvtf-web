@@ -6,8 +6,8 @@ use super::rooms::{open_room, opened};
 use super::token::Source;
 use super::visitor::{Who, who};
 use super::{
-    HTML, INDEX, JSON, MAX_DELAY_S, Request, TEXT, json_body, landing, not_found, param, redirect, refuse, respond, respond_with, token,
-    unix_now,
+    HTML, INDEX, JSON, MAX_DELAY_S, Request, TEXT, json_body, landing, not_found, param, redirect, refuse, respond, respond_marks,
+    respond_with, token, unix_now,
 };
 use crate::matches::sessions;
 use crate::matches::sessions::{Session, Sessions, Viewer};
@@ -105,17 +105,15 @@ pub(super) fn match_timeline(s: &mut TcpStream, m: &Arc<Session>, request: &Requ
         m.prepare();
         return respond(s, "202 Accepted", JSON, b"{}");
     };
-    let body = if part == "marks" {
-        let from = param(&request.query, "from").and_then(|f| f.parse().ok()).unwrap_or(0);
-        let (marks, all) = r.marks(from);
-        serde_json::json!({ "marks": marks, "all": all })
-    } else {
-        // A live match's is at its end, once it ended too: only a replay plays from the start.
-        let at = if m.watches_server() { r.length() } else { lock(&m.hub).played.min(r.length()) };
-        let (length, live, rounds, marks) = (r.length(), r.is_live(), r.rounds(), r.marks(usize::MAX).1);
-        let (start, origin) = (r.start(), r.origin());
-        serde_json::json!({ "at": at, "length": length, "start": start, "origin": origin, "live": live, "rounds": rounds, "marks": marks })
-    };
+    if part == "marks" {
+        return respond_marks(s, &request.query, |from| r.marks(from));
+    }
+    // A live match's is at its end, once it ended too: only a replay plays from the start.
+    let at = if m.watches_server() { r.length() } else { lock(&m.hub).played.min(r.length()) };
+    let (length, live, rounds, marks) = (r.length(), r.is_live(), r.rounds(), r.marks(usize::MAX).1);
+    let (start, origin) = (r.start(), r.origin());
+    let body =
+        serde_json::json!({ "at": at, "length": length, "start": start, "origin": origin, "live": live, "rounds": rounds, "marks": marks });
     respond(s, "200 OK", JSON, body.to_string().as_bytes())
 }
 

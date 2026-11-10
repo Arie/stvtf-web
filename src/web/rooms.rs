@@ -4,7 +4,9 @@ use super::client::counted;
 use super::events::{stream, too_many_streams, wants_detail};
 use super::matches::is_page;
 use super::visitor::{Who, origin, who};
-use super::{HTML, INDEX, JSON, Request, TEXT, done, form_decode, json_body, not_found, param, refuse, respond, respond_with};
+use super::{
+    HTML, INDEX, JSON, Request, TEXT, done, form_decode, json_body, not_found, param, refuse, respond, respond_marks, respond_with,
+};
 use crate::App;
 use crate::matches::sessions::{Session, Sessions};
 use crate::rooms::room::{ArcDraw, Control, Draw, Room, ViewPost};
@@ -119,11 +121,7 @@ pub(super) fn serve_room(
             None => too_many_streams(&mut s)?,
         },
         ("me", "GET") => me(&mut s, app, &room, &who)?,
-        ("marks", "GET") => {
-            let from = param(&request.query, "from").and_then(|f| f.parse().ok()).unwrap_or(0);
-            let (marks, all) = room.marks(from);
-            respond(&mut s, "200 OK", JSON, serde_json::json!({ "marks": marks, "all": all }).to_string().as_bytes())?;
-        }
+        ("marks", "GET") => respond_marks(&mut s, &request.query, |from| room.marks(from))?,
         (part, "POST") => change(&mut s, reader, request, &room, &who, part)?,
         _ => not_found(&mut s)?,
     }

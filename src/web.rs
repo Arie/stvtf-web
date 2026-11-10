@@ -1,6 +1,7 @@
 //! The HTTP side: pages, files, event streams and starting matches.
 
 use crate::matches::hub::SharedHub;
+use crate::matches::recording::Mark;
 use crate::matches::sessions;
 use crate::matches::sessions::{Session, Sessions};
 use crate::{App, Matches};
@@ -282,6 +283,13 @@ fn read_body(reader: &mut BufReader<Take<TcpStream>>, request: &Request) -> Resu
 /// A JSON body read as `T`, or why not.
 fn json_body<T: serde::de::DeserializeOwned>(reader: &mut BufReader<Take<TcpStream>>, request: &Request) -> Result<T> {
     Ok(serde_json::from_slice(&read_body(reader, request)?)?)
+}
+
+/// The marks from `?from=` on, and how many there are in all.
+fn respond_marks(s: &mut TcpStream, query: &str, marks: impl FnOnce(usize) -> (Vec<Mark>, usize)) -> std::io::Result<()> {
+    let from = param(query, "from").and_then(|f| f.parse().ok()).unwrap_or(0);
+    let (marks, all) = marks(from);
+    respond(s, "200 OK", JSON, serde_json::json!({ "marks": marks, "all": all }).to_string().as_bytes())
 }
 
 /// `204` when `done` is, `400` with why not.
