@@ -466,8 +466,8 @@ impl Drop for RemoteRelay {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::relays::pool::tests::{free_port, want};
-    use crate::testing::TempDir;
+    use crate::relays::pool::tests::want;
+    use crate::testing::{TempDir, free_port};
 
     #[test]
     fn a_beam_goes_to_the_relay_process_as_it_was() {

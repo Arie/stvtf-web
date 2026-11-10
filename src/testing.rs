@@ -37,6 +37,11 @@ impl Drop for TempDir {
     }
 }
 
+/// A UDP port nothing has just now.
+pub(crate) fn free_port() -> u16 {
+    std::net::UdpSocket::bind("0.0.0.0:0").unwrap().local_addr().unwrap().port()
+}
+
 /// What the stand-in for a server's watcher does.
 struct Script {
     target: String,

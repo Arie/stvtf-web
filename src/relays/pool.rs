@@ -281,11 +281,6 @@ pub(super) mod tests {
     use super::*;
     use std::time::Instant;
 
-    /// A UDP port nothing has just now.
-    pub(crate) fn free_port() -> u16 {
-        std::net::UdpSocket::bind("0.0.0.0:0").unwrap().local_addr().unwrap().port()
-    }
-
     /// Two UDP ports nothing has just now.
     fn free_ports() -> [u16; 2] {
         let a = std::net::UdpSocket::bind("0.0.0.0:0").unwrap();

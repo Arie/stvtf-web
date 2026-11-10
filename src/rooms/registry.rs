@@ -425,7 +425,7 @@ impl Rooms {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::testing::TempDir;
+    use crate::testing::{TempDir, free_port};
     use std::fmt::Write as _;
 
     /// Sessions with a pinned demo rooms can play, and the folder its recording is in.
@@ -531,7 +531,7 @@ mod tests {
         std::fs::write(path(&relayed.id), v.to_string()).unwrap();
         relayed.stop();
         plain.stop();
-        let port = std::net::UdpSocket::bind("0.0.0.0:0").unwrap().local_addr().unwrap().port();
+        let port = free_port();
         let pool = Some(Arc::new(Pool::Local(crate::relays::pool::Relays::new("127.0.0.1", [port]))));
         let next = Rooms::new(Some(store(&dir)), pool);
         next.pick_up_relayed(&sessions);
