@@ -53,7 +53,8 @@ function badge(x, y, r, muted) {
   ctx.fillStyle = "#0b0c0ee0";
   ctx.fill();
   ctx.lineWidth = Math.max(1, r * 0.14);
-  ctx.strokeStyle = muted ? "#e05a4f" : "#fff";
+  // Black, as the dots' own outline: a white one blurs into the sound waves at this size.
+  ctx.strokeStyle = muted ? "#e05a4f" : "#000";
   ctx.stroke();
   const u = r / 7;
   ctx.beginPath();
