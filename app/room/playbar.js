@@ -48,23 +48,26 @@ export function playbar(o) {
   return new Playbar(o);
 }
 
+// The speed after `now` among `speeds`, round again after the last.
+/** @param {number[]} speeds @param {number} now */
+export const nextSpeed = (speeds, now) => speeds.find(s => s > now) ?? speeds[0];
+
+/** @param {number} s */
+export const speedLabel = s => `${{ 0.25: "¼", 0.5: "½" }[s] ?? s}×`;
+
 class Playbar {
   /** @param {Options} o */
   constructor(o) {
     this.o = o;
     this.play = /** @type {HTMLButtonElement} */ ($("rb-play"));
     this.time = /** @type {HTMLInputElement} */ ($("rb-time"));
-    this.speed = /** @type {HTMLSelectElement} */ ($("rb-speed"));
+    this.speed = /** @type {HTMLButtonElement} */ ($("rb-speed"));
+    this.speeds = o.room ? ROOM_SPEEDS : SPEEDS;
     this.shown = $("rb-clock");
     this.live = /** @type {HTMLButtonElement} */ ($("rb-live"));
     this.track = $("rb-track");
     $("roombar").hidden = false;
     this.width = widthOf(this.track);
-    this.speed.replaceChildren(
-      ...(o.room ? ROOM_SPEEDS : SPEEDS).map(s =>
-        Object.assign(document.createElement("option"), { value: String(s), textContent: `${s}×` }),
-      ),
-    );
     /** @type {PlaybackLine | null} The latest playback line, heard at `heardAt`. */
     this.last = null;
     this.heardAt = 0;
@@ -85,7 +88,7 @@ class Playbar {
     const { play, live, speed, time, o } = this;
     play.onclick = () => this.last && this.control({ paused: !this.last.paused });
     live.onclick = () => o.live(Math.round(this.length()));
-    speed.onchange = () => this.control({ speed: Number(speed.value) });
+    speed.onclick = () => this.control({ speed: nextSpeed(this.speeds, this.last?.speed ?? 1) });
     time.oninput = () => {
       this.dragging = true;
       this.show();
@@ -182,7 +185,8 @@ class Playbar {
     if (j && (Math.abs(m.at - j.at) < JUMP_MS || this.heardAt - j.since > JUMP_WAIT_MS)) this.jumped = null;
     this.play.textContent = m.paused ? "▶" : "⏸";
     this.play.title = m.paused ? "Play (space)" : "Pause (space)";
-    this.speed.value = String(m.speed);
+    this.speed.textContent = speedLabel(m.speed);
+    this.speed.title = `Speed ${speedLabel(m.speed)}: ${speedLabel(nextSpeed(this.speeds, m.speed))} next`;
     this.time.max = String(m.length);
     this.marks.heard(m);
     this.show();

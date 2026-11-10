@@ -40,6 +40,10 @@
 #roombar select {
   padding: 0 6px;
 }
+#roombar #rb-speed {
+  width: 34px;
+  font-size: 12px;
+}
 #roombar #rb-pen.on,
 #roombar #rb-marker.on,
 #roombar #rb-arc.on,
