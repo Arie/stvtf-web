@@ -156,7 +156,11 @@
   color: var(--alert);
   animation: pulse 0.7s infinite alternate;
 }
+/* Its contents, not the card: a followed one's frame stays bright. */
 .card.dead {
+  background: var(--shade-90);
+}
+.card.dead > :not(.vc) {
   filter: grayscale(1) brightness(0.55);
 }
 .card.dead .hp {
@@ -280,8 +284,24 @@
 .card:hover {
   filter: brightness(1.25);
 }
-.card.followed {
-  box-shadow: inset 0 0 0 2px #fff;
+/* The followed player's card: framed over its contents, and stepped out of its column towards
+   the map. */
+.card {
+  transition: transform 0.15s ease-out;
+}
+.card.followed::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  border: 2px solid #fff;
+  pointer-events: none;
+}
+#hud-blue .card.followed {
+  transform: translateX(10px);
+}
+#hud-red .card.followed {
+  transform: translateX(-10px);
 }
 #scoreboard {
   position: absolute;
