@@ -2,8 +2,8 @@
 // heard; then RED and BLU with everyone on them now, heard or not, and the rest heard; each team
 // with its mute, each person with theirs and a volume. Who talks is lit, and so is their team's
 // name.
-import { state } from "../core/core.js";
-import { env } from "../core/env.js";
+import { ICONS, state } from "../core/core.js";
+import { asset, env } from "../core/env.js";
 import * as voice from "../core/voice.js";
 
 // The teams in the list, in order, and how they are named.
@@ -20,10 +20,25 @@ function button(text, data, title = "") {
   return b;
 }
 
+// A person's mute: their class icon as on the HUD, on their team's colour (faded and struck out
+// while muted); a 🔊 or 🔇 for one with no class.
+/** @param {string} steamid @param {import("../../types/stream").Player | undefined} p @param {boolean} muted */
+function muteButton(steamid, p, muted) {
+  const b = button(muted ? "🔇" : "🔊", { mute: steamid }, muted ? "Unmute" : "Mute");
+  if (p && ICONS[p.class]) {
+    b.textContent = "";
+    b.className = `vci t-${p.team}`;
+    b.append(Object.assign(document.createElement("img"), { src: asset(`icons/${p.class}.svg`), alt: p.class }));
+  }
+  b.classList.toggle("muted", muted);
+  return b;
+}
+
 /** @param {{ steamid: string; player: number | null }} s */
 function row(s) {
   const muted = voice.isMuted(s.steamid);
-  const name = (s.player == null ? null : state.players.get(s.player)?.name) ?? s.steamid;
+  const p = s.player == null ? undefined : state.players.get(s.player);
+  const name = p?.name ?? s.steamid;
   const el = document.createElement("div");
   el.className = "vrow";
   el.dataset.steamid = s.steamid;
@@ -32,7 +47,7 @@ function row(s) {
   range.value = String(Math.round(voice.volumeOf(s.steamid) * 100));
   range.dataset.volume = s.steamid;
   range.setAttribute("aria-label", `Volume of ${name}`);
-  el.append(button(muted ? "🔇" : "🔊", { mute: s.steamid }, muted ? "Unmute" : "Mute"), label, range);
+  el.append(muteButton(s.steamid, p, muted), label, range);
   return el;
 }
 
@@ -69,7 +84,13 @@ function groups() {
 
 // What the list shows, to know when to build it anew.
 /** @param {ReturnType<typeof groups>} gs */
-const shape = gs => gs.map(g => `${g.team}:${g.people.map(p => p.steamid).join(",")}`).join("|");
+const shape = gs =>
+  gs
+    .map(
+      g =>
+        `${g.team}:${g.people.map(p => `${p.steamid}/${p.player == null ? "" : state.players.get(p.player)?.class}`).join(",")}`,
+    )
+    .join("|");
 
 /** @param {HTMLElement} list */
 export function renderList(list) {

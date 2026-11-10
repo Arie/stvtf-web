@@ -254,6 +254,35 @@
   width: 26px;
   height: 22px;
 }
+/* A person's class, as on the HUD: a click mutes or unmutes them. */
+#voicelist .vrow .vci {
+  position: relative;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  background: var(--dim);
+}
+#voicelist .vrow .vci.t-red {
+  background: var(--red);
+}
+#voicelist .vrow .vci.t-blue {
+  background: var(--blue);
+}
+#voicelist .vci img {
+  width: 16px;
+  height: 16px;
+}
+#voicelist .vci.muted img {
+  opacity: 0.35;
+}
+#voicelist .vci.muted::after {
+  content: "";
+  position: absolute;
+  inset: 50% 2px auto;
+  height: 2px;
+  background: #e05a4f;
+  transform: rotate(-35deg);
+}
 #voicelist .vname {
   flex: 1;
   overflow: hidden;
