@@ -3,6 +3,7 @@
 // with its mute, each person with theirs and a volume. Who talks is lit, and so is their team's
 // name.
 import { state } from "../core/core.js";
+import { env } from "../core/env.js";
 import * as voice from "../core/voice.js";
 
 // The teams in the list, in order, and how they are named.
@@ -37,12 +38,26 @@ function row(s) {
 
 /** @typedef {{ steamid: string; player: number | null }} Person */
 
-// Who is listed, by team: RED's and BLU's players now (bots aside), then the rest heard.
+// Where each player's HUD card is, top to bottom: the list keeps the HUD's order.
+function hudOrder() {
+  /** @type {Map<number, number>} */
+  const at = new Map();
+  for (const c of /** @type {NodeListOf<HTMLElement>} */ (env.root.querySelectorAll("#hud-red .card, #hud-blue .card")))
+    at.set(Number(c.dataset.id), at.size);
+  return at;
+}
+
+// Who is listed, by team: RED's and BLU's players now (bots aside) as the HUD has them, then the
+// rest heard.
 /** @returns {{ team: string; name: string; people: Person[] }[]} */
 function groups() {
   /** @type {Map<string, Person[]>} */
   const by = new Map(TEAMS.map(t => [t.team, []]));
-  for (const p of state.players.values())
+  const order = hudOrder();
+  const players = [...state.players.values()].sort(
+    (a, b) => (order.get(a.id) ?? Infinity) - (order.get(b.id) ?? Infinity),
+  );
+  for (const p of players)
     if ((p.team === "red" || p.team === "blue") && p.steamid && p.steamid !== "BOT")
       by.get(p.team)?.push({ steamid: p.steamid, player: p.id });
   for (const s of voice.speakersHeard()) {
