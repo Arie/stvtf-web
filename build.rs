@@ -54,7 +54,7 @@ fn walk(dir: &Path, found: &mut Vec<PathBuf>) {
 
 /// The stylesheet at `path` with each `@import "x";` line replaced by the file it names.
 fn inline_imports(path: &Path) -> String {
-    let text = fs::read_to_string(path).expect("style.css");
+    let text = fs::read_to_string(path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
     let dir = path.parent().expect("a folder");
     text.lines()
         .map(|line| match line.strip_prefix("@import \"").and_then(|l| l.strip_suffix("\";")) {
