@@ -100,10 +100,11 @@ function roomBar() {
   const allow = on => {
     me.admin = on;
     bar.allow(on);
+    // A tool in hand is let go, while its button still takes the click.
+    for (const t of [pen, marker, arc, circle, text]) if (!on && t.classList.contains("on")) t.click();
     for (const c of [pen, marker, arc, circle, text, clear, $("rb-view")])
       /** @type {HTMLButtonElement} */ (c).disabled = !on;
     $("roombar").title = on ? "" : "The room's admins control playback";
-    for (const t of [pen, marker, arc, circle, text]) if (!on && t.classList.contains("on")) t.click();
     if (on) $("claim").hidden = true;
     setViewAdmin(on);
   };
