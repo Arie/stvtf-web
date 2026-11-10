@@ -310,7 +310,7 @@
   will-change: transform;
   image-rendering: pixelated;
 }
-.stvtf.room #bgtoggle {
+.stvtf.room #mapcorner {
   bottom: 70px;
 }
 .stvtf.room #autozoom {
@@ -335,11 +335,17 @@
 .stvtf.watch #rb-lead {
   display: none;
 }
-#bgtoggle {
+/* The map's corner: voice, and overview or geometry. */
+#mapcorner {
   position: absolute;
   right: 12px;
   bottom: 12px;
   z-index: 3;
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+}
+#bgtoggle {
   display: flex;
   padding: 2px;
   border-radius: 6px;

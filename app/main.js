@@ -15,6 +15,7 @@ import { drawEffects } from "./map/effects.js";
 import { initRoom } from "./room/room.js";
 import { drawSpawnRooms } from "./map/spawns.js";
 import { openStream } from "./core/stream.js";
+import { initVoice } from "./panel/speakers.js";
 import { drawStrokes } from "./room/telestrator.js";
 import { frameMap, drawBackground, viewArea } from "./map/view.js";
 
@@ -187,6 +188,7 @@ function advance() {
 
 renderSettings();
 initRoom();
+initVoice();
 openStream();
 
 requestAnimationFrame(frame);

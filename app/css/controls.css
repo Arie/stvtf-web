@@ -190,3 +190,84 @@
   display: block;
   color: var(--good);
 }
+
+/* The voice button, and its speakers list opening upward over the map. */
+#voicebox {
+  position: relative;
+}
+#voicetoggle {
+  height: 26px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 6px;
+  background: var(--shade-90);
+  color: #fff;
+  font: inherit;
+  cursor: pointer;
+}
+#voicetoggle:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+#voicelist {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 6px);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 240px;
+  max-height: 60vh;
+  overflow-y: auto;
+  padding: 6px;
+  border-radius: 6px;
+  background: var(--shade-90);
+  box-shadow: 0 2px 10px #0008;
+  color: #fff;
+  font-size: 12px;
+}
+#voicelist[hidden] {
+  display: none;
+}
+#voicelist button {
+  border: 0;
+  border-radius: 4px;
+  background: #ffffff1a;
+  color: #fff;
+  font: inherit;
+  cursor: pointer;
+}
+#voicelist .vhead {
+  display: flex;
+  gap: 6px;
+}
+#voicelist .vhead button {
+  flex: 1;
+  height: 24px;
+}
+#voicelist .vrow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+#voicelist .vrow button {
+  width: 26px;
+  height: 22px;
+}
+#voicelist .vname {
+  flex: 1;
+  overflow: hidden;
+  color: var(--dim);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+#voicelist .vrow.talking .vname {
+  color: #fff;
+  font-weight: 700;
+}
+#voicelist input[type="range"] {
+  width: 70px;
+}
+#voicelist .vempty {
+  color: var(--dim);
+}

@@ -24,6 +24,7 @@ import { onClear, onDraw, onMarker } from "../room/telestrator.js";
 import { onArc } from "../room/arcs.js";
 import { onCircle } from "../room/circles.js";
 import { onNote } from "../room/notes.js";
+import { dropAll, onVoice, voiceOn, voicePlayback } from "./voice.js";
 import { loadMap } from "../map/view.js";
 /** @typedef {import("../../types/stream").GameEvent} GameEvent */
 /** @typedef {import("../../types/stream").StreamMessage} StreamMessage */
@@ -58,6 +59,7 @@ export function openStream(from) {
   if (from) eventsUrl = from;
   const url = new URL(eventsUrl);
   if (detailNeeded()) url.searchParams.set("detail", "1");
+  if (voiceOn()) url.searchParams.set("voice", "1");
   for (const [k, v] of streamParams) url.searchParams.set(k, v);
   const s = (es = new EventSource(url));
   s.onmessage = e => {
@@ -150,6 +152,7 @@ const ON_LINE = {
     $("feed").replaceChildren();
     $("chat").replaceChildren();
     resetMatch(true, true);
+    dropAll();
     sought = true;
   },
   draw: m => onDraw(/** @type {import("../../types/stream").DrawLine} */ (m)),
@@ -157,6 +160,7 @@ const ON_LINE = {
   arc: m => onArc(/** @type {import("../../types/stream").ArcLine} */ (m)),
   circle: m => onCircle(/** @type {import("../../types/stream").CircleLine} */ (m)),
   note: m => onNote(/** @type {import("../../types/stream").NoteLine} */ (m)),
+  voice: m => onVoice(/** @type {import("../../types/stream").VoiceLine} */ (m)),
   clear: () => onClear(),
   view: m => viewListeners.forEach(f => f(/** @type {import("../../types/stream").ViewLine} */ (m))),
   people: m => peopleListeners.forEach(f => f(/** @type {import("../../types/stream").PeopleLine} */ (m))),
@@ -211,6 +215,7 @@ function onPlayback(m) {
     state.lastData = performance.now();
     setStatus("paused", true);
   } else if ($("status").textContent === "paused") setStatus("live", true);
+  voicePlayback(m);
   for (const f of playbackListeners) f(m);
 }
 

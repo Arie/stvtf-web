@@ -92,7 +92,7 @@ const KEYS = {
   e: () => setSidebar(env.el.classList.contains("noside")),
   g() {
     if (!$("bgtoggle").hidden)
-      /** @type {HTMLButtonElement} */ (env.root.querySelector("#bgtoggle button:not(.on)")).click();
+      /** @type {HTMLButtonElement} */ (env.root.querySelector("#bgtoggle button[data-bg]:not(.on)")).click();
   },
   o() {
     if (!env.component)
@@ -215,10 +215,10 @@ try {
 } catch {}
 // side=0: no events and chat beside the map, for a site that shows its own.
 if (OPT.get("side") === "0") env.el.classList.add("noside");
-for (const b of /** @type {NodeListOf<HTMLButtonElement>} */ (env.root.querySelectorAll("#bgtoggle button"))) {
+for (const b of /** @type {NodeListOf<HTMLButtonElement>} */ (env.root.querySelectorAll("#bgtoggle button[data-bg]"))) {
   b.addEventListener("click", () => {
     state.bg = b.dataset.bg ?? state.bg;
-    for (const o of env.root.querySelectorAll("#bgtoggle button")) o.classList.toggle("on", o === b);
+    for (const o of env.root.querySelectorAll("#bgtoggle button[data-bg]")) o.classList.toggle("on", o === b);
   });
   if (b.dataset.bg === (PLAIN_BG ? "geometry" : OPT.get("bg"))) b.click();
 }

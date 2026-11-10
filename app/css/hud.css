@@ -503,3 +503,14 @@
   border-radius: 16px;
   color: var(--dim);
 }
+
+/* A player talking, or muted (panel/speakers.js): a click on it mutes or unmutes them. */
+.card .vc {
+  position: absolute;
+  top: 1px;
+  right: 3px;
+  z-index: 1;
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+}

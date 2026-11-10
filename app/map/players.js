@@ -1,5 +1,6 @@
 import { TEAM, CLASS, icon, OVERLAY, optOn, uiScale, ctx, context2d, state, teamColour, INK } from "../core/core.js";
 import { layerOn } from "../core/layers.js";
+import { isTalking } from "../core/voice.js";
 import { toScreen, screenAngle, playerRad, drawText, label, crossPath } from "./view.js";
 import {
   drawChargeInside,
@@ -203,6 +204,7 @@ export function drawPlayers(players) {
   const alive = dots(players);
   // In passes, so in a clump every class icon sits on top of the other players' discs.
   if (SHOW_FACING) for (const d of alive) drawPointer(d);
+  for (const d of alive) if (isTalking(d.p.id)) drawTalking(d);
   for (const d of alive) drawDisc(d);
   // Flames over the dots, so they show in a fight, but under the class icons.
   if (SHOW_SHOTS) for (const { p, x, y, rad } of alive) if (p.flames) drawFlames(p, x, y, rad, screenAngle(p.yaw ?? 0));
@@ -230,6 +232,23 @@ function dots(players) {
     alive.push({ p, x, y, rad: playerRad(), col: TEAM[p.team], cloaked: p.conds?.includes("Stealthed") });
   }
   return alive;
+}
+
+// How far out a talking player's ring is, and how fast it pulses (per millisecond).
+const TALK_RING = 1.5,
+  TALK_PULSE = 0.008;
+
+// A soft ring round a player who is talking (core/voice.js), pulsing.
+/** @param {Dot} d */
+function drawTalking({ x, y, rad }) {
+  ctx.save();
+  ctx.globalAlpha = 0.45 + 0.25 * Math.sin(performance.now() * TALK_PULSE);
+  ctx.beginPath();
+  ctx.arc(x, y, rad * TALK_RING, 0, Math.PI * 2);
+  ctx.lineWidth = Math.max(1.5, rad * 0.2);
+  ctx.strokeStyle = "#fff";
+  ctx.stroke();
+  ctx.restore();
 }
 
 /** @param {Player} p */

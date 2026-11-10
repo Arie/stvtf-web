@@ -43,6 +43,16 @@ newest data. A map change clears everything from the old map.
 (`player`, `steamid`), its `rate` and its Opus `frames` in base64 (see stvtf's README). A page asks
 for them once its viewer turns voice on. They are not kept in history.
 
+## Voice
+
+When the match carries the players' voice (the server relays it to SourceTV), 🔇 by the map's
+Overview/Geometry switch turns it on (kept in the browser; a browser plays sound only after a
+click). It then opens the speakers list: voice off, mute all, and everyone heard so far, each with
+a mute and a volume, kept in the browser by SteamID across matches. While someone talks, their HUD
+card shows 🔊 and a ring pulses round their dot; a click on a card's 🔊 or 🔇 mutes or unmutes them.
+Paused, sought or at another speed than 1×, voice is silent. It needs WebCodecs, so a secure page
+(https, or localhost); the overlay has none.
+
 ## Camera
 
 Keeps every living player in view, tightly: quick when one leaves the view, gentle for a fresh

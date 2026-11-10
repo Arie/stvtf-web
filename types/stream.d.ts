@@ -220,6 +220,16 @@ export type NoteLine = {
   player: number | null;
 };
 
+/** A player talking: their Opus frames (base64, 20 ms each), with `?voice=1`. */
+export type VoiceLine = {
+  type: "voice";
+  tick: number;
+  player: number | null;
+  steamid: string;
+  rate: number;
+  frames: string[];
+};
+
 /** An admin wiped the room's map. */
 export type ClearLine = { type: "clear"; by: number };
 
@@ -264,6 +274,7 @@ export type StreamMessage =
   | ArcLine
   | CircleLine
   | NoteLine
+  | VoiceLine
   | ClearLine
   | PeopleLine
   | ViewLine
