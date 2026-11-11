@@ -1,6 +1,6 @@
 // For a room's admins, at the end of the speakers list (panel/voicelist.js), once voice from
 // outside the match comes (a team's Discord, through the voice bot): the delay nudged by ear, and
-// each voice with no Steam link of its own put on a player.
+// each voice that is no player's (no Steam link, or linked on another account) put on one.
 import { $, state } from "../core/core.js";
 import { HOME, me, post } from "./home.js";
 import { renderList, setListExtra } from "../panel/voicelist.js";
@@ -12,7 +12,7 @@ const ASK_MS = 5000,
   STEP = 0.5,
   MAX_NUDGE = 30;
 
-/** @typedef {{ discord: string; name: string; steamid: string | null }} Heard */
+/** @typedef {{ discord: string; name: string; steamid: string | null; linked: string | null }} Heard */
 /** @type {Heard[]} */
 let voices = [];
 // Whether this page may: an admin of the room, and where people sign in, a streamer.
@@ -53,6 +53,13 @@ function choice(v) {
   return select;
 }
 
+// The voices to put on a player: all but those whose own link is a player in the match (unless
+// put on another by hand).
+function toPlace() {
+  const playing = new Set([...state.players.values()].map(p => p.steamid));
+  return voices.filter(v => v.steamid != null || v.linked == null || !playing.has(v.linked));
+}
+
 function rows() {
   if (!allowed || (!voices.length && !voice.outsideVoice())) return [];
   const n = voice.voiceNudge();
@@ -71,7 +78,9 @@ function rows() {
   return [
     head,
     nudge,
-    ...voices.map(v => el("div", { className: "vrow vmatch" }, el("span", { className: "vname" }, v.name), choice(v))),
+    ...toPlace().map(v =>
+      el("div", { className: "vrow vmatch" }, el("span", { className: "vname" }, v.name), choice(v)),
+    ),
   ];
 }
 

@@ -1007,7 +1007,7 @@ fn a_room_takes_voice_for_its_live_match_and_its_admins_match_who_is_who() {
     assert!(request_to(&app, keyless.as_bytes()).1.starts_with("HTTP/1.1 401"));
     // Its admins see who is not matched, and match them to a player.
     let voices = get(&app, &format!("{room}voices"), &cookie);
-    assert!(voices.contains(r#"{"discord":"77","name":"coach","steamid":null}"#), "{voices}");
+    assert!(voices.contains(r#"{"discord":"77","linked":null,"name":"coach","steamid":null}"#), "{voices}");
     assert!(get(&app, &format!("{room}voices"), "").starts_with("HTTP/1.1 403"), "admins only");
     let matched = post(&app, &format!("{room}voice-match"), &cookie, r#"{"discord":"77","player":7}"#);
     assert!(matched.starts_with("HTTP/1.1 204"), "{matched}");
