@@ -132,7 +132,7 @@ function discordSetup() {
   const parts = [
     top("home", "Discord"),
     el("div", { className: "vrow vinvite" }, copy),
-    el("div", { className: "vhint" }, "Paste in ", discord, ", from a voice channel"),
+    el("div", { className: "vhint" }, "Paste in ", discord, ", while in voice"),
     delayRow(),
   ];
   parts.push(statusLine("Waiting for bot…"));
