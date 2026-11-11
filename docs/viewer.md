@@ -58,7 +58,7 @@ another speed than 1×, voice is silent. It needs WebCodecs, so a secure page (h
 localhost); the overlay has none.
 
 Voice from outside the match (a team's Discord, through the voice bot): `POST /w/<id>/voice` with
-`Authorization: Bearer <STVTF_VOICE_KEY>` and `{"steamid": "[U:1:N]", "frames": ["<base64 Opus>",
+`Authorization: Bearer <STVTF_VOICE_KEY>` and `{"invite": "<the match's>", "steamid": "[U:1:N]", "frames": ["<base64 Opus>",
 …], "delay": <seconds>}` (up to 32 frames of 20 ms; `delay` is how far the stream is behind the
 game where it was said, 90 unless said: each post its own, so a team's channel and others can
 feed one match). It is held until the stream reaches the tick it was said at (the tick now plus
@@ -66,7 +66,16 @@ the delay in ticks), an utterance starting at its tick and running on by the clo
 comes out as `voice` lines with `injected`, for a live match only. What is said while the game is
 paused is kept in the recording (`pause`), and played to no one. With `"delay": 0` it is
 commentary on the stream itself (casters watching it): straight out, paused or not. 401 without
-the key, 404 with no key set or no live match, 409 before the stream has a tick.
+the key, 403 without the match's invite, 404 with no key set or no live match, 409 before the
+stream has a tick.
+
+The invite is what lets a Discord channel into a match: the key only says it is our bot, which
+anyone can have in their server. `GET /w/<id>/voice-invite` (a room's too) gives `{"invite",
+"bot"}` to whoever started the match and to the site's streamers (403 to others; where nobody
+signs in, to anyone): `bot` is where the bot is added to a server (`STVTF_VOICE_BOT`). The
+speakers list ends with "Discord voice" for them: the `/stv join` command with the page's link
+and the invite to copy, for their own Discord or to pass on to a team, with the delay when it is
+not 90 s. Everyone in a channel brought in so is heard.
 
 Instead of `steamid` a post may say who talks in Discord: `"discord": "<user id>"`, with a
 `"name"` and the voice `"channel"` they are in. Such a voice is nobody's until matched to a
@@ -76,9 +85,9 @@ voices and their matches at `GET /r/<id>/voices`, and put one on a player (or ta
 `POST /r/<id>/voice-match` `{"discord": "<user id>", "player": <id or null>}`.
 
 On the page such a voice is listed by its name, under the team it is taken for or under Others
-(two minutes after its last word, no longer). A room's admins get "From Discord" at the end of the
-speakers list once such voice comes (where people sign in, only the streamers among them: the
-voice is the match's, for every room on it, and anyone opens a room): each voice that is no player's (no link, or linked on another account) with the players to
+(two minutes after its last word, no longer). Whoever started the match, and a room's admins who are the site's streamers (where nobody signs
+in, any admin), get "From Discord" at the end of the speakers list in a room once such voice
+comes: each voice that is no player's (no link, or linked on another account) with the players to
 put it on;
 those whose name looks like its own come first, as a suggestion.
 

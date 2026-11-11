@@ -18,6 +18,9 @@ const MAX_FRAME: usize = 2000;
 
 #[derive(Deserialize)]
 struct Said {
+    /// The match's voice invite, from the link the bot was given.
+    #[serde(default)]
+    invite: Option<String>,
     /// The speaker's `SteamID`, when the bot knows their link; else who they are in Discord.
     #[serde(default)]
     steamid: Option<String>,
@@ -67,6 +70,10 @@ pub(super) fn voice_in(
         return respond(s, "401 Unauthorized", TEXT, b"");
     }
     let Ok(said) = json_body::<Said>(reader, request) else { return respond(s, "400 Bad Request", TEXT, b"not voice") };
+    // The key says it is our bot; the invite, that whoever brought it in was let into this match.
+    if !is_key(m.voice_invite(), said.invite.as_deref()) {
+        return respond(s, "403 Forbidden", TEXT, b"not invited");
+    }
     if said.frames.len() > MAX_FRAMES {
         return respond(s, "413 Content Too Large", TEXT, b"too many frames");
     }
@@ -94,4 +101,23 @@ pub(super) fn voice_in(
         Some(Took::NoStream) => respond(s, "409 Conflict", TEXT, b"no stream yet"),
         Some(Took::Full) => respond(s, "429 Too Many Requests", TEXT, b"too many speakers"),
     }
+}
+
+/// Whether `who` gets a match's voice invite, and says whose voice is whose: whoever started it,
+/// and the site's streamers; where nobody signs in (no site in front), anyone.
+pub(super) fn has_say(app: &App, m: &Session, who: &super::visitor::Who) -> bool {
+    app.keys.is_none() || m.started_by(&who.key) || who.user.as_ref().is_some_and(|u| u.streamer)
+}
+
+/// `GET /w/<id>/voice-invite` (and a room's): the invite, and where to add the bot to a Discord
+/// server (`STVTF_VOICE_BOT`), to those with a say.
+pub(super) fn invite(s: &mut TcpStream, app: &App, m: Option<&Session>, who: &super::visitor::Who) -> std::io::Result<()> {
+    let Some(m) = m.filter(|m| m.is_live() && app.voice_key.is_some()) else {
+        return respond(s, "404 Not Found", TEXT, b"No voice comes into this match.");
+    };
+    if !has_say(app, m, who) {
+        return respond(s, "403 Forbidden", TEXT, b"Only whoever started the match, and streamers, invite a Discord.");
+    }
+    let invite = serde_json::json!({ "invite": m.voice_invite(), "bot": app.voice_bot });
+    respond(s, "200 OK", super::JSON, invite.to_string().as_bytes())
 }

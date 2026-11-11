@@ -83,6 +83,8 @@ struct App {
     voice_key: Option<String>,
     /// Discord users and the Steam accounts linked to them, for voice from Discord.
     voice_links: web::voice_link::Links,
+    /// Where the voice bot is added to a Discord server (`STVTF_VOICE_BOT`), for the invite.
+    voice_bot: Option<String>,
 }
 
 /// Counts an event stream against its client's limit until dropped.
@@ -365,6 +367,7 @@ fn main() -> Result<()> {
         rooms: rooms::registry::Rooms::new(store, relays).with_maps(options.cache.clone()),
         voice_key: std::env::var("STVTF_VOICE_KEY").ok().filter(|k| !k.is_empty()),
         voice_links: web::voice_link::Links::from_env(options.sessions.as_deref()),
+        voice_bot: std::env::var("STVTF_VOICE_BOT").ok().filter(|u| !u.is_empty()),
     });
     app.rooms.sweep();
     if let Matches::Many(_) = app.matches {

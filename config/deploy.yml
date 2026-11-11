@@ -36,6 +36,9 @@ builder:
 # STVTF_VOICE_KEY is the voice bot's key (see stvtf-voice-bot): without it a region takes no
 # voice in. Europe has more of its own (deploy.eu.yml): people link Steam there.
 env:
+  clear:
+    # Where the voice bot is added to a Discord server, shown with a match's invite.
+    STVTF_VOICE_BOT: https://discord.com/oauth2/authorize?client_id=1569859416897888426&scope=bot+applications.commands&permissions=68160512
   secret:
     - STVTF_TOKEN_KEY
     - STVTF_VOICE_KEY

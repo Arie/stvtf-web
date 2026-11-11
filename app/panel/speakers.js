@@ -8,6 +8,7 @@ import { env } from "../core/env.js";
 import { openStream } from "../core/stream.js";
 import * as voice from "../core/voice.js";
 import { chooseIn, markTalking, renderList } from "./voicelist.js";
+import { voiceInvite } from "./voiceinvite.js";
 
 // How often the cards and the list show who talks, in milliseconds.
 const REFRESH_MS = 150;
@@ -47,6 +48,7 @@ export function initVoice() {
     if (!list.hidden && !at.closest?.("#voicelist, #voicetoggle")) list.hidden = true;
   });
   voice.voiceListeners.add(show);
+  voiceInvite();
   for (const id of ["hud-blue", "hud-red"]) cardClicks($(id));
   badgeClicks();
   setInterval(() => {

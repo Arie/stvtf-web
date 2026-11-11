@@ -3,7 +3,7 @@
 // voice that is no player's (no Steam link, or linked on another account) put on one.
 import { $, state } from "../core/core.js";
 import { HOME, me, post } from "./home.js";
-import { renderList, setListExtra } from "../panel/voicelist.js";
+import { addListExtra, renderList } from "../panel/voicelist.js";
 
 // How often the voices are asked for while the list is open, in milliseconds.
 const ASK_MS = 5000;
@@ -68,7 +68,7 @@ function rows() {
 
 export function voiceAdmin() {
   const list = $("voicelist");
-  setListExtra(rows);
+  addListExtra(rows);
   const show = () => list.hidden || renderList(list);
   const ask = () => {
     if (list.hidden || !me.admin) return;

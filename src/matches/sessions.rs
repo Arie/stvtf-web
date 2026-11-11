@@ -256,6 +256,9 @@ impl Sessions {
         if let Some(by) = saved.by {
             let _ = s.by.set(by);
         }
+        if let Some(invite) = saved.voice_invite {
+            let _ = s.voice_invite.set(invite);
+        }
         record(&s, Some(store), true);
         s.link(saved.reservation);
         Some(s)

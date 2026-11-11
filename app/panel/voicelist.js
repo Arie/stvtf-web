@@ -93,18 +93,19 @@ const shape = gs =>
     )
     .join("|");
 
-// More for the end of the list (a room's admins get the voices from outside to match, see
-// room/voiceadmin.js).
-/** @type {(() => HTMLElement[]) | null} */
-let extra = null;
+// More for the end of the list: the Discord invite (voiceinvite.js), and for a room's admins the
+// voices from outside to match (room/voiceadmin.js).
+/** @type {(() => HTMLElement[])[]} */
+const extras = [];
 /** @param {() => HTMLElement[]} more */
-export const setListExtra = more => (extra = more);
+export const addListExtra = more => void extras.push(more);
 
 /** @param {HTMLElement} list */
 export function renderList(list) {
   // Not under a slider being dragged or a choice being made: it would come loose. Once let go,
   // the list catches up.
-  if (list.querySelector("input[type=range]:active, select:focus")) return void (list.dataset.stale = "1");
+  if (list.querySelector("input[type=range]:active, select:focus, input[type=number]:focus"))
+    return void (list.dataset.stale = "1");
   delete list.dataset.stale;
   const gs = groups();
   list.dataset.shape = shape(gs);
@@ -128,7 +129,7 @@ export function renderList(list) {
     }
     parts.push(group, ...people.map(row));
   }
-  list.replaceChildren(...parts, ...(extra?.() ?? []));
+  list.replaceChildren(...parts, ...extras.flatMap(more => more()));
   markTalking(list);
 }
 

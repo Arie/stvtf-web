@@ -120,7 +120,10 @@ pub(super) fn serve_room(
             }
             None => too_many_streams(&mut s)?,
         },
-        ("me", "GET") => me(&mut s, app, &room, &who)?,
+        ("me", "GET") => me(&mut s, app, sessions, &room, &who)?,
+        ("voice-invite", "GET") => {
+            super::voice_in::invite(&mut s, app, app.rooms.live_match(&room.id, sessions).as_deref(), &who)?;
+        }
         ("marks", "GET") => respond_marks(&mut s, &request.query, |from| room.marks(from))?,
         ("voice", "POST") => match app.rooms.live_match(&room.id, sessions) {
             Some(m) => super::voice_in::voice_in(&mut s, reader, app, &m, request)?,
@@ -135,7 +138,7 @@ pub(super) fn serve_room(
 }
 
 /// Who the visitor is in `room`, and what they may do.
-fn me(s: &mut TcpStream, app: &App, room: &Room, who: &Who) -> std::io::Result<()> {
+fn me(s: &mut TcpStream, app: &App, sessions: &Sessions, room: &Room, who: &Who) -> std::io::Result<()> {
     let (id, admin) = room.me(&who.key);
     let me = serde_json::json!({
         "id": id,
@@ -143,7 +146,7 @@ fn me(s: &mut TcpStream, app: &App, room: &Room, who: &Who) -> std::io::Result<(
         "signed": who.user.is_some(),
         "streamer": who.user.as_ref().is_some_and(|u| u.streamer),
         "signin": app.keys.is_some() && app.home.as_deref().and_then(origin).is_some(),
-        "voice": tunes_voice(app, room, who),
+        "voice": tunes_voice(app, sessions, room, who),
     });
     respond(s, "200 OK", JSON, me.to_string().as_bytes())
 }
@@ -185,19 +188,20 @@ fn change(
     }
 }
 
-const NOT_THEIRS: &[u8] = b"Only streamers among the room's admins do that.";
+const NOT_THEIRS: &[u8] = b"Only whoever started the match, and streamers among the room's admins, do that.";
 
-/// Whether `who` may place the voice coming into `room`'s match (whose voice is which player's): it is the match's, for
-/// every room on it, and anyone opens a room. So an admin of the room who is one of the site's
-/// streamers; where nobody signs in (no site in front), any admin of the room.
-fn tunes_voice(app: &App, room: &Room, who: &Who) -> bool {
-    room.is_admin(&who.key) && (app.keys.is_none() || who.user.as_ref().is_some_and(|u| u.streamer))
+/// Whether `who` says whose voice is whose in `room`'s match: it is the match's, for every room
+/// on it, and anyone opens a room. So whoever started the match, and the room's admins who are
+/// the site's streamers; where nobody signs in (no site in front), any admin of the room.
+fn tunes_voice(app: &App, sessions: &Sessions, room: &Room, who: &Who) -> bool {
+    let started = app.keys.is_some() && app.rooms.live_match(&room.id, sessions).is_some_and(|m| m.started_by(&who.key));
+    started || (room.is_admin(&who.key) && (app.keys.is_none() || who.user.as_ref().is_some_and(|u| u.streamer)))
 }
 
 /// The voices coming into `room`'s live match from outside it, and who each is matched to: for
 /// its admins.
 fn voices(s: &mut TcpStream, app: &App, sessions: &Sessions, room: &Room, who: &Who) -> std::io::Result<()> {
-    if !tunes_voice(app, room, who) {
+    if !tunes_voice(app, sessions, room, who) {
         return respond(s, "403 Forbidden", TEXT, NOT_THEIRS);
     }
     let heard = app.rooms.live_match(&room.id, sessions).map(|m| m.voice.voices()).unwrap_or_default();
@@ -221,7 +225,7 @@ fn voice_match(
     room: &Room,
     who: &Who,
 ) -> std::io::Result<()> {
-    if !tunes_voice(app, room, who) {
+    if !tunes_voice(app, sessions, room, who) {
         return respond(s, "403 Forbidden", TEXT, NOT_THEIRS);
     }
     let Ok(v) = json_body::<VoiceMatch>(reader, request) else { return respond(s, "400 Bad Request", TEXT, b"a voice and a player") };

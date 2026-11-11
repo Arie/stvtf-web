@@ -21,6 +21,8 @@ config of its own) with `STVTF_VOICE_KEY`, from `~/.config/stvtf/voice.key`
 Steam (`/voice/link`), for all regions: its Discord application's client id and secret come from
 `~/.config/stvtf/discord-client.id` and `discord-client.secret`, and the application's OAuth2
 redirect is `https://stv.tf/voice/linked`. The links are kept in `/data/sessions/voice-links.json`.
+`STVTF_VOICE_BOT` (in `config/deploy.yml`) is where the bot is added to a Discord server, shown
+with the invite.
 
 ## Relays
 

@@ -65,6 +65,9 @@ pub struct Session {
     /// Voice from outside the match (a team's Discord), and whether a thread tends it.
     pub(crate) voice: VoiceFeed,
     pub(super) voice_tended: AtomicBool,
+    /// What a Discord channel's voice comes in with: given to whoever started the match, and to
+    /// the site's streamers, to pass on with the bot's command.
+    pub(super) voice_invite: OnceLock<String>,
 }
 
 /// A recorded match: a saved file, or a demo's gzipped output.
@@ -72,6 +75,9 @@ pub(super) enum Source {
     File(PathBuf),
     Output(Arc<Vec<u8>>),
 }
+
+/// How long a voice invite is, in hex digits.
+const INVITE_LEN: usize = 16;
 
 impl Session {
     /// A session not watched yet; a pinned one is never idle, so never reaped.
@@ -102,7 +108,18 @@ impl Session {
             by: OnceLock::new(),
             voice: VoiceFeed::default(),
             voice_tended: AtomicBool::new(false),
+            voice_invite: OnceLock::new(),
         }
+    }
+
+    /// The match's voice invite: a secret made once, kept with the match.
+    pub(crate) fn voice_invite(&self) -> &str {
+        self.voice_invite.get_or_init(|| super::random_id()[..INVITE_LEN].to_string())
+    }
+
+    /// Whether the visitor known as `key` (see `web::visitor::Who`) started it.
+    pub(crate) fn started_by(&self, key: &str) -> bool {
+        self.owner.as_deref().is_some_and(|o| crate::rooms::people::steam_key(o) == key)
     }
 
     /// Whether it is a fixed match (`--demo`, `--demos`), there again in the next process.

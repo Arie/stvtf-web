@@ -124,6 +124,7 @@ pub(crate) fn app(matches: Matches) -> App {
         rooms: rooms::registry::Rooms::default(),
         voice_key: None,
         voice_links: web::voice_link::Links::default(),
+        voice_bot: None,
     }
 }
 

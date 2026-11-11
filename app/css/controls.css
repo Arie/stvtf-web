@@ -297,6 +297,34 @@
 #voicelist input[type="range"] {
   width: 70px;
 }
+/* The command that brings the voice bot in, for whoever may invite it. */
+#voicelist .vinvite {
+  gap: 4px;
+  color: var(--dim);
+}
+#voicelist .vinvite input {
+  min-width: 0;
+  border: 0;
+  border-radius: 4px;
+  padding: 2px 4px;
+  background: #ffffff1a;
+  color: #fff;
+  font: inherit;
+}
+#voicelist .vinvite input[type="text"] {
+  flex: 1;
+}
+#voicelist .vinvite input[type="number"] {
+  width: 52px;
+  margin-left: auto;
+}
+#voicelist .vinvite button {
+  width: auto;
+  padding: 0 8px;
+}
+#voicelist a.vinvite {
+  color: #9cc4ff;
+}
 /* A room's admins: whose voice each from outside is. */
 #voicelist .vmatch select {
   width: 120px;

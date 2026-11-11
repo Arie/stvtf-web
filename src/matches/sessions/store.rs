@@ -40,6 +40,8 @@ pub(super) struct SavedMatch {
     pub(super) history: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(super) by: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(super) voice_invite: Option<String>,
 }
 
 /// The file in the store holding the mark of the process it belongs to.
@@ -83,6 +85,7 @@ impl Store {
             map,
             history,
             by: s.by.get().cloned(),
+            voice_invite: s.voice_invite.get().cloned(),
         };
         self.put(&s.id, &serde_json::to_vec(&saved)?)?;
         *last_saved = Some(changes);
