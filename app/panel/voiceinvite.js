@@ -195,7 +195,7 @@ function view() {
 // In the speakers list: the way in.
 function entry() {
   if (!given || screen) return [];
-  const b = act("🎙 Comms", "go:home", "Discord or Mumble");
+  const b = act("🎧 Comms", "go:home", "Discord or Mumble");
   b.className = "vcopy";
   return [el("div", { className: "vrow vinvite" }, b)];
 }
