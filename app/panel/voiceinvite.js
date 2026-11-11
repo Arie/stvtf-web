@@ -64,10 +64,13 @@ const show = () => list.hidden || renderList(list);
 const failed = status => /^(Could not join|Left)/.test(status);
 
 // How it goes: green in a channel, yellow on the way, red when it would not do.
-/** @param {string} status @param {string} [more] @param {string} [where] Discord or Mumble, said before it. */
-function statusLine(status, more = "", where = "") {
+/**
+ * @param {string} status @param {string} [more] @param {string} [where] Discord or Mumble, said before it.
+ * @param {boolean} [bad] It would not do, whatever the words.
+ */
+function statusLine(status, more = "", where = "", bad = failed(status)) {
   let dot = "good";
-  if (failed(status)) dot = "bad";
+  if (bad) dot = "bad";
   else if (status === "connecting" || status.startsWith("Waiting")) dot = "wait";
   const text = el("span", { className: "vstatustext" }, where ? `${where}: ${status}` : status);
   if (more) text.append(el("span", { className: "vhint" }, more));
@@ -122,21 +125,16 @@ function discordSetup() {
   if (!given) return [];
   const copy = act(copied ? "✓ Copied" : "Copy command", "copy");
   copy.className = "vcopy";
-  /** @type {HTMLElement[]} */
+  // The word Discord leads to where the bot is added to a server.
+  const discord = given.bot
+    ? el("a", { href: given.bot, target: "_blank", rel: "noopener", title: "Invite bot to server" }, "Discord")
+    : "Discord";
   const parts = [
     top("home", "Discord"),
     el("div", { className: "vrow vinvite" }, copy),
-    el("div", { className: "vhint" }, "Paste in Discord, from a voice channel"),
+    el("div", { className: "vhint" }, "Paste in ", discord, ", from a voice channel"),
     delayRow(),
   ];
-  if (given.bot)
-    parts.push(
-      el(
-        "a",
-        { href: given.bot, target: "_blank", rel: "noopener", className: "vrow vinvite" },
-        "Invite bot to server ↗",
-      ),
-    );
   parts.push(statusLine("Waiting for bot…"));
   return parts;
 }
@@ -146,7 +144,7 @@ function mumbleSetup(moving) {
   /** @type {HTMLElement[]} */
   const parts = [top("home", "Mumble")];
   const was = comms.mumble;
-  if (refused) parts.push(statusLine(refused));
+  if (refused) parts.push(statusLine(refused, "", "", true));
   else if (!moving && was && failed(was.status)) parts.push(statusLine(was.status));
   const join = act(moving ? "Reconnect" : "Connect", "join");
   join.className = "vcopy vmumble";

@@ -424,7 +424,7 @@
   color: var(--dim);
   font-size: 11px;
 }
-#voicelist a.vinvite,
+#voicelist .vhint a,
 #voicelist a.vdemo {
   color: #9cc4ff;
 }
