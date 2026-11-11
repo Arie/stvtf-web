@@ -68,6 +68,20 @@ paused is kept in the recording (`pause`), and played to no one. With `"delay": 
 commentary on the stream itself (casters watching it): straight out, paused or not. 401 without
 the key, 404 with no key set or no live match, 409 before the stream has a tick.
 
+Instead of `steamid` a post may say who talks in Discord: `"discord": "<user id>"`, with a
+`"name"` and the voice `"channel"` they are in. Such a voice is nobody's until matched to a
+player; meanwhile it is heard as of no player, on the team most of its channel's matched speakers
+are on. A room on the match takes the same posts at `POST /r/<id>/voice`; its admins see the
+voices and their matches at `GET /r/<id>/voices`, and put one on a player (or take it off) with
+`POST /r/<id>/voice-match` `{"discord": "<user id>", "player": <id or null>}`.
+
+Linking, so that it need not be done by hand: `GET /voice/link` signs a visitor in with Discord
+(`identify connections`) and keeps the Steam account Discord verified as theirs
+(`voice-links.json` under `--sessions`). The bot asks `GET /voice/who?discord=<user id>` with its
+key: `{"steamid": "[U:1:N]"}` or null. Needs a Discord application: `STVTF_DISCORD_CLIENT_ID`,
+`STVTF_DISCORD_CLIENT_SECRET`, and `STVTF_DISCORD_REDIRECT` (this site's `/voice/linked`, as the
+application has it).
+
 
 ## Camera
 

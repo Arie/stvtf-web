@@ -1,7 +1,7 @@
 use super::assets::APP;
 use super::*;
 use crate::matches::hub::{SharedHub, publish};
-use crate::testing::{TempDir, app, server};
+use crate::testing::{TempDir, app, server, web_server};
 use crate::web::client::{client_key, is_cloudflare, on_our_network};
 use crate::{App, Matches, TcpListener};
 use flate2::read::GzDecoder;
@@ -1016,4 +1016,62 @@ fn a_room_takes_voice_for_its_live_match_and_its_admins_match_who_is_who() {
     assert!(post(&app, &format!("{room}voice-match"), "", r#"{"discord":"77","player":7}"#).starts_with("HTTP/1.1 403"));
     assert!(post(&app, &format!("{room}voice-match"), &cookie, r#"{"discord":"77","player":null}"#).starts_with("HTTP/1.1 204"));
     assert!(get(&app, &format!("{room}voices"), &cookie).contains(r#""steamid":null"#), "unmatched again");
+}
+
+/// An app that links through a made-up Discord, whose user 77 has these connections.
+fn linking_app(connections: &str) -> App {
+    let (discord, _) = web_server(vec![
+        ("/oauth2/token", br#"{"access_token":"t","token_type":"Bearer"}"#.to_vec()),
+        ("/users/@me", br#"{"id":"77","username":"gummy"}"#.to_vec()),
+        ("/users/@me/connections", connections.as_bytes().to_vec()),
+    ]);
+    let mut app = app(Matches::Many(Sessions::new(false, 4, 20.0)));
+    app.voice_key = Some("k".into());
+    app.voice_links = voice_link::Links::with_discord(discord.trim_end_matches('/'), "id1", "secret", "https://stv.example/voice/linked");
+    app
+}
+
+fn who(app: &App, discord: &str, key: &str) -> String {
+    request_to(app, format!("GET /voice/who?discord={discord} HTTP/1.1\r\nAuthorization: Bearer {key}\r\n\r\n").as_bytes()).1
+}
+
+#[test]
+fn a_discord_user_links_the_steam_account_discord_verified_and_the_bot_asks_who_they_are() {
+    // 76561197960265728 + 5.
+    let app = linking_app(r#"[{"type":"twitch","id":"1","verified":true},{"type":"steam","id":"76561197960265733","verified":true}]"#);
+    assert!(who(&app, "77", "k").ends_with(r#"{"steamid":null}"#), "not linked yet");
+    let sent = get(&app, "/voice/link", "");
+    assert!(sent.starts_with("HTTP/1.1 302"), "{sent}");
+    let location = sent.lines().find_map(|l| l.strip_prefix("Location: ")).unwrap();
+    assert!(location.contains("/oauth2/authorize?response_type=code&client_id=id1&scope=identify+connections"), "{location}");
+    assert!(location.contains("&redirect_uri=https%3A//stv.example/voice/linked"), "{location}");
+    let cookie = cookie_of(&sent);
+    let state = cookie.strip_prefix("voice_link=").unwrap();
+    assert!(location.ends_with(&format!("&state={state}")), "{location}");
+    // Back from Discord without the browser's own state: refused.
+    assert!(get(&app, "/voice/linked?code=c&state=other", &cookie).starts_with("HTTP/1.1 400"));
+    assert!(get(&app, &format!("/voice/linked?code=c&state={state}"), "").starts_with("HTTP/1.1 400"));
+    let linked = get(&app, &format!("/voice/linked?code=c&state={state}"), &cookie);
+    assert!(linked.starts_with("HTTP/1.1 200") && linked.contains("[U:1:5]"), "{linked}");
+    assert!(who(&app, "77", "k").ends_with(r#"{"steamid":"[U:1:5]"}"#));
+    assert!(who(&app, "77", "wrong").starts_with("HTTP/1.1 401"));
+    assert!(who(&app, "x", "k").starts_with("HTTP/1.1 400"));
+}
+
+#[test]
+fn a_discord_user_without_a_verified_steam_connection_is_told_to_add_one() {
+    let app = linking_app(r#"[{"type":"steam","id":"76561197960265733","verified":false}]"#);
+    let sent = get(&app, "/voice/link", "");
+    let cookie = cookie_of(&sent);
+    let state = cookie.strip_prefix("voice_link=").unwrap();
+    let linked = get(&app, &format!("/voice/linked?code=c&state={state}"), &cookie);
+    assert!(linked.starts_with("HTTP/1.1 409") && linked.contains("Connections"), "{linked}");
+    assert!(who(&app, "77", "k").ends_with(r#"{"steamid":null}"#));
+}
+
+#[test]
+fn without_a_discord_application_there_is_no_linking() {
+    let (app, _) = voice_app();
+    assert!(get(&app, "/voice/link", "").starts_with("HTTP/1.1 404"));
+    assert!(who(&app, "77", "k").ends_with(r#"{"steamid":null}"#), "the bot may still ask");
 }

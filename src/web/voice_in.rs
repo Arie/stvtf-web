@@ -35,7 +35,7 @@ struct Said {
 }
 
 /// Whether `given` is the key, compared without stopping at the first difference.
-fn is_key(key: &str, given: Option<&str>) -> bool {
+pub(super) fn is_key(key: &str, given: Option<&str>) -> bool {
     let Some(given) = given else { return false };
     key.len() == given.len() && key.bytes().zip(given.bytes()).fold(0, |d, (a, b)| d | (a ^ b)) == 0
 }
@@ -48,7 +48,7 @@ fn is_steamid(s: &str) -> bool {
 }
 
 /// A Discord id: digits.
-fn is_snowflake(s: &str) -> bool {
+pub(super) fn is_snowflake(s: &str) -> bool {
     !s.is_empty() && s.len() <= 20 && s.bytes().all(|b| b.is_ascii_digit())
 }
 

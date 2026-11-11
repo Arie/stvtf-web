@@ -18,6 +18,7 @@ mod rooms;
 pub(crate) mod token;
 mod visitor;
 mod voice_in;
+pub(crate) mod voice_link;
 
 pub(crate) use assets::app_version;
 use assets::serve_file;
@@ -74,6 +75,8 @@ struct Request {
     guest: Option<String>,
     /// The [`USER_COOKIE`].
     user: Option<String>,
+    /// The cookie of a Discord sign-in begun ([`voice_link::STATE_COOKIE`]).
+    voice_link: Option<String>,
 }
 
 /// The request line and headers.
@@ -94,6 +97,7 @@ fn read_request(reader: &mut impl BufRead) -> Result<Request> {
         bearer: None,
         guest: None,
         user: None,
+        voice_link: None,
     };
     loop {
         let mut header = String::new();
@@ -113,6 +117,7 @@ fn read_request(reader: &mut impl BufRead) -> Result<Request> {
         } else if name.eq_ignore_ascii_case("cookie") {
             request.guest = cookie(value, GUEST_COOKIE).filter(|g| sessions::is_id(g)).map(str::to_string);
             request.user = cookie(value, USER_COOKIE).map(str::to_string);
+            request.voice_link = cookie(value, voice_link::STATE_COOKIE).filter(|g| sessions::is_id(g)).map(str::to_string);
         } else if name.eq_ignore_ascii_case("accept-encoding") {
             request.gzip = value.split(',').any(|e| e.split(';').next().is_some_and(|e| e.trim().eq_ignore_ascii_case("gzip")));
         }
@@ -232,6 +237,9 @@ fn serve_many(
             }
         }
         ("/signout", "GET") => back_with(&mut s, app, request, &set_cookie(app, USER_COOKIE, "", 0))?,
+        ("/voice/link", "GET") => voice_link::link(&mut s, app)?,
+        ("/voice/linked", "GET") => voice_link::linked(&mut s, app, request)?,
+        ("/voice/who", "GET") => voice_link::who(&mut s, app, request)?,
         ("/start", _) => match start(app, sessions, request, client) {
             // <stv-map> asks where the match is instead of following the redirect.
             Ok(m) if param(&request.query, "format") == Some("json") => {

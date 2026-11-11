@@ -85,7 +85,17 @@ pub(crate) fn web_server(files: Vec<(&'static str, Vec<u8>)>) -> (String, Arc<Mu
         for mut conn in listener.incoming().flatten() {
             use std::io::{BufRead, Write};
             let mut line = String::new();
-            std::io::BufReader::new(&conn).read_line(&mut line).unwrap();
+            let mut reader = std::io::BufReader::new(&conn);
+            reader.read_line(&mut line).unwrap();
+            // The headers and the body, read so that closing does not cut off the answer.
+            let (mut header, mut length) = (String::new(), 0);
+            while reader.read_line(&mut header).is_ok_and(|n| n > 2) {
+                if let Some(n) = header.to_ascii_lowercase().strip_prefix("content-length:") {
+                    length = n.trim().parse().unwrap_or(0);
+                }
+                header.clear();
+            }
+            let _ = std::io::Read::read_exact(&mut reader, &mut vec![0; length]);
             let path = line.split_whitespace().nth(1).unwrap_or_default().to_string();
             let found = files.iter().find(|(name, _)| *name == path).map(|(_, body)| body);
             lock(&log).push(path);
@@ -113,6 +123,7 @@ pub(crate) fn app(matches: Matches) -> App {
         streams: Mutex::default(),
         rooms: rooms::registry::Rooms::default(),
         voice_key: None,
+        voice_links: web::voice_link::Links::default(),
     }
 }
 
