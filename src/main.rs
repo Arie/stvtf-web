@@ -338,6 +338,22 @@ fn accept(listen: &str, app: &Arc<App>, open: &'static AtomicUsize) -> Result<()
     Ok(())
 }
 
+/// Who is who in a team's voice channel: kept in the store, the same as the stv.tf that holds
+/// it for all regions (`STVTF_VOICE_HOME`; none on that one itself), and with the sites asked
+/// who a Discord user is (`STVTF_LINK_SITES`, each as `--home`; else the one this belongs to),
+/// where voice is taken in and the sites share a key.
+fn who_is_who(options: &Options, keys: Option<&Arc<web::token::Keys>>, voice_key: Option<&str>) -> web::voice_known::WhoHistory {
+    let home = std::env::var("STVTF_VOICE_HOME").ok().filter(|u| !u.is_empty());
+    let sites = std::env::var("STVTF_LINK_SITES").ok().filter(|l| !l.is_empty()).or_else(|| options.home.clone()).unwrap_or_default();
+    let sites: Vec<_> = match (keys, voice_key) {
+        (Some(keys), Some(_)) => {
+            sites.split(',').map(str::trim).filter(|s| !s.is_empty()).map(|s| web::voice_known::site(s, keys.clone())).collect()
+        }
+        _ => Vec::new(),
+    };
+    web::voice_known::WhoHistory::new(options.sessions.as_deref(), home.as_deref().zip(voice_key), sites)
+}
+
 fn main() -> Result<()> {
     static STOP: AtomicBool = AtomicBool::new(false);
     static OPEN: AtomicUsize = AtomicUsize::new(0);
@@ -361,11 +377,7 @@ fn main() -> Result<()> {
         (None, None) => None,
     };
     let voice_key = std::env::var("STVTF_VOICE_KEY").ok().filter(|k| !k.is_empty());
-    // The stv.tf that holds who is who for all regions; none on that one itself.
-    let voice_home = std::env::var("STVTF_VOICE_HOME").ok().filter(|u| !u.is_empty());
-    // The site's Discord links, where voice is taken in and the site shares a key.
-    let site = options.home.as_deref().zip(keys.clone()).filter(|_| voice_key.is_some());
-    let site_links = site.map(|(home, keys)| web::voice_known::from_site(home, keys));
+    let voice_who = who_is_who(&options, keys.as_ref(), voice_key.as_deref());
     let app = Arc::new(App {
         matches,
         cache: options.cache.clone(),
@@ -382,11 +394,7 @@ fn main() -> Result<()> {
         voice_bot: std::env::var("STVTF_VOICE_BOT").ok().filter(|u| !u.is_empty()),
         mumble_changes: web::voice_mumble::Changes::default(),
         mumble_anywhere: std::env::var("STVTF_MUMBLE_ANYWHERE").is_ok_and(|v| v == "1"),
-        voice_who: web::voice_known::WhoHistory::new(
-            options.sessions.as_deref(),
-            voice_home.as_deref().zip(voice_key.as_deref()),
-            site_links,
-        ),
+        voice_who,
     });
     app.voice_who.keep_up();
     app.rooms.sweep();

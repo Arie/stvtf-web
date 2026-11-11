@@ -33,10 +33,13 @@ them on) is kept on Europe too, in `/data/sessions/voice-who.json`: the other re
 with `STVTF_VOICE_HOME` (in their `config/deploy.<region>.yml`), tell it what is said on their
 pages and ask it every half minute what changed, with the bot's key.
 
-Each region also takes in its serveme.tf's Discord links (users who linked Discord there, with
-their Steam uid): every ten minutes it asks `<--home>/discord_links` with a token sealed with
-`STVTF_TOKEN_KEY`, and they reach the other regions through Europe. A caster's word on who is who stands over
-them; a match starter's does in their own match, and is a suggestion elsewhere. It needs no setting of its own.
+A Discord user in a channel whom nothing is known of is looked up at the serveme.tf sites
+(`STVTF_LINK_SITES` in `config/deploy.yml`; all four, by every region): each is asked in turn
+who that one user is (`<site>/discord_links/<id>`, with a token for that user sealed with
+`STVTF_TOKEN_KEY`), and what the first that knows them says reaches the other regions through
+Europe. They are asked again after a day, or after ten minutes when no site knew them. A caster's
+word on who is who stands over a link; a match starter's does in their own match, and is a
+suggestion elsewhere.
 
 ## Relays
 

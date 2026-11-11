@@ -246,6 +246,11 @@ impl VoiceFeed {
         all.into_values().collect()
     }
 
+    /// Who is in the channels now, each as who they are where they talk.
+    pub(crate) fn roster_ids(&self) -> Vec<String> {
+        lock(&self.0).roster().map(|(id, _)| id.clone()).collect()
+    }
+
     /// The name `discord` talks under, in the channel or as heard.
     pub(crate) fn name_of(&self, discord: &str) -> Option<String> {
         let st = lock(&self.0);

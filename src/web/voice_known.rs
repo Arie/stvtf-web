@@ -9,9 +9,10 @@
 //! - `GET /voice/known?since=<version>`: what changed since, and the `version` of that.
 //! - `POST /voice/known`: `id` is `steamid` (or with none, nobody), by the `name` they talk under.
 //!
-//! The site a stv.tf belongs to (`--home`) has Discord users who linked their Steam account
-//! there: its whole list is asked for now and then (`GET <home>/discord_links`, with a token
-//! sealed with the key the two share) and taken into this one, marked as from that site (`src`).
+//! The sites stv.tf belongs to (`STVTF_LINK_SITES`, else its `--home`) have Discord users who
+//! linked their Steam account there. Someone in a channel whom nothing is known of is asked
+//! about, one site after the other (`GET <site>/discord_links/<id>`, with a token for that one
+//! user sealed with the key they share), and what a site says is kept, marked as from it (`src`).
 //!
 //! Not all of it is as sure. A link someone made themselves (a site's) and what a caster said
 //! hold everywhere as said. What a match's starter said holds in their match, and elsewhere is a
@@ -25,7 +26,7 @@ use crate::maps::cache::write_atomic;
 use crate::{App, lock};
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeSet, HashMap, VecDeque};
 use std::io::{BufReader, Take};
 use std::net::TcpStream;
 use std::path::{Path, PathBuf};
@@ -37,8 +38,11 @@ const FILE: &str = "voice-who.json";
 /// How often the list's home is asked what changed, and how long it gets to answer.
 const ASK_EVERY: Duration = Duration::from_secs(30);
 const TIMEOUT: Duration = Duration::from_secs(5);
-/// How often the site is asked for its links.
-const LINKS_EVERY: Duration = Duration::from_secs(600);
+/// How long what the sites said of someone stands before they are asked again: a link, and none.
+const LINK_FOR: Duration = Duration::from_hours(24);
+const NO_LINK_FOR: Duration = Duration::from_mins(10);
+/// The most people waiting to be asked about.
+const MAX_WANTED: usize = 1000;
 /// The most people kept, and the longest a name.
 const MAX_KNOWN: usize = 100_000;
 const MAX_NAME: usize = 100;
@@ -109,27 +113,44 @@ impl Kept {
 
 /// How the list's home is asked: a method, a path, and a body to send; its answer's body.
 type Asking = Box<dyn Fn(&str, &str, Option<&str>) -> Result<String> + Send + Sync>;
-/// How a site is asked for its links: its answer's body.
-pub(crate) type Fetching = Box<dyn Fn() -> Result<String> + Send + Sync>;
+/// How a site is asked who a Discord user is: the Steam account (its 64-bit id) they linked
+/// there, if any.
+pub(crate) type Fetching = Box<dyn Fn(&str) -> Result<Option<String>> + Send + Sync>;
 
-/// How the site at `home` (a stv.tf's `--home`) is asked for its links, and its name.
-pub(crate) fn from_site(home: &str, keys: Arc<Keys>) -> (String, Fetching) {
-    let url = format!("{}/discord_links", home.trim_end_matches('/'));
+/// A site with links, by its name.
+pub(crate) struct Site {
+    name: String,
+    ask: Fetching,
+}
+
+/// The site at `home` (as a stv.tf's `--home`), asked with tokens sealed with `keys`.
+pub(crate) fn site(home: &str, keys: Arc<Keys>) -> Site {
+    let url = format!("{}/discord_links/", home.trim_end_matches('/'));
     let name = home.split("://").last().unwrap_or(home).split('/').next().unwrap_or_default().to_string();
     let agent = ureq::AgentBuilder::new().timeout(TIMEOUT).redirects(0).build();
-    let fetch = move || {
-        let bearer = format!("Bearer {}", keys.links_token(super::unix_now()));
-        Ok(agent.get(&url).set("Authorization", &bearer).call().context("the site's Discord links")?.into_string()?)
+    let ask = move |discord: &str| {
+        let bearer = format!("Bearer {}", keys.link_token(discord, super::unix_now()));
+        match agent.get(&format!("{url}{discord}")).set("Authorization", &bearer).call() {
+            Ok(answer) => {
+                let said: serde_json::Value = serde_json::from_str(&answer.into_string()?)?;
+                Ok(said["steam"].as_str().map(str::to_string))
+            }
+            Err(ureq::Error::Status(404, _)) => Ok(None),
+            Err(e) => Err(e).context("a site's Discord link"),
+        }
     };
-    (name, Box::new(fetch))
+    Site { name, ask: Box::new(ask) }
 }
 
 struct Inner {
     file: Option<PathBuf>,
     kept: Mutex<Kept>,
     home: Option<Asking>,
-    /// The site whose links are taken in: its name, and how it is asked.
-    site: Option<(String, Fetching)>,
+    /// The sites asked who a Discord user is.
+    sites: Vec<Site>,
+    /// Those to ask the sites about, and when each was last asked and whether a site knew them.
+    wanted: Mutex<VecDeque<String>>,
+    looked: Mutex<HashMap<String, (Instant, bool)>>,
     /// Wakes the telling when something was said.
     said: Mutex<Option<Sender<()>>>,
 }
@@ -139,7 +160,7 @@ pub(crate) struct WhoHistory(Arc<Inner>);
 
 impl Default for WhoHistory {
     fn default() -> Self {
-        Self::new(None, None, None)
+        Self::new(None, None, Vec::new())
     }
 }
 
@@ -174,20 +195,21 @@ fn over_http(url: &str, key: &str) -> Asking {
 
 impl WhoHistory {
     /// The list kept in `dir`; with a `home` (its address and the bot's key), kept the same as
-    /// the one there; with a `site`, its links taken in.
-    pub(crate) fn new(dir: Option<&Path>, home: Option<(&str, &str)>, site: Option<(String, Fetching)>) -> Self {
-        Self::asking(dir, home.map(|(url, key)| over_http(url, key)), site)
+    /// the one there; with `sites`, they are asked who a Discord user is.
+    pub(crate) fn new(dir: Option<&Path>, home: Option<(&str, &str)>, sites: Vec<Site>) -> Self {
+        Self::asking(dir, home.map(|(url, key)| over_http(url, key)), sites)
     }
 
-    fn asking(dir: Option<&Path>, home: Option<Asking>, site: Option<(String, Fetching)>) -> Self {
+    fn asking(dir: Option<&Path>, home: Option<Asking>, sites: Vec<Site>) -> Self {
         let file = dir.map(|d| d.join(FILE));
         let kept = file.as_deref().and_then(read).unwrap_or_default();
-        Self(Arc::new(Inner { file, kept: Mutex::new(kept), home, site, said: Mutex::new(None) }))
+        let (wanted, looked) = Default::default();
+        Self(Arc::new(Inner { file, kept: Mutex::new(kept), home, sites, wanted, looked, said: Mutex::new(None) }))
     }
 
-    /// Keeps the list the same as its home's and its site's from here on, if it has any.
+    /// Keeps the list the same as its home's from here on, and asks the sites, if it has any.
     pub(crate) fn keep_up(&self) {
-        if self.0.home.is_none() && self.0.site.is_none() {
+        if self.0.home.is_none() && self.0.sites.is_empty() {
             return;
         }
         let (tx, rx) = std::sync::mpsc::channel();
@@ -197,13 +219,10 @@ impl WhoHistory {
     }
 
     fn run(&self, said: &Receiver<()>) {
-        let mut asked: Option<Instant> = None;
         loop {
-            if asked.is_none_or(|at| at.elapsed() >= LINKS_EVERY) {
-                asked = Some(Instant::now());
-                if let Err(e) = self.take_links() {
-                    eprintln!("stvtf-web: the site's Discord links not taken in: {e:#}");
-                }
+            loop {
+                let Some(who) = lock(&self.0.wanted).pop_front() else { break };
+                self.find(&who);
             }
             if let Err(e) = self.sync() {
                 eprintln!("stvtf-web: who is who not kept up: {e:#}");
@@ -267,51 +286,81 @@ impl WhoHistory {
         true
     }
 
-    /// The links of the site `src`, all of them (each a Discord user and their `SteamID`), taken
-    /// in: over nothing, over nobody, over a match's starter's word and over what that site said
-    /// before, not over a caster's word or another site's. Those it no longer has are nobody again.
-    /// How many changed.
-    fn take_in(&self, src: &str, links: &HashMap<String, String>) -> usize {
-        let mut kept = lock(&self.0.kept);
-        let mut changed = 0;
-        for (who, steamid) in links {
-            let stands =
-                kept.known.get(who).is_some_and(|k| k.steamid.as_ref().is_some_and(|s| s == steamid || (k.sure() >= 2 && k.src != src)));
-            if !stands && self.put(&mut kept, who, Some(steamid), "", src, "") {
-                changed += 1;
+    /// Someone is in a channel: the sites are asked who they are, if they are a Discord user
+    /// and were not asked about lately. What the sites say is known a little later.
+    pub(crate) fn look_up(&self, who: &str) {
+        if self.0.sites.is_empty() || who.is_empty() || who.len() > 20 || !who.bytes().all(|b| b.is_ascii_digit()) {
+            return;
+        }
+        {
+            let mut looked = lock(&self.0.looked);
+            let fresh = |(at, found): &(Instant, bool)| at.elapsed() < if *found { LINK_FOR } else { NO_LINK_FOR };
+            if looked.get(who).is_some_and(fresh) || looked.len() >= MAX_KNOWN {
+                return;
+            }
+            looked.insert(who.to_string(), (Instant::now(), false));
+        }
+        let mut wanted = lock(&self.0.wanted);
+        if wanted.len() < MAX_WANTED {
+            wanted.push_back(who.to_string());
+            drop(wanted);
+            if let Some(said) = lock(&self.0.said).as_ref() {
+                let _ = said.send(());
             }
         }
-        let gone: Vec<String> = kept
-            .known
-            .iter()
-            .filter(|(who, k)| k.src == src && k.steamid.is_some() && !links.contains_key(*who))
-            .map(|(who, _)| who.clone())
-            .collect();
-        for who in &gone {
-            self.put(&mut kept, who, None, "", src, "");
-        }
-        changed += gone.len();
-        if changed > 0 {
-            self.save(&kept);
-        }
-        changed
     }
 
-    /// Asks the site for its links and takes them in.
-    fn take_links(&self) -> Result<()> {
-        let Some((src, fetch)) = &self.0.site else { return Ok(()) };
-        let theirs: Links = serde_json::from_str(&fetch()?).context("the site's Discord links")?;
-        let links = theirs
-            .links
-            .into_iter()
-            .filter(|l| !l.discord.is_empty() && l.discord.len() <= 20 && l.discord.bytes().all(|b| b.is_ascii_digit()))
-            .filter_map(|l| Some((l.discord, steamid_of(&l.steam)?)))
-            .collect();
-        let changed = self.take_in(src, &links);
-        if changed > 0 {
-            eprintln!("stvtf-web: {changed} Discord links taken in from {src}");
+    /// Asks the sites, one after the other, who Discord user `who` is, and keeps what the first
+    /// that knows them says. None knowing them, a link kept from before is gone; unless a site
+    /// did not answer, which says nothing.
+    fn find(&self, who: &str) {
+        let mut all_said = true;
+        for site in &self.0.sites {
+            match (site.ask)(who) {
+                Ok(Some(steam)) => {
+                    if let Some(steamid) = steamid_of(&steam) {
+                        lock(&self.0.looked).insert(who.to_string(), (Instant::now(), true));
+                        self.found(who, Some((&site.name, &steamid)));
+                        return;
+                    }
+                }
+                Ok(None) => {}
+                Err(e) => {
+                    all_said = false;
+                    eprintln!("stvtf-web: {} not asked who a Discord user is: {e:#}", site.name);
+                }
+            }
         }
-        Ok(())
+        if all_said {
+            self.found(who, None);
+        }
+    }
+
+    /// What the sites say of `who`: linked there (the site, and the `SteamID`), or nowhere.
+    /// A link is kept over nothing, nobody, a match's starter's word and a link from before,
+    /// not over a caster's word; with none, one kept from a site is nobody again. Whether that
+    /// changed anything.
+    fn found(&self, who: &str, link: Option<(&str, &str)>) -> bool {
+        let mut kept = lock(&self.0.kept);
+        let before = kept.known.get(who);
+        let changed = match link {
+            Some((src, steamid)) => {
+                let stands = before.is_some_and(|k| k.steamid.as_deref().is_some_and(|s| s == steamid || k.sure() == 3));
+                !stands && self.put(&mut kept, who, Some(steamid), "", src, "")
+            }
+            None => match before.filter(|k| k.steamid.is_some() && !k.src.is_empty()).map(|k| k.src.clone()) {
+                Some(src) => self.put(&mut kept, who, None, "", &src, ""),
+                None => false,
+            },
+        };
+        if changed {
+            self.save(&kept);
+            drop(kept);
+            if let Some(said) = lock(&self.0.said).as_ref() {
+                let _ = said.send(());
+            }
+        }
+        changed
     }
 
     /// What another stv.tf says was said there, or taken in from its site (`src`).
@@ -390,18 +439,6 @@ struct Said {
     by: String,
 }
 
-#[derive(Deserialize)]
-struct Links {
-    links: Vec<Link>,
-}
-
-/// A Discord user and the Steam account (its 64-bit id) they linked on the site.
-#[derive(Deserialize)]
-struct Link {
-    discord: String,
-    steam: String,
-}
-
 /// `GET /voice/known?since=<version>`, another stv.tf's: what changed since.
 pub(super) fn known(s: &mut TcpStream, app: &App, request: &Request) -> std::io::Result<()> {
     let Some(key) = &app.voice_key else { return respond(s, "404 Not Found", TEXT, b"") };
@@ -443,13 +480,13 @@ mod tests {
     #[test]
     fn who_someone_was_said_to_be_is_kept_in_a_file_until_they_are_said_to_be_nobody() {
         let dir = TempDir::new("voicewho");
-        let who = WhoHistory::new(Some(&dir), None, None);
+        let who = WhoHistory::new(Some(&dir), None, Vec::new());
         who.remember("mumble:cert:abc", Some("[U:1:9]"), "arie", true);
         who.remember("77", Some("[U:1:5]"), "gummy", true);
-        let again = WhoHistory::new(Some(&dir), None, None);
+        let again = WhoHistory::new(Some(&dir), None, Vec::new());
         assert_eq!(again.get("mumble:cert:abc").as_deref(), Some("[U:1:9]"));
         again.remember("77", None, "gummy", true);
-        assert_eq!(WhoHistory::new(Some(&dir), None, None).get("77"), None);
+        assert_eq!(WhoHistory::new(Some(&dir), None, Vec::new()).get("77"), None);
     }
 
     #[test]
@@ -464,7 +501,7 @@ mod tests {
             }
             Ok(r#"{"version":0,"known":[]}"#.into())
         });
-        let who = WhoHistory::asking(Some(&dir), Some(home), None);
+        let who = WhoHistory::asking(Some(&dir), Some(home), Vec::new());
         assert_eq!(who.get("77").as_deref(), Some("[U:1:5]"));
         who.sync().unwrap();
         assert_eq!(*lock(&told), [r#"{"by":"","id":"77","name":"","src":"","steamid":"[U:1:5]"}"#]);
@@ -485,7 +522,7 @@ mod tests {
                 let (version, known) = home.since(path.rsplit('=').next().unwrap().parse()?);
                 Ok(serde_json::json!({ "version": version, "known": known }).to_string())
             })),
-            None,
+            Vec::new(),
         )
     }
 
@@ -513,51 +550,82 @@ mod tests {
     }
 
     #[test]
-    fn a_sites_links_are_taken_in_but_not_over_what_someone_said_and_go_when_the_site_drops_them() {
+    fn what_a_site_says_of_someone_is_kept_but_not_over_a_casters_word_and_goes_when_no_site_knows_them() {
         let (home, down) = (WhoHistory::default(), Arc::new(Mutex::new(false)));
         let (na, au) = (away(&home, &down), away(&home, &down));
-        let links = |pairs: &[(&str, &str)]| pairs.iter().map(|(d, s)| (d.to_string(), s.to_string())).collect::<HashMap<_, _>>();
         // A caster says 78 plays on another account than the one they linked.
         na.remember("78", Some("[U:1:60]"), "aoki", true);
-        assert_eq!(na.take_in("na.serveme.tf", &links(&[("77", "[U:1:5]"), ("78", "[U:1:6]")])), 1);
+        assert!(na.found("77", Some(("na.serveme.tf", "[U:1:5]"))) && !na.found("78", Some(("na.serveme.tf", "[U:1:6]"))));
         assert_eq!((na.get("77").as_deref(), na.get("78").as_deref()), (Some("[U:1:5]"), Some("[U:1:60]")));
-        assert_eq!(na.take_in("na.serveme.tf", &links(&[("77", "[U:1:5]"), ("78", "[U:1:6]")])), 0, "the same again changes nothing");
-        // Known in the next region, as from that site: its own site's other link does not take its place.
+        assert!(!na.found("77", Some(("na.serveme.tf", "[U:1:5]"))), "the same again changes nothing");
+        // Known in the next region, as from that site.
         na.sync().unwrap();
         au.sync().unwrap();
-        assert_eq!(au.get("77").as_deref(), Some("[U:1:5]"));
-        assert_eq!(au.take_in("au.serveme.tf", &links(&[("77", "[U:1:9]")])), 0);
-        // Linked anew on the site, then no longer: taken over, then nobody.
-        assert_eq!(na.take_in("na.serveme.tf", &links(&[("77", "[U:1:7]")])), 1);
+        assert_eq!(au.recall("77"), Some(Recalled::Player { steamid: "[U:1:5]".into(), sure: true }));
+        // Linked anew, then no longer anywhere: taken over, then nobody. A caster's word stands.
+        assert!(na.found("77", Some(("serveme.tf", "[U:1:7]"))));
         assert_eq!(na.get("77").as_deref(), Some("[U:1:7]"));
-        assert_eq!(na.take_in("na.serveme.tf", &links(&[])), 1);
+        assert!(na.found("77", None) && !na.found("78", None));
         assert_eq!((na.get("77"), na.get("78").as_deref()), (None, Some("[U:1:60]")));
     }
 
-    #[test]
-    fn a_site_is_asked_for_its_links_as_it_writes_them() {
-        let site: Fetching = Box::new(|| {
-            Ok(r#"{"links":[{"discord":"77","steam":"76561197960265737"},{"discord":"x","steam":"76561197960265737"},{"discord":"78","steam":"gaben"}]}"#.into())
+    /// A site that knows `links` (Discord users and their 64-bit Steam ids), or does not answer.
+    fn knows(name: &str, links: &[(&str, &str)], asked: &Arc<Mutex<Vec<String>>>, down: bool) -> Site {
+        let links: HashMap<String, String> = links.iter().map(|(d, s)| (d.to_string(), s.to_string())).collect();
+        let (asked, name) = (asked.clone(), name.to_string());
+        let site = name.clone();
+        let ask: Fetching = Box::new(move |who| {
+            lock(&asked).push(format!("{site} {who}"));
+            anyhow::ensure!(!down, "down");
+            Ok(links.get(who).cloned())
         });
-        let who = WhoHistory::asking(None, None, Some(("serveme.tf".into(), site)));
-        who.take_links().unwrap();
-        assert_eq!((who.get("77").as_deref(), who.get("x"), who.get("78")), (Some("[U:1:9]"), None, None));
+        Site { name, ask }
+    }
+
+    #[test]
+    fn someone_in_a_channel_is_asked_about_at_each_site_until_one_knows_them_and_not_again_soon() {
+        let asked = Arc::new(Mutex::new(Vec::new()));
+        let sites = vec![
+            knows("eu", &[], &asked, false),
+            knows("na", &[("77", "76561197960265737")], &asked, false),
+            knows("au", &[], &asked, false),
+        ];
+        let who = WhoHistory::asking(None, None, sites);
+        for id in ["77", "77", "mumble:cert:abc", "78"] {
+            who.look_up(id);
+        }
+        let wanted: Vec<String> = lock(&who.0.wanted).drain(..).collect();
+        assert_eq!(wanted, ["77", "78"], "a Discord user, once");
+        for id in &wanted {
+            who.find(id);
+        }
+        assert_eq!(*lock(&asked), ["eu 77", "na 77", "eu 78", "na 78", "au 78"]);
+        assert_eq!(who.recall("77"), Some(Recalled::Player { steamid: "[U:1:9]".into(), sure: true }));
+        assert_eq!(who.recall("78"), None);
+    }
+
+    #[test]
+    fn a_site_not_answering_takes_no_link_away() {
+        let asked = Arc::new(Mutex::new(Vec::new()));
+        let who = WhoHistory::asking(None, None, vec![knows("eu", &[], &asked, true), knows("na", &[], &asked, false)]);
+        who.found("77", Some(("eu", "[U:1:5]")));
+        who.find("77");
+        assert_eq!(who.get("77").as_deref(), Some("[U:1:5]"));
     }
 
     #[test]
     fn a_match_starters_word_is_a_suggestion_elsewhere_and_gives_way_to_the_surer() {
         let who = WhoHistory::default();
-        let links = |pairs: &[(&str, &str)]| pairs.iter().map(|(d, s)| (d.to_string(), s.to_string())).collect::<HashMap<_, _>>();
         let player = |steamid: &str, sure| Some(Recalled::Player { steamid: steamid.into(), sure });
         who.remember("77", Some("[U:1:5]"), "gummy", false);
         assert_eq!(who.recall("77"), player("[U:1:5]", false));
         // Their own link takes its place, and a starter's word no longer does.
-        assert_eq!(who.take_in("serveme.tf", &links(&[("77", "[U:1:6]")])), 1);
+        assert!(who.found("77", Some(("serveme.tf", "[U:1:6]"))));
         who.remember("77", Some("[U:1:7]"), "gummy", false);
         assert_eq!(who.recall("77"), player("[U:1:6]", true));
         // A caster's word does, and their link then leaves it be.
         who.remember("77", Some("[U:1:8]"), "gummy", true);
-        assert_eq!(who.take_in("serveme.tf", &links(&[("77", "[U:1:6]")])), 0);
+        assert!(!who.found("77", Some(("serveme.tf", "[U:1:6]"))));
         assert_eq!(who.recall("77"), player("[U:1:8]", true));
         // Nobody is remembered too, until something is said of them.
         who.remember("78", None, "coach", false);

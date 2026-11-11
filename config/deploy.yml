@@ -39,6 +39,8 @@ env:
   clear:
     # Where the voice bot is added to a Discord server, shown with a match's invite.
     STVTF_VOICE_BOT: https://discord.com/oauth2/authorize?client_id=1569859416897888426&scope=bot+applications.commands&permissions=68160512
+    # The sites asked who a Discord user is (their Steam account linked there), by every region.
+    STVTF_LINK_SITES: https://serveme.tf/stv,https://na.serveme.tf/stv,https://au.serveme.tf/stv,https://sea.serveme.tf/stv
   secret:
     - STVTF_TOKEN_KEY
     - STVTF_VOICE_KEY

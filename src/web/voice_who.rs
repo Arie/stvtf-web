@@ -129,17 +129,23 @@ pub(super) fn status(
             .take(MAX_PEOPLE)
             .map(|p| (p.id, p.name.chars().filter(|c| !c.is_control()).take(MAX_TEXT).collect()))
             .collect();
-        // Whom they were said to be before holds here too, until someone says otherwise.
-        for (id, _) in &people {
-            match app.voice_who.recall(id) {
-                Some(Recalled::Player { steamid, sure }) => m.voice.remembered(id, Put::Player { steamid, confirmed: sure }),
-                Some(Recalled::Nobody) => m.voice.remembered(id, Put::Nobody),
-                None => {}
-            }
-        }
         m.voice.set_roster(&m.hub, &channel, people);
+        recall(app, m);
     }
     respond(s, "204 No Content", TEXT, b"")
+}
+
+/// Whom those in the match's channels were said to be before holds here too, until someone says
+/// otherwise; a Discord user nothing is known of is asked about at the sites.
+fn recall(app: &App, m: &Session) {
+    for id in m.voice.roster_ids() {
+        match app.voice_who.recall(&id) {
+            Some(Recalled::Player { steamid, sure }) => m.voice.remembered(&id, Put::Player { steamid, confirmed: sure }),
+            Some(Recalled::Nobody) => m.voice.remembered(&id, Put::Nobody),
+            None => {}
+        }
+        app.voice_who.look_up(&id);
+    }
 }
 
 /// The match whose voice `who` has a say in, if it is one and they have.
@@ -164,6 +170,8 @@ pub(super) fn comms(s: &mut TcpStream, app: &App, m: Option<&Session>, who: &Who
 /// `GET <page>voices`: those in the channel and those heard, and whom each is put on.
 pub(super) fn voices(s: &mut TcpStream, app: &App, m: Option<&Session>, who: &Who) -> std::io::Result<()> {
     let Some(m) = theirs(app, m, who) else { return respond(s, "204 No Content", TEXT, b"") };
+    // What the sites said since of those in the channel shows at once.
+    recall(app, m);
     respond(s, "200 OK", JSON, serde_json::json!(m.voice.voices(&m.hub)).to_string().as_bytes())
 }
 
