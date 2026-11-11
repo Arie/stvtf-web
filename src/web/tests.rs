@@ -148,7 +148,7 @@ fn someone_signed_in_is_their_steam_id_in_a_room_and_a_streamer_makes_themselves
     let opened = post(&app, "/w/demo/room", &owner, "");
     let page = page_of(&opened);
     let me = get(&app, &format!("{page}me"), &owner);
-    assert!(me.ends_with(r#"{"admin":true,"id":1,"signed":true,"signin":true,"streamer":false,"voice":false}"#), "{me}");
+    assert!(me.ends_with(r#"{"admin":true,"id":1,"signed":true,"signin":true,"streamer":false}"#), "{me}");
     // The same user from another browser (no guest cookie) is still the owner.
     let elsewhere = format!("{owner}; stvtf_guest={}", "3".repeat(32));
     assert!(get(&app, &format!("{page}me"), &elsewhere).contains(r#""admin":true"#));
@@ -218,10 +218,7 @@ fn a_demo_opens_a_room_for_its_owner() {
     assert!(get(&app, &page, "").contains("<canvas"));
     assert!(get(&app, &page, "").contains("Cache-Control: no-cache"));
     assert!(get(&app, &format!("{page}marks?from=0"), "").ends_with(r#"{"all":0,"marks":[]}"#), "what its timeline shows");
-    assert!(
-        get(&app, &format!("{page}me"), &cookie)
-            .ends_with(r#"{"admin":true,"id":1,"signed":false,"signin":false,"streamer":false,"voice":true}"#)
-    );
+    assert!(get(&app, &format!("{page}me"), &cookie).ends_with(r#"{"admin":true,"id":1,"signed":false,"signin":false,"streamer":false}"#));
     assert!(get(&app, &format!("{page}me"), "").contains(r#""admin":false"#));
     assert!(get(&app, &page, "").contains("Set-Cookie: stvtf_guest="), "everyone in a room gets a cookie");
     let again = post(&app, "/w/demo/room", &cookie, "");
@@ -263,7 +260,7 @@ fn admins_make_others_admin() {
     let (page, owner) = open_room(&app);
     let viewer = format!("stvtf_guest={}", "1".repeat(32));
     let me = get(&app, &format!("{page}me"), &viewer);
-    assert!(me.ends_with(r#"{"admin":false,"id":2,"signed":false,"signin":false,"streamer":false,"voice":false}"#), "{me}");
+    assert!(me.ends_with(r#"{"admin":false,"id":2,"signed":false,"signin":false,"streamer":false}"#), "{me}");
     assert!(post(&app, &format!("{page}name"), &viewer, r#"{"name":"caster"}"#).starts_with("HTTP/1.1 204"));
     let pause = r#"{"paused":true}"#;
     assert!(post(&app, &format!("{page}control"), &viewer, pause).starts_with("HTTP/1.1 403"));
@@ -1000,8 +997,7 @@ fn a_room_takes_voice_for_its_live_match_and_its_admins_match_who_is_who() {
     assert!(request_to(&app, keyless.as_bytes()).1.starts_with("HTTP/1.1 401"));
     // Its admins see who is not matched, and match them to a player.
     let voices = get(&app, &format!("{room}voices"), &cookie);
-    assert!(voices.contains(r#"{"discord":"77","linked":null,"name":"coach","steamid":null}"#), "{voices}");
-    assert!(get(&app, &format!("{room}voices"), "").starts_with("HTTP/1.1 403"), "admins only");
+    assert!(voices.contains(r#"{"confirmed":false,"discord":"77","heard":true,"linked":null,"name":"coach","steamid":null}"#), "{voices}");
     let matched = post(&app, &format!("{room}voice-match"), &cookie, r#"{"discord":"77","player":7}"#);
     assert!(matched.starts_with("HTTP/1.1 204"), "{matched}");
     assert!(get(&app, &format!("{room}voices"), &cookie).contains(r#""steamid":"[U:1:5]""#));
@@ -1013,7 +1009,6 @@ fn a_room_takes_voice_for_its_live_match_and_its_admins_match_who_is_who() {
         post(&app, &format!("{room}voice-match"), &cookie, r#"{"discord":"78","player":7}"#).starts_with("HTTP/1.1 400"),
         "no such voice"
     );
-    assert!(post(&app, &format!("{room}voice-match"), "", r#"{"discord":"77","player":7}"#).starts_with("HTTP/1.1 403"));
     assert!(post(&app, &format!("{room}voice-match"), &cookie, r#"{"discord":"77","player":null}"#).starts_with("HTTP/1.1 204"));
     assert!(get(&app, &format!("{room}voices"), &cookie).contains(r#""steamid":null"#), "unmatched again");
     // The delay is the bot's to say (whoever invited it): a room moves no voice.
@@ -1087,13 +1082,11 @@ fn where_people_sign_in_only_streamers_among_a_rooms_admins_tune_its_matchs_voic
     let page = page_of(&post(&app, "/w/demo/room", &owner, ""));
     assert!(get(&app, &format!("{page}me"), &owner).contains(r#""admin":true"#));
     // Anyone opens a room and is its admin: a match's voice is not theirs to move.
-    assert!(get(&app, &format!("{page}voices"), &owner).starts_with("HTTP/1.1 403"));
-    assert!(post(&app, &format!("{page}voice-match"), &owner, r#"{"discord":"77","player":7}"#).starts_with("HTTP/1.1 403"));
+    assert!(get(&app, &format!("{page}voices"), &owner).starts_with("HTTP/1.1 204"));
+    assert!(post(&app, &format!("{page}voice-match"), &owner, r#"{"discord":"77","player":7}"#).starts_with("HTTP/1.1 409"), "a demo");
     let streamer = signed_in(&app, &key, r#"{"uid":"9999","name":"caster","streamer":true}"#);
     assert!(post(&app, &format!("{page}claim"), &streamer, "").starts_with("HTTP/1.1 204"));
-    assert!(get(&app, &format!("{page}voices"), &streamer).ends_with("[]"));
-    assert!(get(&app, &format!("{page}me"), &streamer).contains(r#""voice":true"#));
-    assert!(get(&app, &format!("{page}me"), &owner).contains(r#""voice":false"#));
+    assert!(get(&app, &format!("{page}voices"), &streamer).starts_with("HTTP/1.1 204"), "a demo has no voice coming in");
 }
 
 #[test]
@@ -1135,9 +1128,8 @@ fn behind_a_site_the_invite_is_for_who_started_the_match_and_for_streamers() {
     let room = page_of(&post(&app, &format!("{page}room"), &other, ""));
     assert!(get(&app, &format!("{room}voice-invite"), &starter).contains(&invite));
     assert!(get(&app, &format!("{room}voice-invite"), &other).starts_with("HTTP/1.1 204"), "its admin, but nobody to the match");
-    assert!(get(&app, &format!("{room}voices"), &other).starts_with("HTTP/1.1 403"));
+    assert!(get(&app, &format!("{room}voices"), &other).starts_with("HTTP/1.1 204"));
     assert!(get(&app, &format!("{room}voices"), &starter).starts_with("HTTP/1.1 200"), "no admin of the room, but the match is theirs");
-    assert!(get(&app, &format!("{room}me"), &starter).contains(r#""voice":true"#));
 }
 
 /// A server whose store has match `id`'s demo of `cp_a` kept with comms in it.
@@ -1199,16 +1191,23 @@ fn bot(app: &App, method: &str, key: &str, body: &str) -> String {
     request_to(app, send.as_bytes()).1
 }
 
+/// The bot says how it goes in a channel brought into match `id`, and who is in it.
+fn status(app: &App, id: &str, key: &str, body: &str) -> String {
+    let body = invited(app, id, body);
+    let send = format!("POST /w/{id}/voice-status HTTP/1.1\r\nAuthorization: Bearer {key}\r\nContent-Length: {}\r\n\r\n{body}", body.len());
+    request_to(app, send.as_bytes()).1
+}
+
 #[test]
 fn a_mumble_channel_is_asked_for_on_the_page_and_the_bot_hears_of_it() {
     let (app, id) = voice_app();
     let page = format!("/w/{id}/");
-    assert!(get(&app, &format!("{page}voice-mumble"), "").starts_with("HTTP/1.1 204"), "none asked for");
+    assert!(get(&app, &format!("{page}voice-comms"), "").ends_with(r#"{"discord":null,"mumble":null}"#), "none yet");
     assert!(bot(&app, "GET", "k", "").contains(r#""jobs":[]"#));
     let ask = r#"{"host":"mumble.example","port":64738,"password":"pw","channel":"Team A","delay":0}"#;
     assert!(post(&app, &format!("{page}voice-mumble"), "", ask).starts_with("HTTP/1.1 204"));
     // The page sees where the bot is wanted, not the password.
-    let shown = get(&app, &format!("{page}voice-mumble"), "");
+    let shown = get(&app, &format!("{page}voice-comms"), "");
     assert!(
         shown.contains(r#""host":"mumble.example""#)
             && shown.contains(r#""channel":"Team A""#)
@@ -1245,14 +1244,14 @@ fn a_mumble_channel_is_asked_for_on_the_page_and_the_bot_hears_of_it() {
         assert!(took >= Duration::from_millis(100) && took < Duration::from_secs(5), "{took:?}");
     });
     // What the bot says of it reaches the page.
-    let said = format!(r#"{{"match":"{id}","status":"In Team A with 3 people"}}"#);
-    assert!(bot(&app, "POST", "k", &said).starts_with("HTTP/1.1 204"));
-    assert!(bot(&app, "POST", "wrong", &said).starts_with("HTTP/1.1 401"));
-    assert!(get(&app, &format!("{page}voice-mumble"), "").contains("In Team A with 3 people"));
+    let said = r#"{"kind":"mumble","status":"In Team A with 3 people"}"#;
+    assert!(status(&app, &id, "k", said).starts_with("HTTP/1.1 204"));
+    assert!(status(&app, &id, "wrong", said).starts_with("HTTP/1.1 401"));
+    assert!(get(&app, &format!("{page}voice-comms"), "").contains("In Team A with 3 people"));
     // Sent away: the bot hears of it no more.
     assert!(post(&app, &format!("{page}voice-mumble"), "", r#"{"leave":true}"#).starts_with("HTTP/1.1 204"));
     assert!(bot(&app, "GET", "k", "").contains(r#""jobs":[]"#));
-    assert!(get(&app, &format!("{page}voice-mumble"), "").starts_with("HTTP/1.1 204"));
+    assert!(get(&app, &format!("{page}voice-comms"), "").contains(r#""mumble":null"#));
     // Not anywhere, nor anything, for a server.
     for bad in [
         r#"{"host":"mumble.example/x","channel":"a"}"#,
@@ -1278,8 +1277,8 @@ fn behind_a_site_only_who_has_a_say_brings_mumble_in() {
     let ask = r#"{"host":"mumble.example","channel":"Team A"}"#;
     assert!(post(&app, &format!("{page}voice-mumble"), &other, ask).starts_with("HTTP/1.1 403"));
     assert!(post(&app, &format!("{page}voice-mumble"), &starter, ask).starts_with("HTTP/1.1 204"));
-    assert!(get(&app, &format!("{page}voice-mumble"), &other).starts_with("HTTP/1.1 204"), "nor sees where it is");
-    assert!(get(&app, &format!("{page}voice-mumble"), &starter).contains("mumble.example"));
+    assert!(get(&app, &format!("{page}voice-comms"), &other).starts_with("HTTP/1.1 204"), "nor sees where it is");
+    assert!(get(&app, &format!("{page}voice-comms"), &starter).contains("mumble.example"));
 }
 
 #[test]
@@ -1291,7 +1290,45 @@ fn someone_in_mumble_is_known_by_who_they_are_on_their_server() {
     publish(&m.hub, &crate::matches::hub::tests::snapshot(1000, None, Vec::new()));
     let said = r#"{"discord":"mumble:mumble.example:user:97","name":"Arie","channel":"mumble:mumble.example:12","frames":["aA=="]}"#;
     assert!(post_voice(&app, &id, Some("k"), said).starts_with("HTTP/1.1 200"));
-    assert_eq!(m.voice.voices()[0].discord, "mumble:mumble.example:user:97");
+    assert_eq!(m.voice.voices(&m.hub)[0].discord, "mumble:mumble.example:user:97");
     let odd = r#"{"discord":"mumble:<script>","frames":["aA=="]}"#;
     assert!(post_voice(&app, &id, Some("k"), odd).starts_with("HTTP/1.1 400"));
+}
+
+#[test]
+fn who_is_who_is_said_before_anyone_speaks_by_player_or_by_steam_id() {
+    let (app, id) = voice_app();
+    let Matches::Many(sessions) = &app.matches else { panic!() };
+    let m = sessions.get(&id).unwrap();
+    publish(&m.hub, &server("cp_process_f12"));
+    let scout = output::Player { steamid: "[U:1:5]".into(), ..crate::matches::hub::tests::player(7, "scout", output::Team::Red) };
+    publish(&m.hub, &crate::matches::hub::tests::snapshot(1000, None, vec![scout]));
+    let page = format!("/w/{id}/");
+    // The bot is in a Discord channel, and says who is there: nobody has said a word.
+    let there = r#"{"kind":"discord","status":"In General with 2 people","people":[{"id":"77","name":"coach"},{"id":"78","name":"sub"}]}"#;
+    assert!(status(&app, &id, "k", there).starts_with("HTTP/1.1 204"));
+    assert!(get(&app, &format!("{page}voice-comms"), "").ends_with(r#"{"discord":{"status":"In General with 2 people"},"mumble":null}"#));
+    let voices = get(&app, &format!("{page}voices"), "");
+    assert!(voices.contains(r#"{"confirmed":false,"discord":"77","heard":false,"linked":null,"name":"coach","steamid":null}"#), "{voices}");
+    // One on a player in the match, one on a Steam id as people write them.
+    assert!(post(&app, &format!("{page}voice-match"), "", r#"{"discord":"77","player":7}"#).starts_with("HTTP/1.1 204"));
+    assert!(post(&app, &format!("{page}voice-match"), "", r#"{"discord":"78","steamid":"STEAM_0:1:4"}"#).starts_with("HTTP/1.1 204"));
+    let voices = get(&app, &format!("{page}voices"), "");
+    assert!(voices.contains(r#""name":"coach","steamid":"[U:1:5]""#) && voices.contains(r#""name":"sub","steamid":"[U:1:9]""#), "{voices}");
+    assert!(post(&app, &format!("{page}voice-match"), "", r#"{"discord":"78","steamid":"gaben"}"#).starts_with("HTTP/1.1 400"));
+    assert!(post(&app, &format!("{page}voice-match"), "", r#"{"discord":"99","player":7}"#).starts_with("HTTP/1.1 400"), "nobody there");
+    // What they then say is that player's.
+    let said = r#"{"discord":"77","name":"coach","frames":["aA=="],"delay":0}"#;
+    let page_stream = crate::matches::hub::subscribe_to(&m.hub, false, true);
+    assert!(post_voice(&app, &id, Some("k"), said).ends_with("live"));
+    assert!(page_stream.try_iter().any(|l| l.contains(r#""player":7"#) && l.contains(r#""type":"voice""#)));
+    // The bot gone: nobody is in a channel, and those who never spoke are no longer listed.
+    assert!(status(&app, &id, "k", r#"{"kind":"discord","left":true}"#).starts_with("HTTP/1.1 204"));
+    assert!(get(&app, &format!("{page}voice-comms"), "").contains(r#""discord":null"#));
+    let voices = get(&app, &format!("{page}voices"), "");
+    assert!(voices.contains("coach") && !voices.contains("sub"), "{voices}");
+    // Not without the invite.
+    let uninvited =
+        format!("POST /w/{id}/voice-status HTTP/1.1\r\nAuthorization: Bearer k\r\nContent-Length: {}\r\n\r\n{there}", there.len());
+    assert!(request_to(&app, uninvited.as_bytes()).1.starts_with("HTTP/1.1 403"));
 }

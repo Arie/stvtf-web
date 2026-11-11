@@ -87,6 +87,8 @@ struct App {
     voice_bot: Option<String>,
     /// The bell the voice bot waits on for Mumble channels asked for.
     mumble_changes: web::voice_mumble::Changes,
+    /// Whom people in voice channels were said to be, from one match to the next.
+    voice_who: web::voice_who::WhoHistory,
 }
 
 /// Counts an event stream against its client's limit until dropped.
@@ -371,6 +373,7 @@ fn main() -> Result<()> {
         voice_links: web::voice_link::Links::from_env(options.sessions.as_deref()),
         voice_bot: std::env::var("STVTF_VOICE_BOT").ok().filter(|u| !u.is_empty()),
         mumble_changes: web::voice_mumble::Changes::default(),
+        voice_who: web::voice_who::WhoHistory::new(options.sessions.as_deref()),
     });
     app.rooms.sweep();
     if let Matches::Many(_) = app.matches {

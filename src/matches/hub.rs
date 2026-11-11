@@ -110,6 +110,12 @@ impl Hub {
         self.steamids.iter().find(|(_, p, ..)| *p == id).map(|(s, ..)| s.as_str())
     }
 
+    /// The players in the latest snapshot: their `SteamID` and name.
+    pub(crate) fn players(&self) -> Vec<(String, String)> {
+        let name = |id: &PlayerId| self.names.get(id).map(|n| n.name.clone()).unwrap_or_default();
+        self.steamids.iter().filter(|(s, ..)| s != "BOT").map(|(s, id, ..)| (s.clone(), name(id))).collect()
+    }
+
     /// The slot of the player with `steamid` in the latest snapshot: their entity less one.
     pub(crate) fn slot_of(&self, steamid: &str) -> Option<u8> {
         let ent = self.steamids.iter().find(|(s, ..)| s == steamid)?.3;

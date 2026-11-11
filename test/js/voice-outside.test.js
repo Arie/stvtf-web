@@ -45,7 +45,7 @@ test("a voice of no player is heard by its name, on the team its line says", () 
 });
 
 test("names that look alike are suggested: the same letters, or one within the other", async () => {
-  const { alike } = await import("../../app/room/voiceadmin.js");
+  const { alike } = await import("../../app/panel/voicewho.js");
   assert.equal(alike("Gummy", "gummy"), true);
   assert.equal(alike("[team] gummy :)", "Gummy"), true);
   assert.equal(alike("gummy", "arie"), false);

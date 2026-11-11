@@ -337,6 +337,84 @@
 #voicelist .vstatus {
   color: #fff;
 }
+/* The comms view: wider than the list it takes the place of. */
+#voicelist.wide {
+  width: 400px;
+  max-width: calc(100vw - 24px);
+}
+#voicelist .vtop .vtitle {
+  flex: 1;
+  color: var(--dim);
+  text-align: right;
+}
+#voicelist .vtop button,
+#voicelist .vstatus button,
+#voicelist .vwho button {
+  width: auto;
+  height: 22px;
+  padding: 0 8px;
+}
+#voicelist .vinvite .vmumble {
+  background: #3d7a44;
+}
+#voicelist .vstatus {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+#voicelist .vstatustext {
+  flex: 1;
+  min-width: 0;
+}
+#voicelist .vstatustext .vhint {
+  display: block;
+}
+#voicelist .vdot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  margin-top: 4px;
+  border-radius: 50%;
+  background: var(--good);
+}
+#voicelist .vdot.wait {
+  background: var(--gold);
+}
+#voicelist .vdot.bad,
+#voicelist .vbad {
+  background: var(--red);
+}
+#voicelist .vhint.vbad {
+  background: none;
+  color: var(--alert);
+}
+#voicelist .vwho .vname.on {
+  color: #fff;
+  font-weight: 700;
+}
+#voicelist .vwho select,
+#voicelist .vwho input {
+  width: 170px;
+  border: 0;
+  border-radius: 4px;
+  padding: 2px 4px;
+  background: #ffffff1a;
+  color: #fff;
+  font: inherit;
+}
+#voicelist .vwho input {
+  flex: 1;
+  width: 0;
+}
+#voicelist .vwho select.set {
+  background: #7cc47f33;
+}
+#voicelist .vwho select.maybe {
+  background: #ffd23f2e;
+}
+#voicelist .vwho option {
+  color: #000;
+}
 #voicelist .vhint {
   color: var(--dim);
   font-size: 11px;
@@ -344,18 +422,6 @@
 #voicelist a.vinvite,
 #voicelist a.vdemo {
   color: #9cc4ff;
-}
-/* A room's admins: whose voice each from outside is. */
-#voicelist .vmatch select {
-  width: 120px;
-  border: 0;
-  border-radius: 4px;
-  background: #ffffff1a;
-  color: #fff;
-  font: inherit;
-}
-#voicelist .vmatch option {
-  color: #000;
 }
 #voicelist .vteam {
   display: flex;

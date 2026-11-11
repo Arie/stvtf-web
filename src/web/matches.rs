@@ -68,7 +68,12 @@ pub(super) fn serve_match(
         (Some(m), "voice-mumble") if request.method == "POST" => {
             super::voice_mumble::ask(&mut s, reader, app, Some(&m), request, &who(app, request))?;
         }
-        (Some(m), "voice-mumble") => super::voice_mumble::asked(&mut s, app, Some(&m), &who(app, request))?,
+        (Some(m), "voice-status") if request.method == "POST" => super::voice_who::status(&mut s, reader, app, Some(&m), request)?,
+        (Some(m), "voice-comms") => super::voice_who::comms(&mut s, app, Some(&m), &who(app, request))?,
+        (Some(m), "voices") => super::voice_who::voices(&mut s, app, Some(&m), &who(app, request))?,
+        (Some(m), "voice-match") if request.method == "POST" => {
+            super::voice_who::voice_match(&mut s, reader, app, Some(&m), request, &who(app, request))?;
+        }
         (Some(m), "voice-invite") => super::voice_in::invite(&mut s, app, Some(&m), &who(app, request))?,
         (Some(m), "voice") if request.method == "POST" => super::voice_in::voice_in(&mut s, reader, app, &m, request)?,
         (Some(m), "events") => match app.stream_slot(client) {

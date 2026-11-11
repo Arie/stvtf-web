@@ -57,7 +57,7 @@ pub(super) fn is_snowflake(s: &str) -> bool {
 
 /// Who someone is where they talk, or the channel they are in there: a Discord id, or for
 /// Mumble what the bot makes of the server and who they are on it (`mumble:<server>:<user>`).
-fn is_voice_id(s: &str) -> bool {
+pub(super) fn is_voice_id(s: &str) -> bool {
     !s.is_empty() && s.len() <= 128 && s.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b':' | b'_' | b'-'))
 }
 

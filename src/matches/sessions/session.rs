@@ -71,6 +71,8 @@ pub struct Session {
     pub(super) voice_invite: OnceLock<String>,
     /// The Mumble channel the voice bot is wanted in for it, if any.
     pub(crate) mumble: Mutex<Option<MumbleJob>>,
+    /// How it goes in the Discord channel the voice bot is in for it, and when it last said.
+    pub(crate) discord: Mutex<Option<(String, Instant)>>,
 }
 
 /// A recorded match: a saved file, or a demo's gzipped output.
@@ -113,6 +115,7 @@ impl Session {
             voice_tended: AtomicBool::new(false),
             voice_invite: OnceLock::new(),
             mumble: Mutex::new(None),
+            discord: Mutex::new(None),
         }
     }
 

@@ -77,37 +77,40 @@ speakers list ends with "Discord voice" for them: the `/stv join` command with t
 and the invite to copy, for their own Discord or to pass on to a team, with the delay when it is
 not 90 s. Everyone in a channel brought in so is heard.
 
-Instead of `steamid` a post may say who talks in Discord: `"discord": "<user id>"`, with a
-`"name"` and the voice `"channel"` they are in. Such a voice is nobody's until matched to a
-player; meanwhile it is heard as of no player, on the team most of its channel's matched speakers
-are on. A room on the match takes the same posts at `POST /r/<id>/voice`; its admins see the
-voices and their matches at `GET /r/<id>/voices`, and put one on a player (or take it off) with
-`POST /r/<id>/voice-match` `{"discord": "<user id>", "player": <id or null>}`.
+Instead of `steamid` a post may say who talks where they talk: `"discord": "<who>"` (a Discord
+user id; for Mumble `mumble:<server>:<who they are there>`), with a `"name"` and the `"channel"`
+they are in. Until put on a player such a voice is nobody's, heard as of no player, on the team
+most of its channel's players are on; on the page it is listed by its name, under that team or
+under Others (two minutes after its last word, no longer).
 
-On the page such a voice is listed by its name, under the team it is taken for or under Others
-(two minutes after its last word, no longer). Whoever started the match, and a room's admins who are the site's streamers (where nobody signs
-in, any admin), get "From Discord" at the end of the speakers list in a room once such voice
-comes: each voice that is no player's (no link, or linked on another account) with the players to
-put it on;
-those whose name looks like its own come first, as a suggestion.
+Comms are set up in the speakers list, by whoever started the match and by the site's streamers
+(where nobody signs in, by anyone): "Comms" swaps the list for a wider view. With no channel
+brought in yet it asks Discord or Mumble. Discord: the `/stv join` command with the page's link
+and the match's invite to copy, for their own Discord or to pass on to a team, with the delay
+when it is not 90 s. Mumble: a server (its name, with a port if not 64738), its password and a
+channel, and the bot joins at once. Once the bot is in a channel only that one shows: how it
+goes, for Mumble a way to move the bot (the same form, filled in; no password typed is the one
+given before) or take it out, and who is who: everyone in the channel, heard yet or not, each
+with the player they are. Someone is put on a player by whoever has a say (a player of the match,
+a Steam ID as people write them, or nobody), by what was said of them in an earlier match, or
+by their name, when just one player's looks like it: that last is a guess, shown as one until
+confirmed.
 
-Mumble needs no command: the speakers list's "Set up comms" (for the same people) swaps the
-list for a view with Discord's button and, for Mumble, a server (its name, with a port if not
-64738), its password and a channel. `POST /w/<id>/voice-mumble` (a room's too) with `{"host",
-"port", "password", "channel", "delay"}` asks the bot in, `{"leave": true}` sends it away, and
-`GET` says where it is wanted and how it goes (`status`, as the bot says it; never the password).
-The bot keeps `GET /voice/mumble?since=<version>` open with its key, which answers the moment
-something is asked for (`{"jobs": [...], "version"}`), and says how each goes with `POST
-/voice/mumble` `{"match", "status"}`. What is asked for is kept with the match, so a restart does
-not send the bot away. Someone in Mumble is known as `mumble:<server>:<who they are there>` (in
-the `discord` field of a post, which takes any such name), and put on a player as anyone is.
+| | |
+|---|---|
+| `GET <page>voice-invite` | `{"invite", "bot"}`: the match's invite, and where the bot is added to a Discord server (`STVTF_VOICE_BOT`) |
+| `GET <page>voice-comms` | `{"discord": {"status"} or null, "mumble": {"host", "port", "channel", "delay", "status"} or null}` |
+| `POST <page>voice-mumble` | `{"host", "port", "password", "channel", "delay"}` asks the bot in or moves it; `{"leave": true}` takes it out |
+| `GET <page>voices` | everyone in the channel or heard: `discord` (who they are there), `name`, `steamid` (whom they are put on), `linked` (their own Discord link), `heard`, `confirmed` |
+| `POST <page>voice-match` | `{"discord", "player": <id>}`, `{"discord", "steamid": "<any form>"}`, or `{"discord"}` alone for nobody |
 
-What a match's players say from outside it is kept with the demo stv.tf records of it, a map at
-a time (two when the connection to its server dropped): the speakers list ends with "Demos with
-comms", each to download with the comms written into it as the players' voice, for TF2's
-`playdemo`. `GET /w/<id>/demos` (a room's too) lists them (`map`, `mb`, `href`), and the match's
-page says so once it is gone. Kept two weeks, 10 GB of them at most (the oldest go first); what
-was said in a pause, or by someone who is no player, is not in them.
+`<page>` is a match's (`/w/<id>/`) or a room's on it. Those with no say get no content from the
+`GET`s (every page asks) and 403 from the `POST`s. The bot's own, with its key: `POST
+<page>voice-status` with the invite, `{"kind": "discord" or "mumble", "status", "people": [{"id",
+"name"}]}` or `{"kind", "left": true}`; and `GET /voice/mumble?since=<version>`, kept open, which
+answers the moment a Mumble channel is asked for (`{"jobs": [...], "version"}`). What is asked
+for is kept with the match, so a restart does not send the bot away; who was said to be whom is
+kept in `voice-who.json`, and holds the next time the same person is in a channel.
 
 Linking, so that it need not be done by hand: `GET /voice/link` signs a visitor in with Discord
 (`identify connections`) and keeps the Steam account Discord verified as theirs

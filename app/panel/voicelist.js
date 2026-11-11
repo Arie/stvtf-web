@@ -93,8 +93,8 @@ const shape = gs =>
     )
     .join("|");
 
-// More for the end of the list: the Discord invite (voiceinvite.js), and for a room's admins the
-// voices from outside to match (room/voiceadmin.js).
+// More for the end of the list: the way to setting up comms (voiceinvite.js), and the demos to
+// download (voicedemos.js).
 /** @type {(() => HTMLElement[])[]} */
 const extras = [];
 /** @param {() => HTMLElement[]} more */

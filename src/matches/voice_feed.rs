@@ -57,16 +57,37 @@ fn account(steamid: &str) -> Option<u32> {
 /// How a speaker with no `SteamID` is named in the hold and on their lines.
 const DISCORD: &str = "discord:";
 
-/// Someone heard from Discord: for a room's admins to match to a player (one with no link, or
-/// playing on another account than the one they linked).
+/// Someone in a channel brought into the match (Discord, Mumble), heard yet or not: for whoever
+/// has a say to put on a player (one with no link, or playing on another account).
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
-pub(crate) struct Heard {
+pub(crate) struct Person {
+    /// Who they are where they talk.
     pub(crate) discord: String,
     pub(crate) name: String,
-    /// The `SteamID` an admin matched them to.
+    /// The `SteamID` they are put on: by someone, or guessed from their name.
     pub(crate) steamid: Option<String>,
     /// The `SteamID` they linked themselves.
     pub(crate) linked: Option<String>,
+    /// Whether they have said anything.
+    pub(crate) heard: bool,
+    /// Whether whom they are put on (a player, or nobody) was said by someone, not guessed.
+    pub(crate) confirmed: bool,
+}
+
+/// Whom someone is put on.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum Put {
+    /// The player with this `SteamID`: said so by someone (`confirmed`), or guessed from names.
+    Player { steamid: String, confirmed: bool },
+    /// Nobody: they are no player, said so by someone.
+    Nobody,
+}
+
+/// Whether two names look like one: the same letters and digits, or one within the other.
+pub(crate) fn alike(a: &str, b: &str) -> bool {
+    let plain = |n: &str| n.chars().filter(|c| c.is_alphanumeric()).flat_map(char::to_lowercase).collect::<String>();
+    let (a, b) = (plain(a), plain(b));
+    a.chars().count() > 2 && b.chars().count() > 2 && (a.contains(&b) || b.contains(&a))
 }
 
 /// The most speakers remembered (names, channels).
@@ -77,8 +98,10 @@ struct State {
     hold: Option<VoiceHold>,
     /// The speakers heard, by key: their name and channel as last given.
     known: BTreeMap<String, Speaker>,
-    /// Discord ids matched by hand to a `SteamID`.
-    matched: BTreeMap<String, String>,
+    /// Whom each is put on, by who they are where they talk.
+    matched: BTreeMap<String, Put>,
+    /// Those in the channel now, as the bot says: who they are there, and their name.
+    roster: BTreeMap<String, String>,
     /// The stream's count of new starts, and whether it was paused, when last looked at.
     epoch: u64,
     paused: bool,
@@ -110,6 +133,7 @@ impl VoiceFeed {
                 st.known.insert(key.clone(), who.clone());
             }
         }
+        self.guess(hub);
         let delay = delay.unwrap_or(DEFAULT_DELAY);
         if delay < NO_DELAY {
             let Some(tick) = lock(hub).voice_clock().0 else { return Took::NoStream };
@@ -125,33 +149,83 @@ impl VoiceFeed {
         st.hold.get_or_insert_with(|| VoiceHold::new(interval)).said(Said { who: key, frames }, delay, now)
     }
 
-    /// Those heard from Discord, their own link, and whom an admin matched them to.
-    pub(crate) fn voices(&self) -> Vec<Heard> {
-        let st = lock(&self.0);
-        // Once each: someone who linked meanwhile is known both ways, the linked one last.
-        let mut heard: BTreeMap<String, Heard> = BTreeMap::new();
-        for s in st.known.values() {
-            let Some(discord) = s.discord.clone() else { continue };
-            let name = s.name.clone().unwrap_or_else(|| discord.clone());
-            let (steamid, linked) = (st.matched.get(&discord).cloned(), s.steamid.clone());
-            let before = heard.remove(&discord).and_then(|h| h.linked);
-            heard.insert(discord.clone(), Heard { discord, name, steamid, linked: linked.or(before) });
-        }
-        heard.into_values().collect()
+    /// Those in the channel are these now (the bot says so, before anyone speaks): each by who
+    /// they are there, with their name.
+    pub(crate) fn set_roster(&self, hub: &SharedHub, people: impl IntoIterator<Item = (String, String)>) {
+        lock(&self.0).roster = people.into_iter().take(MAX_KNOWN).collect();
+        self.guess(hub);
     }
 
-    /// Matches Discord user `discord` to `steamid` by hand, or with none, no more; whether
-    /// they were heard at all.
+    /// Puts those nobody placed yet on the one player whose name looks like theirs, when there
+    /// is just one and nobody else has that player: a guess, shown as one until someone says so.
+    fn guess(&self, hub: &SharedHub) {
+        let mut st = lock(&self.0);
+        let players = lock(hub).players();
+        let playing = |steamid: &str| players.iter().any(|(s, _)| s == steamid);
+        let mut people: BTreeMap<String, (String, Option<String>)> =
+            st.roster.iter().map(|(id, name)| (id.clone(), (name.clone(), None))).collect();
+        for k in st.known.values() {
+            if let Some(id) = &k.discord {
+                let name = k.name.clone().or_else(|| people.get(id).map(|p| p.0.clone())).unwrap_or_default();
+                people.insert(id.clone(), (name, k.steamid.clone()));
+            }
+        }
+        let mut taken: Vec<String> =
+            st.matched.values().filter_map(|p| if let Put::Player { steamid, .. } = p { Some(steamid.clone()) } else { None }).collect();
+        taken.extend(people.values().filter_map(|(_, own)| own.clone()).filter(|s| playing(s)));
+        for (id, (name, own)) in people {
+            if st.matched.contains_key(&id) || own.is_some_and(|s| playing(&s)) {
+                continue;
+            }
+            let mut like = players.iter().filter(|(s, n)| alike(n, &name) && !taken.contains(s));
+            if let (Some((steamid, _)), None) = (like.next(), like.next()) {
+                taken.push(steamid.clone());
+                st.matched.insert(id, Put::Player { steamid: steamid.clone(), confirmed: false });
+            }
+        }
+    }
+
+    /// Those in the channel and those heard, their own link, and whom each is put on.
+    pub(crate) fn voices(&self, hub: &SharedHub) -> Vec<Person> {
+        self.guess(hub);
+        let st = lock(&self.0);
+        let put = |id: &str| match st.matched.get(id) {
+            Some(Put::Player { steamid, confirmed }) => (Some(steamid.clone()), *confirmed),
+            Some(Put::Nobody) => (None, true),
+            None => (None, false),
+        };
+        let mut all: BTreeMap<String, Person> = BTreeMap::new();
+        for (id, name) in &st.roster {
+            let (steamid, confirmed) = put(id);
+            all.insert(id.clone(), Person { discord: id.clone(), name: name.clone(), steamid, linked: None, heard: false, confirmed });
+        }
+        // Once each: someone who linked meanwhile is known both ways, the linked one last.
+        for s in st.known.values() {
+            let Some(discord) = s.discord.clone() else { continue };
+            let before = all.remove(&discord);
+            let name = s.name.clone().or_else(|| before.as_ref().map(|h| h.name.clone())).unwrap_or_else(|| discord.clone());
+            let linked = s.steamid.clone().or_else(|| before.and_then(|h| h.linked));
+            let (steamid, confirmed) = put(&discord);
+            all.insert(discord.clone(), Person { discord, name, steamid, linked, heard: true, confirmed });
+        }
+        all.into_values().collect()
+    }
+
+    /// Someone says whom `discord` is: a player's `SteamID`, or nobody. Whether there is such a
+    /// person, in the channel or heard.
     pub(crate) fn set_match(&self, discord: &str, steamid: Option<String>) -> bool {
         let mut st = lock(&self.0);
-        if !st.known.values().any(|s| s.discord.as_deref() == Some(discord)) {
+        if !st.roster.contains_key(discord) && !st.known.values().any(|s| s.discord.as_deref() == Some(discord)) {
             return false;
         }
-        match steamid {
-            Some(s) => st.matched.insert(discord.to_string(), s),
-            None => st.matched.remove(discord),
-        };
+        let put = steamid.map_or(Put::Nobody, |steamid| Put::Player { steamid, confirmed: true });
+        st.matched.insert(discord.to_string(), put);
         true
+    }
+
+    /// The same, as it is known from before: only for someone nobody placed here yet.
+    pub(crate) fn remembered(&self, discord: &str, steamid: String) {
+        lock(&self.0).matched.entry(discord.to_string()).or_insert(Put::Player { steamid, confirmed: true });
     }
 
     /// What `said` is as a line at `tick`: its speaker the player with their `SteamID` now (their
@@ -160,11 +234,16 @@ impl VoiceFeed {
     fn line(&self, hub: &SharedHub, said: Said, tick: u32, pause: bool) -> Line {
         let mut st = lock(&self.0);
         let known = st.known.get(&said.who).cloned().unwrap_or_default();
-        // The one they were matched to by hand, else their own.
+        // The one they are put on (by someone, or by their name), else their own.
         let steamid_of = |key: &str| {
             let discord = key.strip_prefix(DISCORD).or_else(|| st.known.get(key)?.discord.as_deref());
             let own = (!key.starts_with(DISCORD)).then(|| key.to_string());
-            discord.and_then(|d| st.matched.get(d).cloned()).or(own)
+            match discord.and_then(|d| st.matched.get(d)) {
+                Some(Put::Player { steamid, .. }) => Some(steamid.clone()),
+                // Said to be no player: not even the one they linked.
+                Some(Put::Nobody) => None,
+                None => own,
+            }
         };
         let steamid = steamid_of(&said.who);
         let hub = lock(hub);
@@ -368,8 +447,8 @@ mod tests {
         assert!(v["player"].is_null(), "{v}");
         assert_eq!((v["steamid"].as_str(), v["name"].as_str(), v["team"].as_str()), (Some("discord:77"), Some("coach"), Some("red")));
         assert_eq!(
-            feed.voices(),
-            [Heard { discord: "77".into(), name: "coach".into(), steamid: None, linked: None }],
+            feed.voices(&hub),
+            [Person { discord: "77".into(), name: "coach".into(), steamid: None, linked: None, heard: true, confirmed: false }],
             "for a room's admins to place"
         );
     }
@@ -417,8 +496,15 @@ mod tests {
         let alt = Speaker { steamid: Some("[U:1:99]".into()), ..unlinked("77", "arie") };
         feed.said(&hub, &alt, frames(1), Some(0.0), now);
         assert!(voices(&page)[0]["player"].is_null());
-        let heard = Heard { discord: "77".into(), name: "arie".into(), steamid: None, linked: Some("[U:1:99]".into()) };
-        assert_eq!(feed.voices(), [heard]);
+        let heard = Person {
+            discord: "77".into(),
+            name: "arie".into(),
+            steamid: None,
+            linked: Some("[U:1:99]".into()),
+            heard: true,
+            confirmed: false,
+        };
+        assert_eq!(feed.voices(&hub), [heard]);
         assert!(feed.set_match("77", Some(STEAMID.into())));
         feed.said(&hub, &alt, frames(1), Some(0.0), now);
         let out = voices(&page);
@@ -447,6 +533,57 @@ mod tests {
     }
 
     #[test]
+    fn those_in_the_channel_are_put_on_players_before_they_speak_by_their_names_or_by_someone() {
+        let (hub, feed, now) = (SharedHub::default(), VoiceFeed::default(), Instant::now());
+        let playing = |id, name: &str, steamid: &str| stvtf::output::Player { steamid: steamid.into(), ..player(id, name, Team::Red) };
+        publish(
+            &hub,
+            &snapshot(
+                1000,
+                None,
+                vec![playing(7, "^_^ gummy@lan", STEAMID), playing(8, "Aoki", "[U:1:6]"), playing(9, "aoki2", "[U:1:7]")],
+            ),
+        );
+        let page = subscribe_to(&hub, false, true);
+        feed.set_roster(
+            &hub,
+            [("77".to_string(), "Gummy".to_string()), ("78".to_string(), "aoki".to_string()), ("79".to_string(), "dave".to_string())],
+        );
+        let who: Vec<_> = feed.voices(&hub).into_iter().map(|h| (h.name, h.steamid, h.heard, h.confirmed)).collect();
+        assert_eq!(
+            who,
+            [
+                ("Gummy".to_string(), Some(STEAMID.to_string()), false, false),
+                ("aoki".to_string(), None, false, false),
+                ("dave".to_string(), None, false, false),
+            ],
+            "one name like theirs is a guess; two are none"
+        );
+        // A guess counts until someone says otherwise: what they say is that player's.
+        feed.said(&hub, &unlinked("77", "Gummy"), frames(1), Some(0.0), now);
+        assert_eq!(voices(&page)[0]["player"], 7);
+        // Someone says who is who, a player or nobody: confirmed, and no guess comes in its place.
+        assert!(feed.set_match("78", Some("[U:1:6]".into())) && feed.set_match("77", None));
+        let who: Vec<_> = feed.voices(&hub).into_iter().map(|h| (h.name, h.steamid, h.confirmed)).collect();
+        assert_eq!(who[0], ("Gummy".to_string(), None, true));
+        assert_eq!(who[1], ("aoki".to_string(), Some("[U:1:6]".to_string()), true));
+        feed.said(&hub, &unlinked("77", "Gummy"), frames(1), Some(0.0), now);
+        assert!(voices(&page)[0]["player"].is_null(), "said to be no player");
+        // Known from before, for someone not placed here: as said by someone.
+        feed.remembered("79", "[U:1:7]".into());
+        feed.remembered("78", "[U:1:99]".into());
+        let who = feed.voices(&hub);
+        assert_eq!((who[2].steamid.as_deref(), who[2].confirmed), (Some("[U:1:7]"), true));
+        assert_eq!(who[1].steamid.as_deref(), Some("[U:1:6]"), "what was said here stands");
+    }
+
+    #[test]
+    fn names_look_alike_when_one_is_in_the_other() {
+        assert!(alike("Gummy", "^_^ gummy@lan") && alike("ÄRIE", "ärie"));
+        assert!(!alike("gummy", "arie") && !alike("a", "arie") && !alike("", ""));
+    }
+
+    #[test]
     fn only_a_voice_heard_is_matched() {
         let (hub, feed, now) = (SharedHub::default(), VoiceFeed::default(), Instant::now());
         at(&hub, 1000);
@@ -466,7 +603,7 @@ mod tests {
         feed.step(&hub, now);
         let out = voices(&page);
         assert_eq!((out[0]["player"].as_u64(), out[0]["steamid"].as_str()), (Some(7), Some(STEAMID)), "what was held too");
-        assert_eq!(feed.voices()[0].steamid.as_deref(), Some(STEAMID));
+        assert_eq!(feed.voices(&hub)[0].steamid.as_deref(), Some(STEAMID));
         feed.set_match("77", None);
         feed.said(&hub, &unlinked("77", "arie"), frames(1), Some(0.0), now);
         assert!(voices(&page)[0]["player"].is_null(), "and no more once unmatched");

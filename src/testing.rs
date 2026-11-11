@@ -126,6 +126,7 @@ pub(crate) fn app(matches: Matches) -> App {
         voice_links: web::voice_link::Links::default(),
         voice_bot: None,
         mumble_changes: web::voice_mumble::Changes::default(),
+        voice_who: web::voice_who::WhoHistory::default(),
     }
 }
 
