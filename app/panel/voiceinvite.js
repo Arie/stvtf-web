@@ -10,9 +10,8 @@ import { addListExtra, renderList } from "./voicelist.js";
 // What most of competitive TF2 sets `tv_delay` to, in seconds: the bot's own when none is said.
 const USUAL_DELAY = 90,
   MAX_DELAY = 300;
-// How long the button says it copied, and the way to the bot shows for someone who finds no
-// such command in their Discord, in milliseconds.
-const COPIED_MS = 6000;
+// How long the button says it copied, in milliseconds.
+const COPIED_MS = 4000;
 
 // The command for Discord: `page` (the match's, or a room's on it) with the invite, and the delay
 // only when it is not the usual.
@@ -49,7 +48,8 @@ const addBot = (bot, text) =>
   el("a", { href: bot, target: "_blank", rel: "noopener", className: "vrow vinvite" }, text);
 
 // One button that copies the command (never shown: it is long), and a gear for what is seldom
-// needed: the delay, which the gear shows when it is not the usual, and the way to the bot.
+// needed: the delay, and the way to the bot. Nothing comes and goes around the button: the list
+// opens upward, so it would move under the pointer.
 function rows() {
   if (!given) return [];
   const head = el("div", { className: "vteam t-none" }, el("span", { className: "vtname" }, "Discord voice"));
@@ -57,13 +57,12 @@ function rows() {
   copy.dataset.invite = "copy";
   copy.title =
     "The /stv join command for this match: paste it in Discord, in the server of the voice channel you are in";
-  const gear = el("button", { className: "vgear" }, delay === USUAL_DELAY ? "⚙" : `⚙ ${delay}s`);
+  const gear = el("button", { className: "vgear" }, "⚙");
   gear.dataset.invite = "settings";
   gear.title = "Voice delay, and adding the bot";
   gear.setAttribute("aria-expanded", String(settings));
   /** @type {HTMLElement[]} */
   const parts = [head, el("div", { className: "vrow vinvite" }, copy, gear)];
-  if (copied && given.bot && !settings) parts.push(addBot(given.bot, "No /stv command there? Add the bot ↗"));
   if (settings) {
     const secs = el("input", { type: "number", min: "0", max: String(MAX_DELAY), value: String(delay) });
     secs.dataset.invite = "delay";
