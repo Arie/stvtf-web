@@ -76,10 +76,19 @@ function statusLine(status, more = "", where = "") {
   return line;
 }
 
+// A form's labels: one width, so what is typed lines up.
+const labelOf = (/** @type {string} */ text) => el("span", { className: "vlabel" }, text);
+
 function delayRow() {
   const secs = el("input", { type: "number", min: "0", max: String(MAX_DELAY), value: String(delay) });
   secs.dataset.invite = "delay";
-  const row = el("label", { className: "vrow vinvite" }, "tv_delay", secs, el("span", { className: "vhint" }, "s"));
+  const row = el(
+    "label",
+    { className: "vrow vinvite vfield" },
+    labelOf("tv_delay"),
+    secs,
+    el("span", { className: "vhint" }, "s"),
+  );
   row.title = "0 for casters";
   return row;
 }
@@ -88,7 +97,7 @@ function delayRow() {
 function field(name, label, hint, type = "text") {
   const input = el("input", { type, value: typed[name], placeholder: hint, autocomplete: "off", spellcheck: false });
   input.dataset.mumble = name;
-  return el("label", { className: "vrow vinvite vfield" }, label, input);
+  return el("label", { className: "vrow vinvite vfield" }, labelOf(label), input);
 }
 
 /** @param {string} back Where the back button goes. @param {string} title */
@@ -121,7 +130,13 @@ function discordSetup() {
     delayRow(),
   ];
   if (given.bot)
-    parts.push(el("a", { href: given.bot, target: "_blank", rel: "noopener", className: "vrow vinvite" }, "Add bot ↗"));
+    parts.push(
+      el(
+        "a",
+        { href: given.bot, target: "_blank", rel: "noopener", className: "vrow vinvite" },
+        "Invite bot to server ↗",
+      ),
+    );
   parts.push(statusLine("Waiting for bot…"));
   return parts;
 }
@@ -140,9 +155,14 @@ function mumbleSetup(moving) {
     field("password", "Password", moving ? "unchanged" : "optional", "password"),
     field("channel", "Channel", ""),
     delayRow(),
-    el("div", { className: "vrow vinvite" }, join),
   );
-  if (moving) parts.push(el("div", { className: "vrow vinvite" }, act("Disconnect", "leave")));
+  const buttons = el("div", { className: "vrow vinvite" }, join);
+  if (moving) {
+    const leave = act("Disconnect", "leave");
+    leave.className = "vcopy vleave";
+    buttons.append(leave);
+  }
+  parts.push(buttons);
   return parts;
 }
 
@@ -232,7 +252,7 @@ function joinMumble() {
   const server = serverOf(typed.server);
   refused = "";
   if (!server) refused = "Invalid server";
-  else if (!typed.channel.trim()) refused = "Channel?";
+  else if (!typed.channel.trim()) refused = "Channel name required";
   if (!server || refused) return void show();
   const refuse = (/** @type {string} */ why) => {
     refused = why;
