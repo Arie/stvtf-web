@@ -2,6 +2,7 @@
 //! thread of its own while there is any.
 
 use super::session::Session;
+use crate::matches::voice_feed::Speaker;
 use crate::matches::voice_hold::Took;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
@@ -12,9 +13,9 @@ use std::time::{Duration, Instant};
 const TEND_EVERY: Duration = Duration::from_millis(60);
 
 impl Session {
-    /// `who` (a `SteamID`) said `frames` (base64 Opus) just now, in a source `delay` seconds behind
+    /// `who` said `frames` (base64 Opus) just now, in a source `delay` seconds behind
     /// the game (see `VoiceFeed::said`). None for a match not watched live.
-    pub fn voice_said(self: &Arc<Self>, who: &str, frames: Vec<String>, delay: Option<f64>) -> Option<Took> {
+    pub fn voice_said(self: &Arc<Self>, who: &Speaker, frames: Vec<String>, delay: Option<f64>) -> Option<Took> {
         if !self.is_live() {
             return None;
         }

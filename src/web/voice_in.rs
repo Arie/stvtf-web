@@ -4,7 +4,7 @@
 use super::{Request, TEXT, json_body, respond};
 use crate::App;
 use crate::matches::sessions::Session;
-use crate::matches::voice_feed::MAX_DELAY;
+use crate::matches::voice_feed::{MAX_DELAY, Speaker};
 use crate::matches::voice_hold::Took;
 use base64::Engine;
 use serde::Deserialize;
@@ -18,7 +18,16 @@ const MAX_FRAME: usize = 2000;
 
 #[derive(Deserialize)]
 struct Said {
-    steamid: String,
+    /// The speaker's `SteamID`, when the bot knows their link; else who they are in Discord.
+    #[serde(default)]
+    steamid: Option<String>,
+    #[serde(default)]
+    discord: Option<String>,
+    #[serde(default)]
+    name: Option<String>,
+    /// The Discord voice channel they are in: those in one are taken for a team.
+    #[serde(default)]
+    channel: Option<String>,
     frames: Vec<String>,
     /// How far the match's stream is behind its game, in seconds, when the bot was told.
     #[serde(default)]
@@ -38,6 +47,14 @@ fn is_steamid(s: &str) -> bool {
         .is_some_and(|n| !n.is_empty() && n.len() <= 10 && n.bytes().all(|b| b.is_ascii_digit()))
 }
 
+/// A Discord id: digits.
+fn is_snowflake(s: &str) -> bool {
+    !s.is_empty() && s.len() <= 20 && s.bytes().all(|b| b.is_ascii_digit())
+}
+
+/// The most characters of a speaker's name kept.
+const MAX_NAME: usize = 40;
+
 pub(super) fn voice_in(
     s: &mut TcpStream,
     reader: &mut BufReader<Take<TcpStream>>,
@@ -55,10 +72,21 @@ pub(super) fn voice_in(
     }
     let b64 = base64::engine::general_purpose::STANDARD;
     let sound = !said.frames.is_empty() && said.frames.iter().all(|f| f.len() <= MAX_FRAME && b64.decode(f).is_ok_and(|d| !d.is_empty()));
-    if !sound || !is_steamid(&said.steamid) || said.delay.is_some_and(|d| !(0.0..=MAX_DELAY).contains(&d)) {
+    let known = match (&said.steamid, &said.discord) {
+        (Some(steamid), _) => is_steamid(steamid),
+        (None, Some(discord)) => is_snowflake(discord),
+        (None, None) => false,
+    };
+    if !sound || !known || said.delay.is_some_and(|d| !(0.0..=MAX_DELAY).contains(&d)) {
         return respond(s, "400 Bad Request", TEXT, b"not voice");
     }
-    match m.voice_said(&said.steamid, said.frames, said.delay) {
+    let who = Speaker {
+        steamid: said.steamid,
+        discord: said.discord.filter(|d| is_snowflake(d)),
+        name: said.name.map(|n| n.chars().filter(|c| !c.is_control()).take(MAX_NAME).collect()),
+        channel: said.channel.filter(|c| is_snowflake(c)),
+    };
+    match m.voice_said(&who, said.frames, said.delay) {
         None => respond(s, "404 Not Found", TEXT, b"not a live match"),
         Some(Took::Held { due }) => respond(s, "200 OK", TEXT, format!("held until tick {due}").as_bytes()),
         Some(Took::PauseTalk) => respond(s, "200 OK", TEXT, b"pause talk"),

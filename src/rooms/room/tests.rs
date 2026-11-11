@@ -373,6 +373,7 @@ fn a_room_gives_its_relay_the_injected_voice_it_plays_and_no_other() {
             injected,
             pause,
             team: None,
+            name: None,
         })
     };
     let v = relay::relay_voice(&said(true, false)).expect("injected: the relay must send it");

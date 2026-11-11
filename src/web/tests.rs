@@ -984,3 +984,36 @@ fn a_rooms_admin_nudges_its_live_matchs_voice_delay() {
     let none = post(&demo, &format!("{demo_room}voice-nudge"), &owner, r#"{"nudge":1}"#);
     assert!(none.starts_with("HTTP/1.1 409"), "a demo has no voice coming in: {none}");
 }
+
+#[test]
+fn a_room_takes_voice_for_its_live_match_and_its_admins_match_who_is_who() {
+    let (app, id) = voice_app();
+    let Matches::Many(sessions) = &app.matches else { panic!() };
+    let m = sessions.get(&id).unwrap();
+    publish(&m.hub, &server("cp_process_f12"));
+    let scout = output::Player { steamid: "[U:1:5]".into(), ..crate::matches::hub::tests::player(7, "scout", output::Team::Red) };
+    publish(&m.hub, &crate::matches::hub::tests::snapshot(1000, None, vec![scout]));
+    let opened = post(&app, &format!("/w/{id}/room"), "", "");
+    let (cookie, room) = (cookie_of(&opened), page_of(&opened));
+    // The bot posts to the room's link as to the match's.
+    let said = r#"{"discord":"77","name":"coach","channel":"9","frames":["aA=="]}"#;
+    let send = format!("POST {room}voice HTTP/1.1\r\nAuthorization: Bearer k\r\nContent-Length: {}\r\n\r\n{said}", said.len());
+    let held = request_to(&app, send.as_bytes()).1;
+    assert!(held.starts_with("HTTP/1.1 200") && held.ends_with("held until tick 7000"), "{held}");
+    let keyless = format!("POST {room}voice HTTP/1.1\r\nContent-Length: {}\r\n\r\n{said}", said.len());
+    assert!(request_to(&app, keyless.as_bytes()).1.starts_with("HTTP/1.1 401"));
+    // Its admins see who is not matched, and match them to a player.
+    let voices = get(&app, &format!("{room}voices"), &cookie);
+    assert!(voices.contains(r#"{"discord":"77","name":"coach","steamid":null}"#), "{voices}");
+    assert!(get(&app, &format!("{room}voices"), "").starts_with("HTTP/1.1 403"), "admins only");
+    let matched = post(&app, &format!("{room}voice-match"), &cookie, r#"{"discord":"77","player":7}"#);
+    assert!(matched.starts_with("HTTP/1.1 204"), "{matched}");
+    assert!(get(&app, &format!("{room}voices"), &cookie).contains(r#""steamid":"[U:1:5]""#));
+    assert!(
+        post(&app, &format!("{room}voice-match"), &cookie, r#"{"discord":"77","player":99}"#).starts_with("HTTP/1.1 400"),
+        "no such player"
+    );
+    assert!(post(&app, &format!("{room}voice-match"), "", r#"{"discord":"77","player":7}"#).starts_with("HTTP/1.1 403"));
+    assert!(post(&app, &format!("{room}voice-match"), &cookie, r#"{"discord":"77","player":null}"#).starts_with("HTTP/1.1 204"));
+    assert!(get(&app, &format!("{room}voices"), &cookie).contains(r#""steamid":null"#), "unmatched again");
+}

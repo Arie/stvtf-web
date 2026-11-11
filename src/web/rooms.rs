@@ -122,6 +122,12 @@ pub(super) fn serve_room(
         },
         ("me", "GET") => me(&mut s, app, &room, &who)?,
         ("marks", "GET") => respond_marks(&mut s, &request.query, |from| room.marks(from))?,
+        ("voice", "POST") => match app.rooms.live_match(&room.id, sessions) {
+            Some(m) => super::voice_in::voice_in(&mut s, reader, app, &m, request)?,
+            None => respond(&mut s, "404 Not Found", TEXT, b"not a live match")?,
+        },
+        ("voices", "GET") => voices(&mut s, app, sessions, &room, &who)?,
+        ("voice-match", "POST") => voice_match(&mut s, reader, app, sessions, request, &room, &who)?,
         ("voice-nudge", "POST") => voice_nudge(&mut s, reader, app, sessions, request, &room, &who)?,
         (part, "POST") => change(&mut s, reader, request, &room, &who, part)?,
         _ => not_found(&mut s)?,
@@ -210,5 +216,50 @@ fn voice_nudge(
     };
     m.voice.set_nudge(n.nudge);
     room.voice_nudged(n.nudge);
+    respond(s, "204 No Content", TEXT, b"")
+}
+
+/// The voices coming into `room`'s live match from outside it, and who each is matched to: for
+/// its admins.
+fn voices(s: &mut TcpStream, app: &App, sessions: &Sessions, room: &Room, who: &Who) -> std::io::Result<()> {
+    if !room.is_admin(&who.key) {
+        return respond(s, "403 Forbidden", TEXT, b"Only the room's admins do that.");
+    }
+    let heard = app.rooms.live_match(&room.id, sessions).map(|m| m.voice.voices()).unwrap_or_default();
+    respond(s, "200 OK", JSON, serde_json::json!(heard).to_string().as_bytes())
+}
+
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct VoiceMatch {
+    discord: String,
+    player: Option<u16>,
+}
+
+/// An admin of `room` puts a Discord voice on a player of its live match, or takes it off.
+fn voice_match(
+    s: &mut TcpStream,
+    reader: &mut BufReader<Take<TcpStream>>,
+    app: &App,
+    sessions: &Sessions,
+    request: &Request,
+    room: &Room,
+    who: &Who,
+) -> std::io::Result<()> {
+    if !room.is_admin(&who.key) {
+        return respond(s, "403 Forbidden", TEXT, b"Only the room's admins do that.");
+    }
+    let Ok(v) = json_body::<VoiceMatch>(reader, request) else { return respond(s, "400 Bad Request", TEXT, b"a voice and a player") };
+    let Some(m) = app.rooms.live_match(&room.id, sessions) else {
+        return respond(s, "409 Conflict", TEXT, b"No voice comes into this match.");
+    };
+    let steamid = match v.player {
+        None => None,
+        Some(p) => match crate::lock(&m.hub).steamid_of(stvtf::output::PlayerId(p)).map(str::to_owned) {
+            Some(steamid) => Some(steamid),
+            None => return respond(s, "400 Bad Request", TEXT, b"no such player"),
+        },
+    };
+    m.voice.set_match(&v.discord, steamid);
     respond(s, "204 No Content", TEXT, b"")
 }

@@ -105,6 +105,11 @@ impl Hub {
         self.steamids.iter().find(|(s, ..)| s == steamid).map(|(_, id, team)| (*id, *team))
     }
 
+    /// The `SteamID` of player `id` in the latest snapshot.
+    pub(crate) fn steamid_of(&self, id: PlayerId) -> Option<&str> {
+        self.steamids.iter().find(|(_, p, _)| *p == id).map(|(s, ..)| s.as_str())
+    }
+
     pub(crate) fn tick(&self) -> Option<u32> {
         self.tick
     }
@@ -654,6 +659,7 @@ pub(crate) mod tests {
             injected: false,
             pause: false,
             team: None,
+            name: None,
         };
         publish(&hub, &Line::Voice(said));
         publish(&hub, &kill(2, 3, 4));
