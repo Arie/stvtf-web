@@ -355,6 +355,9 @@ impl WhoHistory {
         let had = lock(&self.0.kept).had;
         let theirs: Theirs = serde_json::from_str(&ask("GET", &format!("/voice/known?since={had}"), None)?)?;
         let mut kept = lock(&self.0.kept);
+        if theirs.known.is_empty() && kept.had == theirs.version {
+            return Ok(());
+        }
         for k in theirs.known.into_iter().filter(|k| is_voice_id(&k.id)) {
             // What is said here and not told yet stands.
             if !kept.untold.contains(&k.id) {
