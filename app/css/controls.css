@@ -425,8 +425,10 @@
 #voicelist .vwho select.maybe {
   background: #ffd23f2e;
 }
+/* The open list: the page's own dark, not the browser's. */
 #voicelist .vwho option {
-  color: #000;
+  background: var(--panel);
+  color: #fff;
 }
 #voicelist .vhint {
   color: var(--dim);
