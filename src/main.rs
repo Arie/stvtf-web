@@ -88,7 +88,7 @@ struct App {
     /// The bell the voice bot waits on for Mumble channels asked for.
     mumble_changes: web::voice_mumble::Changes,
     /// Whom people in voice channels were said to be, from one match to the next.
-    voice_who: web::voice_who::WhoHistory,
+    voice_who: web::voice_known::WhoHistory,
 }
 
 /// Counts an event stream against its client's limit until dropped.
@@ -358,6 +358,9 @@ fn main() -> Result<()> {
         (None, Some(socket)) => Some(Arc::new(relays::pool::Pool::Remote(relays::daemon::Remote::new(socket)))),
         (None, None) => None,
     };
+    let voice_key = std::env::var("STVTF_VOICE_KEY").ok().filter(|k| !k.is_empty());
+    // The stv.tf that holds who is who for all regions; none on that one itself.
+    let voice_home = std::env::var("STVTF_VOICE_HOME").ok().filter(|u| !u.is_empty());
     let app = Arc::new(App {
         matches,
         cache: options.cache.clone(),
@@ -369,12 +372,13 @@ fn main() -> Result<()> {
         home: options.home.clone(),
         streams: Mutex::default(),
         rooms: rooms::registry::Rooms::new(store, relays).with_maps(options.cache.clone()),
-        voice_key: std::env::var("STVTF_VOICE_KEY").ok().filter(|k| !k.is_empty()),
+        voice_key: voice_key.clone(),
         voice_links: web::voice_link::Links::from_env(options.sessions.as_deref()),
         voice_bot: std::env::var("STVTF_VOICE_BOT").ok().filter(|u| !u.is_empty()),
         mumble_changes: web::voice_mumble::Changes::default(),
-        voice_who: web::voice_who::WhoHistory::new(options.sessions.as_deref()),
+        voice_who: web::voice_known::WhoHistory::new(options.sessions.as_deref(), voice_home.as_deref().zip(voice_key.as_deref())),
     });
+    app.voice_who.keep_up();
     app.rooms.sweep();
     if let Matches::Many(_) = app.matches {
         keep_house(app.clone(), &STOP);

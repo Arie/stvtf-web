@@ -23,3 +23,9 @@ accessories:
     options:
       publish: ["28100-28119:28100-28119/udp"]
       memory: 1g
+
+# Who is who in a team's voice channel is kept on stv.tf for every region: what is said on a
+# page here is told there, and what is known there holds here.
+env:
+  clear:
+    STVTF_VOICE_HOME: https://stv.tf

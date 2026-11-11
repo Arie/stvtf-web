@@ -1291,6 +1291,28 @@ fn the_same_mumble_channel_asked_for_again_is_joined_anew_but_not_for_a_new_dela
 }
 
 #[test]
+fn who_is_who_is_told_to_and_asked_of_the_stv_tf_that_holds_it_with_the_bots_key() {
+    let (app, _id) = voice_app();
+    let known = |key: &str, method: &str, query: &str, body: &str| {
+        let send =
+            format!("{method} /voice/known{query} HTTP/1.1\r\nAuthorization: Bearer {key}\r\nContent-Length: {}\r\n\r\n{body}", body.len());
+        request_to(&app, send.as_bytes()).1
+    };
+    let said = r#"{"id":"mumble:cert:abc","steamid":"76561197960265737","name":"arie"}"#;
+    assert!(known("wrong", "POST", "", said).starts_with("HTTP/1.1 401") && known("wrong", "GET", "", "").starts_with("HTTP/1.1 401"));
+    assert!(known("k", "POST", "", said).starts_with("HTTP/1.1 204"));
+    let all = known("k", "GET", "", "");
+    assert!(all.contains(r#""version":1"#) && all.contains(r#""id":"mumble:cert:abc","name":"arie","steamid":"[U:1:9]","v":1"#), "{all}");
+    // Asked what changed since: nothing, until something does.
+    assert!(known("k", "GET", "?since=1", "").contains(r#""known":[]"#));
+    assert!(known("k", "POST", "", r#"{"id":"mumble:cert:abc","steamid":null,"name":"arie"}"#).starts_with("HTTP/1.1 204"));
+    assert!(known("k", "GET", "?since=1", "").contains(r#""steamid":null,"v":2"#));
+    for bad in [r#"{"id":"a b","steamid":"[U:1:9]"}"#, r#"{"id":"77","steamid":"gaben"}"#, "{}"] {
+        assert!(known("k", "POST", "", bad).starts_with("HTTP/1.1 400"), "{bad}");
+    }
+}
+
+#[test]
 fn behind_a_site_only_who_has_a_say_brings_mumble_in() {
     let (mut app, key, _dir) = site_app();
     app.voice_key = Some("k".into());

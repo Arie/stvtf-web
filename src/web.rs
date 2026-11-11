@@ -18,6 +18,7 @@ mod rooms;
 pub(crate) mod token;
 mod visitor;
 mod voice_in;
+pub(crate) mod voice_known;
 pub(crate) mod voice_link;
 pub(crate) mod voice_mumble;
 pub(crate) mod voice_who;
@@ -243,6 +244,8 @@ fn serve_many(
         ("/voice/linked", "GET") => voice_link::linked(&mut s, app, request)?,
         ("/voice/who", "GET") => voice_link::who(&mut s, app, request)?,
         ("/voice/mumble", "GET") => voice_mumble::wanted(&mut s, app, sessions, request)?,
+        ("/voice/known", "GET") => voice_known::known(&mut s, app, request)?,
+        ("/voice/known", "POST") => voice_known::learn(&mut s, reader, app, request)?,
         ("/start", _) => match start(app, sessions, request, client) {
             // <stv-map> asks where the match is instead of following the redirect.
             Ok(m) if param(&request.query, "format") == Some("json") => {

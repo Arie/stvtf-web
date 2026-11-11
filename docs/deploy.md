@@ -24,6 +24,11 @@ redirect is `https://stv.tf/voice/linked`. The links are kept in `/data/sessions
 `STVTF_VOICE_BOT` (in `config/deploy.yml`) is where the bot is added to a Discord server, shown
 with the invite.
 
+Who is who in a channel (a Discord user or a Mumble certificate, and the SteamID someone put
+them on) is kept on Europe too, in `/data/sessions/voice-who.json`: the other regions name it
+with `STVTF_VOICE_HOME` (in their `config/deploy.<region>.yml`), tell it what is said on their
+pages and ask it every half minute what changed, with the bot's key.
+
 ## Relays
 
 The rooms' TF2 relays run apart from the app, as the Kamal accessory `relay`

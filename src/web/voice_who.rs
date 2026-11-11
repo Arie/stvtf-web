@@ -8,21 +8,17 @@
 //! - `GET <page>voices`: those in the channel and those heard, and whom each is put on.
 //! - `POST <page>voice-match`: someone is a player of the match, a `SteamID`, or nobody.
 //!
-//! What someone says of who is who is remembered (`voice-who.json` in the store), and holds
-//! when the same person is in a channel again.
+//! What someone says of who is who is remembered (`voice_known`), and holds when the same
+//! person is in a channel again, in any region.
 
 use super::visitor::Who;
 use super::voice_in::{has_say, is_key, is_voice_id};
 use super::{JSON, Request, TEXT, json_body, respond};
-use crate::maps::cache::write_atomic;
 use crate::matches::sessions::Session;
 use crate::{App, lock};
 use serde::Deserialize;
-use std::collections::HashMap;
 use std::io::{BufReader, Take};
 use std::net::TcpStream;
-use std::path::{Path, PathBuf};
-use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 /// What Steam's 64-bit ids of people start from.
@@ -32,7 +28,6 @@ const MAX_PEOPLE: usize = 64;
 const MAX_TEXT: usize = 100;
 /// The bot says how Discord goes this often at least: past it, it is taken to be gone.
 pub(crate) const DISCORD_SAID_FOR: Duration = Duration::from_secs(45);
-const FILE: &str = "voice-who.json";
 
 /// A `SteamID` as people write them, as `[U:1:N]`: that itself, `STEAM_X:Y:Z`, the 64-bit number,
 /// or a profile link with that number in it.
@@ -52,40 +47,6 @@ pub(crate) fn steamid_of(text: &str) -> Option<String> {
         u32::try_from(digits.parse::<u64>().ok()?.checked_sub(STEAM64_BASE)?).ok()?
     };
     (account > 0).then(|| format!("[U:1:{account}]"))
-}
-
-/// Whom people were said to be, from one match to the next: who they are where they talk, and
-/// the `SteamID` someone put them on.
-#[derive(Default)]
-pub(crate) struct WhoHistory {
-    file: Option<PathBuf>,
-    known: Mutex<HashMap<String, String>>,
-}
-
-impl WhoHistory {
-    pub(crate) fn new(dir: Option<&Path>) -> Self {
-        let file = dir.map(|d| d.join(FILE));
-        let known = file.as_ref().and_then(|f| std::fs::read(f).ok()).and_then(|d| serde_json::from_slice(&d).ok()).unwrap_or_default();
-        Self { file, known: Mutex::new(known) }
-    }
-
-    fn get(&self, who: &str) -> Option<String> {
-        lock(&self.known).get(who).cloned()
-    }
-
-    /// `who` is `steamid`, or with none is nobody any more.
-    fn remember(&self, who: &str, steamid: Option<&str>) {
-        let mut known = lock(&self.known);
-        match steamid {
-            Some(s) => known.insert(who.to_string(), s.to_string()),
-            None => known.remove(who),
-        };
-        if let Some(file) = &self.file
-            && let Err(e) = write_atomic(file, serde_json::json!(*known).to_string().as_bytes())
-        {
-            eprintln!("stvtf-web: who is who not kept: {e}");
-        }
-    }
 }
 
 #[derive(Deserialize)]
@@ -225,14 +186,13 @@ pub(super) fn voice_match(
     if !m.voice.set_match(&v.discord, steamid.clone()) {
         return respond(s, "400 Bad Request", TEXT, b"Not found");
     }
-    app.voice_who.remember(&v.discord, steamid.as_deref());
+    app.voice_who.remember(&v.discord, steamid.as_deref(), &m.voice.name_of(&v.discord).unwrap_or_default());
     respond(s, "204 No Content", TEXT, b"")
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::testing::TempDir;
 
     #[test]
     fn a_steam_id_is_read_as_people_write_them() {
@@ -259,16 +219,5 @@ mod tests {
         ] {
             assert_eq!(steamid_of(none), None, "{none}");
         }
-    }
-
-    #[test]
-    fn who_is_who_is_kept_and_read_back() {
-        let dir = TempDir::new("voicewho");
-        let who = WhoHistory::new(Some(&dir));
-        who.remember("mumble:x:user:1", Some("[U:1:5]"));
-        who.remember("77", Some("[U:1:6]"));
-        who.remember("77", None);
-        let again = WhoHistory::new(Some(&dir));
-        assert_eq!((again.get("mumble:x:user:1").as_deref(), again.get("77")), (Some("[U:1:5]"), None));
     }
 }

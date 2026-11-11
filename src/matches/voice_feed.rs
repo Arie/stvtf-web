@@ -221,6 +221,13 @@ impl VoiceFeed {
         all.into_values().collect()
     }
 
+    /// The name `discord` talks under, in the channel or as heard.
+    pub(crate) fn name_of(&self, discord: &str) -> Option<String> {
+        let st = lock(&self.0);
+        let heard = || st.known.values().find(|s| s.discord.as_deref() == Some(discord)).and_then(|s| s.name.clone());
+        st.roster.get(discord).cloned().or_else(heard)
+    }
+
     /// Someone says whom `discord` is: a player's `SteamID`, or nobody. Whether there is such a
     /// person, in the channel or heard.
     pub(crate) fn set_match(&self, discord: &str, steamid: Option<String>) -> bool {
