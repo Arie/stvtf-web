@@ -1256,16 +1256,6 @@ fn a_mumble_channel_is_asked_for_on_the_page_and_the_bot_hears_of_it() {
     assert!(post(&app, &format!("{page}voice-mumble"), "", r#"{"leave":true}"#).starts_with("HTTP/1.1 204"));
     assert!(bot(&app, "GET", "k", "").contains(r#""jobs":[]"#));
     assert!(get(&app, &format!("{page}voice-comms"), "").contains(r#""mumble":null"#));
-    // Not anywhere, nor anything, for a server.
-    for bad in [
-        r#"{"host":"mumble.example/x","channel":"a"}"#,
-        r#"{"host":"","channel":"a"}"#,
-        r#"{"host":"mumble.example","channel":""}"#,
-        r#"{"host":"mumble.example","port":0,"channel":"a"}"#,
-        r#"{"host":"mumble.example","channel":"a","delay":900}"#,
-    ] {
-        assert!(post(&app, &format!("{page}voice-mumble"), "", bad).starts_with("HTTP/1.1 400"), "{bad}");
-    }
 }
 
 #[test]
@@ -1312,6 +1302,34 @@ fn who_is_who_is_told_to_and_asked_of_the_stv_tf_that_holds_it_with_the_bots_key
     assert!(known("k", "GET", "?since=1", "").contains(r#""steamid":null,"v":2"#));
     for bad in [r#"{"id":"a b","steamid":"[U:1:9]"}"#, r#"{"id":"77","steamid":"gaben"}"#, "{}"] {
         assert!(known("k", "POST", "", bad).starts_with("HTTP/1.1 400"), "{bad}");
+    }
+}
+
+#[test]
+fn a_mumble_server_is_somewhere_out_on_the_internet() {
+    let (app, id) = voice_app();
+    let page = format!("/w/{id}/");
+    assert!(post(&app, &format!("{page}voice-mumble"), "", r#"{"host":"203.0.114.7","channel":"a"}"#).starts_with("HTTP/1.1 204"));
+    // Not anywhere, nor anything, for a server.
+    for bad in [
+        r#"{"host":"mumble.example/x","channel":"a"}"#,
+        r#"{"host":"","channel":"a"}"#,
+        r#"{"host":"mumble.example","channel":""}"#,
+        r#"{"host":"mumble.example","port":0,"channel":"a"}"#,
+        r#"{"host":"mumble.example","channel":"a","delay":900}"#,
+        // Nor this machine or a network of its own.
+        r#"{"host":"localhost","channel":"a"}"#,
+        r#"{"host":"relay","channel":"a"}"#,
+        r#"{"host":"127.0.0.1","channel":"a"}"#,
+        r#"{"host":"10.0.0.5","channel":"a"}"#,
+        r#"{"host":"192.168.1.1","channel":"a"}"#,
+        r#"{"host":"172.17.0.1","channel":"a"}"#,
+        r#"{"host":"169.254.169.254","channel":"a"}"#,
+        r#"{"host":"100.64.0.1","channel":"a"}"#,
+        r#"{"host":"0.0.0.0","channel":"a"}"#,
+        r#"{"host":"db.internal","channel":"a"}"#,
+    ] {
+        assert!(post(&app, &format!("{page}voice-mumble"), "", bad).starts_with("HTTP/1.1 400"), "{bad}");
     }
 }
 

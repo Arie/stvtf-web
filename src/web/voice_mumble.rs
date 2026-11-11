@@ -59,9 +59,20 @@ struct Ask {
     leave: bool,
 }
 
-/// A server's name or address: nothing of a link, a path or a port.
+/// A server's name or address, out on the internet: nothing of a link, a path or a port, and
+/// not this machine or a network of its own (the bot looks again at what a name leads to).
 fn is_host(host: &str) -> bool {
-    !host.is_empty() && host.len() <= 253 && host.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'.' || b == b'-')
+    if host.is_empty() || host.len() > 253 || !host.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'.' || b == b'-') {
+        return false;
+    }
+    if let Ok(ip) = host.parse::<std::net::Ipv4Addr>() {
+        let [a, b, ..] = ip.octets();
+        let own =
+            ip.is_private() || ip.is_loopback() || ip.is_link_local() || ip.is_unspecified() || ip.is_broadcast() || ip.is_multicast();
+        return !(own || (a == 100 && (64..128).contains(&b)) || (a == 198 && (18..20).contains(&b)) || a == 0 || a >= 240);
+    }
+    let name = host.to_ascii_lowercase();
+    name.contains('.') && !name.ends_with('.') && ![".local", ".internal", ".localhost", ".lan"].iter().any(|own| name.ends_with(own))
 }
 
 /// `POST /w/<id>/voice-mumble`.
