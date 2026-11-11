@@ -7,8 +7,9 @@ use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
 
-/// How often the feed looks at the stream: a frame of voice.
-const TEND_EVERY: Duration = Duration::from_millis(20);
+/// How often the feed looks at the stream: three frames of voice, so a line carries a few and a
+/// player's queue (100 ms ahead) rides it out.
+const TEND_EVERY: Duration = Duration::from_millis(60);
 
 impl Session {
     /// `who` (a `SteamID`) said `frames` (base64 Opus) just now, in a source `delay` seconds behind
