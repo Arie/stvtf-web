@@ -348,10 +348,13 @@ impl VoiceFeed {
     /// One look at the stream: the hold follows its tick, pauses and new starts, and what is due
     /// goes to the hub; pause talk, once the game goes on, as lines only kept.
     pub(crate) fn step(&self, hub: &SharedHub, now: Instant) {
-        let (tick, paused, epoch) = lock(hub).voice_clock();
-        let (out, pause_talk, at) = {
+        let (out, pause_talk, at, tick) = {
+            // The feed first, then the stream's clock: two looking at once see it in turn.
             let mut st = lock(&self.0);
-            let interval = lock(hub).tick_interval();
+            let ((tick, paused, epoch), interval) = {
+                let hub = lock(hub);
+                (hub.voice_clock(), hub.tick_interval())
+            };
             // SourceTV says a pause only as late as the rest, or not at all: its tick standing
             // still is one too, from when it last moved.
             let (still, since) = match st.seen {
@@ -375,7 +378,7 @@ impl VoiceFeed {
             }
             hold.on_pause(paused, now, since);
             let talk = if was_paused && !paused { hold.pause_talk() } else { Vec::new() };
-            (hold.due(tick, now), talk, at)
+            (hold.due(tick, now), talk, at, tick)
         };
         for said in pause_talk {
             let line = self.line(hub, said, at, true);
