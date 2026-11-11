@@ -864,6 +864,9 @@ fn the_fixed_files_are_served_as_what_they_are() {
         ("/examples/tf2pugs.html", HTML),
         ("/examples/tf2pugs-js.html", HTML),
         ("/icons/scout.svg", SVG),
+        ("/favicon.svg", SVG),
+        ("/favicon.ico", "image/x-icon"),
+        ("/apple-touch-icon.png", "image/png"),
     ] {
         let head = head_of(&a, path);
         assert!(head.starts_with("HTTP/1.1 200") && head.contains(&format!("Content-Type: {ctype}")), "{path}: {head}");

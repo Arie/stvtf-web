@@ -31,6 +31,11 @@ pub(super) fn serve_file(s: &mut TcpStream, app: &App, path: &str, gzip: bool) -
     match path {
         "/fonts/RobotoCondensed-Regular.ttf" => respond_cached(s, TTF, include_bytes!("../../fonts/RobotoCondensed-Regular.ttf")),
         "/fonts/RobotoCondensed-Bold.ttf" => respond_cached(s, TTF, include_bytes!("../../fonts/RobotoCondensed-Bold.ttf")),
+        // The site's mark: stv over tf, between a RED and a BLU dot (the voice bot's avatar is
+        // icons/brand/bot-avatar-512.png, set in Discord by hand).
+        "/favicon.svg" => respond_cached(s, SVG, include_bytes!("../../icons/brand/favicon.svg")),
+        "/favicon.ico" => respond_cached(s, "image/x-icon", include_bytes!("../../icons/brand/favicon.ico")),
+        "/apple-touch-icon.png" => respond_cached(s, "image/png", include_bytes!("../../icons/brand/apple-touch-icon.png")),
         "/killicons.css" => respond(s, "200 OK", CSS, include_bytes!("../../killicons/killicons.css")),
         "/killicons.webp" => respond(s, "200 OK", WEBP, include_bytes!("../../killicons/killicons.webp")),
         // For other sites: the class names stay as they are within a version.
