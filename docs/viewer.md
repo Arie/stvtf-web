@@ -91,6 +91,17 @@ comes: each voice that is no player's (no link, or linked on another account) wi
 put it on;
 those whose name looks like its own come first, as a suggestion.
 
+Mumble needs no command: the speakers list's "Set up comms" (for the same people) swaps the
+list for a view with Discord's button and, for Mumble, a server (its name, with a port if not
+64738), its password and a channel. `POST /w/<id>/voice-mumble` (a room's too) with `{"host",
+"port", "password", "channel", "delay"}` asks the bot in, `{"leave": true}` sends it away, and
+`GET` says where it is wanted and how it goes (`status`, as the bot says it; never the password).
+The bot keeps `GET /voice/mumble?since=<version>` open with its key, which answers the moment
+something is asked for (`{"jobs": [...], "version"}`), and says how each goes with `POST
+/voice/mumble` `{"match", "status"}`. What is asked for is kept with the match, so a restart does
+not send the bot away. Someone in Mumble is known as `mumble:<server>:<who they are there>` (in
+the `discord` field of a post, which takes any such name), and put on a player as anyone is.
+
 What a match's players say from outside it is kept with the demo stv.tf records of it, a map at
 a time (two when the connection to its server dropped): the speakers list ends with "Demos with
 comms", each to download with the comms written into it as the players' voice, for TF2's

@@ -100,13 +100,27 @@ const extras = [];
 /** @param {() => HTMLElement[]} more */
 export const addListExtra = more => void extras.push(more);
 
+// What takes the list's place while it is set (setting up comms, see voiceinvite.js).
+/** @type {(() => HTMLElement[]) | null} */
+let view = null;
+/** @param {(() => HTMLElement[]) | null} other */
+export const setListView = other => (view = other);
+
 /** @param {HTMLElement} list */
 export function renderList(list) {
   // Not under a slider being dragged or a choice being made: it would come loose. Once let go,
   // the list catches up.
-  if (list.querySelector("input[type=range]:active, select:focus, input[type=number]:focus"))
+  if (
+    list.querySelector(
+      "input[type=range]:active, select:focus, input[type=number]:focus, input[type=text]:focus, input[type=password]:focus",
+    )
+  )
     return void (list.dataset.stale = "1");
   delete list.dataset.stale;
+  if (view) {
+    list.dataset.shape = "";
+    return void list.replaceChildren(...view());
+  }
   const gs = groups();
   list.dataset.shape = shape(gs);
   const head = document.createElement("div");
@@ -137,6 +151,7 @@ export function renderList(list) {
 /** @param {HTMLElement} list */
 export function markTalking(list) {
   const heard = voice.speakersHeard();
+  if (view) return;
   if (list.dataset.stale || list.dataset.shape !== shape(groups())) renderList(list);
   /** @type {Set<string>} */
   const teams = new Set();
