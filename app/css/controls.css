@@ -297,13 +297,30 @@
 #voicelist input[type="range"] {
   width: 70px;
 }
-/* The command that brings the voice bot in, for whoever may invite it. */
+/* The button that copies the command that brings the voice bot in, and its gear. */
 #voicelist .vinvite {
   gap: 4px;
   color: var(--dim);
 }
+#voicelist .vinvite button {
+  width: auto;
+  height: 24px;
+  padding: 0 8px;
+}
+#voicelist .vinvite .vcopy {
+  flex: 1;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  background: #5865f2;
+  font-weight: 700;
+}
+#voicelist .vinvite .vgear[aria-expanded="true"] {
+  background: #ffffff33;
+}
 #voicelist .vinvite input {
-  min-width: 0;
+  width: 52px;
+  margin-left: auto;
   border: 0;
   border-radius: 4px;
   padding: 2px 4px;
@@ -311,16 +328,9 @@
   color: #fff;
   font: inherit;
 }
-#voicelist .vinvite input[type="text"] {
-  flex: 1;
-}
-#voicelist .vinvite input[type="number"] {
-  width: 52px;
-  margin-left: auto;
-}
-#voicelist .vinvite button {
-  width: auto;
-  padding: 0 8px;
+#voicelist .vhint {
+  color: var(--dim);
+  font-size: 11px;
 }
 #voicelist a.vinvite {
   color: #9cc4ff;
