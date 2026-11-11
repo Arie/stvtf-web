@@ -20,8 +20,9 @@ const AHEAD: Duration = Duration::from_millis(500);
 /// Frames that came this soon after the tick last moved were still said in the running game: the
 /// stream's ticks come some apart.
 const NOTICED: Duration = Duration::from_millis(100);
-/// The most frames held of one speaker (a minute): past it the oldest go.
-pub(crate) const MAX_HELD: usize = 3000;
+/// The most frames held of one speaker (speaking throughout the longest delay, and some):
+/// past it the oldest go.
+pub(crate) const MAX_HELD: usize = 16_000;
 /// The most speakers held at once, and the most frames of pause talk kept.
 const MAX_SPEAKERS: usize = 64;
 const MAX_PAUSE_TALK: usize = 6000;
