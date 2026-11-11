@@ -26,8 +26,9 @@ pressed again, it returns to your room on that match. The match's own page never
 - Voice from outside the match (a team's Discord, casters: see the viewer's Voice) plays in TF2
   too: the relay sends it as the player's own voice, or for someone who is no player in a slot nobody
   is in (TF2 shows them as unconnected; each their own, so two talk at once), and only on a full
-  server as SourceTV's, one at a time. TF2's own gain on voice can flatten it; `voice_maxgain 1` in
-  the viewer's console plays it as sent.
+  server as SourceTV's, one at a time. TF2 plays injected voice at a level of its own that
+  wanders, and a voice of no player may fall silent there after a while (its talking mark still
+  shows): the page plays every voice as sent, and is the one to listen to.
 - People are listed by the name they give (kept in the browser) or Guest N, known by the
   `stvtf_guest` cookie (pages only see numbers), or by Steam id when [signed in](site.md#sign-in).
 
