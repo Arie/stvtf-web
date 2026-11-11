@@ -20,6 +20,7 @@ impl Session {
             return None;
         }
         let took = self.voice.said(&self.hub, who, frames, delay, Instant::now());
+        self.keep_spoken();
         if matches!(took, Took::Held { .. } | Took::PauseTalk) && !self.voice_tended.swap(true, Ordering::AcqRel) {
             let s = self.clone();
             std::thread::spawn(move || {
@@ -27,6 +28,7 @@ impl Session {
                     std::thread::sleep(TEND_EVERY);
                     let now = Instant::now();
                     s.voice.step(&s.hub, now);
+                    s.keep_spoken();
                     if s.voice.idle(now) {
                         break;
                     }
@@ -35,5 +37,15 @@ impl Session {
             });
         }
         Some(took)
+    }
+
+    /// What players said goes beside the demo being recorded, to download with the comms in it.
+    fn keep_spoken(&self) {
+        let spoken = self.voice.take_spoken();
+        if let Some(demos) = self.demos.get() {
+            for s in &spoken {
+                demos.said(s);
+            }
+        }
     }
 }

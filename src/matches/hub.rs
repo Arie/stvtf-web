@@ -47,7 +47,7 @@ pub(crate) struct Hub {
     /// Counts the stream's new starts (a map change, a new server line): its ticks start over.
     epoch: u64,
     /// Who is in the latest snapshot, by `SteamID`, for voice from outside the match.
-    steamids: Vec<(String, PlayerId, Team)>,
+    steamids: Vec<(String, PlayerId, Team, u32)>,
 }
 
 /// A match at a glance, read from the latest server line and snapshot when the list asks.
@@ -102,12 +102,18 @@ impl Hub {
 
     /// The player with `steamid` in the latest snapshot, and their team.
     pub(crate) fn player_with(&self, steamid: &str) -> Option<(PlayerId, Team)> {
-        self.steamids.iter().find(|(s, ..)| s == steamid).map(|(_, id, team)| (*id, *team))
+        self.steamids.iter().find(|(s, ..)| s == steamid).map(|(_, id, team, _)| (*id, *team))
     }
 
     /// The `SteamID` of player `id` in the latest snapshot.
     pub(crate) fn steamid_of(&self, id: PlayerId) -> Option<&str> {
-        self.steamids.iter().find(|(_, p, _)| *p == id).map(|(s, ..)| s.as_str())
+        self.steamids.iter().find(|(_, p, ..)| *p == id).map(|(s, ..)| s.as_str())
+    }
+
+    /// The slot of the player with `steamid` in the latest snapshot: their entity less one.
+    pub(crate) fn slot_of(&self, steamid: &str) -> Option<u8> {
+        let ent = self.steamids.iter().find(|(s, ..)| s == steamid)?.3;
+        u8::try_from(ent.checked_sub(1)?).ok()
     }
 
     pub(crate) fn tick(&self) -> Option<u32> {
@@ -346,7 +352,7 @@ impl Hub {
         self.snapshot = Some(json.clone());
         self.snapshot_at = Some(Instant::now());
         self.steamids.clear();
-        self.steamids.extend(snapshot.players.iter().map(|p| (p.steamid.clone(), p.id, p.team)));
+        self.steamids.extend(snapshot.players.iter().map(|p| (p.steamid.clone(), p.id, p.team, p.ent)));
         for p in &snapshot.players {
             // Every snapshot names everyone: reuse the string rather than allocate a new one.
             let seen = self.names.entry(p.id).or_insert_with(|| Seen { name: String::new(), team: p.team });

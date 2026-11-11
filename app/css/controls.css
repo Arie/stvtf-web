@@ -332,7 +332,8 @@
   color: var(--dim);
   font-size: 11px;
 }
-#voicelist a.vinvite {
+#voicelist a.vinvite,
+#voicelist a.vdemo {
   color: #9cc4ff;
 }
 /* A room's admins: whose voice each from outside is. */

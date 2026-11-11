@@ -1136,3 +1136,57 @@ fn behind_a_site_the_invite_is_for_who_started_the_match_and_for_streamers() {
     assert!(get(&app, &format!("{room}voices"), &starter).starts_with("HTTP/1.1 200"), "no admin of the room, but the match is theirs");
     assert!(get(&app, &format!("{room}me"), &starter).contains(r#""voice":true"#));
 }
+
+/// A server whose store has match `id`'s demo of `cp_a` kept with comms in it.
+fn kept_app(id: &str) -> (App, TempDir) {
+    let dir = TempDir::new("kept-web");
+    let header = stvtf::demo::Header {
+        protocol: 24,
+        server: String::new(),
+        client: String::new(),
+        map: "cp_a".into(),
+        game: "tf".into(),
+        seconds: 0.0,
+        ticks: 0,
+        frames: 0,
+        signon_bytes: 0,
+    };
+    let file = std::fs::File::create(dir.join(format!("kept-{id}-100.dem"))).unwrap();
+    let mut w = stvtf::demo::Writer::new(std::io::BufWriter::new(file), header, 0.015).unwrap();
+    w.signon(b"signon").unwrap();
+    w.message(100, b"game").unwrap();
+    w.finish().unwrap();
+    let said = r#"{"tick":100,"slot":3,"account":5,"frames":["aA=="]}"#;
+    std::fs::write(dir.join(format!("kept-{id}-100.dem.voice")), format!("{said}\n")).unwrap();
+    let mut sessions = Sessions::new(false, 4, 20.0);
+    sessions.store = Some(sessions::Store { dir: dir.to_path_buf(), keys: None });
+    (app(Matches::Many(sessions)), dir)
+}
+
+#[test]
+fn a_matchs_demos_with_comms_are_listed_and_downloaded_the_match_gone_too() {
+    let id = "ab".repeat(16);
+    let (app, _dir) = kept_app(&id);
+    let list = get(&app, &format!("/w/{id}/demos"), "");
+    assert!(list.starts_with("HTTP/1.1 200"), "{list}");
+    assert!(list.contains(&format!(r#""href":"/w/{id}/demos/100.dem""#)) && list.contains(r#""map":"cp_a""#), "{list}");
+    let (head, body) = {
+        let response = exchange(&app, format!("GET /w/{id}/demos/100.dem HTTP/1.1\r\n\r\n").as_bytes()).1;
+        let (h, b) = head_and_body(&response);
+        (h, b.to_vec())
+    };
+    assert!(
+        head.starts_with("HTTP/1.1 200") && head.contains(r#"Content-Disposition: attachment; filename="cp_a-comms-100.dem""#),
+        "{head}"
+    );
+    let demo = stvtf::demo::Reader::new(std::io::Cursor::new(&body)).unwrap();
+    assert_eq!((demo.header.map.as_str(), demo.header.frames), ("cp_a", 2), "the frame and the voice");
+    // Nothing of another match, or by another name.
+    let other = "cd".repeat(16);
+    assert!(get(&app, &format!("/w/{other}/demos"), "").ends_with("[]"));
+    assert!(get(&app, &format!("/w/{other}/demos/100.dem"), "").starts_with("HTTP/1.1 404"));
+    assert!(get(&app, &format!("/w/{id}/demos/..%2f100.dem"), "").starts_with("HTTP/1.1 404"));
+    // The match's page, gone, says what there is to download.
+    let gone = get(&app, &format!("/w/{id}/"), "");
+    assert!(gone.starts_with("HTTP/1.1 404") && gone.contains(&format!("/w/{id}/demos/100.dem")), "{gone}");
+}

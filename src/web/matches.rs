@@ -13,6 +13,7 @@ use crate::matches::sessions;
 use crate::matches::sessions::{Session, Sessions, Viewer};
 use crate::{App, lock};
 use anyhow::{Result, anyhow};
+use std::fmt::Write as _;
 use std::io::{BufReader, Take};
 use std::net::{IpAddr, TcpStream};
 use std::sync::Arc;
@@ -28,7 +29,19 @@ pub(super) fn serve_match(
     client: IpAddr,
 ) -> Result<()> {
     let (id, rest) = path.split_once('/').unwrap_or((path, ""));
-    match (sessions.get(id), rest) {
+    // A match's demos with its comms in them, kept after it too.
+    if rest == "demos" {
+        return Ok(respond(&mut s, "200 OK", JSON, serde_json::json!(comms_demos(app, sessions, id)).to_string().as_bytes())?);
+    }
+    if let Some(file) = rest.strip_prefix("demos/") {
+        return Ok(comms_demo(&mut s, sessions, id, file)?);
+    }
+    let session = sessions.get(id);
+    // Looked for only when a page of a match that is gone is asked for: it reads the store.
+    let kept = if session.is_none() && is_page(rest) { comms_demos(app, sessions, id) } else { Vec::new() };
+    match (session, rest) {
+        // Gone, but with comms kept: what there is to download.
+        (None, _) if !kept.is_empty() => respond(&mut s, "404 Not Found", HTML, gone_with_demos(&kept).as_bytes())?,
         // A demo not playing (now): the site plays it again.
         (None, rest)
             if is_page(rest)
@@ -219,4 +232,46 @@ pub(super) fn is_page(rest: &str) -> bool {
         Some(("overlay", d)) => delay(d),
         _ => false,
     }
+}
+
+/// The page of a match that is gone, with its demos to download.
+fn gone_with_demos(kept: &[serde_json::Value]) -> String {
+    let mut links = String::new();
+    for d in kept {
+        let (href, map) = (d["href"].as_str().unwrap_or_default(), d["map"].as_str().unwrap_or_default());
+        let _ = write!(links, r#"<li><a href="{href}" download>{map} ({} MB)</a></li>"#, d["mb"]);
+    }
+    format!(
+        "<!doctype html><meta charset=utf-8><meta name=viewport content=\"width=device-width\"><title>stv.tf</title>\
+         <body style=\"font:16px system-ui;background:#16171a;color:#ddd;max-width:32em;margin:3em auto;padding:0 1em\">\
+         <p>That match is no longer being watched.</p><p>Its demos, with the team's comms in them as the players' voice:</p>\
+         <ul>{links}</ul><p style=\"color:#888\">Put one in TF2's <code>tf</code> folder and play it with <code>playdemo</code>.</p>"
+    )
+}
+
+/// Match `id`'s demos with comms in them, to download: per demo its map, its size in MB, and
+/// where it is. None without a store, or for an id that is none.
+pub(super) fn comms_demos(app: &App, sessions: &Sessions, id: &str) -> Vec<serde_json::Value> {
+    let Some(store) = sessions.store.as_ref().filter(|_| sessions::is_id(id)) else { return Vec::new() };
+    crate::matches::live_demos::downloads(&store.dir, id)
+        .into_iter()
+        .filter(|d| d.map.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-'))
+        .map(|d| {
+            let href = format!("{}/w/{id}/demos/{}.dem", app.base, d.file);
+            serde_json::json!({ "map": d.map, "mb": d.bytes.div_ceil(1 << 20), "href": href })
+        })
+        .collect()
+}
+
+/// `GET /w/<id>/demos/<file>.dem`: that demo as TF2 plays it, the comms written into it.
+fn comms_demo(s: &mut TcpStream, sessions: &Sessions, id: &str, file: &str) -> std::io::Result<()> {
+    // One at a time: a demo is built in memory.
+    static BUILDING: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    let built = sessions.store.as_ref().filter(|_| sessions::is_id(id)).zip(file.strip_suffix(".dem")).and_then(|(store, file)| {
+        let _one = lock(&BUILDING);
+        crate::matches::live_demos::build(&store.dir, id, file).ok()
+    });
+    let Some((name, demo)) = built else { return respond(s, "404 Not Found", TEXT, b"No such demo.") };
+    let attachment = format!(r#"attachment; filename="{name}""#);
+    respond_with(s, "200 OK", &[("Content-Type", "application/octet-stream"), ("Content-Disposition", &attachment)], &demo)
 }

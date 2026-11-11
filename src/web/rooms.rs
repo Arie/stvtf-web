@@ -121,6 +121,12 @@ pub(super) fn serve_room(
             None => too_many_streams(&mut s)?,
         },
         ("me", "GET") => me(&mut s, app, sessions, &room, &who)?,
+        ("demos", "GET") => {
+            // Its match's demos with comms in them.
+            let demos =
+                app.rooms.live_match(&room.id, sessions).map(|m| super::matches::comms_demos(app, sessions, &m.id)).unwrap_or_default();
+            respond(&mut s, "200 OK", JSON, serde_json::json!(demos).to_string().as_bytes())?;
+        }
         ("voice-invite", "GET") => {
             super::voice_in::invite(&mut s, app, app.rooms.live_match(&room.id, sessions).as_deref(), &who)?;
         }

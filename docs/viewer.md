@@ -91,6 +91,13 @@ comes: each voice that is no player's (no link, or linked on another account) wi
 put it on;
 those whose name looks like its own come first, as a suggestion.
 
+What a match's players say from outside it is kept with the demo stv.tf records of it, a map at
+a time (two when the connection to its server dropped): the speakers list ends with "Demos with
+comms", each to download with the comms written into it as the players' voice, for TF2's
+`playdemo`. `GET /w/<id>/demos` (a room's too) lists them (`map`, `mb`, `href`), and the match's
+page says so once it is gone. Kept two weeks, 10 GB of them at most (the oldest go first); what
+was said in a pause, or by someone who is no player, is not in them.
+
 Linking, so that it need not be done by hand: `GET /voice/link` signs a visitor in with Discord
 (`identify connections`) and keeps the Steam account Discord verified as theirs
 (`voice-links.json` under `--sessions`). The bot asks `GET /voice/who?discord=<user id>` with its

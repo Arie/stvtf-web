@@ -19,6 +19,10 @@ const STALE: Duration = Duration::from_hours(1);
 const QUIET: Duration = Duration::from_secs(5);
 /// A live match's `.dem` file not written for this long is past what its recording keeps.
 const LIVE_DEMO_KEPT: Duration = Duration::from_hours(3);
+/// Demos kept to download with their comms: for two weeks, and at most 10 GB of them (the oldest
+/// go first).
+const COMMS_DEMOS_KEPT: Duration = Duration::from_hours(14 * 24);
+const COMMS_DEMOS_BUDGET: u64 = 10 << 30;
 
 #[derive(Default)]
 pub(crate) struct Rooms {
@@ -423,13 +427,15 @@ impl Rooms {
         let Ok(entries) = std::fs::read_dir(&store.dir) else { return };
         for entry in entries.flatten() {
             let name = entry.file_name().to_string_lossy().into_owned();
-            let dem = std::path::Path::new(&name).extension().is_some_and(|e| e == "dem");
+            // A live match's demos, and the voice kept beside them.
+            let dem = std::path::Path::new(name.strip_suffix(".voice").unwrap_or(&name)).extension().is_some_and(|e| e == "dem");
             let keep = if name.starts_with(LIVE_PREFIX) && dem { LIVE_DEMO_KEPT } else { STALE };
             let ours = [ROOM_PREFIX, DEMO_PREFIX, LIVE_PREFIX].iter().any(|p| name.starts_with(p));
             if ours && age(&entry).is_ok_and(|a| a > keep) {
                 store.forget(&name);
             }
         }
+        crate::matches::live_demos::sweep_kept(&store.dir, COMMS_DEMOS_KEPT, COMMS_DEMOS_BUDGET);
     }
 }
 

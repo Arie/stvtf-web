@@ -4,6 +4,7 @@
 
 use crate::lock;
 use crate::matches::hub::{SharedHub, publish};
+use crate::matches::live_demos::Spoken;
 use crate::matches::voice_hold::{Said, Took, VoiceHold};
 use std::collections::BTreeMap;
 use std::sync::Mutex;
@@ -48,6 +49,11 @@ impl Speaker {
     }
 }
 
+/// The account of `[U:1:<account>]`.
+fn account(steamid: &str) -> Option<u32> {
+    steamid.strip_prefix("[U:1:")?.strip_suffix(']')?.parse().ok()
+}
+
 /// How a speaker with no `SteamID` is named in the hold and on their lines.
 const DISCORD: &str = "discord:";
 
@@ -81,7 +87,12 @@ struct State {
     /// The stream's tick, and since when it is that.
     seen: Option<(u32, Instant)>,
     said: Option<Instant>,
+    /// What players said, as it went out, for the demo being recorded: until taken.
+    spoken: Vec<Spoken>,
 }
+
+/// The most kept so, when nothing takes it (no demo is recorded).
+const MAX_SPOKEN: usize = 4096;
 
 /// A match's voice from outside it.
 #[derive(Default)]
@@ -147,7 +158,7 @@ impl VoiceFeed {
     /// own, or the one they were matched to); else by name, on the team most of their channel's
     /// players are on.
     fn line(&self, hub: &SharedHub, said: Said, tick: u32, pause: bool) -> Line {
-        let st = lock(&self.0);
+        let mut st = lock(&self.0);
         let known = st.known.get(&said.who).cloned().unwrap_or_default();
         // The one they were matched to by hand, else their own.
         let steamid_of = |key: &str| {
@@ -174,7 +185,14 @@ impl VoiceFeed {
             let team = (red != blue).then_some(if red > blue { Team::Red } else { Team::Blue });
             (team, known.name.clone())
         };
+        // A player's, said in the running game: what a demo with the comms in it is made of.
+        let slot = steamid.as_deref().filter(|_| player.is_some() && !pause).and_then(|s| Some((hub.slot_of(s)?, account(s)?)));
         drop(hub);
+        if let Some((slot, account)) = slot
+            && st.spoken.len() < MAX_SPOKEN
+        {
+            st.spoken.push(Spoken { tick, slot, account, frames: said.frames.clone() });
+        }
         Line::Voice(Voice {
             tick,
             player: player.map(|(id, _)| id),
@@ -186,6 +204,11 @@ impl VoiceFeed {
             team,
             name,
         })
+    }
+
+    /// What players said since last asked, as it went out.
+    pub(crate) fn take_spoken(&self) -> Vec<Spoken> {
+        std::mem::take(&mut lock(&self.0).spoken)
     }
 
     /// Whether nothing is held and nothing was said for a while: no need to tend it.
@@ -403,6 +426,24 @@ mod tests {
         assert!(feed.set_match("77", None));
         feed.said(&hub, &alt, frames(1), Some(0.0), now);
         assert_eq!(voices(&page)[0]["steamid"], "[U:1:99]", "their own again");
+    }
+
+    #[test]
+    fn what_players_say_is_handed_on_to_be_kept_with_the_demo() {
+        let (hub, feed, now) = (SharedHub::default(), VoiceFeed::default(), Instant::now());
+        at(&hub, 1000);
+        // A player (entity 7, so slot 6), someone who is no player, and pause talk.
+        feed.said(&hub, &STEAMID.into(), frames(2), Some(0.0), now);
+        feed.said(&hub, &unlinked("77", "coach"), frames(1), Some(0.0), now);
+        let kept = feed.take_spoken();
+        assert_eq!(kept, [Spoken { tick: 1000, slot: 6, account: 5, frames: frames(2) }]);
+        assert_eq!(feed.take_spoken(), [], "once");
+        publish(&hub, &Line::Pause(Pause { tick: 1000, paused: true }));
+        feed.step(&hub, now);
+        feed.said(&hub, &STEAMID.into(), frames(1), None, now);
+        publish(&hub, &Line::Pause(Pause { tick: 1000, paused: false }));
+        feed.step(&hub, now);
+        assert_eq!(feed.take_spoken(), [], "not what was said in a pause");
     }
 
     #[test]
