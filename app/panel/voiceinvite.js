@@ -106,7 +106,7 @@ function choice() {
   const mumble = act("Mumble", "go:mumble");
   discord.className = "vcopy";
   mumble.className = "vcopy vmumble";
-  return [top("", "Comms")];
+  return [top("", "Comms"), el("div", { className: "vrow vinvite" }, discord, mumble)];
 }
 
 function discordSetup() {
