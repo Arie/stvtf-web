@@ -55,6 +55,12 @@ pub(super) fn is_snowflake(s: &str) -> bool {
     !s.is_empty() && s.len() <= 20 && s.bytes().all(|b| b.is_ascii_digit())
 }
 
+/// Who someone is where they talk, or the channel they are in there: a Discord id, or for
+/// Mumble what the bot makes of the server and who they are on it (`mumble:<server>:<user>`).
+fn is_voice_id(s: &str) -> bool {
+    !s.is_empty() && s.len() <= 128 && s.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b':' | b'_' | b'-'))
+}
+
 /// The most characters of a speaker's name kept.
 const MAX_NAME: usize = 40;
 
@@ -81,7 +87,7 @@ pub(super) fn voice_in(
     let sound = !said.frames.is_empty() && said.frames.iter().all(|f| f.len() <= MAX_FRAME && b64.decode(f).is_ok_and(|d| !d.is_empty()));
     let known = match (&said.steamid, &said.discord) {
         (Some(steamid), _) => is_steamid(steamid),
-        (None, Some(discord)) => is_snowflake(discord),
+        (None, Some(discord)) => is_voice_id(discord),
         (None, None) => false,
     };
     if !sound || !known || said.delay.is_some_and(|d| !(0.0..=MAX_DELAY).contains(&d)) {
@@ -89,9 +95,9 @@ pub(super) fn voice_in(
     }
     let who = Speaker {
         steamid: said.steamid,
-        discord: said.discord.filter(|d| is_snowflake(d)),
+        discord: said.discord.filter(|d| is_voice_id(d)),
         name: said.name.map(|n| n.chars().filter(|c| !c.is_control()).take(MAX_NAME).collect()),
-        channel: said.channel.filter(|c| is_snowflake(c)),
+        channel: said.channel.filter(|c| is_voice_id(c)),
     };
     match m.voice_said(&who, said.frames, said.delay) {
         None => respond(s, "404 Not Found", TEXT, b"not a live match"),

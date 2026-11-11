@@ -127,6 +127,11 @@ pub(super) fn serve_room(
                 app.rooms.live_match(&room.id, sessions).map(|m| super::matches::comms_demos(app, sessions, &m.id)).unwrap_or_default();
             respond(&mut s, "200 OK", JSON, serde_json::json!(demos).to_string().as_bytes())?;
         }
+        ("voice-mumble", "POST") => {
+            let m = app.rooms.live_match(&room.id, sessions);
+            super::voice_mumble::ask(&mut s, reader, app, m.as_deref(), request, &who)?;
+        }
+        ("voice-mumble", "GET") => super::voice_mumble::asked(&mut s, app, app.rooms.live_match(&room.id, sessions).as_deref(), &who)?,
         ("voice-invite", "GET") => {
             super::voice_in::invite(&mut s, app, app.rooms.live_match(&room.id, sessions).as_deref(), &who)?;
         }

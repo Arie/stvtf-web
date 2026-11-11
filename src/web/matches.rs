@@ -65,6 +65,10 @@ pub(super) fn serve_match(
         (Some(m), "room") => open_room(&mut s, app, sessions, &m, request, client)?,
         (Some(m), part @ ("timeline" | "marks")) => match_timeline(&mut s, &m, request, part)?,
         (Some(m), "rewind") if request.method == "POST" => rewind(&mut s, reader, app, &m, request, client)?,
+        (Some(m), "voice-mumble") if request.method == "POST" => {
+            super::voice_mumble::ask(&mut s, reader, app, Some(&m), request, &who(app, request))?;
+        }
+        (Some(m), "voice-mumble") => super::voice_mumble::asked(&mut s, app, Some(&m), &who(app, request))?,
         (Some(m), "voice-invite") => super::voice_in::invite(&mut s, app, Some(&m), &who(app, request))?,
         (Some(m), "voice") if request.method == "POST" => super::voice_in::voice_in(&mut s, reader, app, &m, request)?,
         (Some(m), "events") => match app.stream_slot(client) {

@@ -42,6 +42,8 @@ pub(super) struct SavedMatch {
     pub(super) by: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(super) voice_invite: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(super) mumble: Option<crate::matches::mumble_job::MumbleJob>,
 }
 
 /// The file in the store holding the mark of the process it belongs to.
@@ -86,6 +88,7 @@ impl Store {
             history,
             by: s.by.get().cloned(),
             voice_invite: s.voice_invite.get().cloned(),
+            mumble: lock(&s.mumble).clone(),
         };
         self.put(&s.id, &serde_json::to_vec(&saved)?)?;
         *last_saved = Some(changes);

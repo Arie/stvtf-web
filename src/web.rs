@@ -19,6 +19,7 @@ pub(crate) mod token;
 mod visitor;
 mod voice_in;
 pub(crate) mod voice_link;
+pub(crate) mod voice_mumble;
 
 pub(crate) use assets::app_version;
 use assets::serve_file;
@@ -240,6 +241,8 @@ fn serve_many(
         ("/voice/link", "GET") => voice_link::link(&mut s, app)?,
         ("/voice/linked", "GET") => voice_link::linked(&mut s, app, request)?,
         ("/voice/who", "GET") => voice_link::who(&mut s, app, request)?,
+        ("/voice/mumble", "GET") => voice_mumble::wanted(&mut s, app, sessions, request)?,
+        ("/voice/mumble", "POST") => voice_mumble::went(&mut s, reader, app, sessions, request)?,
         ("/start", _) => match start(app, sessions, request, client) {
             // <stv-map> asks where the match is instead of following the redirect.
             Ok(m) if param(&request.query, "format") == Some("json") => {

@@ -1193,3 +1193,105 @@ fn a_matchs_demos_with_comms_are_listed_and_downloaded_the_match_gone_too() {
     let gone = get(&app, &format!("/w/{id}/"), "");
     assert!(gone.starts_with("HTTP/1.1 404") && gone.contains(&format!("/w/{id}/demos/100.dem")), "{gone}");
 }
+
+fn bot(app: &App, method: &str, key: &str, body: &str) -> String {
+    let send = format!("{method} /voice/mumble HTTP/1.1\r\nAuthorization: Bearer {key}\r\nContent-Length: {}\r\n\r\n{body}", body.len());
+    request_to(app, send.as_bytes()).1
+}
+
+#[test]
+fn a_mumble_channel_is_asked_for_on_the_page_and_the_bot_hears_of_it() {
+    let (app, id) = voice_app();
+    let page = format!("/w/{id}/");
+    assert!(get(&app, &format!("{page}voice-mumble"), "").starts_with("HTTP/1.1 204"), "none asked for");
+    assert!(bot(&app, "GET", "k", "").contains(r#""jobs":[]"#));
+    let ask = r#"{"host":"mumble.example","port":64738,"password":"pw","channel":"Team A","delay":0}"#;
+    assert!(post(&app, &format!("{page}voice-mumble"), "", ask).starts_with("HTTP/1.1 204"));
+    // The page sees where the bot is wanted, not the password.
+    let shown = get(&app, &format!("{page}voice-mumble"), "");
+    assert!(
+        shown.contains(r#""host":"mumble.example""#)
+            && shown.contains(r#""channel":"Team A""#)
+            && shown.contains(r#""status":"on its way""#),
+        "{shown}"
+    );
+    assert!(!shown.contains("pw"), "{shown}");
+    // The bot, with its key, gets it all, and the invite to post voice with.
+    assert!(bot(&app, "GET", "wrong", "").starts_with("HTTP/1.1 401"));
+    let jobs = bot(&app, "GET", "k", "");
+    for part in [
+        format!(r#""match":"{id}""#),
+        format!(r#""invite":"{}""#, invite_of(&app, &id)),
+        r#""password":"pw""#.into(),
+        r#""port":64738"#.into(),
+        r#""delay":0.0"#.into(),
+    ] {
+        assert!(jobs.contains(&part), "{part} in {jobs}");
+    }
+    // The bot waits for what changes, and hears of it at once: asked again with what it has, it
+    // is answered when something is asked for or taken back, not before.
+    let version = jobs.split(r#""version":"#).nth(1).unwrap().trim_end_matches('}').to_string();
+    std::thread::scope(|scope| {
+        let waiting = scope.spawn(|| {
+            let started = Instant::now();
+            let send = format!("GET /voice/mumble?since={version} HTTP/1.1\r\nAuthorization: Bearer k\r\n\r\n");
+            (request_to(&app, send.as_bytes()).1, started.elapsed())
+        });
+        std::thread::sleep(Duration::from_millis(150));
+        let other = r#"{"host":"other.example","channel":"B"}"#;
+        assert!(post(&app, &format!("{page}voice-mumble"), "", other).starts_with("HTTP/1.1 204"));
+        let (answer, took) = waiting.join().unwrap();
+        assert!(answer.contains("other.example"), "{answer}");
+        assert!(took >= Duration::from_millis(100) && took < Duration::from_secs(5), "{took:?}");
+    });
+    // What the bot says of it reaches the page.
+    let said = format!(r#"{{"match":"{id}","status":"In Team A with 3 people"}}"#);
+    assert!(bot(&app, "POST", "k", &said).starts_with("HTTP/1.1 204"));
+    assert!(bot(&app, "POST", "wrong", &said).starts_with("HTTP/1.1 401"));
+    assert!(get(&app, &format!("{page}voice-mumble"), "").contains("In Team A with 3 people"));
+    // Sent away: the bot hears of it no more.
+    assert!(post(&app, &format!("{page}voice-mumble"), "", r#"{"leave":true}"#).starts_with("HTTP/1.1 204"));
+    assert!(bot(&app, "GET", "k", "").contains(r#""jobs":[]"#));
+    assert!(get(&app, &format!("{page}voice-mumble"), "").starts_with("HTTP/1.1 204"));
+    // Not anywhere, nor anything, for a server.
+    for bad in [
+        r#"{"host":"mumble.example/x","channel":"a"}"#,
+        r#"{"host":"","channel":"a"}"#,
+        r#"{"host":"mumble.example","channel":""}"#,
+        r#"{"host":"mumble.example","port":0,"channel":"a"}"#,
+        r#"{"host":"mumble.example","channel":"a","delay":900}"#,
+    ] {
+        assert!(post(&app, &format!("{page}voice-mumble"), "", bad).starts_with("HTTP/1.1 400"), "{bad}");
+    }
+}
+
+#[test]
+fn behind_a_site_only_who_has_a_say_brings_mumble_in() {
+    let (mut app, key, _dir) = site_app();
+    app.voice_key = Some("k".into());
+    let exp = unix_now() + 60;
+    let start = format!(r#"{{"connect":"connect 192.0.2.9:27020; password \"tv\"","owner":"7656","exp":{exp}}}"#);
+    let opened = get(&app, &format!("/start?t={}", token::seal(&key, &start, [3; 12])), "");
+    let page = opened.lines().find_map(|l| l.strip_prefix("Location: ")).unwrap().to_string();
+    let starter = signed_in(&app, &key, r#"{"uid":"7656","name":"Arie","streamer":false}"#);
+    let other = signed_in(&app, &key, r#"{"uid":"1111","name":"someone","streamer":false}"#);
+    let ask = r#"{"host":"mumble.example","channel":"Team A"}"#;
+    assert!(post(&app, &format!("{page}voice-mumble"), &other, ask).starts_with("HTTP/1.1 403"));
+    assert!(post(&app, &format!("{page}voice-mumble"), &starter, ask).starts_with("HTTP/1.1 204"));
+    assert!(get(&app, &format!("{page}voice-mumble"), &other).starts_with("HTTP/1.1 204"), "nor sees where it is");
+    assert!(get(&app, &format!("{page}voice-mumble"), &starter).contains("mumble.example"));
+}
+
+#[test]
+fn someone_in_mumble_is_known_by_who_they_are_on_their_server() {
+    let (app, id) = voice_app();
+    let Matches::Many(sessions) = &app.matches else { panic!() };
+    let m = sessions.get(&id).unwrap();
+    publish(&m.hub, &server("cp_process_f12"));
+    publish(&m.hub, &crate::matches::hub::tests::snapshot(1000, None, Vec::new()));
+    let said = r#"{"discord":"mumble:mumble.example:user:97","name":"Arie","channel":"mumble:mumble.example:12","frames":["aA=="]}"#;
+    assert!(post_voice(&app, &id, Some("k"), said).starts_with("HTTP/1.1 200"));
+    assert_eq!(m.voice.voices()[0].discord, "mumble:mumble.example:user:97");
+    let odd = r#"{"discord":"mumble:<script>","frames":["aA=="]}"#;
+    assert!(post_voice(&app, &id, Some("k"), odd).starts_with("HTTP/1.1 400"));
+}

@@ -85,6 +85,8 @@ struct App {
     voice_links: web::voice_link::Links,
     /// Where the voice bot is added to a Discord server (`STVTF_VOICE_BOT`), for the invite.
     voice_bot: Option<String>,
+    /// The bell the voice bot waits on for Mumble channels asked for.
+    mumble_changes: web::voice_mumble::Changes,
 }
 
 /// Counts an event stream against its client's limit until dropped.
@@ -368,6 +370,7 @@ fn main() -> Result<()> {
         voice_key: std::env::var("STVTF_VOICE_KEY").ok().filter(|k| !k.is_empty()),
         voice_links: web::voice_link::Links::from_env(options.sessions.as_deref()),
         voice_bot: std::env::var("STVTF_VOICE_BOT").ok().filter(|u| !u.is_empty()),
+        mumble_changes: web::voice_mumble::Changes::default(),
     });
     app.rooms.sweep();
     if let Matches::Many(_) = app.matches {

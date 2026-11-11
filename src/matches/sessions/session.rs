@@ -4,6 +4,7 @@ use super::store::{Store, dem_beside, demo_dem, live_file, to_file};
 use crate::lock;
 use crate::matches::hub::{SharedHub, Summary, subscribe_all};
 use crate::matches::live_demos::LiveDemos;
+use crate::matches::mumble_job::MumbleJob;
 use crate::matches::recording::Recording;
 use crate::matches::replay;
 use crate::matches::voice_feed::VoiceFeed;
@@ -68,6 +69,8 @@ pub struct Session {
     /// What a Discord channel's voice comes in with: given to whoever started the match, and to
     /// the site's streamers, to pass on with the bot's command.
     pub(super) voice_invite: OnceLock<String>,
+    /// The Mumble channel the voice bot is wanted in for it, if any.
+    pub(crate) mumble: Mutex<Option<MumbleJob>>,
 }
 
 /// A recorded match: a saved file, or a demo's gzipped output.
@@ -109,6 +112,7 @@ impl Session {
             voice: VoiceFeed::default(),
             voice_tended: AtomicBool::new(false),
             voice_invite: OnceLock::new(),
+            mumble: Mutex::new(None),
         }
     }
 

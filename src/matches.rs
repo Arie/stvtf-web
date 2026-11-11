@@ -4,6 +4,7 @@
 pub(crate) mod demostf;
 pub(crate) mod hub;
 pub(crate) mod live_demos;
+pub(crate) mod mumble_job;
 pub(crate) mod recording;
 pub(crate) mod replay;
 pub(crate) mod sessions;

@@ -68,6 +68,11 @@ impl Sessions {
     }
 
     /// Every match, the oldest first.
+    /// The matches watched live now.
+    pub(crate) fn live(&self) -> Vec<Arc<Session>> {
+        lock(&self.map).values().filter(|s| s.is_live()).cloned().collect()
+    }
+
     pub fn list(&self) -> Vec<Listed> {
         let mut all: Vec<Listed> = self.lock().values().map(|s| s.listed()).collect();
         all.sort_by(|a, b| b.watching_for.cmp(&a.watching_for).then_with(|| a.id.cmp(&b.id)));
@@ -259,6 +264,7 @@ impl Sessions {
         if let Some(invite) = saved.voice_invite {
             let _ = s.voice_invite.set(invite);
         }
+        *lock(&s.mumble) = saved.mumble;
         record(&s, Some(store), true);
         s.link(saved.reservation);
         Some(s)
