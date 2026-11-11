@@ -44,14 +44,6 @@ test("a voice of no player is heard by its name, on the team its line says", () 
   v.setTeamMuted("red", false);
 });
 
-test("a room's nudge of the voice is kept, and the page told", () => {
-  let told = 0;
-  v.voiceListeners.add(() => told++);
-  v.voiceNudged({ nudge: -1.5 });
-  assert.equal(v.voiceNudge(), -1.5);
-  assert.equal(told, 1);
-});
-
 test("names that look alike are suggested: the same letters, or one within the other", async () => {
   const { alike } = await import("../../app/room/voiceadmin.js");
   assert.equal(alike("Gummy", "gummy"), true);

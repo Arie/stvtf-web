@@ -78,8 +78,7 @@ voices and their matches at `GET /r/<id>/voices`, and put one on a player (or ta
 On the page such a voice is listed by its name, under the team it is taken for or under Others
 (two minutes after its last word, no longer). A room's admins get "From Discord" at the end of the
 speakers list once such voice comes (where people sign in, only the streamers among them: the
-voice is the match's, for every room on it, and anyone opens a room): the delay nudged half a second at a time (30 s either way,
-for what is said from then on), and each voice that is no player's (no link, or linked on another account) with the players to
+voice is the match's, for every room on it, and anyone opens a room): each voice that is no player's (no link, or linked on another account) with the players to
 put it on;
 those whose name looks like its own come first, as a suggestion.
 

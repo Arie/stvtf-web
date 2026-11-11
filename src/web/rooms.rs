@@ -128,7 +128,6 @@ pub(super) fn serve_room(
         },
         ("voices", "GET") => voices(&mut s, app, sessions, &room, &who)?,
         ("voice-match", "POST") => voice_match(&mut s, reader, app, sessions, request, &room, &who)?,
-        ("voice-nudge", "POST") => voice_nudge(&mut s, reader, app, sessions, request, &room, &who)?,
         (part, "POST") => change(&mut s, reader, request, &room, &who, part)?,
         _ => not_found(&mut s)?,
     }
@@ -188,45 +187,11 @@ fn change(
 
 const NOT_THEIRS: &[u8] = b"Only streamers among the room's admins do that.";
 
-/// Whether `who` may move and place the voice coming into `room`'s match: it is the match's, for
+/// Whether `who` may place the voice coming into `room`'s match (whose voice is which player's): it is the match's, for
 /// every room on it, and anyone opens a room. So an admin of the room who is one of the site's
 /// streamers; where nobody signs in (no site in front), any admin of the room.
 fn tunes_voice(app: &App, room: &Room, who: &Who) -> bool {
     room.is_admin(&who.key) && (app.keys.is_none() || who.user.as_ref().is_some_and(|u| u.streamer))
-}
-
-/// How far a room's admins move its live match's voice, in seconds either way.
-#[derive(serde::Deserialize)]
-#[serde(deny_unknown_fields)]
-struct Nudge {
-    nudge: f64,
-}
-
-/// An admin of `room` nudges the delay of the voice coming into its live match (a team's Discord
-/// out of step by ear): added to delayed sources' delays from now on; pages hear `voice_nudge`.
-fn voice_nudge(
-    s: &mut TcpStream,
-    reader: &mut BufReader<Take<TcpStream>>,
-    app: &App,
-    sessions: &Sessions,
-    request: &Request,
-    room: &Room,
-    who: &Who,
-) -> std::io::Result<()> {
-    use crate::matches::voice_feed::MAX_NUDGE;
-    if !tunes_voice(app, room, who) {
-        return respond(s, "403 Forbidden", TEXT, NOT_THEIRS);
-    }
-    let Ok(n) = json_body::<Nudge>(reader, request) else { return respond(s, "400 Bad Request", TEXT, b"a nudge in seconds") };
-    if !(-MAX_NUDGE..=MAX_NUDGE).contains(&n.nudge) {
-        return respond(s, "400 Bad Request", TEXT, format!("at most {MAX_NUDGE} s either way").as_bytes());
-    }
-    let Some(m) = app.rooms.live_match(&room.id, sessions) else {
-        return respond(s, "409 Conflict", TEXT, b"No voice comes into this match.");
-    };
-    m.voice.set_nudge(n.nudge);
-    room.voice_nudged(n.nudge);
-    respond(s, "204 No Content", TEXT, b"")
 }
 
 /// The voices coming into `room`'s live match from outside it, and who each is matched to: for

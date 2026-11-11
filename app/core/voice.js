@@ -183,7 +183,6 @@ function play(s, data) {
 
 /** @param {VoiceLine} m */
 export function onVoice(m) {
-  if (m.injected) outside = true;
   if (!voiceOn() || !audio || !playing || !(m.rate > 0)) return;
   const s = speaker(m);
   if (!s) return;
@@ -253,19 +252,6 @@ const letThrough = new Set();
 export function teamOf(steamid) {
   for (const p of state.players.values()) if (p.steamid === steamid) return p.team;
   return speakers.get(steamid)?.team ?? null;
-}
-
-// Whether voice from outside the match (a team's Discord) has come.
-let outside = false;
-export const outsideVoice = () => outside;
-
-// How far a room's admins nudged the delay of voice from outside the match, in seconds.
-let nudge = 0;
-export const voiceNudge = () => nudge;
-/** @param {{ nudge: number }} m */
-export function voiceNudged(m) {
-  nudge = m.nudge;
-  voiceListeners.forEach(f => f());
 }
 
 // Whether `steamid` is muted: by the viewer (kept), or with their team (unless let through).

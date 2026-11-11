@@ -964,31 +964,6 @@ fn voice_posted_to_a_live_match_is_held_to_its_tick() {
 }
 
 #[test]
-fn a_rooms_admin_nudges_its_live_matchs_voice_delay() {
-    let (app, id) = voice_app();
-    let Matches::Many(sessions) = &app.matches else { panic!() };
-    let m = sessions.get(&id).unwrap();
-    publish(&m.hub, &server("cp_process_f12"));
-    publish(&m.hub, &crate::matches::hub::tests::snapshot(1000, None, Vec::new()));
-    let opened = post(&app, &format!("/w/{id}/room"), "", "");
-    assert!(opened.starts_with("HTTP/1.1 201"), "{opened}");
-    let (cookie, room) = (cookie_of(&opened), page_of(&opened));
-    let nudged = post(&app, &format!("{room}voice-nudge"), &cookie, r#"{"nudge":1.5}"#);
-    assert!(nudged.starts_with("HTTP/1.1 204"), "{nudged}");
-    assert!((m.voice.nudge() - 1.5).abs() < 1e-9);
-    assert!(post_voice(&app, &id, Some("k"), VOICE).ends_with("held until tick 7100"), "90 s and the nudge");
-    let joined = app.rooms.get(room.trim_matches('/').trim_start_matches("r/"), sessions).unwrap();
-    let told: Vec<_> = crate::matches::hub::subscribe(&joined.hub, false).try_iter().collect();
-    assert!(told.iter().any(|l| l.contains(r#""nudge":1.5"#)), "pages are told, those that join later too");
-    assert!(post(&app, &format!("{room}voice-nudge"), "", r#"{"nudge":3}"#).starts_with("HTTP/1.1 403"), "admins only");
-    assert!(post(&app, &format!("{room}voice-nudge"), &cookie, r#"{"nudge":99}"#).starts_with("HTTP/1.1 400"));
-    let (demo, _dir) = demo_app();
-    let (demo_room, owner) = open_room(&demo);
-    let none = post(&demo, &format!("{demo_room}voice-nudge"), &owner, r#"{"nudge":1}"#);
-    assert!(none.starts_with("HTTP/1.1 409"), "a demo has no voice coming in: {none}");
-}
-
-#[test]
 fn a_room_takes_voice_for_its_live_match_and_its_admins_match_who_is_who() {
     let (app, id) = voice_app();
     let Matches::Many(sessions) = &app.matches else { panic!() };
@@ -1023,6 +998,10 @@ fn a_room_takes_voice_for_its_live_match_and_its_admins_match_who_is_who() {
     assert!(post(&app, &format!("{room}voice-match"), "", r#"{"discord":"77","player":7}"#).starts_with("HTTP/1.1 403"));
     assert!(post(&app, &format!("{room}voice-match"), &cookie, r#"{"discord":"77","player":null}"#).starts_with("HTTP/1.1 204"));
     assert!(get(&app, &format!("{room}voices"), &cookie).contains(r#""steamid":null"#), "unmatched again");
+    // The delay is the bot's to say (whoever invited it): a room moves no voice.
+    let nudged = post(&app, &format!("{room}voice-nudge"), &cookie, r#"{"nudge":-30}"#);
+    assert!(!nudged.starts_with("HTTP/1.1 2"), "{nudged}");
+    assert!(post_voice(&app, &id, Some("k"), VOICE).ends_with("held until tick 7000"), "90 s, as said");
 }
 
 /// An app that links through a made-up Discord, whose user 77 has these connections.
@@ -1091,7 +1070,6 @@ fn where_people_sign_in_only_streamers_among_a_rooms_admins_tune_its_matchs_voic
     assert!(get(&app, &format!("{page}me"), &owner).contains(r#""admin":true"#));
     // Anyone opens a room and is its admin: a match's voice is not theirs to move.
     assert!(get(&app, &format!("{page}voices"), &owner).starts_with("HTTP/1.1 403"));
-    assert!(post(&app, &format!("{page}voice-nudge"), &owner, r#"{"nudge":-30}"#).starts_with("HTTP/1.1 403"));
     assert!(post(&app, &format!("{page}voice-match"), &owner, r#"{"discord":"77","player":7}"#).starts_with("HTTP/1.1 403"));
     let streamer = signed_in(&app, &key, r#"{"uid":"9999","name":"caster","streamer":true}"#);
     assert!(post(&app, &format!("{page}claim"), &streamer, "").starts_with("HTTP/1.1 204"));

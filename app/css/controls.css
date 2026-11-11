@@ -297,11 +297,7 @@
 #voicelist input[type="range"] {
   width: 70px;
 }
-/* A room's admins: the delay of voice from outside nudged, and whose voice each is. */
-#voicelist .vnudge .vby {
-  min-width: 44px;
-  text-align: center;
-}
+/* A room's admins: whose voice each from outside is. */
 #voicelist .vmatch select {
   width: 120px;
   border: 0;

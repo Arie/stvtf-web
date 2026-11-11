@@ -1,16 +1,12 @@
 // For a room's admins, at the end of the speakers list (panel/voicelist.js), once voice from
-// outside the match comes (a team's Discord, through the voice bot): the delay nudged by ear, and
-// each voice that is no player's (no Steam link, or linked on another account) put on one.
+// outside the match comes (a team's Discord, through the voice bot): each
+// voice that is no player's (no Steam link, or linked on another account) put on one.
 import { $, state } from "../core/core.js";
 import { HOME, me, post } from "./home.js";
 import { renderList, setListExtra } from "../panel/voicelist.js";
-import * as voice from "../core/voice.js";
 
-// How often the voices are asked for while the list is open, and a nudge's step and most, in
-// seconds.
-const ASK_MS = 5000,
-  STEP = 0.5,
-  MAX_NUDGE = 30;
+// How often the voices are asked for while the list is open, in milliseconds.
+const ASK_MS = 5000;
 
 /** @typedef {{ discord: string; name: string; steamid: string | null; linked: string | null }} Heard */
 /** @type {Heard[]} */
@@ -61,26 +57,12 @@ function toPlace() {
 }
 
 function rows() {
-  if (!allowed || (!voices.length && !voice.outsideVoice())) return [];
-  const n = voice.voiceNudge();
+  const place = toPlace();
+  if (!allowed || !place.length) return [];
   const head = el("div", { className: "vteam t-none" }, el("span", { className: "vtname" }, "From Discord"));
-  const nudge = el(
-    "div",
-    { className: "vrow vnudge", title: "Voice from outside the match, from now on: later (+) or sooner (−)" },
-    el("span", { className: "vname" }, "Delay"),
-    el("button", {}, "−"),
-    el("span", { className: "vby" }, `${n > 0 ? "+" : ""}${n.toFixed(1)} s`),
-    el("button", {}, "+"),
-  );
-  const [less, more] = /** @type {HTMLButtonElement[]} */ ([...nudge.querySelectorAll("button")]);
-  less.dataset.nudge = String(-STEP);
-  more.dataset.nudge = String(STEP);
   return [
     head,
-    nudge,
-    ...toPlace().map(v =>
-      el("div", { className: "vrow vmatch" }, el("span", { className: "vname" }, v.name), choice(v)),
-    ),
+    ...place.map(v => el("div", { className: "vrow vmatch" }, el("span", { className: "vname" }, v.name), choice(v))),
   ];
 }
 
@@ -103,14 +85,6 @@ export function voiceAdmin() {
   };
   setInterval(ask, ASK_MS);
   $("voicetoggle").addEventListener("click", () => setTimeout(ask));
-  list.addEventListener("click", e => {
-    const step = Number(
-      /** @type {HTMLElement | null} */ (/** @type {Element} */ (e.target).closest("[data-nudge]"))?.dataset.nudge,
-    );
-    if (!step) return;
-    const nudge = Math.max(-MAX_NUDGE, Math.min(MAX_NUDGE, voice.voiceNudge() + step));
-    post("voice-nudge", { nudge });
-  });
   list.addEventListener("change", e => {
     const select = /** @type {HTMLSelectElement} */ (e.target);
     const discord = select.dataset.match;

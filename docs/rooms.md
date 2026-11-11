@@ -99,7 +99,6 @@ seeking and at speed with it.
 | `POST /r/<id>/circle` | admin: `{"at": [x, y]}`, a circle on the floor under it; 400 with why when there is no floor there or the map is not built |
 | `POST /r/<id>/light` | admin: `{"at": [x, y]}`, the spotlight on the floor under it, from where it was; 400 with why when there is no floor there or the map is not built |
 | `POST /r/<id>/note` | admin: `{"text", "at": [x, y]}` (on the floor there) or `{"text", "player": <id>}` (following them); 400 with why when it is empty or too long, there is no floor there, the map is not built or the room has its 10 notes |
-| `POST /r/<id>/voice-nudge` | admin: `{"nudge": <seconds, -30 to 30>}`, added from now on to the delay of delayed voice coming into the room's live match (a team's Discord out of step by ear); 409 on a room not on a live match. Pages hear `voice_nudge` (`nudge`) |
 | `POST /r/<id>/draw` | admin: `{"stroke": <id>, "points": [[x, y, ms], …]}`, up to 256, ms into the stroke; later points continue it; pages draw at that pace, 40 ms behind |
 
 ## Stream lines

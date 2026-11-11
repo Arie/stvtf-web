@@ -271,11 +271,3 @@ pub(crate) use light::LightDraw;
 pub(crate) use note::NoteDraw;
 pub(crate) use play::Control;
 pub(crate) use view::ViewPost;
-
-impl Room {
-    /// Its pages hear how far its match's voice was nudged, now and on joining.
-    pub(crate) fn voice_nudged(&self, nudge: f64) {
-        let line = serde_json::json!({ "type": "voice_nudge", "nudge": nudge }).to_string().into();
-        announce(&self.hub, "voice_nudge", &line);
-    }
-}

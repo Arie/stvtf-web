@@ -73,8 +73,6 @@ struct State {
     known: BTreeMap<String, Speaker>,
     /// Discord ids matched by hand to a `SteamID`.
     matched: BTreeMap<String, String>,
-    /// Seconds added to every delayed source's delay: a room's admins' nudge, by ear.
-    nudge: f64,
     /// The stream's count of new starts, and whether it was paused, when last looked at.
     epoch: u64,
     paused: bool,
@@ -90,17 +88,6 @@ struct State {
 pub(crate) struct VoiceFeed(Mutex<State>);
 
 impl VoiceFeed {
-    /// The nudge: seconds added to delayed sources' delays.
-    #[cfg(test)]
-    pub(crate) fn nudge(&self) -> f64 {
-        lock(&self.0).nudge
-    }
-
-    /// Sets the nudge, for what is said from now on.
-    pub(crate) fn set_nudge(&self, nudge: f64) {
-        lock(&self.0).nudge = nudge.clamp(-MAX_NUDGE, MAX_NUDGE);
-    }
-
     /// `who` said `frames` just now, in a source whose stream is `delay` seconds behind its game
     /// (the usual, unless given). With no delay it is commentary on the stream itself: straight
     /// out, paused or not.
@@ -123,7 +110,7 @@ impl VoiceFeed {
         let interval = lock(hub).tick_interval();
         let mut st = lock(&self.0);
         st.said = Some(now);
-        let delay = (delay + st.nudge).clamp(0.0, MAX_DELAY);
+        let delay = delay.clamp(0.0, MAX_DELAY);
         st.hold.get_or_insert_with(|| VoiceHold::new(interval)).said(Said { who: key, frames }, delay, now)
     }
 
@@ -247,9 +234,6 @@ impl VoiceFeed {
         }
     }
 }
-
-/// The most a nudge is, either way.
-pub(crate) const MAX_NUDGE: f64 = 30.0;
 
 #[cfg(test)]
 mod tests {
