@@ -2,10 +2,11 @@
 
 use super::store::{Store, dem_beside, demo_dem, live_file, to_file};
 use crate::lock;
-use crate::matches::hub::{SharedHub, Summary, subscribe};
+use crate::matches::hub::{SharedHub, Summary, subscribe_all};
 use crate::matches::live_demos::LiveDemos;
 use crate::matches::recording::Recording;
 use crate::matches::replay;
+use crate::matches::voice_feed::VoiceFeed;
 use crate::relays::pool::DemoOf;
 use anyhow::{Result, bail};
 use serde::Serialize;
@@ -61,6 +62,9 @@ pub struct Session {
     pub(super) demos: OnceLock<Arc<LiveDemos>>,
     /// Who started it, for the limit per person: a Steam id or an address.
     pub(super) by: OnceLock<String>,
+    /// Voice from outside the match (a team's Discord), and whether a thread tends it.
+    pub(crate) voice: VoiceFeed,
+    pub(super) voice_tended: AtomicBool,
 }
 
 /// A recorded match: a saved file, or a demo's gzipped output.
@@ -96,6 +100,8 @@ impl Session {
             preparing: AtomicBool::new(false),
             demos: OnceLock::new(),
             by: OnceLock::new(),
+            voice: VoiceFeed::default(),
+            voice_tended: AtomicBool::new(false),
         }
     }
 
@@ -330,7 +336,8 @@ pub(super) fn record(s: &Arc<Session>, store: Option<&Store>, resume: bool) {
         }
     });
     let _ = s.live.set(recording.clone());
-    let (lines, s) = (subscribe(&s.hub, true), s.clone());
+    // Everything: detail, voice, and what is only kept.
+    let (lines, s) = (subscribe_all(&s.hub), s.clone());
     std::thread::spawn(move || {
         while s.is_live() && !s.stop.load(Ordering::Relaxed) {
             let json = match lines.recv_timeout(RECORD_POLL) {

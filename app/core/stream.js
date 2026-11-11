@@ -151,6 +151,9 @@ const ON_LINE = {
   data_age: m => (state.lastData = performance.now() - /** @type {{ ms: number }} */ (m).ms),
   snapshot: m => onSnapshot(/** @type {import("../../types/stream").Snapshot} */ (m)),
   world: () => {},
+  // The game paused or went on: for the server's own use (held voice), nothing to show.
+  pause: () => {},
+  voice_nudge: () => {},
   seek: () => {
     // A room jumped: everything shown is from before it.
     $("feed").replaceChildren();

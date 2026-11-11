@@ -16,6 +16,7 @@ stvtf-web: live top-down viewer of a TF2 match in the browser
   stvtf-web HOST:TVPORT [--password tv] [--listen 127.0.0.1:8080] [--hz 20] [--cache DIR] [--backpack DIR]
   stvtf-web HOST[:PORT] [tv] / 'connect HOST:PORT; password \"tv\"'
   stvtf-web [--public] [--max-matches 20] [--base-path /live] [--demo MATCH.jsonl[.gz]] [--demos DIR] [--sessions DIR] [--no-warm]   (watch any server: paste a connect string on the page; --no-warm: no maps built in advance)
+     With STVTF_VOICE_KEY set, a voice bot posts a team's voice to live matches with it (POST /w/<id>/voice).
      With STVTF_TOKEN_KEY (64 hex digits) set, matches start only from a site's encrypted /start?t= links;
      --home URL then sends visitors of / to that site.
      --relay-ports 27100-27199 --relay-host HOST: each room is also a SourceTV address for TF2 clients,

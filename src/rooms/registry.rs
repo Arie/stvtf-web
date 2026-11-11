@@ -124,6 +124,15 @@ impl Rooms {
         }
     }
 
+    /// The live match room `id` is on, if it is on one.
+    pub(crate) fn live_match(&self, id: &str, sessions: &Sessions) -> Option<Arc<Session>> {
+        let source = lock(&self.sources).get(id).cloned()?;
+        match source {
+            Source::Live(m) => sessions.get(&m).filter(|s| s.is_live()),
+            Source::Pinned(_) | Source::Demo(_) => None,
+        }
+    }
+
     /// The room `owner` opened on match `from` and still has, if any (not a private playback).
     pub(crate) fn owned(&self, from: &Session, owner: &str) -> Option<Arc<Room>> {
         let source = Self::source(from);

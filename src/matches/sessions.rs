@@ -28,6 +28,7 @@ mod address;
 mod ids;
 mod session;
 mod store;
+mod voice;
 
 pub struct Sessions {
     map: Mutex<HashMap<String, Arc<Session>>>,

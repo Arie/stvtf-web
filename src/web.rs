@@ -17,6 +17,7 @@ mod matches;
 mod rooms;
 pub(crate) mod token;
 mod visitor;
+mod voice_in;
 
 pub(crate) use assets::app_version;
 use assets::serve_file;

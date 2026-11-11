@@ -122,6 +122,7 @@ pub(super) fn serve_room(
         },
         ("me", "GET") => me(&mut s, app, &room, &who)?,
         ("marks", "GET") => respond_marks(&mut s, &request.query, |from| room.marks(from))?,
+        ("voice-nudge", "POST") => voice_nudge(&mut s, reader, app, sessions, request, &room, &who)?,
         (part, "POST") => change(&mut s, reader, request, &room, &who, part)?,
         _ => not_found(&mut s)?,
     }
@@ -176,4 +177,38 @@ fn change(
         "admin" => done(s, json_body::<Admin>(reader, request).and_then(|a| room.set_admin(guest, a.person, a.admin))),
         _ => not_found(s),
     }
+}
+
+/// How far a room's admins move its live match's voice, in seconds either way.
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Nudge {
+    nudge: f64,
+}
+
+/// An admin of `room` nudges the delay of the voice coming into its live match (a team's Discord
+/// out of step by ear): added to delayed sources' delays from now on; pages hear `voice_nudge`.
+fn voice_nudge(
+    s: &mut TcpStream,
+    reader: &mut BufReader<Take<TcpStream>>,
+    app: &App,
+    sessions: &Sessions,
+    request: &Request,
+    room: &Room,
+    who: &Who,
+) -> std::io::Result<()> {
+    use crate::matches::voice_feed::MAX_NUDGE;
+    if !room.is_admin(&who.key) {
+        return respond(s, "403 Forbidden", TEXT, b"Only the room's admins do that.");
+    }
+    let Ok(n) = json_body::<Nudge>(reader, request) else { return respond(s, "400 Bad Request", TEXT, b"a nudge in seconds") };
+    if !(-MAX_NUDGE..=MAX_NUDGE).contains(&n.nudge) {
+        return respond(s, "400 Bad Request", TEXT, format!("at most {MAX_NUDGE} s either way").as_bytes());
+    }
+    let Some(m) = app.rooms.live_match(&room.id, sessions) else {
+        return respond(s, "409 Conflict", TEXT, b"No voice comes into this match.");
+    };
+    m.voice.set_nudge(n.nudge);
+    room.voice_nudged(n.nudge);
+    respond(s, "204 No Content", TEXT, b"")
 }

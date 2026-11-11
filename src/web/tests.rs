@@ -906,3 +906,81 @@ fn pages_leave_styling_to_the_stylesheet() {
         assert!(!page.contains(" style=") && !page.contains("<style"), "styling in a page: put it in app/css/");
     }
 }
+
+/// An app that takes voice with key "k", and the id of a live match on it (watching nowhere).
+fn voice_app() -> (App, String) {
+    let mut app = app(Matches::Many(Sessions::new(false, 4, 20.0)));
+    app.voice_key = Some("k".into());
+    let started = post_watch(&app, "connect+192.0.2.1%3A27020%3B+password+%22tv%22");
+    let location = started.lines().find_map(|l| l.strip_prefix("Location: ")).unwrap();
+    let id = location.trim_matches('/').trim_start_matches("w/").to_string();
+    (app, id)
+}
+
+fn post_voice(app: &App, id: &str, key: Option<&str>, body: &str) -> String {
+    let auth = key.map(|k| format!("Authorization: Bearer {k}\r\n")).unwrap_or_default();
+    let send = format!("POST /w/{id}/voice HTTP/1.1\r\n{auth}Content-Length: {}\r\n\r\n{body}", body.len());
+    request_to(app, send.as_bytes()).1
+}
+
+const VOICE: &str = r#"{"steamid":"[U:1:5]","frames":["aA=="]}"#;
+
+#[test]
+fn a_voice_post_needs_the_key_and_a_live_match() {
+    let (app, id) = voice_app();
+    assert!(post_voice(&app, &id, None, VOICE).starts_with("HTTP/1.1 401"));
+    assert!(post_voice(&app, &id, Some("wrong"), VOICE).starts_with("HTTP/1.1 401"));
+    assert!(post_voice(&app, "nope", Some("k"), VOICE).starts_with("HTTP/1.1 404"));
+    let no_stream = post_voice(&app, &id, Some("k"), VOICE);
+    assert!(no_stream.starts_with("HTTP/1.1 409"), "nothing to hold it against yet: {no_stream}");
+    let mut keyless = voice_app();
+    keyless.0.voice_key = None;
+    assert!(post_voice(&keyless.0, &keyless.1, Some("k"), VOICE).starts_with("HTTP/1.1 404"), "off without a key");
+}
+
+#[test]
+fn voice_posted_to_a_live_match_is_held_to_its_tick() {
+    let (app, id) = voice_app();
+    let Matches::Many(sessions) = &app.matches else { panic!() };
+    let m = sessions.get(&id).unwrap();
+    publish(&m.hub, &crate::matches::hub::tests::snapshot(1000, None, Vec::new()));
+    let held = post_voice(&app, &id, Some("k"), VOICE);
+    assert!(held.starts_with("HTTP/1.1 200") && held.ends_with("held until tick 7000"), "{held}");
+    let sooner = post_voice(&app, &id, Some("k"), r#"{"steamid":"[U:1:5]","frames":["aA=="],"delay":30}"#);
+    assert!(sooner.ends_with("held until tick 3000"), "{sooner}");
+    for bad in [
+        r#"{"steamid":"[U:1:5]","frames":[]}"#,
+        r#"{"steamid":"someone","frames":["aA=="]}"#,
+        r#"{"steamid":"[U:1:5]","frames":["not base64!"]}"#,
+        r#"{"steamid":"[U:1:5]","frames":["aA=="],"delay":900}"#,
+    ] {
+        assert!(post_voice(&app, &id, Some("k"), bad).starts_with("HTTP/1.1 400"), "{bad}");
+    }
+    let many = format!(r#"{{"steamid":"[U:1:5]","frames":[{}]}}"#, vec![r#""aA==""#; 33].join(","));
+    assert!(post_voice(&app, &id, Some("k"), &many).starts_with("HTTP/1.1 413"));
+}
+
+#[test]
+fn a_rooms_admin_nudges_its_live_matchs_voice_delay() {
+    let (app, id) = voice_app();
+    let Matches::Many(sessions) = &app.matches else { panic!() };
+    let m = sessions.get(&id).unwrap();
+    publish(&m.hub, &server("cp_process_f12"));
+    publish(&m.hub, &crate::matches::hub::tests::snapshot(1000, None, Vec::new()));
+    let opened = post(&app, &format!("/w/{id}/room"), "", "");
+    assert!(opened.starts_with("HTTP/1.1 201"), "{opened}");
+    let (cookie, room) = (cookie_of(&opened), page_of(&opened));
+    let nudged = post(&app, &format!("{room}voice-nudge"), &cookie, r#"{"nudge":1.5}"#);
+    assert!(nudged.starts_with("HTTP/1.1 204"), "{nudged}");
+    assert!((m.voice.nudge() - 1.5).abs() < 1e-9);
+    assert!(post_voice(&app, &id, Some("k"), VOICE).ends_with("held until tick 7100"), "90 s and the nudge");
+    let joined = app.rooms.get(room.trim_matches('/').trim_start_matches("r/"), sessions).unwrap();
+    let told: Vec<_> = crate::matches::hub::subscribe(&joined.hub, false).try_iter().collect();
+    assert!(told.iter().any(|l| l.contains(r#""nudge":1.5"#)), "pages are told, those that join later too");
+    assert!(post(&app, &format!("{room}voice-nudge"), "", r#"{"nudge":3}"#).starts_with("HTTP/1.1 403"), "admins only");
+    assert!(post(&app, &format!("{room}voice-nudge"), &cookie, r#"{"nudge":99}"#).starts_with("HTTP/1.1 400"));
+    let (demo, _dir) = demo_app();
+    let (demo_room, owner) = open_room(&demo);
+    let none = post(&demo, &format!("{demo_room}voice-nudge"), &owner, r#"{"nudge":1}"#);
+    assert!(none.starts_with("HTTP/1.1 409"), "a demo has no voice coming in: {none}");
+}

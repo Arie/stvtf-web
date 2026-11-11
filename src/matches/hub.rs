@@ -42,6 +42,12 @@ pub(crate) struct Hub {
     pub(crate) played: u64,
     /// A room's latest lines of its own (playback, people), by type.
     room: BTreeMap<&'static str, Arc<str>>,
+    /// Whether the game is paused, as its stream last said.
+    paused: bool,
+    /// Counts the stream's new starts (a map change, a new server line): its ticks start over.
+    epoch: u64,
+    /// Who is in the latest snapshot, by `SteamID`, for voice from outside the match.
+    steamids: Vec<(String, PlayerId, Team)>,
 }
 
 /// A match at a glance, read from the latest server line and snapshot when the list asks.
@@ -88,6 +94,17 @@ impl Hub {
     }
 
     /// The latest snapshot's tick: where a room that played up to here is.
+    /// What held voice goes by: the stream's tick, whether the game is paused, and how many
+    /// times the stream started over.
+    pub(crate) fn voice_clock(&self) -> (Option<u32>, bool, u64) {
+        (self.tick, self.paused, self.epoch)
+    }
+
+    /// The player with `steamid` in the latest snapshot, and their team.
+    pub(crate) fn player_with(&self, steamid: &str) -> Option<(PlayerId, Team)> {
+        self.steamids.iter().find(|(s, ..)| s == steamid).map(|(_, id, team)| (*id, *team))
+    }
+
     pub(crate) fn tick(&self) -> Option<u32> {
         self.tick
     }
@@ -115,6 +132,9 @@ impl Hub {
             tick_interval: self.tick_interval,
             room: self.room.clone(),
             played: self.played,
+            paused: self.paused,
+            epoch: self.epoch,
+            steamids: self.steamids.clone(),
         }
     }
 
@@ -145,6 +165,8 @@ struct Client {
     detail: bool,
     /// Whether it asked for the players' voice.
     voice: bool,
+    /// Whether it takes what is only kept (a match's recorder).
+    kept: bool,
 }
 
 /// A player's name and team, as last seen in a snapshot.
@@ -169,8 +191,10 @@ enum Route {
     Feed,
     /// Only for pages that ask (`?detail=1`); never kept.
     Detail,
-    /// The players' voice: only for pages that ask (`?voice=1`), never kept.
+    /// The players' voice: only for pages that ask (`?voice=1`), never kept in the history.
     Voice,
+    /// Only for the recording: voice said while the game was paused.
+    Kept,
     /// Passed on and not kept.
     Live,
 }
@@ -254,7 +278,9 @@ fn route(line: &Line) -> Route {
         | Line::Explosion(_)
         | Line::SentryShot(_)
         | Line::Airblast(_)
-        | Line::Reflect(_) => Route::Live,
+        | Line::Reflect(_)
+        | Line::Pause(_) => Route::Live,
+        Line::Voice(v) if v.pause => Route::Kept,
         Line::Voice(_) => Route::Voice,
     }
 }
@@ -283,6 +309,8 @@ impl Hub {
     /// A status line: a map change forgets the old map's state and feed.
     fn on_status(&mut self, map_change: bool, json: &Arc<str>) {
         if map_change {
+            self.epoch += 1;
+            self.paused = false;
             self.snapshot = None;
             self.history.clear();
             self.names.clear();
@@ -301,6 +329,8 @@ impl Hub {
             self.changes += 1;
         }
         (self.server, self.snapshot, self.round_clock, self.tick) = (Some(json.clone()), None, None, None);
+        self.epoch += 1;
+        self.paused = false;
         self.tick_interval = Some(server.tick_interval).filter(|i| *i > 0.0);
     }
 
@@ -310,6 +340,8 @@ impl Hub {
         self.tick = Some(snapshot.tick);
         self.snapshot = Some(json.clone());
         self.snapshot_at = Some(Instant::now());
+        self.steamids.clear();
+        self.steamids.extend(snapshot.players.iter().map(|p| (p.steamid.clone(), p.id, p.team)));
         for p in &snapshot.players {
             // Every snapshot names everyone: reuse the string rather than allocate a new one.
             let seen = self.names.entry(p.id).or_insert_with(|| Seen { name: String::new(), team: p.team });
@@ -346,12 +378,13 @@ pub(crate) fn publish(hub: &SharedHub, line: &Line) {
         Line::Server(server) => h.on_server(server, &json),
         Line::World(_) => h.world = Some(json.clone()),
         Line::Snapshot(snapshot) => h.on_snapshot(snapshot, &json),
+        Line::Pause(p) => h.paused = p.paused,
         _ if route == Route::Feed => h.keep(line),
         _ => {}
     }
     // A browser that cannot keep up is dropped; it reconnects and resyncs from the latest state.
-    let (detail, voice) = (route == Route::Detail, route == Route::Voice);
-    h.clients.retain(|c| (detail && !c.detail) || (voice && !c.voice) || c.tx.try_send(json.clone()).is_ok());
+    let (detail, voice, kept) = (route == Route::Detail, route == Route::Voice, route == Route::Kept);
+    h.clients.retain(|c| (detail && !c.detail) || (voice && !c.voice) || (kept && !c.kept) || c.tx.try_send(json.clone()).is_ok());
 }
 
 /// Watches a `SourceTV` server into `hub` until `stop`, recording it as `demos` if given; a watch
@@ -374,18 +407,28 @@ pub(crate) fn watch_into(
     result
 }
 
+#[cfg(test)]
 pub(crate) fn subscribe(hub: &SharedHub, detail: bool) -> Receiver<Arc<str>> {
     subscribe_to(hub, detail, false)
 }
 
 /// A page's lines, with the detail lines and the players' voice if it asks for them.
 pub(crate) fn subscribe_to(hub: &SharedHub, detail: bool, voice: bool) -> Receiver<Arc<str>> {
+    join(hub, detail, voice, false)
+}
+
+/// Every line, those only kept too: what a match's recorder takes.
+pub(crate) fn subscribe_all(hub: &SharedHub) -> Receiver<Arc<str>> {
+    join(hub, true, true, true)
+}
+
+fn join(hub: &SharedHub, detail: bool, voice: bool, kept: bool) -> Receiver<Arc<str>> {
     let (tx, rx) = sync_channel(PAGE_QUEUE);
     let mut h = lock(hub);
     for line in join_lines(&h) {
         let _ = tx.try_send(line);
     }
-    h.clients.push(Client { tx, detail, voice });
+    h.clients.push(Client { tx, detail, voice, kept });
     rx
 }
 
@@ -434,7 +477,7 @@ pub(crate) mod tests {
     use stvtf::output::{self, PlayerId, Team};
 
     /// The types of the lines queued for a page.
-    fn types(rx: &Receiver<Arc<str>>) -> Vec<String> {
+    pub(crate) fn types(rx: &Receiver<Arc<str>>) -> Vec<String> {
         rx.try_iter().map(|l| serde_json::from_str::<Value>(&l).unwrap()["type"].as_str().unwrap().to_string()).collect()
     }
 
@@ -602,7 +645,16 @@ pub(crate) mod tests {
     fn voice_reaches_only_pages_that_asked_and_is_not_kept() {
         let hub = SharedHub::default();
         let (plain, detail, voice) = (subscribe(&hub, false), subscribe(&hub, true), subscribe_to(&hub, false, true));
-        let said = output::Voice { tick: 1, player: None, steamid: "[U:1:2]".into(), rate: 24000, frames: vec!["aA==".into()] };
+        let said = output::Voice {
+            tick: 1,
+            player: None,
+            steamid: "[U:1:2]".into(),
+            rate: 24000,
+            frames: vec!["aA==".into()],
+            injected: false,
+            pause: false,
+            team: None,
+        };
         publish(&hub, &Line::Voice(said));
         publish(&hub, &kill(2, 3, 4));
         assert_eq!(types(&plain), ["kill"]);

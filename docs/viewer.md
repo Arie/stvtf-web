@@ -57,6 +57,18 @@ on either mutes or unmutes them (a muted team's player is then let through). Pau
 another speed than 1×, voice is silent. It needs WebCodecs, so a secure page (https, or
 localhost); the overlay has none.
 
+Voice from outside the match (a team's Discord, through the voice bot): `POST /w/<id>/voice` with
+`Authorization: Bearer <STVTF_VOICE_KEY>` and `{"steamid": "[U:1:N]", "frames": ["<base64 Opus>",
+…], "delay": <seconds>}` (up to 32 frames of 20 ms; `delay` is how far the stream is behind the
+game where it was said, 90 unless said: each post its own, so a team's channel and others can
+feed one match). It is held until the stream reaches the tick it was said at (the tick now plus
+the delay in ticks), an utterance starting at its tick and running on by the clock, and then
+comes out as `voice` lines with `injected`, for a live match only. What is said while the game is
+paused is kept in the recording (`pause`), and played to no one. With `"delay": 0` it is
+commentary on the stream itself (casters watching it): straight out, paused or not. 401 without
+the key, 404 with no key set or no live match, 409 before the stream has a tick.
+
+
 ## Camera
 
 Keeps every living player in view, tightly: quick when one leaves the view, gentle for a fresh

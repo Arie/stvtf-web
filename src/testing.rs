@@ -112,6 +112,7 @@ pub(crate) fn app(matches: Matches) -> App {
         home: None,
         streams: Mutex::default(),
         rooms: rooms::registry::Rooms::default(),
+        voice_key: None,
     }
 }
 

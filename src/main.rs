@@ -79,6 +79,8 @@ struct App {
     /// Open event streams by client address.
     streams: Mutex<HashMap<IpAddr, usize>>,
     rooms: rooms::registry::Rooms,
+    /// The key the voice bot posts with (`STVTF_VOICE_KEY`); without it no voice is taken in.
+    voice_key: Option<String>,
 }
 
 /// Counts an event stream against its client's limit until dropped.
@@ -359,6 +361,7 @@ fn main() -> Result<()> {
         home: options.home.clone(),
         streams: Mutex::default(),
         rooms: rooms::registry::Rooms::new(store, relays).with_maps(options.cache.clone()),
+        voice_key: std::env::var("STVTF_VOICE_KEY").ok().filter(|k| !k.is_empty()),
     });
     app.rooms.sweep();
     if let Matches::Many(_) = app.matches {
