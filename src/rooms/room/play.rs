@@ -62,6 +62,32 @@ pub(crate) struct Control {
     pub(crate) seek: Option<u64>,
 }
 
+/// Where playback is as time passes, from where it was last set down: at `at` milliseconds into
+/// the match, at `speed`. Each wait measured by itself would lose what passes between waits (a
+/// long sleep, the lines sent in between), and a room would fall behind the match it plays.
+#[derive(Debug, Clone, Copy)]
+pub(super) struct Clock {
+    from: Instant,
+    at: u64,
+    speed: f64,
+}
+
+impl Clock {
+    pub(super) fn new(from: Instant, at: u64, speed: f64) -> Self {
+        Clock { from, at, speed }
+    }
+
+    /// When playback is at `t`.
+    pub(super) fn due(&self, t: u64) -> Instant {
+        self.from + wait(t.saturating_sub(self.at), self.speed)
+    }
+
+    /// Where playback is at `now`.
+    pub(super) fn at(&self, now: Instant) -> u64 {
+        self.at + (now.saturating_duration_since(self.from).as_secs_f64() * 1000.0 * self.speed).round() as u64
+    }
+}
+
 /// Real time to wait out `gap` milliseconds of play at `speed`.
 pub(super) fn wait(gap: u64, speed: f64) -> Duration {
     Duration::from_secs_f64(gap as f64 / 1000.0 / speed)
@@ -116,6 +142,9 @@ impl Room {
         let mut st = lock(&self.state);
         self.announce(&st);
         let mut announced = Instant::now();
+        // The clock playing goes by, while it plays on undisturbed: a seek, a pause, the end of
+        // what is recorded or another speed sets it down anew.
+        let mut clock: Option<Clock> = None;
         loop {
             if st.stop {
                 return;
@@ -130,19 +159,22 @@ impl Room {
             }
             if let Some(target) = st.seek.take() {
                 self.seek_to(&mut st, &mut cur, target);
+                clock = None;
                 continue;
             }
             cur.refill(rec);
             let Some(&(t, _)) = cur.lines.front() else {
                 st = self.at_end(st);
+                clock = None;
                 continue;
             };
             if st.paused || (self.viewers.load(Ordering::Relaxed) == 0 && self.relay_clients() == 0) {
                 st = self.sleep(st, IDLE_POLL);
+                clock = None;
                 continue;
             }
             if t > st.at {
-                st = self.wait_until(st, t, &mut announced);
+                st = self.wait_until(st, t, &mut announced, &mut clock);
                 continue;
             }
             let (_, line) = cur.lines.pop_front().expect("a front line");
@@ -196,13 +228,23 @@ impl Room {
         self.sleep(st, IDLE_POLL)
     }
 
-    /// Waits toward the next line, at `t`, for at most [`ANNOUNCE_EVERY`]; whatever was waited
-    /// counts at the speed it was waited at.
-    fn wait_until<'a>(&self, st: MutexGuard<'a, State>, t: u64, announced: &mut Instant) -> MutexGuard<'a, State> {
-        let (speed, started, gap) = (st.speed, Instant::now(), t - st.at);
-        let mut st = self.sleep(st, wait(gap, speed).min(ANNOUNCE_EVERY));
-        let played = (started.elapsed().as_secs_f64() * 1000.0 * speed) as u64;
-        st.at = (st.at + played).min(t);
+    /// Waits toward the next line, at `t`, for at most [`ANNOUNCE_EVERY`], by `clock` (set down
+    /// here when there is none, or the speed changed): playback is then where the clock says.
+    fn wait_until<'a>(
+        &self,
+        st: MutexGuard<'a, State>,
+        t: u64,
+        announced: &mut Instant,
+        clock: &mut Option<Clock>,
+    ) -> MutexGuard<'a, State> {
+        let now = Instant::now();
+        let by = *clock.insert(match *clock {
+            Some(c) if (c.speed - st.speed).abs() < f64::EPSILON => c,
+            _ => Clock::new(now, st.at, st.speed),
+        });
+        let mut st = self.sleep(st, by.due(t).saturating_duration_since(now).min(ANNOUNCE_EVERY));
+        // Woken to something else (a seek, a pause): the loop sees to it, and sets the clock anew.
+        st.at = by.at(Instant::now()).clamp(st.at, t);
         if announced.elapsed() >= ANNOUNCE_EVERY {
             self.announce_now(&st, announced);
         }

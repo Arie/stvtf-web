@@ -381,3 +381,23 @@ fn a_room_gives_its_relay_the_injected_voice_it_plays_and_no_other() {
     assert!(relay::relay_voice(&said(false, false)).is_none(), "the demo's own voice is in the demo");
     assert!(relay::relay_voice(&said(true, true)).is_none(), "pause talk is not played");
 }
+
+#[test]
+fn the_play_clock_counts_all_the_time_that_passes_not_only_the_waits() {
+    use super::play::Clock;
+    let t0 = Instant::now();
+    let ms = Duration::from_millis;
+    // Set down at 5 s into the match, at 1x: a thousand lines 15 ms apart, each wait a little
+    // long and a little work between them, as it goes.
+    let clock = Clock::new(t0, 5000, 1.0);
+    let mut now = t0;
+    for i in 1..=1000u64 {
+        assert_eq!(clock.due(5000 + i * 15), t0 + ms(i * 15), "when a line is due does not move with the waits before it");
+        now = clock.due(5000 + i * 15) + Duration::from_micros(700);
+    }
+    assert!(now > t0 + ms(15_000));
+    assert_eq!(clock.at(t0 + ms(15_000)), 5000 + 15_000, "15 s on, to the millisecond");
+    // At 2x, twice the match in the same time.
+    let fast = Clock::new(t0, 0, 2.0);
+    assert_eq!((fast.at(t0 + ms(500)), fast.due(1000)), (1000, t0 + ms(500)));
+}
