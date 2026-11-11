@@ -61,9 +61,13 @@ struct Ask {
 
 /// A server's name or address, out on the internet: nothing of a link, a path or a port, and
 /// not this machine or a network of its own (the bot looks again at what a name leads to).
-fn is_host(host: &str) -> bool {
+/// `anywhere`, on that network too: for a stv.tf and its bot run at a LAN.
+fn is_host(host: &str, anywhere: bool) -> bool {
     if host.is_empty() || host.len() > 253 || !host.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'.' || b == b'-') {
         return false;
+    }
+    if anywhere {
+        return true;
     }
     if let Ok(ip) = host.parse::<std::net::Ipv4Addr>() {
         let [a, b, ..] = ip.octets();
@@ -101,7 +105,13 @@ pub(super) fn ask(
     let fits = |t: &str| t.chars().count() <= MAX_TEXT && !t.chars().any(char::is_control);
     let before = lock(&m.mumble).as_ref().filter(|j| j.host == ask.host && j.port == port).map(|j| j.password.clone());
     let password = ask.password.or(before).unwrap_or_default();
-    if !is_host(&ask.host) || port == 0 || channel.is_empty() || !fits(channel) || !fits(&password) || !(0.0..=MAX_DELAY).contains(&delay) {
+    if !is_host(&ask.host, app.mumble_anywhere)
+        || port == 0
+        || channel.is_empty()
+        || !fits(channel)
+        || !fits(&password)
+        || !(0.0..=MAX_DELAY).contains(&delay)
+    {
         return respond(s, "400 Bad Request", TEXT, b"Invalid server, channel or delay");
     }
     let mut wanted = lock(&m.mumble);

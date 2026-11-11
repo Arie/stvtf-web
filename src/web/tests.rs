@@ -1340,6 +1340,19 @@ fn a_mumble_server_is_somewhere_out_on_the_internet() {
 }
 
 #[test]
+fn at_a_lan_a_mumble_server_may_be_on_the_network_there() {
+    let (mut app, id) = voice_app();
+    app.mumble_anywhere = true;
+    let page = format!("/w/{id}/");
+    for near in [r#"{"host":"192.168.1.20","channel":"a"}"#, r#"{"host":"mumble.lan","channel":"a"}"#, r#"{"host":"mumble","channel":"a"}"#]
+    {
+        assert!(post(&app, &format!("{page}voice-mumble"), "", near).starts_with("HTTP/1.1 204"), "{near}");
+    }
+    // Still a server's name or address, and nothing else.
+    assert!(post(&app, &format!("{page}voice-mumble"), "", r#"{"host":"a/b","channel":"a"}"#).starts_with("HTTP/1.1 400"));
+}
+
+#[test]
 fn two_teams_channels_in_one_match_each_keep_their_own_people_and_how_it_goes() {
     let (app, id) = voice_app();
     let page = format!("/w/{id}/");

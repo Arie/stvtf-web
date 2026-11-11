@@ -87,6 +87,8 @@ struct App {
     voice_bot: Option<String>,
     /// The bell the voice bot waits on for Mumble channels asked for.
     mumble_changes: web::voice_mumble::Changes,
+    /// Whether a Mumble server may be on this machine or its network (`STVTF_MUMBLE_ANYWHERE=1`): at a LAN.
+    mumble_anywhere: bool,
     /// Whom people in voice channels were said to be, from one match to the next.
     voice_who: web::voice_known::WhoHistory,
 }
@@ -379,6 +381,7 @@ fn main() -> Result<()> {
         voice_links: web::voice_link::Links::from_env(options.sessions.as_deref()),
         voice_bot: std::env::var("STVTF_VOICE_BOT").ok().filter(|u| !u.is_empty()),
         mumble_changes: web::voice_mumble::Changes::default(),
+        mumble_anywhere: std::env::var("STVTF_MUMBLE_ANYWHERE").is_ok_and(|v| v == "1"),
         voice_who: web::voice_known::WhoHistory::new(
             options.sessions.as_deref(),
             voice_home.as_deref().zip(voice_key.as_deref()),
