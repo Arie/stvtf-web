@@ -201,14 +201,16 @@ impl VoiceFeed {
         let (out, pause_talk, at) = {
             let mut st = lock(&self.0);
             let interval = lock(hub).tick_interval();
-            // SourceTV says a pause only as late as the rest: its tick standing still is one too.
-            let still = match st.seen {
-                Some((t, since)) if Some(t) == tick => now.saturating_duration_since(since) > STILL,
+            // SourceTV says a pause only as late as the rest, or not at all: its tick standing
+            // still is one too, from when it last moved.
+            let (still, since) = match st.seen {
+                Some((t, since)) if Some(t) == tick => (now.saturating_duration_since(since) > STILL, since),
                 _ => {
                     st.seen = tick.map(|t| (t, now));
-                    false
+                    (false, now)
                 }
             };
+            let since = if still && !paused { since } else { now };
             let paused = paused || still;
             let (was_paused, new_start) = (st.paused, st.epoch != epoch);
             (st.epoch, st.paused) = (epoch, paused);
@@ -220,7 +222,7 @@ impl VoiceFeed {
             if new_start {
                 hold.reset();
             }
-            hold.on_pause(paused, now);
+            hold.on_pause(paused, now, since);
             let talk = if was_paused && !paused { hold.pause_talk() } else { Vec::new() };
             (hold.due(tick, now), talk, at)
         };

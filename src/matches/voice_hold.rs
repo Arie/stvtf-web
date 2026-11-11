@@ -17,6 +17,9 @@ pub(crate) const FRAME: Duration = Duration::from_millis(20);
 pub(crate) const GAP: Duration = Duration::from_millis(200);
 /// The most a frame goes out before its own due tick.
 const AHEAD: Duration = Duration::from_millis(500);
+/// Frames that came this soon after the tick last moved were still said in the running game: the
+/// stream's ticks come some apart.
+const NOTICED: Duration = Duration::from_millis(100);
 /// The most frames held of one speaker (a minute): past it the oldest go.
 pub(crate) const MAX_HELD: usize = 3000;
 /// The most speakers held at once, and the most frames of pause talk kept.
@@ -50,6 +53,8 @@ struct Frame {
     opus: String,
     /// The first of an utterance: it waits for its tick, those after it for the clock.
     starts: bool,
+    /// When it came in.
+    came: Instant,
 }
 
 #[derive(Default)]
@@ -104,7 +109,7 @@ impl VoiceHold {
         let mut starts = s.heard.is_none_or(|h| now.duration_since(h) > GAP);
         s.heard = Some(now);
         for opus in said.frames {
-            s.frames.push_back(Frame { due, opus, starts });
+            s.frames.push_back(Frame { due, opus, starts, came: now });
             starts = false;
         }
         while s.frames.len() > MAX_HELD {
@@ -150,10 +155,21 @@ impl VoiceHold {
         out
     }
 
-    /// The game paused, or went on: utterances stop where they are, and go on from there.
-    pub(crate) fn on_pause(&mut self, paused: bool, now: Instant) {
+    /// The game paused, or went on: utterances stop where they are, and go on from there. A
+    /// pause may be noticed late (a stream that says none shows it only by its tick standing
+    /// still): the game stood still from `since`, and what was said after that is pause talk.
+    pub(crate) fn on_pause(&mut self, paused: bool, now: Instant, since: Instant) {
         match (paused, self.paused) {
-            (true, None) => self.paused = Some(now),
+            (true, None) => {
+                self.paused = Some(now);
+                for (who, s) in &mut self.speakers {
+                    let kept = s.frames.iter().take_while(|f| f.came <= since + NOTICED).count();
+                    let frames: Vec<String> = s.frames.drain(kept..).map(|f| f.opus).collect();
+                    if !frames.is_empty() {
+                        self.pause_talk.push(Said { who: who.clone(), frames });
+                    }
+                }
+            }
             (false, Some(since)) => {
                 self.paused = None;
                 let stood = now.duration_since(since);
@@ -197,6 +213,29 @@ mod tests {
 
     fn count(out: &[Said]) -> usize {
         out.iter().map(|s| s.frames.len()).sum()
+    }
+
+    #[test]
+    fn a_pause_noticed_late_takes_back_what_was_said_since_the_game_stood_still() {
+        // A stream that says no pause: it shows only as its tick not moving, noticed after a while.
+        let t0 = Instant::now();
+        let ms = Duration::from_millis;
+        let mut h = hold(t0);
+        h.said(said("a", 0..5), 90.0, t0);
+        // The tick stood still from 100 ms on; these came after that, before anyone knew.
+        h.said(said("a", 5..10), 90.0, t0 + ms(300));
+        h.said(said("a", 10..15), 90.0, t0 + ms(600));
+        h.on_pause(true, t0 + ms(800), t0 + ms(100));
+        assert_eq!(h.held(), 5, "only what was said while the game ran");
+        assert_eq!(h.pause_talk(), [said("a", 5..15)], "the rest is pause talk, in order");
+        // What is said once the game goes on starts at its own tick: nothing is in its way.
+        h.on_pause(false, t0 + 10 * SEC, t0 + 10 * SEC);
+        h.said(said("a", 20..21), 90.0, t0 + 10 * SEC);
+        // The first goes at its tick, the rest by the clock; the new one right behind, not late.
+        let mut out = h.due(Some(7001), t0 + 100 * SEC);
+        out.extend(h.due(Some(7001), t0 + 100 * SEC + ms(80)));
+        let frames: Vec<String> = out.into_iter().flat_map(|s| s.frames).collect();
+        assert_eq!(frames, (0..5).chain(20..21).map(|i| i.to_string()).collect::<Vec<_>>());
     }
 
     #[test]
@@ -273,9 +312,9 @@ mod tests {
         let start = t0 + 90 * SEC;
         h.due(Some(7067), start);
         assert_eq!(count(&h.due(Some(7067), start + FRAME * 9)), 9);
-        h.on_pause(true, start + FRAME * 9);
+        h.on_pause(true, start + FRAME * 9, start + FRAME * 9);
         assert_eq!(h.due(Some(7067), start + 30 * SEC).len(), 0, "nothing while paused");
-        h.on_pause(false, start + 30 * SEC);
+        h.on_pause(false, start + 30 * SEC, start + 30 * SEC);
         assert_eq!(count(&h.due(Some(7067), start + 30 * SEC + FRAME * 10)), 10, "on from where it stopped");
     }
 
@@ -283,9 +322,9 @@ mod tests {
     fn what_is_said_in_a_pause_is_pause_talk_not_held() {
         let t0 = Instant::now();
         let mut h = hold(t0);
-        h.on_pause(true, t0);
+        h.on_pause(true, t0, t0);
         assert_eq!(h.said(said("a", 0..3), 90.0, t0), Took::PauseTalk);
-        h.on_pause(false, t0 + SEC);
+        h.on_pause(false, t0 + SEC, t0 + SEC);
         assert_eq!(h.due(Some(9000), t0 + 200 * SEC).len(), 0, "never played");
         assert_eq!(h.pause_talk(), [said("a", 0..3)]);
         assert_eq!(h.pause_talk().len(), 0, "taken once");
