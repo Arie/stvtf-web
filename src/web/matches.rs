@@ -34,7 +34,7 @@ pub(super) fn serve_match(
         return Ok(respond(&mut s, "200 OK", JSON, serde_json::json!(comms_demos(app, sessions, id)).to_string().as_bytes())?);
     }
     if let Some(file) = rest.strip_prefix("demos/") {
-        return Ok(comms_demo(&mut s, sessions, id, file)?);
+        return Ok(comms_demo(&mut s, sessions, request, id, file)?);
     }
     let session = sessions.get(id);
     // Looked for only when a page of a match that is gone is asked for: it reads the store.
@@ -272,8 +272,10 @@ pub(super) fn comms_demos(app: &App, sessions: &Sessions, id: &str) -> Vec<serde
         .collect()
 }
 
-/// `GET /w/<id>/demos/<file>.dem`: that demo as TF2 plays it, the comms written into it.
-fn comms_demo(s: &mut TcpStream, sessions: &Sessions, id: &str, file: &str) -> std::io::Result<()> {
+/// `GET /w/<id>/demos/<file>.dem`: that demo as TF2 plays it, the comms written into it. Asked
+/// with `?built=<mark>`, the answer sets that mark as a cookie: the page that waits for it then
+/// knows the demo is built and on its way.
+fn comms_demo(s: &mut TcpStream, sessions: &Sessions, request: &Request, id: &str, file: &str) -> std::io::Result<()> {
     // One at a time: a demo is built in memory.
     static BUILDING: std::sync::Mutex<()> = std::sync::Mutex::new(());
     let built = sessions.store.as_ref().filter(|_| sessions::is_id(id)).zip(file.strip_suffix(".dem")).and_then(|(store, file)| {
@@ -282,5 +284,11 @@ fn comms_demo(s: &mut TcpStream, sessions: &Sessions, id: &str, file: &str) -> s
     });
     let Some((name, demo)) = built else { return respond(s, "404 Not Found", TEXT, b"No such demo.") };
     let attachment = format!(r#"attachment; filename="{name}""#);
-    respond_with(s, "200 OK", &[("Content-Type", "application/octet-stream"), ("Content-Disposition", &attachment)], &demo)
+    let mut headers = vec![("Content-Type", "application/octet-stream"), ("Content-Disposition", attachment.as_str())];
+    let mark = param(&request.query, "built").filter(|m| m.len() <= 16 && m.bytes().all(|b| b.is_ascii_alphanumeric()));
+    let cookie = mark.map(|m| format!("built={m}; Path=/; Max-Age=60; SameSite=Lax"));
+    if let Some(cookie) = &cookie {
+        headers.push(("Set-Cookie", cookie));
+    }
+    respond_with(s, "200 OK", &headers, &demo)
 }
