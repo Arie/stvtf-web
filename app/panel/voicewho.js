@@ -43,7 +43,7 @@ function choices(v) {
 
 /** @param {Person} v */
 function picker(v) {
-  const select = el("select", { title: `Who ${v.name} is in the match` });
+  const select = el("select", {});
   select.dataset.who = v.discord;
   const now = playerOf(v);
   const nobody = el("option", { value: "none" }, "Not a player");
@@ -56,7 +56,7 @@ function picker(v) {
   }
   // Put on someone who is not in the match (yet): by their Steam ID.
   if (v.steamid && !now) select.append(el("option", { value: "kept", selected: true }, v.steamid));
-  select.append(el("option", { value: "steamid" }, "A Steam ID…"));
+  select.append(el("option", { value: "steamid" }, "Steam ID…"));
   return select;
 }
 
@@ -72,7 +72,7 @@ function row(v) {
     const input = el("input", {
       type: "text",
       value: typedId,
-      placeholder: "STEAM_0:1:… or a profile link",
+      placeholder: "Steam ID or profile link",
       spellcheck: false,
     });
     input.dataset.steamid = v.discord;
@@ -84,23 +84,16 @@ function row(v) {
   // Set by someone or by their own link; a guess from the name; or not set.
   if (set) select.classList.add(v.confirmed || linked ? "set" : "maybe");
   const r = el("div", { className: "vrow vwho" }, name, select);
-  if (linked) r.title = "Linked their Steam account through Discord";
-  if (set && !v.confirmed && !linked) r.append(act("✓", `who-ok:${v.discord}`, "Yes, that is them"));
+  if (linked) r.title = "Linked via Discord";
+  if (set && !v.confirmed && !linked) r.append(act("✓", `who-ok:${v.discord}`, "Confirm"));
   return r;
 }
 
 export function whoRows() {
-  if (!people.length) return [el("div", { className: "vhint" }, "Nobody is in the channel yet.")];
+  if (!people.length) return [el("div", { className: "vhint" }, "Nobody there")];
   const set = people.filter(v => playerOf(v) || v.steamid || v.confirmed).length;
-  const parts = [heading("Who is who", `${set} of ${people.length} set`), ...people.map(row)];
+  const parts = [heading("Who is who", `${set}/${people.length}`), ...people.map(row)];
   if (refused) parts.push(el("div", { className: "vhint vbad" }, refused));
-  parts.push(
-    el(
-      "div",
-      { className: "vhint" },
-      "Set anyone before they speak: a player of the match, or a Steam ID in any form.",
-    ),
-  );
   return parts;
 }
 
@@ -130,7 +123,7 @@ function put(discord, whom, show) {
       if (r.ok) typing = "";
       else return r.text().then(why => (refused = why));
     })
-    .catch(() => (refused = "stv.tf did not answer."))
+    .catch(() => (refused = "No answer"))
     .finally(() => askWho(show))
     .finally(show);
 }

@@ -1211,7 +1211,7 @@ fn a_mumble_channel_is_asked_for_on_the_page_and_the_bot_hears_of_it() {
     assert!(
         shown.contains(r#""host":"mumble.example""#)
             && shown.contains(r#""channel":"Team A""#)
-            && shown.contains(r#""status":"on its way""#),
+            && shown.contains(r#""status":"connecting""#),
         "{shown}"
     );
     assert!(!shown.contains("pw"), "{shown}");

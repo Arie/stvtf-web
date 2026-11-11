@@ -201,34 +201,29 @@ pub(super) fn voice_match(
     who: &Who,
 ) -> std::io::Result<()> {
     let Some(m) = m.filter(|m| m.is_live() && app.voice_key.is_some()) else {
-        return respond(s, "409 Conflict", TEXT, b"No voice comes into this match.");
+        return respond(s, "409 Conflict", TEXT, b"No voice here");
     };
     if !has_say(app, m, who) {
-        return respond(s, "403 Forbidden", TEXT, b"Only whoever started the match, and streamers, say who is who.");
+        return respond(s, "403 Forbidden", TEXT, b"Not allowed");
     }
     let Ok(v) = json_body::<Match>(reader, request) else {
-        return respond(s, "400 Bad Request", TEXT, b"someone, and a player or a Steam ID");
+        return respond(s, "400 Bad Request", TEXT, b"Invalid");
     };
     let steamid = match (v.player, v.steamid.as_deref()) {
         (Some(p), _) => match lock(&m.hub).steamid_of(stvtf::output::PlayerId(p)).map(str::to_owned) {
             Some(steamid) => Some(steamid),
-            None => return respond(s, "400 Bad Request", TEXT, b"no such player"),
+            None => return respond(s, "400 Bad Request", TEXT, b"No such player"),
         },
         (None, Some(text)) => match steamid_of(text) {
             Some(steamid) => Some(steamid),
             None => {
-                return respond(
-                    s,
-                    "400 Bad Request",
-                    TEXT,
-                    b"That is no Steam ID: [U:1:N], STEAM_0:1:N, the 17 digits, or a profile link with them.",
-                );
+                return respond(s, "400 Bad Request", TEXT, b"Invalid Steam ID");
             }
         },
         (None, None) => None,
     };
     if !m.voice.set_match(&v.discord, steamid.clone()) {
-        return respond(s, "400 Bad Request", TEXT, b"nobody of that name is there");
+        return respond(s, "400 Bad Request", TEXT, b"Not found");
     }
     app.voice_who.remember(&v.discord, steamid.as_deref());
     respond(s, "204 No Content", TEXT, b"")

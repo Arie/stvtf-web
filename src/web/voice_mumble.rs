@@ -74,12 +74,12 @@ pub(super) fn ask(
     who: &Who,
 ) -> std::io::Result<()> {
     let Some(m) = m.filter(|m| m.is_live() && app.voice_key.is_some()) else {
-        return respond(s, "404 Not Found", TEXT, b"No voice comes into this match.");
+        return respond(s, "404 Not Found", TEXT, b"No voice here");
     };
     if !has_say(app, m, who) {
-        return respond(s, "403 Forbidden", TEXT, b"Only whoever started the match, and streamers, bring a Mumble channel in.");
+        return respond(s, "403 Forbidden", TEXT, b"Not allowed");
     }
-    let Ok(ask) = json_body::<Ask>(reader, request) else { return respond(s, "400 Bad Request", TEXT, b"a server and a channel") };
+    let Ok(ask) = json_body::<Ask>(reader, request) else { return respond(s, "400 Bad Request", TEXT, b"Invalid") };
     if ask.leave {
         *lock(&m.mumble) = None;
         app.mumble_changes.changed();
@@ -91,9 +91,9 @@ pub(super) fn ask(
     let before = lock(&m.mumble).as_ref().filter(|j| j.host == ask.host && j.port == port).map(|j| j.password.clone());
     let password = ask.password.or(before).unwrap_or_default();
     if !is_host(&ask.host) || port == 0 || channel.is_empty() || !fits(channel) || !fits(&password) || !(0.0..=MAX_DELAY).contains(&delay) {
-        return respond(s, "400 Bad Request", TEXT, b"a server's name, its port, a channel, and a delay of 0 to 300 s");
+        return respond(s, "400 Bad Request", TEXT, b"Invalid server, channel or delay");
     }
-    let job = MumbleJob { host: ask.host, port, password, channel: channel.to_string(), delay, status: "on its way".into() };
+    let job = MumbleJob { host: ask.host, port, password, channel: channel.to_string(), delay, status: "connecting".into() };
     *lock(&m.mumble) = Some(job);
     app.mumble_changes.changed();
     respond(s, "204 No Content", TEXT, b"")

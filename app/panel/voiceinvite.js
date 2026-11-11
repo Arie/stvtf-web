@@ -68,7 +68,7 @@ const failed = status => /^(Could not join|Left)/.test(status);
 function statusLine(status, more = "", where = "") {
   let dot = "good";
   if (failed(status)) dot = "bad";
-  else if (!/^In /.test(status)) dot = "wait";
+  else if (status === "connecting" || status.startsWith("Waiting")) dot = "wait";
   const text = el("span", { className: "vstatustext" }, where ? `${where}: ${status}` : status);
   if (more) text.append(el("span", { className: "vhint" }, more));
   const line = el("div", { className: "vstatus" }, el("span", { className: `vdot ${dot}` }), text);
@@ -79,14 +79,8 @@ function statusLine(status, more = "", where = "") {
 function delayRow() {
   const secs = el("input", { type: "number", min: "0", max: String(MAX_DELAY), value: String(delay) });
   secs.dataset.invite = "delay";
-  const row = el(
-    "label",
-    { className: "vrow vinvite" },
-    "Delay",
-    secs,
-    el("span", { className: "vhint" }, "s (tv_delay)"),
-  );
-  row.title = "How far the match's SourceTV is behind the game. 0 for casters talking over the stream";
+  const row = el("label", { className: "vrow vinvite" }, "tv_delay", secs, el("span", { className: "vhint" }, "s"));
+  row.title = "0 for casters";
   return row;
 }
 
@@ -112,81 +106,58 @@ function choice() {
   const mumble = act("Mumble", "go:mumble");
   discord.className = "vcopy";
   mumble.className = "vcopy vmumble";
-  return [
-    top("", "Comms for this match"),
-    el("div", { className: "vhint" }, "Where does the team talk?"),
-    el("div", { className: "vrow vinvite" }, discord, mumble),
-    el(
-      "div",
-      { className: "vhint" },
-      "One per match. The bot joins, shows it is recording, and what is said is heard here in step with the match.",
-    ),
-  ];
+  return [top("", "Comms")];
 }
 
 function discordSetup() {
   if (!given) return [];
-  const copy = act(copied ? "✓ Now paste it in Discord" : "Copy Discord command", "copy");
+  const copy = act(copied ? "✓ Copied" : "Copy command", "copy");
   copy.className = "vcopy";
   /** @type {HTMLElement[]} */
   const parts = [
     top("home", "Discord"),
     el("div", { className: "vrow vinvite" }, copy),
-    el(
-      "div",
-      { className: "vhint" },
-      "Paste it in your Discord while you are in the voice channel, or pass it to the team.",
-    ),
+    el("div", { className: "vhint" }, "Paste in Discord, from a voice channel"),
     delayRow(),
   ];
   if (given.bot)
-    parts.push(
-      el(
-        "a",
-        { href: given.bot, target: "_blank", rel: "noopener", className: "vrow vinvite" },
-        "Bot not in that Discord yet? Add it ↗",
-      ),
-    );
-  parts.push(statusLine("Waiting for the bot to be brought in…"));
+    parts.push(el("a", { href: given.bot, target: "_blank", rel: "noopener", className: "vrow vinvite" }, "Add bot ↗"));
+  parts.push(statusLine("Waiting for bot…"));
   return parts;
 }
 
 /** @param {boolean} moving The bot is somewhere already: this moves it. */
 function mumbleSetup(moving) {
   /** @type {HTMLElement[]} */
-  const parts = [top("home", moving ? "Reconnect the bot" : "Mumble")];
+  const parts = [top("home", "Mumble")];
   const was = comms.mumble;
   if (refused) parts.push(statusLine(refused));
   else if (!moving && was && failed(was.status)) parts.push(statusLine(was.status));
-  const join = act(moving ? "Reconnect" : "Bring the bot in", "join");
+  const join = act(moving ? "Reconnect" : "Connect", "join");
   join.className = "vcopy vmumble";
   parts.push(
-    field("server", "Server", "mumble.example.com"),
-    field("password", "Password", moving ? "as before" : "if it has one", "password"),
-    field("channel", "Channel", "its name"),
+    field("server", "Server", "host:port"),
+    field("password", "Password", moving ? "unchanged" : "optional", "password"),
+    field("channel", "Channel", ""),
     delayRow(),
     el("div", { className: "vrow vinvite" }, join),
   );
-  if (moving) parts.push(el("div", { className: "vrow vinvite" }, act("Disconnect from this match", "leave")));
+  if (moving) parts.push(el("div", { className: "vrow vinvite" }, act("Disconnect", "leave")));
   return parts;
 }
 
 // The bot is in a channel: how it goes there, and who is who.
 function connected() {
-  const parts = [top("", "Comms for this match")];
+  const parts = [top("", "Comms")];
   if (comms.mumble) {
     const m = comms.mumble;
-    const line = statusLine(m.status, `${m.delay} s behind`, "Mumble");
-    line.append(act("Reconnect the bot", "go:reconnect"));
+    const line = statusLine(m.status, `tv_delay ${m.delay} s`, "Mumble");
+    line.append(act("Reconnect", "go:reconnect"));
     parts.push(line);
   } else if (comms.discord) {
     parts.push(
       statusLine(comms.discord.status, "", "Discord"),
-      el(
-        "div",
-        { className: "vhint" },
-        "To change the delay or send the bot away: /stv delay and /stv leave in Discord.",
-      ),
+      el("div", { className: "vhint" }, "/stv delay · /stv leave"),
     );
   }
   return [...parts, ...whoRows()];
@@ -206,7 +177,7 @@ function view() {
 // In the speakers list: the way in.
 function entry() {
   if (!given || screen) return [];
-  const b = act("🎙 Comms", "go:home", "Bring a team's Discord or Mumble into this match, and say who is who");
+  const b = act("🎙 Comms", "go:home", "Discord or Mumble");
   b.className = "vcopy";
   return [el("div", { className: "vrow vinvite" }, b)];
 }
@@ -260,8 +231,8 @@ function copyCommand() {
 function joinMumble() {
   const server = serverOf(typed.server);
   refused = "";
-  if (!server) refused = "That is no server: its name, and its port if it is not Mumble's own.";
-  else if (!typed.channel.trim()) refused = "Which channel?";
+  if (!server) refused = "Invalid server";
+  else if (!typed.channel.trim()) refused = "Channel?";
   if (!server || refused) return void show();
   const refuse = (/** @type {string} */ why) => {
     refused = why;
@@ -271,13 +242,13 @@ function joinMumble() {
   const password = typed.password || (screen === "reconnect" ? undefined : "");
   ask({ ...server, password, channel: typed.channel.trim(), delay }).then(
     r => {
-      if (!r.ok) return void r.text().then(why => refuse(why || "stv.tf would not have it."));
-      comms = { discord: null, mumble: { ...server, channel: typed.channel.trim(), delay, status: "on its way" } };
+      if (!r.ok) return void r.text().then(why => refuse(why || "Refused"));
+      comms = { discord: null, mumble: { ...server, channel: typed.channel.trim(), delay, status: "connecting" } };
       screen = "home";
       show();
       look();
     },
-    () => refuse("stv.tf did not answer."),
+    () => refuse("No answer"),
   );
 }
 

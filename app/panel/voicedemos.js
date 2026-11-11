@@ -16,7 +16,7 @@ function rows() {
   if (!demos.length) return [];
   const head = document.createElement("div");
   head.className = "vteam t-none";
-  head.title = "Each with the comms in it as the players' voice: put it in TF2's tf folder and play it with playdemo";
+  head.title = "For playdemo";
   head.append(Object.assign(document.createElement("span"), { className: "vtname", textContent: "Demos with comms" }));
   return [
     head,

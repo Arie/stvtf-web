@@ -253,8 +253,8 @@ fn gone_with_demos(kept: &[serde_json::Value]) -> String {
     format!(
         "<!doctype html><meta charset=utf-8><meta name=viewport content=\"width=device-width\"><title>stv.tf</title>\
          <body style=\"font:16px system-ui;background:#16171a;color:#ddd;max-width:32em;margin:3em auto;padding:0 1em\">\
-         <p>That match is no longer being watched.</p><p>Its demos, with the team's comms in them as the players' voice:</p>\
-         <ul>{links}</ul><p style=\"color:#888\">Put one in TF2's <code>tf</code> folder and play it with <code>playdemo</code>.</p>"
+         <p>Match ended. Demos with comms:</p>\
+         <ul>{links}</ul>"
     )
 }
 
