@@ -16,7 +16,9 @@ use anyhow::{Result, anyhow};
 use std::fmt::Write as _;
 use std::io::{BufReader, Take};
 use std::net::{IpAddr, TcpStream};
-use std::sync::Arc;
+use std::path::Path;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 /// A match's page and event stream: `path` is what follows `/w/`.
 pub(super) fn serve_match(
@@ -272,17 +274,48 @@ pub(super) fn comms_demos(app: &App, sessions: &Sessions, id: &str) -> Vec<serde
         .collect()
 }
 
+/// How long a demo built stays at hand for the next to ask for it.
+const BUILT_FOR: Duration = Duration::from_secs(60);
+
+/// The demo last built, and when: whoever asks for it again meanwhile gets the same.
+type Built = Option<(String, Instant, Arc<(String, Vec<u8>)>)>;
+static BUILT: Mutex<Built> = Mutex::new(None);
+
+/// The demo `file` of match `id` with its comms written in: built once for all who ask at a
+/// time or soon after. One at a time: a demo is built in memory.
+pub(super) fn built(dir: &Path, id: &str, file: &str) -> Option<Arc<(String, Vec<u8>)>> {
+    let key = format!("{id}/{file}");
+    let mut last = lock(&BUILT);
+    if let Some((_, _, demo)) = last.as_ref().filter(|(k, at, _)| *k == key && at.elapsed() < BUILT_FOR) {
+        return Some(demo.clone());
+    }
+    *last = None;
+    let demo = Arc::new(crate::matches::live_demos::build(dir, id, file).ok()?);
+    let at = Instant::now();
+    *last = Some((key, at, demo.clone()));
+    // Not kept in memory once nobody asks any more.
+    std::thread::spawn(move || {
+        std::thread::sleep(BUILT_FOR);
+        let mut last = lock(&BUILT);
+        if last.as_ref().is_some_and(|(_, built, _)| *built == at) {
+            *last = None;
+        }
+    });
+    Some(demo)
+}
+
 /// `GET /w/<id>/demos/<file>.dem`: that demo as TF2 plays it, the comms written into it. Asked
 /// with `?built=<mark>`, the answer sets that mark as a cookie: the page that waits for it then
 /// knows the demo is built and on its way.
 fn comms_demo(s: &mut TcpStream, sessions: &Sessions, request: &Request, id: &str, file: &str) -> std::io::Result<()> {
-    // One at a time: a demo is built in memory.
-    static BUILDING: std::sync::Mutex<()> = std::sync::Mutex::new(());
-    let built = sessions.store.as_ref().filter(|_| sessions::is_id(id)).zip(file.strip_suffix(".dem")).and_then(|(store, file)| {
-        let _one = lock(&BUILDING);
-        crate::matches::live_demos::build(&store.dir, id, file).ok()
-    });
-    let Some((name, demo)) = built else { return respond(s, "404 Not Found", TEXT, b"No such demo.") };
+    let built = sessions
+        .store
+        .as_ref()
+        .filter(|_| sessions::is_id(id))
+        .zip(file.strip_suffix(".dem"))
+        .and_then(|(store, file)| built(&store.dir, id, file));
+    let Some(built) = built else { return respond(s, "404 Not Found", TEXT, b"No such demo.") };
+    let (name, demo) = &*built;
     let attachment = format!(r#"attachment; filename="{name}""#);
     let mut headers = vec![("Content-Type", "application/octet-stream"), ("Content-Disposition", attachment.as_str())];
     let mark = param(&request.query, "built").filter(|m| m.len() <= 16 && m.bytes().all(|b| b.is_ascii_alphanumeric()));
@@ -290,5 +323,5 @@ fn comms_demo(s: &mut TcpStream, sessions: &Sessions, request: &Request, id: &st
     if let Some(cookie) = &cookie {
         headers.push(("Set-Cookie", cookie));
     }
-    respond_with(s, "200 OK", &headers, &demo)
+    respond_with(s, "200 OK", &headers, demo)
 }
