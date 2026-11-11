@@ -148,6 +148,7 @@ impl Room {
             let (_, line) = cur.lines.pop_front().expect("a front line");
             cur.done += 1;
             publish(&self.hub, &line);
+            self.relay_line(&line);
             if let Line::Snapshot(snap) = &line {
                 st.tick = Some(snap.tick);
                 self.follow(&st);

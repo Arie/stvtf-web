@@ -12,7 +12,7 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
-use stvtf::relay::{Beam, Light, Note, Playback, Relay, RelayConfig, Want};
+use stvtf::relay::{Beam, Light, Note, Playback, Relay, RelayConfig, VoiceIn, Want};
 
 /// TF2 clients a room takes at once.
 const SLOTS: usize = 24;
@@ -147,6 +147,11 @@ impl LocalRelay {
         self.playback.keep_notes(notes);
     }
 
+    /// Voice from outside the match, sent to the TF2 clients in as a player's (or `SourceTV`'s).
+    pub(crate) fn voice(&self, v: VoiceIn) {
+        self.playback.voice(v);
+    }
+
     /// The light the TF2 clients in keep seeing, in place of the one before.
     pub(crate) fn keep_light(&self, light: Option<Light>) {
         self.playback.keep_light(light);
@@ -223,6 +228,14 @@ impl RoomRelay {
         match self {
             RoomRelay::Local(r) => r.keep(beams),
             RoomRelay::Remote(r) => r.keep(beams),
+        }
+    }
+
+    /// Voice from outside the match, sent to the TF2 clients in as a player's (or `SourceTV`'s).
+    pub(crate) fn voice(&self, v: VoiceIn) {
+        match self {
+            RoomRelay::Local(r) => r.voice(v),
+            RoomRelay::Remote(r) => r.voice(&v),
         }
     }
 

@@ -12,6 +12,8 @@
 //! - `{"op": "status", "room"}`: TF2 clients in, whether it stopped, and its page line.
 //! - `{"op": "keep", "room", "beams"}`: lines the TF2 clients in keep seeing, in place of those
 //!   before, each `[x1, y1, z1, x2, y2, z2, r, g, b, seconds, width, speed]`.
+//! - `{"op": "voice", "room", "voice"}`: voice from outside the match to send them as players'
+//!   own, each `{user, steamid, rate, frames}` (frames in base64), in order.
 //! - `{"op": "notes", "room", "notes"}`: text bubbles they keep seeing, in place of those before,
 //!   each a [`stvtf::relay::Note`].
 //! - `{"op": "light", "room", "light"}`: the light they keep seeing, in place of the one before, a
@@ -29,15 +31,16 @@ use crate::lock;
 use crate::matches::sessions::logged;
 use crate::relays::pool::{LocalRelay, Relays, Was};
 use anyhow::{Context, Result, bail};
+use base64::Engine;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Condvar, Mutex, PoisonError};
 use std::time::{Duration, Instant};
-use stvtf::relay::{Beam, Light, Note, Want};
+use stvtf::relay::{Beam, Light, Note, VoiceIn, Want};
 
 /// A relay not asked about for this long is stopped: longer than any deploy takes.
 pub(crate) const LEASE: Duration = Duration::from_mins(2);
@@ -115,6 +118,10 @@ enum Request {
         room: String,
         notes: Vec<Note>,
     },
+    Voice {
+        room: String,
+        voice: Vec<VoiceLine>,
+    },
     Light {
         room: String,
         light: Option<Light>,
@@ -123,6 +130,32 @@ enum Request {
         room: String,
     },
 }
+
+/// A [`VoiceIn`] on the wire: its frames in base64.
+#[derive(Serialize, Deserialize)]
+struct VoiceLine {
+    user: Option<u16>,
+    steamid: String,
+    rate: u16,
+    frames: Vec<String>,
+}
+
+impl VoiceLine {
+    fn of(v: &VoiceIn) -> Self {
+        let b64 = base64::engine::general_purpose::STANDARD;
+        VoiceLine { user: v.user, steamid: v.steamid.clone(), rate: v.rate, frames: v.frames.iter().map(|f| b64.encode(f)).collect() }
+    }
+
+    /// None when a frame is not base64.
+    fn voice(&self) -> Option<VoiceIn> {
+        let b64 = base64::engine::general_purpose::STANDARD;
+        let frames = self.frames.iter().map(|f| b64.decode(f).ok()).collect::<Option<_>>()?;
+        Some(VoiceIn { user: self.user, steamid: self.steamid.clone(), rate: self.rate, frames })
+    }
+}
+
+/// The most voice waiting for the relay process; past it the oldest goes.
+const MAX_VOICE_WAITING: usize = 256;
 
 /// A [`Beam`] on the wire.
 type BeamLine = [f32; 12];
@@ -235,6 +268,12 @@ fn handle(r: Request, rooms: &Rooms, relays: &Arc<Relays>) -> Value {
             l.relay.keep_notes(notes);
             json!({})
         }),
+        Request::Voice { room, voice } => in_room(rooms, &room, |l| {
+            for v in voice.iter().filter_map(VoiceLine::voice) {
+                l.relay.voice(v);
+            }
+            json!({})
+        }),
         Request::Light { room, light } => in_room(rooms, &room, |l| {
             l.relay.keep_light(light);
             json!({})
@@ -321,6 +360,7 @@ impl Remote {
                 want: None,
                 kept: None,
                 notes: None,
+                voice: VecDeque::new(),
                 notes_given: Vec::new(),
                 light: None,
                 light_given: false,
@@ -354,6 +394,8 @@ struct Inner {
     kept: Option<Vec<Beam>>,
     /// The notes to hand over, the latest only.
     notes: Option<Vec<Note>>,
+    /// Voice to hand over, all of it, in order.
+    voice: VecDeque<VoiceLine>,
     /// The notes last given to hand over: the marker gives them with its every piece.
     notes_given: Vec<Note>,
     /// The light last given to hand over (the marker gives it with its every piece), whether one
@@ -376,16 +418,17 @@ impl Shared {
     fn tend(&self) {
         let mut asked = Instant::now();
         loop {
-            let (want, kept, notes, light, done) = {
+            let (want, kept, notes, voice, light, done) = {
                 let mut i = lock(&self.inner);
-                while i.want.is_none() && i.kept.is_none() && i.notes.is_none() && !i.light_due && i.done.is_none() {
+                while i.want.is_none() && i.kept.is_none() && i.notes.is_none() && i.voice.is_empty() && !i.light_due && i.done.is_none() {
                     let left = STATUS_EVERY.saturating_sub(asked.elapsed());
                     if left.is_zero() {
                         break;
                     }
                     i = self.wake.wait_timeout(i, left).unwrap_or_else(PoisonError::into_inner).0;
                 }
-                (i.want.take(), i.kept.take(), i.notes.take(), std::mem::take(&mut i.light_due).then_some(i.light), i.done)
+                let voice: Vec<VoiceLine> = i.voice.drain(..).collect();
+                (i.want.take(), i.kept.take(), i.notes.take(), voice, std::mem::take(&mut i.light_due).then_some(i.light), i.done)
             };
             match done {
                 Some(Done::End) => {
@@ -407,6 +450,9 @@ impl Shared {
             }
             if let Some(notes) = notes {
                 let _ = self.remote.call(&json!({ "op": "notes", "room": self.room, "notes": notes }));
+            }
+            if !voice.is_empty() {
+                let _ = self.remote.call(&json!({ "op": "voice", "room": self.room, "voice": voice }));
             }
             if let Some(light) = light {
                 let _ = self.remote.call(&json!({ "op": "light", "room": self.room, "light": light }));
@@ -486,6 +532,17 @@ impl RemoteRelay {
         self.0.wake.notify_all();
     }
 
+    /// Voice from outside the match for the TF2 clients in; all of it goes, in order.
+    pub(crate) fn voice(&self, v: &VoiceIn) {
+        let mut i = lock(&self.0.inner);
+        if i.voice.len() >= MAX_VOICE_WAITING {
+            i.voice.pop_front();
+        }
+        i.voice.push_back(VoiceLine::of(v));
+        drop(i);
+        self.0.wake.notify_all();
+    }
+
     /// As last asked.
     pub(crate) fn clients(&self) -> usize {
         lock(&self.0.inner).clients
@@ -540,6 +597,14 @@ mod tests {
         let line = json!({ "op": "notes", "room": "r", "notes": [note.clone()] });
         let Ok(Request::Notes { room, notes }) = serde_json::from_value(line) else { panic!("not a notes request") };
         assert_eq!((room.as_str(), notes), ("r", vec![note]));
+    }
+
+    #[test]
+    fn voice_goes_to_the_relay_process_as_it_was() {
+        let v = VoiceIn { user: Some(7), steamid: "[U:1:5]".into(), rate: 24000, frames: vec![vec![0x68, 1, 2], vec![3]] };
+        let line = json!({ "op": "voice", "room": "r", "voice": [VoiceLine::of(&v)] });
+        let Ok(Request::Voice { room, voice }) = serde_json::from_value(line) else { panic!("not a voice request") };
+        assert_eq!((room.as_str(), voice.iter().filter_map(VoiceLine::voice).collect::<Vec<_>>()), ("r", vec![v]));
     }
 
     /// A relay process with one port, serving on a socket in `dir` once this returns.

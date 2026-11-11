@@ -359,3 +359,24 @@ fn a_marker_saved_before_arcs_reads_as_before() {
     let kept: Kept = serde_json::from_str(r#"{"stroke":1,"by":1,"points":[[0.0,0.0,0.0]]}"#).unwrap();
     assert_eq!(kept.arc, None);
 }
+
+#[test]
+fn a_room_gives_its_relay_the_injected_voice_it_plays_and_no_other() {
+    use stvtf::output::{PlayerId, Voice};
+    let said = |injected: bool, pause: bool| {
+        Line::Voice(Voice {
+            tick: 1,
+            player: Some(PlayerId(7)),
+            steamid: "[U:1:5]".into(),
+            rate: 24000,
+            frames: vec!["aAEC".into(), "not base64".into()],
+            injected,
+            pause,
+            team: None,
+        })
+    };
+    let v = relay::relay_voice(&said(true, false)).expect("injected: the relay must send it");
+    assert_eq!((v.user, v.steamid.as_str(), v.rate, v.frames), (Some(7), "[U:1:5]", 24000, vec![vec![0x68, 1, 2]]));
+    assert!(relay::relay_voice(&said(false, false)).is_none(), "the demo's own voice is in the demo");
+    assert!(relay::relay_voice(&said(true, true)).is_none(), "pause talk is not played");
+}

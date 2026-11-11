@@ -6,8 +6,11 @@ use crate::lock;
 use crate::matches::hub::announce;
 use crate::matches::sessions::logged;
 use crate::relays::pool::{Offer, RoomRelay};
+use base64::Engine;
 use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
+use stvtf::Line;
+use stvtf::relay::VoiceIn;
 
 /// A relay that could not start is tried again after this long.
 pub(super) const RELAY_RETRY: Duration = Duration::from_secs(5);
@@ -148,5 +151,29 @@ impl Room {
         }
         self.tell_relay();
         self.keep_marker_if_changed();
+    }
+}
+
+/// What a relay must send of `line` as the room plays it: voice from outside the match (the
+/// demo it plays has the match's own), unless said in a pause. Frames that are not base64 are
+/// left out.
+pub(super) fn relay_voice(line: &Line) -> Option<VoiceIn> {
+    let Line::Voice(v) = line else { return None };
+    if !v.injected || v.pause {
+        return None;
+    }
+    let b64 = base64::engine::general_purpose::STANDARD;
+    let frames: Vec<Vec<u8>> = v.frames.iter().filter_map(|f| b64.decode(f).ok()).collect();
+    (!frames.is_empty()).then(|| VoiceIn { user: v.player.map(|p| p.0), steamid: v.steamid.clone(), rate: v.rate, frames })
+}
+
+impl Room {
+    /// Gives the relay what it must send of a line being played.
+    pub(super) fn relay_line(&self, line: &Line) {
+        if let Some(v) = relay_voice(line)
+            && let Some(r) = &*lock(&self.relay)
+        {
+            r.voice(v);
+        }
     }
 }
