@@ -31,8 +31,8 @@ pages and ask it every half minute what changed, with the bot's key.
 
 Each region also takes in its serveme.tf's Discord links (users who linked Discord there, with
 their Steam uid): every ten minutes it asks `<--home>/discord_links` with a token sealed with
-`STVTF_TOKEN_KEY`, and they reach the other regions through Europe. Whom someone was put on by
-hand stands over them. It needs no setting of its own.
+`STVTF_TOKEN_KEY`, and they reach the other regions through Europe. A caster's word on who is who stands over
+them; a match starter's does in their own match, and is a suggestion elsewhere. It needs no setting of its own.
 
 ## Relays
 

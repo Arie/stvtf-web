@@ -13,8 +13,10 @@
 
 use super::visitor::Who;
 use super::voice_in::{has_say, is_key, is_voice_id};
+use super::voice_known::Recalled;
 use super::{JSON, Request, TEXT, json_body, respond};
 use crate::matches::sessions::Session;
+use crate::matches::voice_feed::Put;
 use crate::{App, lock};
 use serde::Deserialize;
 use std::io::{BufReader, Take};
@@ -129,8 +131,10 @@ pub(super) fn status(
             .collect();
         // Whom they were said to be before holds here too, until someone says otherwise.
         for (id, _) in &people {
-            if let Some(steamid) = app.voice_who.get(id) {
-                m.voice.remembered(id, steamid);
+            match app.voice_who.recall(id) {
+                Some(Recalled::Player { steamid, sure }) => m.voice.remembered(id, Put::Player { steamid, confirmed: sure }),
+                Some(Recalled::Nobody) => m.voice.remembered(id, Put::Nobody),
+                None => {}
             }
         }
         m.voice.set_roster(&m.hub, &channel, people);
@@ -208,7 +212,8 @@ pub(super) fn voice_match(
     if !m.voice.set_match(&v.discord, steamid.clone()) {
         return respond(s, "400 Bad Request", TEXT, b"Not found");
     }
-    app.voice_who.remember(&v.discord, steamid.as_deref(), &m.voice.name_of(&v.discord).unwrap_or_default());
+    let caster = who.user.as_ref().is_some_and(|u| u.streamer);
+    app.voice_who.remember(&v.discord, steamid.as_deref(), &m.voice.name_of(&v.discord).unwrap_or_default(), caster);
     respond(s, "204 No Content", TEXT, b"")
 }
 

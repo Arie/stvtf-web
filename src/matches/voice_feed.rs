@@ -110,8 +110,8 @@ struct State {
     matched: BTreeMap<String, Put>,
     /// Those in each channel now, as the bot says: who they are there, and their name.
     rosters: BTreeMap<String, BTreeMap<String, String>>,
-    /// The `SteamID` each was said to be before, in other matches.
-    remembered: BTreeMap<String, String>,
+    /// Whom each was said to be before, in other matches.
+    remembered: BTreeMap<String, Put>,
     /// The stream's count of new starts, and whether it was paused, when last looked at.
     epoch: u64,
     paused: bool,
@@ -181,10 +181,16 @@ impl VoiceFeed {
         let mut st = lock(&self.0);
         let players = lock(hub).players();
         let playing = |steamid: &str| players.iter().any(|(s, _)| s == steamid);
-        for (id, steamid) in st.remembered.clone() {
+        for (id, before) in st.remembered.clone() {
             let placed = matches!(st.matched.get(&id), Some(Put::Nobody | Put::Player { confirmed: true, .. }));
-            if !placed && playing(&steamid) {
-                st.matched.insert(id, Put::Player { steamid, confirmed: true });
+            // Said to be nobody before: not for someone with a link of their own.
+            let linked = || st.known.values().any(|k| k.discord.as_deref() == Some(&id) && k.steamid.is_some());
+            let holds = match &before {
+                Put::Player { steamid, .. } => playing(steamid),
+                Put::Nobody => !linked(),
+            };
+            if !placed && holds {
+                st.matched.insert(id, before);
             }
         }
         let mut people: BTreeMap<String, (String, Option<String>)> =
@@ -218,7 +224,10 @@ impl VoiceFeed {
             Some(Put::Player { steamid, confirmed }) => (Some(steamid.clone()), *confirmed),
             Some(Put::Nobody) => (None, true),
             // Known from before, and no player here: as known.
-            None => st.remembered.get(id).map_or((None, false), |s| (Some(s.clone()), true)),
+            None => match st.remembered.get(id) {
+                Some(Put::Player { steamid, confirmed }) => (Some(steamid.clone()), *confirmed),
+                _ => (None, false),
+            },
         };
         let mut all: BTreeMap<String, Person> = BTreeMap::new();
         for (id, name) in st.roster() {
@@ -258,10 +267,10 @@ impl VoiceFeed {
 
     /// Whom `discord` was said to be before: theirs here while that one plays here and nobody
     /// placed them; with that one not playing, their name is gone by first.
-    pub(crate) fn remembered(&self, discord: &str, steamid: String) {
+    pub(crate) fn remembered(&self, discord: &str, before: Put) {
         let mut st = lock(&self.0);
         if st.remembered.len() < MAX_KNOWN || st.remembered.contains_key(discord) {
-            st.remembered.insert(discord.to_string(), steamid);
+            st.remembered.insert(discord.to_string(), before);
         }
     }
 
@@ -279,7 +288,10 @@ impl VoiceFeed {
                 Some(Put::Player { steamid, .. }) => Some(steamid.clone()),
                 // Said to be no player: not even the one they linked.
                 Some(Put::Nobody) => None,
-                None => own.or_else(|| st.remembered.get(discord?).cloned()),
+                None => own.or_else(|| match st.remembered.get(discord?) {
+                    Some(Put::Player { steamid, .. }) => Some(steamid.clone()),
+                    _ => None,
+                }),
             }
         };
         let steamid = steamid_of(&said.who);
@@ -608,8 +620,8 @@ mod tests {
         feed.said(&hub, &unlinked("77", "Gummy"), frames(1), Some(0.0), now);
         assert!(voices(&page)[0]["player"].is_null(), "said to be no player");
         // Known from before, for someone not placed here: as said by someone.
-        feed.remembered("79", "[U:1:7]".into());
-        feed.remembered("78", "[U:1:99]".into());
+        feed.remembered("79", Put::Player { steamid: "[U:1:7]".into(), confirmed: true });
+        feed.remembered("78", Put::Player { steamid: "[U:1:99]".into(), confirmed: true });
         let who = feed.voices(&hub);
         assert_eq!((who[2].steamid.as_deref(), who[2].confirmed), (Some("[U:1:7]"), true));
         assert_eq!(who[1].steamid.as_deref(), Some("[U:1:6]"), "what was said here stands");
@@ -623,8 +635,8 @@ mod tests {
         let page = subscribe_to(&hub, false, true);
         feed.set_roster(&hub, "c", [("77".to_string(), "Gummy".to_string()), ("79".to_string(), "dave".to_string())]);
         // Both known as accounts that are not in this match.
-        feed.remembered("77", "[U:1:50]".into());
-        feed.remembered("79", "[U:1:51]".into());
+        feed.remembered("77", Put::Player { steamid: "[U:1:50]".into(), confirmed: true });
+        feed.remembered("79", Put::Player { steamid: "[U:1:51]".into(), confirmed: true });
         let who = |feed: &VoiceFeed| feed.voices(&hub).into_iter().map(|h| (h.steamid, h.confirmed)).collect::<Vec<_>>();
         assert_eq!(
             who(&feed),
@@ -638,6 +650,18 @@ mod tests {
         // The account known joins: theirs from then on, over the guess.
         publish(&hub, &snapshot(1001, None, vec![playing(7, "gummy", STEAMID), playing(8, "smurf", "[U:1:50]")]));
         assert_eq!(who(&feed)[0], (Some("[U:1:50]".to_string()), true));
+    }
+
+    #[test]
+    fn a_suggestion_from_before_shows_as_one_and_nobody_from_before_gets_no_guess() {
+        let (hub, feed) = (SharedHub::default(), VoiceFeed::default());
+        let playing = |id, name: &str, steamid: &str| stvtf::output::Player { steamid: steamid.into(), ..player(id, name, Team::Red) };
+        publish(&hub, &snapshot(1000, None, vec![playing(7, "gummy", STEAMID), playing(8, "coach", "[U:1:6]")]));
+        feed.set_roster(&hub, "c", [("77".to_string(), "someone".to_string()), ("78".to_string(), "coach".to_string())]);
+        feed.remembered("77", Put::Player { steamid: STEAMID.into(), confirmed: false });
+        feed.remembered("78", Put::Nobody);
+        let who: Vec<_> = feed.voices(&hub).into_iter().map(|h| (h.steamid, h.confirmed)).collect();
+        assert_eq!(who, [(Some(STEAMID.to_string()), false), (None, true)]);
     }
 
     #[test]

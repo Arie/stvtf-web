@@ -12,7 +12,10 @@
 //! The site a stv.tf belongs to (`--home`) has Discord users who linked their Steam account
 //! there: its whole list is asked for now and then (`GET <home>/discord_links`, with a token
 //! sealed with the key the two share) and taken into this one, marked as from that site (`src`).
-//! What someone said by hand stands over it.
+//!
+//! Not all of it is as sure. A link someone made themselves (a site's) and what a caster said
+//! hold everywhere as said. What a match's starter said holds in their match, and elsewhere is a
+//! suggestion: shown as one, and it never takes the place of the surer.
 
 use super::token::Keys;
 use super::voice_in::{is_key, is_voice_id};
@@ -51,9 +54,36 @@ pub(crate) struct Known {
     /// The site whose list of links this is from; empty for what someone said on a page.
     #[serde(default)]
     src: String,
+    /// Said on a page by a caster (`caster`), else by a match's starter.
+    #[serde(default)]
+    by: String,
     /// The list's version this was said at.
     #[serde(default)]
     v: u64,
+}
+
+const CASTER: &str = "caster";
+
+impl Known {
+    /// How sure: a match's starter's word, a link of someone's own, a caster's word.
+    fn sure(&self) -> u8 {
+        match (self.src.is_empty(), self.by == CASTER) {
+            (false, _) => 2,
+            (true, true) => 3,
+            (true, false) => 1,
+        }
+    }
+}
+
+/// Whom someone is known as from before.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum Recalled {
+    /// This `SteamID`: as said (`sure`), or a suggestion.
+    Player {
+        steamid: String,
+        sure: bool,
+    },
+    Nobody,
 }
 
 #[derive(Default, Serialize, Deserialize)]
@@ -67,6 +97,14 @@ struct Kept {
     #[serde(default)]
     untold: BTreeSet<String>,
     known: HashMap<String, Known>,
+}
+
+impl Kept {
+    /// Whether what is known of `who` gives way to something as sure as `sure`: nothing, nobody,
+    /// and what is no surer do.
+    fn yields(&self, who: &str, sure: u8) -> bool {
+        self.known.get(who).is_none_or(|k| k.steamid.is_none() || k.sure() <= sure)
+    }
 }
 
 /// How the list's home is asked: a method, a path, and a body to send; its answer's body.
@@ -115,7 +153,7 @@ fn read(file: &Path) -> Option<Kept> {
     let untold = old.keys().cloned().collect();
     let known = old
         .into_iter()
-        .map(|(id, steamid)| (id, Known { steamid: Some(steamid), name: String::new(), src: String::new(), v: 1 }))
+        .map(|(id, steamid)| (id, Known { steamid: Some(steamid), name: String::new(), src: String::new(), by: String::new(), v: 1 }))
         .collect();
     Some(Kept { version: 1, had: 0, untold, known })
 }
@@ -176,8 +214,19 @@ impl WhoHistory {
         }
     }
 
-    pub(crate) fn get(&self, who: &str) -> Option<String> {
+    #[cfg(test)]
+    fn get(&self, who: &str) -> Option<String> {
         lock(&self.0.kept).known.get(who)?.steamid.clone()
+    }
+
+    /// Whom `who` is known as from before, and how sure that is.
+    pub(crate) fn recall(&self, who: &str) -> Option<Recalled> {
+        let kept = lock(&self.0.kept);
+        let known = kept.known.get(who)?;
+        Some(match &known.steamid {
+            Some(steamid) => Recalled::Player { steamid: steamid.clone(), sure: known.sure() >= 2 },
+            None => Recalled::Nobody,
+        })
     }
 
     fn save(&self, kept: &Kept) {
@@ -188,11 +237,13 @@ impl WhoHistory {
         }
     }
 
-    /// `who` is `steamid`, or with none nobody, by the `name` they talk under: kept, and told to
-    /// the list's home.
-    pub(crate) fn remember(&self, who: &str, steamid: Option<&str>, name: &str) {
+    /// `who` is `steamid`, or with none nobody, by the `name` they talk under, said by a
+    /// `caster` or by a match's starter: kept, and told to the list's home, unless someone surer
+    /// said otherwise.
+    pub(crate) fn remember(&self, who: &str, steamid: Option<&str>, name: &str, caster: bool) {
         let mut kept = lock(&self.0.kept);
-        if self.put(&mut kept, who, steamid, name, "") {
+        let by = if caster { CASTER } else { "" };
+        if kept.yields(who, if caster { 3 } else { 1 }) && self.put(&mut kept, who, steamid, name, "", by) {
             self.save(&kept);
         }
         drop(kept);
@@ -202,13 +253,14 @@ impl WhoHistory {
     }
 
     /// Whether `who` was put in the list so: not when it is full.
-    fn put(&self, kept: &mut Kept, who: &str, steamid: Option<&str>, name: &str, src: &str) -> bool {
+    fn put(&self, kept: &mut Kept, who: &str, steamid: Option<&str>, name: &str, src: &str, by: &str) -> bool {
         if kept.known.len() >= MAX_KNOWN && !kept.known.contains_key(who) {
             return false;
         }
         kept.version += 1;
         let (name, v) = (name.chars().take(MAX_NAME).collect(), kept.version);
-        kept.known.insert(who.to_string(), Known { steamid: steamid.map(str::to_string), name, src: src.to_string(), v });
+        kept.known
+            .insert(who.to_string(), Known { steamid: steamid.map(str::to_string), name, src: src.to_string(), by: by.to_string(), v });
         if self.0.home.is_some() {
             kept.untold.insert(who.to_string());
         }
@@ -216,15 +268,16 @@ impl WhoHistory {
     }
 
     /// The links of the site `src`, all of them (each a Discord user and their `SteamID`), taken
-    /// in: over nothing, over nobody and over what that site said before, not over whom
-    /// someone was put on by hand or by another site. Those it no longer has are nobody again.
+    /// in: over nothing, over nobody, over a match's starter's word and over what that site said
+    /// before, not over a caster's word or another site's. Those it no longer has are nobody again.
     /// How many changed.
     fn take_in(&self, src: &str, links: &HashMap<String, String>) -> usize {
         let mut kept = lock(&self.0.kept);
         let mut changed = 0;
         for (who, steamid) in links {
-            let stands = kept.known.get(who).is_some_and(|k| k.steamid.as_ref().is_some_and(|s| s == steamid || k.src != src));
-            if !stands && self.put(&mut kept, who, Some(steamid), "", src) {
+            let stands =
+                kept.known.get(who).is_some_and(|k| k.steamid.as_ref().is_some_and(|s| s == steamid || (k.sure() >= 2 && k.src != src)));
+            if !stands && self.put(&mut kept, who, Some(steamid), "", src, "") {
                 changed += 1;
             }
         }
@@ -235,7 +288,7 @@ impl WhoHistory {
             .map(|(who, _)| who.clone())
             .collect();
         for who in &gone {
-            self.put(&mut kept, who, None, "", src);
+            self.put(&mut kept, who, None, "", src, "");
         }
         changed += gone.len();
         if changed > 0 {
@@ -262,9 +315,10 @@ impl WhoHistory {
     }
 
     /// What another stv.tf says was said there, or taken in from its site (`src`).
-    fn learned(&self, who: &str, steamid: Option<&str>, name: &str, src: &str) {
+    fn learned(&self, who: &str, steamid: Option<&str>, name: &str, src: &str, by: &str) {
         let mut kept = lock(&self.0.kept);
-        if self.put(&mut kept, who, steamid, name, src) {
+        let sure = Known { steamid: None, name: String::new(), src: src.to_string(), by: by.to_string(), v: 0 }.sure();
+        if kept.yields(who, sure) && self.put(&mut kept, who, steamid, name, src, by) {
             self.save(&kept);
         }
     }
@@ -276,7 +330,7 @@ impl WhoHistory {
             .known
             .iter()
             .filter(|(_, k)| k.v > since)
-            .map(|(id, k)| serde_json::json!({ "id": id, "steamid": k.steamid, "name": k.name, "src": k.src, "v": k.v }))
+            .map(|(id, k)| serde_json::json!({ "id": id, "steamid": k.steamid, "name": k.name, "src": k.src, "by": k.by, "v": k.v }))
             .collect();
         (kept.version, changed)
     }
@@ -289,7 +343,8 @@ impl WhoHistory {
             kept.untold.iter().filter_map(|id| Some((id.clone(), kept.known.get(id)?.clone()))).collect()
         };
         for (id, known) in untold {
-            let body = serde_json::json!({ "id": id, "steamid": known.steamid, "name": known.name, "src": known.src }).to_string();
+            let body =
+                serde_json::json!({ "id": id, "steamid": known.steamid, "name": known.name, "src": known.src, "by": known.by }).to_string();
             ask("POST", "/voice/known", Some(&body))?;
             let mut kept = lock(&self.0.kept);
             // Said anew meanwhile: told the next time.
@@ -304,7 +359,7 @@ impl WhoHistory {
             // What is said here and not told yet stands.
             if !kept.untold.contains(&k.id) {
                 let v = kept.version;
-                kept.known.insert(k.id, Known { steamid: k.steamid, name: k.name, src: k.src, v });
+                kept.known.insert(k.id, Known { steamid: k.steamid, name: k.name, src: k.src, by: k.by, v });
             }
         }
         kept.had = theirs.version;
@@ -328,6 +383,8 @@ struct Said {
     name: String,
     #[serde(default)]
     src: String,
+    #[serde(default)]
+    by: String,
 }
 
 #[derive(Deserialize)]
@@ -368,7 +425,10 @@ pub(super) fn learn(s: &mut TcpStream, reader: &mut BufReader<Take<TcpStream>>, 
     if said.src.len() > MAX_NAME || !said.src.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'-' | b':')) {
         return respond(s, "400 Bad Request", TEXT, b"Invalid");
     }
-    app.voice_who.learned(&said.id, steamid.flatten().as_deref(), &name, &said.src);
+    if !matches!(said.by.as_str(), "" | CASTER) {
+        return respond(s, "400 Bad Request", TEXT, b"Invalid");
+    }
+    app.voice_who.learned(&said.id, steamid.flatten().as_deref(), &name, &said.src, &said.by);
     respond(s, "204 No Content", TEXT, b"")
 }
 
@@ -381,11 +441,11 @@ mod tests {
     fn who_someone_was_said_to_be_is_kept_in_a_file_until_they_are_said_to_be_nobody() {
         let dir = TempDir::new("voicewho");
         let who = WhoHistory::new(Some(&dir), None, None);
-        who.remember("mumble:cert:abc", Some("[U:1:9]"), "arie");
-        who.remember("77", Some("[U:1:5]"), "gummy");
+        who.remember("mumble:cert:abc", Some("[U:1:9]"), "arie", true);
+        who.remember("77", Some("[U:1:5]"), "gummy", true);
         let again = WhoHistory::new(Some(&dir), None, None);
         assert_eq!(again.get("mumble:cert:abc").as_deref(), Some("[U:1:9]"));
-        again.remember("77", None, "gummy");
+        again.remember("77", None, "gummy", true);
         assert_eq!(WhoHistory::new(Some(&dir), None, None).get("77"), None);
     }
 
@@ -404,7 +464,7 @@ mod tests {
         let who = WhoHistory::asking(Some(&dir), Some(home), None);
         assert_eq!(who.get("77").as_deref(), Some("[U:1:5]"));
         who.sync().unwrap();
-        assert_eq!(*lock(&told), [r#"{"id":"77","name":"","src":"","steamid":"[U:1:5]"}"#]);
+        assert_eq!(*lock(&told), [r#"{"by":"","id":"77","name":"","src":"","steamid":"[U:1:5]"}"#]);
     }
 
     /// A list whose home is the list `home`, asked as its routes would be.
@@ -416,7 +476,7 @@ mod tests {
                 anyhow::ensure!(!*lock(&down), "down");
                 if method == "POST" {
                     let said: Said = serde_json::from_str(body.unwrap())?;
-                    home.learned(&said.id, said.steamid.as_deref(), &said.name, &said.src);
+                    home.learned(&said.id, said.steamid.as_deref(), &said.name, &said.src, &said.by);
                     return Ok(String::new());
                 }
                 let (version, known) = home.since(path.rsplit('=').next().unwrap().parse()?);
@@ -430,18 +490,18 @@ mod tests {
     fn what_is_said_in_one_region_is_known_in_the_next_through_the_home() {
         let (home, down) = (WhoHistory::default(), Arc::new(Mutex::new(false)));
         let (na, au) = (away(&home, &down), away(&home, &down));
-        na.remember("77", Some("[U:1:5]"), "gummy");
+        na.remember("77", Some("[U:1:5]"), "gummy", true);
         na.sync().unwrap();
         au.sync().unwrap();
         assert_eq!((home.get("77"), au.get("77")), (Some("[U:1:5]".into()), Some("[U:1:5]".into())));
         // Said to be nobody, in the other region: no longer anyone, anywhere.
-        au.remember("77", None, "gummy");
+        au.remember("77", None, "gummy", true);
         au.sync().unwrap();
         na.sync().unwrap();
         assert_eq!((home.get("77"), na.get("77")), (None, None));
         // The home not answering: what is said stands here, and is told once it does.
         *lock(&down) = true;
-        na.remember("78", Some("[U:1:6]"), "aoki");
+        na.remember("78", Some("[U:1:6]"), "aoki", true);
         assert!(na.sync().is_err());
         assert_eq!((na.get("78").as_deref(), home.get("78")), (Some("[U:1:6]"), None));
         *lock(&down) = false;
@@ -454,8 +514,8 @@ mod tests {
         let (home, down) = (WhoHistory::default(), Arc::new(Mutex::new(false)));
         let (na, au) = (away(&home, &down), away(&home, &down));
         let links = |pairs: &[(&str, &str)]| pairs.iter().map(|(d, s)| (d.to_string(), s.to_string())).collect::<HashMap<_, _>>();
-        // By hand, 78 plays on another account than the one they linked.
-        na.remember("78", Some("[U:1:60]"), "aoki");
+        // A caster says 78 plays on another account than the one they linked.
+        na.remember("78", Some("[U:1:60]"), "aoki", true);
         assert_eq!(na.take_in("na.serveme.tf", &links(&[("77", "[U:1:5]"), ("78", "[U:1:6]")])), 1);
         assert_eq!((na.get("77").as_deref(), na.get("78").as_deref()), (Some("[U:1:5]"), Some("[U:1:60]")));
         assert_eq!(na.take_in("na.serveme.tf", &links(&[("77", "[U:1:5]"), ("78", "[U:1:6]")])), 0, "the same again changes nothing");
@@ -479,5 +539,26 @@ mod tests {
         let who = WhoHistory::asking(None, None, Some(("serveme.tf".into(), site)));
         who.take_links().unwrap();
         assert_eq!((who.get("77").as_deref(), who.get("x"), who.get("78")), (Some("[U:1:9]"), None, None));
+    }
+
+    #[test]
+    fn a_match_starters_word_is_a_suggestion_elsewhere_and_gives_way_to_the_surer() {
+        let who = WhoHistory::default();
+        let links = |pairs: &[(&str, &str)]| pairs.iter().map(|(d, s)| (d.to_string(), s.to_string())).collect::<HashMap<_, _>>();
+        let player = |steamid: &str, sure| Some(Recalled::Player { steamid: steamid.into(), sure });
+        who.remember("77", Some("[U:1:5]"), "gummy", false);
+        assert_eq!(who.recall("77"), player("[U:1:5]", false));
+        // Their own link takes its place, and a starter's word no longer does.
+        assert_eq!(who.take_in("serveme.tf", &links(&[("77", "[U:1:6]")])), 1);
+        who.remember("77", Some("[U:1:7]"), "gummy", false);
+        assert_eq!(who.recall("77"), player("[U:1:6]", true));
+        // A caster's word does, and their link then leaves it be.
+        who.remember("77", Some("[U:1:8]"), "gummy", true);
+        assert_eq!(who.take_in("serveme.tf", &links(&[("77", "[U:1:6]")])), 0);
+        assert_eq!(who.recall("77"), player("[U:1:8]", true));
+        // Nobody is remembered too, until something is said of them.
+        who.remember("78", None, "coach", false);
+        assert_eq!(who.recall("78"), Some(Recalled::Nobody));
+        assert_eq!(who.recall("79"), None);
     }
 }
