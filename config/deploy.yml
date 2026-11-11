@@ -33,9 +33,12 @@ builder:
   context: ..
   dockerfile: Dockerfile
 
+# STVTF_VOICE_KEY is the voice bot's key (see stvtf-voice-bot): without it a region takes no
+# voice in. Europe has more of its own (deploy.eu.yml): people link Steam there.
 env:
   secret:
     - STVTF_TOKEN_KEY
+    - STVTF_VOICE_KEY
 
 # The map cache (BSPs from fastdl, extracted geometry) survives deploys. The volume also holds
 # demo.jsonl.gz, the recorded match each region plays at /w/demo/ (`stvtf demo FILE.dem | gzip`,

@@ -10,6 +10,18 @@ proxy:
   hosts:
     - stv.tf
 
+# Where Discord users link the Steam account on their profile (/voice/link), for every region:
+# the bot asks here who someone is. The Discord application's OAuth2 redirect is the one below.
+# (A list here replaces deploy.yml's, so it names those too.)
+env:
+  clear:
+    STVTF_DISCORD_REDIRECT: https://stv.tf/voice/linked
+  secret:
+    - STVTF_TOKEN_KEY
+    - STVTF_VOICE_KEY
+    - STVTF_DISCORD_CLIENT_ID
+    - STVTF_DISCORD_CLIENT_SECRET
+
 # The rooms' SourceTV relays, a process of their own that deploys leave be, so TF2 clients in a
 # room stay connected (`bin/relays` restarts it, at the version just built). On the host's own
 # name: stv.tf names go through Cloudflare, which carries no UDP.

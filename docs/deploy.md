@@ -13,6 +13,15 @@
 The registry is ghcr.io, with the classic token in `~/.config/stvtf/ghcr.token`, scope
 `write:packages` only, because Kamal leaves the login on every host.
 
+## Voice from Discord
+
+Every region takes voice from the voice bot (its own repository, `stvtf-voice-bot`, with a Kamal
+config of its own) with `STVTF_VOICE_KEY`, from `~/.config/stvtf/voice.key`
+(`openssl rand -hex 32`); without the file a region takes none. Europe is where people link
+Steam (`/voice/link`), for all regions: its Discord application's client id and secret come from
+`~/.config/stvtf/discord-client.id` and `discord-client.secret`, and the application's OAuth2
+redirect is `https://stv.tf/voice/linked`. The links are kept in `/data/sessions/voice-links.json`.
+
 ## Relays
 
 The rooms' TF2 relays run apart from the app, as the Kamal accessory `relay`
