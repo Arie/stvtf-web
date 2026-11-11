@@ -271,6 +271,14 @@
 #voicelist .vci img {
   width: 16px;
   height: 16px;
+  opacity: 0.6;
+}
+/* Talking: the icon at full white, ringed. */
+#voicelist .vrow.talking .vci {
+  box-shadow: 0 0 0 2px #fff;
+}
+#voicelist .vrow.talking .vci:not(.muted) img {
+  opacity: 1;
 }
 #voicelist .vci.muted img {
   opacity: 0.35;
