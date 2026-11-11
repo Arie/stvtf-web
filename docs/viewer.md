@@ -71,7 +71,7 @@ stream has a tick.
 
 The invite is what lets a Discord channel into a match: the key only says it is our bot, which
 anyone can have in their server. `GET /w/<id>/voice-invite` (a room's too) gives `{"invite",
-"bot"}` to whoever started the match and to the site's streamers (403 to others; where nobody
+"bot"}` to whoever started the match and to the site's streamers (no content to others; where nobody
 signs in, to anyone): `bot` is where the bot is added to a server (`STVTF_VOICE_BOT`). The
 speakers list ends with "Discord voice" for them: the `/stv join` command with the page's link
 and the invite to copy, for their own Discord or to pass on to a team, with the delay when it is

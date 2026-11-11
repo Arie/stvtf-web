@@ -81,7 +81,7 @@ export function voiceInvite() {
   addListExtra(rows);
   const show = () => list.hidden || renderList(list);
   fetch(new URL("voice-invite", HOME))
-    .then(r => (r.ok ? r.json() : null))
+    .then(r => (r.status === 200 ? r.json() : null))
     .then(
       g => {
         given = g?.invite ? { invite: String(g.invite), bot: typeof g.bot === "string" ? g.bot : null } : null;

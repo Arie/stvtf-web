@@ -110,14 +110,12 @@ pub(super) fn has_say(app: &App, m: &Session, who: &super::visitor::Who) -> bool
 }
 
 /// `GET /w/<id>/voice-invite` (and a room's): the invite, and where to add the bot to a Discord
-/// server (`STVTF_VOICE_BOT`), to those with a say.
+/// server (`STVTF_VOICE_BOT`), to those with a say. Every page asks: no content for the rest, and
+/// where no voice comes in, rather than an error in everyone's console.
 pub(super) fn invite(s: &mut TcpStream, app: &App, m: Option<&Session>, who: &super::visitor::Who) -> std::io::Result<()> {
-    let Some(m) = m.filter(|m| m.is_live() && app.voice_key.is_some()) else {
-        return respond(s, "404 Not Found", TEXT, b"No voice comes into this match.");
+    let Some(m) = m.filter(|m| m.is_live() && app.voice_key.is_some() && has_say(app, m, who)) else {
+        return respond(s, "204 No Content", TEXT, b"");
     };
-    if !has_say(app, m, who) {
-        return respond(s, "403 Forbidden", TEXT, b"Only whoever started the match, and streamers, invite a Discord.");
-    }
     let invite = serde_json::json!({ "invite": m.voice_invite(), "bot": app.voice_bot });
     respond(s, "200 OK", super::JSON, invite.to_string().as_bytes())
 }

@@ -1126,12 +1126,12 @@ fn behind_a_site_the_invite_is_for_who_started_the_match_and_for_streamers() {
     let invite = format!(r#""invite":"{}""#, invite_of(&app, &id));
     assert!(get(&app, &format!("{page}voice-invite"), &starter).contains(&invite));
     assert!(get(&app, &format!("{page}voice-invite"), &caster).contains(&invite));
-    assert!(get(&app, &format!("{page}voice-invite"), &other).starts_with("HTTP/1.1 403"));
-    assert!(get(&app, &format!("{page}voice-invite"), "").starts_with("HTTP/1.1 403"));
+    assert!(get(&app, &format!("{page}voice-invite"), &other).starts_with("HTTP/1.1 204"));
+    assert!(get(&app, &format!("{page}voice-invite"), "").starts_with("HTTP/1.1 204"), "none, and no error on anyone's page");
     // In a room on it too; and there the starter, as the casters, says whose voice is whose.
     let room = page_of(&post(&app, &format!("{page}room"), &other, ""));
     assert!(get(&app, &format!("{room}voice-invite"), &starter).contains(&invite));
-    assert!(get(&app, &format!("{room}voice-invite"), &other).starts_with("HTTP/1.1 403"), "its admin, but nobody to the match");
+    assert!(get(&app, &format!("{room}voice-invite"), &other).starts_with("HTTP/1.1 204"), "its admin, but nobody to the match");
     assert!(get(&app, &format!("{room}voices"), &other).starts_with("HTTP/1.1 403"));
     assert!(get(&app, &format!("{room}voices"), &starter).starts_with("HTTP/1.1 200"), "no admin of the room, but the match is theirs");
     assert!(get(&app, &format!("{room}me"), &starter).contains(r#""voice":true"#));
