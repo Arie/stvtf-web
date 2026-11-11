@@ -144,6 +144,7 @@ fn me(s: &mut TcpStream, app: &App, room: &Room, who: &Who) -> std::io::Result<(
         "signed": who.user.is_some(),
         "streamer": who.user.as_ref().is_some_and(|u| u.streamer),
         "signin": app.keys.is_some() && app.home.as_deref().and_then(origin).is_some(),
+        "voice": tunes_voice(app, room, who),
     });
     respond(s, "200 OK", JSON, me.to_string().as_bytes())
 }
@@ -185,6 +186,15 @@ fn change(
     }
 }
 
+const NOT_THEIRS: &[u8] = b"Only streamers among the room's admins do that.";
+
+/// Whether `who` may move and place the voice coming into `room`'s match: it is the match's, for
+/// every room on it, and anyone opens a room. So an admin of the room who is one of the site's
+/// streamers; where nobody signs in (no site in front), any admin of the room.
+fn tunes_voice(app: &App, room: &Room, who: &Who) -> bool {
+    room.is_admin(&who.key) && (app.keys.is_none() || who.user.as_ref().is_some_and(|u| u.streamer))
+}
+
 /// How far a room's admins move its live match's voice, in seconds either way.
 #[derive(serde::Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -204,8 +214,8 @@ fn voice_nudge(
     who: &Who,
 ) -> std::io::Result<()> {
     use crate::matches::voice_feed::MAX_NUDGE;
-    if !room.is_admin(&who.key) {
-        return respond(s, "403 Forbidden", TEXT, b"Only the room's admins do that.");
+    if !tunes_voice(app, room, who) {
+        return respond(s, "403 Forbidden", TEXT, NOT_THEIRS);
     }
     let Ok(n) = json_body::<Nudge>(reader, request) else { return respond(s, "400 Bad Request", TEXT, b"a nudge in seconds") };
     if !(-MAX_NUDGE..=MAX_NUDGE).contains(&n.nudge) {
@@ -222,8 +232,8 @@ fn voice_nudge(
 /// The voices coming into `room`'s live match from outside it, and who each is matched to: for
 /// its admins.
 fn voices(s: &mut TcpStream, app: &App, sessions: &Sessions, room: &Room, who: &Who) -> std::io::Result<()> {
-    if !room.is_admin(&who.key) {
-        return respond(s, "403 Forbidden", TEXT, b"Only the room's admins do that.");
+    if !tunes_voice(app, room, who) {
+        return respond(s, "403 Forbidden", TEXT, NOT_THEIRS);
     }
     let heard = app.rooms.live_match(&room.id, sessions).map(|m| m.voice.voices()).unwrap_or_default();
     respond(s, "200 OK", JSON, serde_json::json!(heard).to_string().as_bytes())
@@ -246,8 +256,8 @@ fn voice_match(
     room: &Room,
     who: &Who,
 ) -> std::io::Result<()> {
-    if !room.is_admin(&who.key) {
-        return respond(s, "403 Forbidden", TEXT, b"Only the room's admins do that.");
+    if !tunes_voice(app, room, who) {
+        return respond(s, "403 Forbidden", TEXT, NOT_THEIRS);
     }
     let Ok(v) = json_body::<VoiceMatch>(reader, request) else { return respond(s, "400 Bad Request", TEXT, b"a voice and a player") };
     let Some(m) = app.rooms.live_match(&room.id, sessions) else {
@@ -260,6 +270,8 @@ fn voice_match(
             None => return respond(s, "400 Bad Request", TEXT, b"no such player"),
         },
     };
-    m.voice.set_match(&v.discord, steamid);
+    if !m.voice.set_match(&v.discord, steamid) {
+        return respond(s, "400 Bad Request", TEXT, b"no such voice");
+    }
     respond(s, "204 No Content", TEXT, b"")
 }

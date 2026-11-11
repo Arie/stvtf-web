@@ -15,6 +15,8 @@ const ASK_MS = 5000,
 /** @typedef {{ discord: string; name: string; steamid: string | null }} Heard */
 /** @type {Heard[]} */
 let voices = [];
+// Whether this page may: an admin of the room, and where people sign in, a streamer.
+let allowed = false;
 
 /**
  * @template {keyof HTMLElementTagNameMap} K
@@ -52,7 +54,7 @@ function choice(v) {
 }
 
 function rows() {
-  if (!me.admin || (!voices.length && !voice.outsideVoice())) return [];
+  if (!allowed || (!voices.length && !voice.outsideVoice())) return [];
   const n = voice.voiceNudge();
   const head = el("div", { className: "vteam t-none" }, el("span", { className: "vtname" }, "From Discord"));
   const nudge = el(
@@ -80,11 +82,11 @@ export function voiceAdmin() {
   const ask = () => {
     if (list.hidden || !me.admin) return;
     fetch(new URL("voices", HOME))
-      .then(r => (r.ok ? r.json() : []))
+      .then(r => (r.ok ? r.json() : Promise.resolve([])).then(heard => ({ ok: r.ok, heard })))
       .then(
-        (/** @type {Heard[]} */ heard) => {
-          if (JSON.stringify(heard) === JSON.stringify(voices)) return;
-          voices = heard;
+        (/** @type {{ ok: boolean; heard: Heard[] }} */ { ok, heard }) => {
+          if (ok === allowed && JSON.stringify(heard) === JSON.stringify(voices)) return;
+          [allowed, voices] = [ok, heard];
           show();
         },
         () => {},

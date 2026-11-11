@@ -19,6 +19,8 @@ pub(crate) const MAX_DELAY: f64 = 300.0;
 const NO_DELAY: f64 = 0.05;
 /// The rate the frames are labelled with: Opus decodes any packet at it; TF2 and pages play it.
 const RATE: u16 = 24000;
+/// A tick that has not moved this long is a paused game's.
+const STILL: Duration = Duration::from_millis(700);
 /// With nothing held and nothing said this long, the feed needs no tending.
 const IDLE: Duration = Duration::from_secs(60);
 
@@ -68,8 +70,6 @@ struct State {
     known: BTreeMap<String, Speaker>,
     /// Discord ids matched by hand to a `SteamID`.
     matched: BTreeMap<String, String>,
-    /// Per channel, how many lines went out as a RED and as a BLU player's.
-    teams: BTreeMap<String, (u32, u32)>,
     /// Seconds added to every delayed source's delay: a room's admins' nudge, by ear.
     nudge: f64,
     /// The stream's count of new starts, and whether it was paused, when last looked at.
@@ -77,6 +77,8 @@ struct State {
     paused: bool,
     /// The tick the game stood still at, for what was said meanwhile.
     paused_at: u32,
+    /// The stream's tick, and since when it is that.
+    seen: Option<(u32, Instant)>,
     said: Option<Instant>,
 }
 
@@ -136,40 +138,51 @@ impl VoiceFeed {
             .collect()
     }
 
-    /// Matches Discord user `discord` to `steamid` by hand, or with none, no more.
-    pub(crate) fn set_match(&self, discord: &str, steamid: Option<String>) {
+    /// Matches Discord user `discord` to `steamid` by hand, or with none, no more; whether
+    /// they were heard at all.
+    pub(crate) fn set_match(&self, discord: &str, steamid: Option<String>) -> bool {
         let mut st = lock(&self.0);
+        if !st.known.contains_key(&format!("{DISCORD}{discord}")) {
+            return false;
+        }
         match steamid {
             Some(s) => st.matched.insert(discord.to_string(), s),
             None => st.matched.remove(discord),
         };
+        true
     }
 
     /// What `said` is as a line at `tick`: its speaker the player with their `SteamID` now (their
     /// own, or the one they were matched to); else by name, on the team most of their channel's
     /// players are on.
     fn line(&self, hub: &SharedHub, said: Said, tick: u32, pause: bool) -> Line {
-        let mut st = lock(&self.0);
+        let st = lock(&self.0);
         let known = st.known.get(&said.who).cloned().unwrap_or_default();
-        let steamid = match said.who.strip_prefix(DISCORD) {
+        // Their own, or the one they were matched to.
+        let steamid_of = |key: &str| match key.strip_prefix(DISCORD) {
             Some(discord) => st.matched.get(discord).cloned(),
-            None => Some(said.who.clone()),
+            None => Some(key.to_string()),
         };
-        let player = steamid.as_deref().and_then(|s| lock(hub).player_with(s));
-        let channel = known.channel.clone().unwrap_or_default();
-        let (team, name) = if let Some((_, team)) = player {
-            let tally = st.teams.entry(channel).or_default();
-            match team {
-                Team::Red => tally.0 += 1,
-                Team::Blue => tally.1 += 1,
-                _ => {}
-            }
+        let steamid = steamid_of(&said.who);
+        let hub = lock(hub);
+        let player = steamid.as_deref().and_then(|s| hub.player_with(s));
+        let (team, name) = if player.is_some() {
             (None, None)
         } else {
-            let (red, blue) = st.teams.get(&channel).copied().unwrap_or_default();
+            // The sides those in their channel play on now.
+            let (mut red, mut blue) = (0, 0);
+            let mates = st.known.iter().filter(|(_, k)| known.channel.is_some() && k.channel == known.channel);
+            for (_, team) in mates.filter_map(|(key, _)| hub.player_with(&steamid_of(key)?)) {
+                match team {
+                    Team::Red => red += 1,
+                    Team::Blue => blue += 1,
+                    _ => {}
+                }
+            }
             let team = (red != blue).then_some(if red > blue { Team::Red } else { Team::Blue });
             (team, known.name.clone())
         };
+        drop(hub);
         Line::Voice(Voice {
             tick,
             player: player.map(|(id, _)| id),
@@ -196,6 +209,15 @@ impl VoiceFeed {
         let (out, pause_talk, at) = {
             let mut st = lock(&self.0);
             let interval = lock(hub).tick_interval();
+            // SourceTV says a pause only as late as the rest: its tick standing still is one too.
+            let still = match st.seen {
+                Some((t, since)) if Some(t) == tick => now.saturating_duration_since(since) > STILL,
+                _ => {
+                    st.seen = tick.map(|t| (t, now));
+                    false
+                }
+            };
+            let paused = paused || still;
             let (was_paused, new_start) = (st.paused, st.epoch != epoch);
             (st.epoch, st.paused) = (epoch, paused);
             if paused && !was_paused {
@@ -332,6 +354,49 @@ mod tests {
         assert!(v["player"].is_null(), "{v}");
         assert_eq!((v["steamid"].as_str(), v["name"].as_str(), v["team"].as_str()), (Some("discord:77"), Some("coach"), Some("red")));
         assert_eq!(feed.voices(), [Heard { discord: "77".into(), name: "coach".into(), steamid: None }], "for a room's admins to place");
+    }
+
+    #[test]
+    fn someone_with_no_link_follows_their_channel_when_the_teams_swap_sides() {
+        let (hub, feed, now) = (SharedHub::default(), VoiceFeed::default(), Instant::now());
+        at(&hub, 1000);
+        let page = subscribe_to(&hub, false, true);
+        let mate = Speaker { channel: Some("9".into()), ..STEAMID.into() };
+        for _ in 0..5 {
+            feed.said(&hub, &mate, frames(1), Some(0.0), now);
+        }
+        let swapped = stvtf::output::Player { steamid: STEAMID.into(), ..player(7, "a", Team::Blue) };
+        publish(&hub, &snapshot(2000, None, vec![swapped]));
+        feed.said(&hub, &unlinked("77", "coach"), frames(1), Some(0.0), now);
+        assert_eq!(voices(&page).last().unwrap()["team"], "blue");
+        let alone = Speaker { channel: None, ..unlinked("78", "caster") };
+        feed.said(&hub, &alone, frames(1), Some(0.0), now);
+        assert!(voices(&page)[0]["team"].is_null(), "in no channel, on no team");
+    }
+
+    #[test]
+    fn a_tick_standing_still_is_a_pause_though_the_stream_says_none() {
+        let (hub, feed, now) = (SharedHub::default(), VoiceFeed::default(), Instant::now());
+        at(&hub, 1000);
+        let (page, recorder) = (subscribe_to(&hub, true, true), subscribe_all(&hub));
+        feed.step(&hub, now);
+        assert_eq!(feed.said(&hub, &STEAMID.into(), frames(1), None, now + Duration::from_millis(500)), Took::Held { due: 7000 });
+        let later = now + Duration::from_secs(2);
+        assert_eq!(feed.said(&hub, &STEAMID.into(), frames(3), None, later), Took::PauseTalk);
+        at(&hub, 1001);
+        feed.step(&hub, later);
+        assert_eq!(voices(&page).len(), 0, "no page hears it");
+        assert_eq!(voices(&recorder)[0]["pause"], true);
+        assert_eq!(feed.said(&hub, &STEAMID.into(), frames(1), None, later), Took::Held { due: 7001 }, "and on it goes");
+    }
+
+    #[test]
+    fn only_a_voice_heard_is_matched() {
+        let (hub, feed, now) = (SharedHub::default(), VoiceFeed::default(), Instant::now());
+        at(&hub, 1000);
+        assert!(!feed.set_match("77", Some(STEAMID.into())));
+        feed.said(&hub, &unlinked("77", "arie"), frames(1), None, now);
+        assert!(feed.set_match("77", Some(STEAMID.into())));
     }
 
     #[test]

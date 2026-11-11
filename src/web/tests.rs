@@ -148,7 +148,7 @@ fn someone_signed_in_is_their_steam_id_in_a_room_and_a_streamer_makes_themselves
     let opened = post(&app, "/w/demo/room", &owner, "");
     let page = page_of(&opened);
     let me = get(&app, &format!("{page}me"), &owner);
-    assert!(me.ends_with(r#"{"admin":true,"id":1,"signed":true,"signin":true,"streamer":false}"#), "{me}");
+    assert!(me.ends_with(r#"{"admin":true,"id":1,"signed":true,"signin":true,"streamer":false,"voice":false}"#), "{me}");
     // The same user from another browser (no guest cookie) is still the owner.
     let elsewhere = format!("{owner}; stvtf_guest={}", "3".repeat(32));
     assert!(get(&app, &format!("{page}me"), &elsewhere).contains(r#""admin":true"#));
@@ -218,7 +218,10 @@ fn a_demo_opens_a_room_for_its_owner() {
     assert!(get(&app, &page, "").contains("<canvas"));
     assert!(get(&app, &page, "").contains("Cache-Control: no-cache"));
     assert!(get(&app, &format!("{page}marks?from=0"), "").ends_with(r#"{"all":0,"marks":[]}"#), "what its timeline shows");
-    assert!(get(&app, &format!("{page}me"), &cookie).ends_with(r#"{"admin":true,"id":1,"signed":false,"signin":false,"streamer":false}"#));
+    assert!(
+        get(&app, &format!("{page}me"), &cookie)
+            .ends_with(r#"{"admin":true,"id":1,"signed":false,"signin":false,"streamer":false,"voice":true}"#)
+    );
     assert!(get(&app, &format!("{page}me"), "").contains(r#""admin":false"#));
     assert!(get(&app, &page, "").contains("Set-Cookie: stvtf_guest="), "everyone in a room gets a cookie");
     let again = post(&app, "/w/demo/room", &cookie, "");
@@ -260,7 +263,7 @@ fn admins_make_others_admin() {
     let (page, owner) = open_room(&app);
     let viewer = format!("stvtf_guest={}", "1".repeat(32));
     let me = get(&app, &format!("{page}me"), &viewer);
-    assert!(me.ends_with(r#"{"admin":false,"id":2,"signed":false,"signin":false,"streamer":false}"#), "{me}");
+    assert!(me.ends_with(r#"{"admin":false,"id":2,"signed":false,"signin":false,"streamer":false,"voice":false}"#), "{me}");
     assert!(post(&app, &format!("{page}name"), &viewer, r#"{"name":"caster"}"#).starts_with("HTTP/1.1 204"));
     let pause = r#"{"paused":true}"#;
     assert!(post(&app, &format!("{page}control"), &viewer, pause).starts_with("HTTP/1.1 403"));
@@ -1013,6 +1016,10 @@ fn a_room_takes_voice_for_its_live_match_and_its_admins_match_who_is_who() {
         post(&app, &format!("{room}voice-match"), &cookie, r#"{"discord":"77","player":99}"#).starts_with("HTTP/1.1 400"),
         "no such player"
     );
+    assert!(
+        post(&app, &format!("{room}voice-match"), &cookie, r#"{"discord":"78","player":7}"#).starts_with("HTTP/1.1 400"),
+        "no such voice"
+    );
     assert!(post(&app, &format!("{room}voice-match"), "", r#"{"discord":"77","player":7}"#).starts_with("HTTP/1.1 403"));
     assert!(post(&app, &format!("{room}voice-match"), &cookie, r#"{"discord":"77","player":null}"#).starts_with("HTTP/1.1 204"));
     assert!(get(&app, &format!("{room}voices"), &cookie).contains(r#""steamid":null"#), "unmatched again");
@@ -1074,4 +1081,21 @@ fn without_a_discord_application_there_is_no_linking() {
     let (app, _) = voice_app();
     assert!(get(&app, "/voice/link", "").starts_with("HTTP/1.1 404"));
     assert!(who(&app, "77", "k").ends_with(r#"{"steamid":null}"#), "the bot may still ask");
+}
+
+#[test]
+fn where_people_sign_in_only_streamers_among_a_rooms_admins_tune_its_matchs_voice() {
+    let (app, key, _dir) = site_app();
+    let owner = signed_in(&app, &key, r#"{"uid":"7656","name":"Arie","streamer":false}"#);
+    let page = page_of(&post(&app, "/w/demo/room", &owner, ""));
+    assert!(get(&app, &format!("{page}me"), &owner).contains(r#""admin":true"#));
+    // Anyone opens a room and is its admin: a match's voice is not theirs to move.
+    assert!(get(&app, &format!("{page}voices"), &owner).starts_with("HTTP/1.1 403"));
+    assert!(post(&app, &format!("{page}voice-nudge"), &owner, r#"{"nudge":-30}"#).starts_with("HTTP/1.1 403"));
+    assert!(post(&app, &format!("{page}voice-match"), &owner, r#"{"discord":"77","player":7}"#).starts_with("HTTP/1.1 403"));
+    let streamer = signed_in(&app, &key, r#"{"uid":"9999","name":"caster","streamer":true}"#);
+    assert!(post(&app, &format!("{page}claim"), &streamer, "").starts_with("HTTP/1.1 204"));
+    assert!(get(&app, &format!("{page}voices"), &streamer).ends_with("[]"));
+    assert!(get(&app, &format!("{page}me"), &streamer).contains(r#""voice":true"#));
+    assert!(get(&app, &format!("{page}me"), &owner).contains(r#""voice":false"#));
 }
