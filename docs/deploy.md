@@ -29,6 +29,11 @@ them on) is kept on Europe too, in `/data/sessions/voice-who.json`: the other re
 with `STVTF_VOICE_HOME` (in their `config/deploy.<region>.yml`), tell it what is said on their
 pages and ask it every half minute what changed, with the bot's key.
 
+Each region also takes in its serveme.tf's Discord links (users who linked Discord there, with
+their Steam uid): every ten minutes it asks `<--home>/discord_links` with a token sealed with
+`STVTF_TOKEN_KEY`, and they reach the other regions through Europe. Whom someone was put on by
+hand stands over them. It needs no setting of its own.
+
 ## Relays
 
 The rooms' TF2 relays run apart from the app, as the Kamal accessory `relay`

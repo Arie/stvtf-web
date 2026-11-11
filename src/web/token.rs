@@ -125,6 +125,11 @@ impl Keys {
         Ok(Start { source, owner: claims.owner, reservation: claims.reservation })
     }
 
+    /// A token that asks the site for its Discord links, good for a minute from `now`.
+    pub fn links_token(&self, now: u64) -> String {
+        URL_SAFE_NO_PAD.encode(self.seal(serde_json::json!({ "links": true, "exp": now + 60 }).to_string().as_bytes()))
+    }
+
     /// Whether `token` lets its holder list the matches.
     pub fn open_list(&self, token: &str, now: u64) -> Result<()> {
         let claims = self.claims(token, now)?;
@@ -225,6 +230,15 @@ mod tests {
         assert_eq!(keys.kept(&cookie, 1001 + SIGNED_IN_FOR), None);
         assert_eq!(Keys::from_hex(&"ee".repeat(32)).unwrap().kept(&cookie, 1000), None);
         assert_eq!(keys.kept("not a cookie", 1000), None);
+    }
+
+    #[test]
+    fn the_token_that_asks_for_links_says_so_and_until_when() {
+        let keys = Keys::from_hex(&"33".repeat(32)).unwrap();
+        let token = keys.links_token(1000);
+        let plain = keys.unseal(&URL_SAFE_NO_PAD.decode(&token).unwrap()).unwrap();
+        let claims: serde_json::Value = serde_json::from_slice(&plain).unwrap();
+        assert_eq!(claims, serde_json::json!({ "links": true, "exp": 1060 }));
     }
 
     #[test]

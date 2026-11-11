@@ -361,6 +361,9 @@ fn main() -> Result<()> {
     let voice_key = std::env::var("STVTF_VOICE_KEY").ok().filter(|k| !k.is_empty());
     // The stv.tf that holds who is who for all regions; none on that one itself.
     let voice_home = std::env::var("STVTF_VOICE_HOME").ok().filter(|u| !u.is_empty());
+    // The site's Discord links, where voice is taken in and the site shares a key.
+    let site = options.home.as_deref().zip(keys.clone()).filter(|_| voice_key.is_some());
+    let site_links = site.map(|(home, keys)| web::voice_known::from_site(home, keys));
     let app = Arc::new(App {
         matches,
         cache: options.cache.clone(),
@@ -376,7 +379,11 @@ fn main() -> Result<()> {
         voice_links: web::voice_link::Links::from_env(options.sessions.as_deref()),
         voice_bot: std::env::var("STVTF_VOICE_BOT").ok().filter(|u| !u.is_empty()),
         mumble_changes: web::voice_mumble::Changes::default(),
-        voice_who: web::voice_known::WhoHistory::new(options.sessions.as_deref(), voice_home.as_deref().zip(voice_key.as_deref())),
+        voice_who: web::voice_known::WhoHistory::new(
+            options.sessions.as_deref(),
+            voice_home.as_deref().zip(voice_key.as_deref()),
+            site_links,
+        ),
     });
     app.voice_who.keep_up();
     app.rooms.sweep();
