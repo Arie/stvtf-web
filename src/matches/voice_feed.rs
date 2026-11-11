@@ -90,8 +90,16 @@ pub(crate) fn alike(a: &str, b: &str) -> bool {
     a.chars().count() > 2 && b.chars().count() > 2 && (a.contains(&b) || b.contains(&a))
 }
 
-/// The most speakers remembered (names, channels).
+/// The most speakers remembered (names, channels), and the most channels with people in them.
 const MAX_KNOWN: usize = 256;
+const MAX_CHANNELS: usize = 8;
+
+impl State {
+    /// Those in any channel now: who they are there, and their name.
+    fn roster(&self) -> impl Iterator<Item = (&String, &String)> {
+        self.rosters.values().flatten()
+    }
+}
 
 #[derive(Default)]
 struct State {
@@ -100,8 +108,8 @@ struct State {
     known: BTreeMap<String, Speaker>,
     /// Whom each is put on, by who they are where they talk.
     matched: BTreeMap<String, Put>,
-    /// Those in the channel now, as the bot says: who they are there, and their name.
-    roster: BTreeMap<String, String>,
+    /// Those in each channel now, as the bot says: who they are there, and their name.
+    rosters: BTreeMap<String, BTreeMap<String, String>>,
     /// The `SteamID` each was said to be before, in other matches.
     remembered: BTreeMap<String, String>,
     /// The stream's count of new starts, and whether it was paused, when last looked at.
@@ -153,8 +161,16 @@ impl VoiceFeed {
 
     /// Those in the channel are these now (the bot says so, before anyone speaks): each by who
     /// they are there, with their name.
-    pub(crate) fn set_roster(&self, hub: &SharedHub, people: impl IntoIterator<Item = (String, String)>) {
-        lock(&self.0).roster = people.into_iter().take(MAX_KNOWN).collect();
+    pub(crate) fn set_roster(&self, hub: &SharedHub, channel: &str, people: impl IntoIterator<Item = (String, String)>) {
+        let people: BTreeMap<String, String> = people.into_iter().take(MAX_KNOWN).collect();
+        {
+            let mut st = lock(&self.0);
+            if people.is_empty() {
+                st.rosters.remove(channel);
+            } else if st.rosters.len() < MAX_CHANNELS || st.rosters.contains_key(channel) {
+                st.rosters.insert(channel.to_string(), people);
+            }
+        }
         self.guess(hub);
     }
 
@@ -172,7 +188,7 @@ impl VoiceFeed {
             }
         }
         let mut people: BTreeMap<String, (String, Option<String>)> =
-            st.roster.iter().map(|(id, name)| (id.clone(), (name.clone(), None))).collect();
+            st.roster().map(|(id, name)| (id.clone(), (name.clone(), None))).collect();
         for k in st.known.values() {
             if let Some(id) = &k.discord {
                 let name = k.name.clone().or_else(|| people.get(id).map(|p| p.0.clone())).unwrap_or_default();
@@ -205,7 +221,7 @@ impl VoiceFeed {
             None => st.remembered.get(id).map_or((None, false), |s| (Some(s.clone()), true)),
         };
         let mut all: BTreeMap<String, Person> = BTreeMap::new();
-        for (id, name) in &st.roster {
+        for (id, name) in st.roster() {
             let (steamid, confirmed) = put(id);
             all.insert(id.clone(), Person { discord: id.clone(), name: name.clone(), steamid, linked: None, heard: false, confirmed });
         }
@@ -225,14 +241,14 @@ impl VoiceFeed {
     pub(crate) fn name_of(&self, discord: &str) -> Option<String> {
         let st = lock(&self.0);
         let heard = || st.known.values().find(|s| s.discord.as_deref() == Some(discord)).and_then(|s| s.name.clone());
-        st.roster.get(discord).cloned().or_else(heard)
+        st.roster().find(|(id, _)| *id == discord).map(|(_, name)| name.clone()).or_else(heard)
     }
 
     /// Someone says whom `discord` is: a player's `SteamID`, or nobody. Whether there is such a
     /// person, in the channel or heard.
     pub(crate) fn set_match(&self, discord: &str, steamid: Option<String>) -> bool {
         let mut st = lock(&self.0);
-        if !st.roster.contains_key(discord) && !st.known.values().any(|s| s.discord.as_deref() == Some(discord)) {
+        if !st.roster().any(|(id, _)| id == discord) && !st.known.values().any(|s| s.discord.as_deref() == Some(discord)) {
             return false;
         }
         let put = steamid.map_or(Put::Nobody, |steamid| Put::Player { steamid, confirmed: true });
@@ -568,6 +584,7 @@ mod tests {
         let page = subscribe_to(&hub, false, true);
         feed.set_roster(
             &hub,
+            "c",
             [("77".to_string(), "Gummy".to_string()), ("78".to_string(), "aoki".to_string()), ("79".to_string(), "dave".to_string())],
         );
         let who: Vec<_> = feed.voices(&hub).into_iter().map(|h| (h.name, h.steamid, h.heard, h.confirmed)).collect();
@@ -604,7 +621,7 @@ mod tests {
         let playing = |id, name: &str, steamid: &str| stvtf::output::Player { steamid: steamid.into(), ..player(id, name, Team::Red) };
         publish(&hub, &snapshot(1000, None, vec![playing(7, "gummy", STEAMID)]));
         let page = subscribe_to(&hub, false, true);
-        feed.set_roster(&hub, [("77".to_string(), "Gummy".to_string()), ("79".to_string(), "dave".to_string())]);
+        feed.set_roster(&hub, "c", [("77".to_string(), "Gummy".to_string()), ("79".to_string(), "dave".to_string())]);
         // Both known as accounts that are not in this match.
         feed.remembered("77", "[U:1:50]".into());
         feed.remembered("79", "[U:1:51]".into());

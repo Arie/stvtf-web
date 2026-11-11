@@ -67,7 +67,16 @@ struct Report {
     people: Option<Vec<Member>>,
     #[serde(default)]
     left: bool,
+    /// The channel this is of: a match may have more than one (each team's).
+    #[serde(default)]
+    channel: Option<String>,
+    /// For Mumble: which asking for a channel (`MumbleJob::asked`) this answers.
+    #[serde(default)]
+    asked: Option<u64>,
 }
+
+/// The most channels a match keeps the people and the going of.
+const MAX_CHANNELS: usize = 8;
 
 /// `POST <page>voice-status`, the bot's.
 pub(super) fn status(
@@ -87,12 +96,25 @@ pub(super) fn status(
         return respond(s, "403 Forbidden", TEXT, b"not invited");
     }
     let text: String = said.status.chars().filter(|c| !c.is_control()).take(MAX_TEXT).collect();
+    // Which channel: the bot's own name for it, else the one of its kind.
+    let channel = said.channel.filter(|c| is_voice_id(c)).unwrap_or_else(|| said.kind.clone());
     match said.kind.as_str() {
-        "discord" => *lock(&m.discord) = (!said.left).then(|| (text, Instant::now())),
-        "mumble" => {
-            if let Some(job) = lock(&m.mumble).as_mut() {
-                job.status = text;
+        "discord" => {
+            let mut going = lock(&m.discord);
+            going.retain(|_, (_, at)| at.elapsed() < DISCORD_SAID_FOR);
+            if said.left {
+                going.remove(&channel);
+            } else if going.len() < MAX_CHANNELS || going.contains_key(&channel) {
+                going.insert(channel.clone(), (text, Instant::now()));
             }
+        }
+        "mumble" => {
+            let mut job = lock(&m.mumble);
+            // Of a channel it was since asked out of: nothing of it stands.
+            let Some(job) = job.as_mut().filter(|j| said.asked.is_none_or(|a| a == j.asked)) else {
+                return respond(s, "204 No Content", TEXT, b"");
+            };
+            job.status = text;
         }
         _ => return respond(s, "400 Bad Request", TEXT, b"Discord or Mumble"),
     }
@@ -111,7 +133,7 @@ pub(super) fn status(
                 m.voice.remembered(id, steamid);
             }
         }
-        m.voice.set_roster(&m.hub, people);
+        m.voice.set_roster(&m.hub, &channel, people);
     }
     respond(s, "204 No Content", TEXT, b"")
 }
@@ -125,10 +147,10 @@ fn theirs<'a>(app: &App, m: Option<&'a Session>, who: &Who) -> Option<&'a Sessio
 /// for someone with no say.
 pub(super) fn comms(s: &mut TcpStream, app: &App, m: Option<&Session>, who: &Who) -> std::io::Result<()> {
     let Some(m) = theirs(app, m, who) else { return respond(s, "204 No Content", TEXT, b"") };
-    let discord = lock(&m.discord)
-        .as_ref()
-        .filter(|(_, at)| at.elapsed() < DISCORD_SAID_FOR)
-        .map(|(status, _)| serde_json::json!({ "status": status }));
+    // Each Discord channel's going, one after the other.
+    let going: Vec<String> =
+        lock(&m.discord).values().filter(|(_, at)| at.elapsed() < DISCORD_SAID_FOR).map(|(status, _)| status.clone()).collect();
+    let discord = (!going.is_empty()).then(|| serde_json::json!({ "status": going.join(" + ") }));
     let mumble = lock(&m.mumble)
         .as_ref()
         .map(|j| serde_json::json!({ "host": j.host, "port": j.port, "channel": j.channel, "delay": j.delay, "status": j.status }));

@@ -1334,6 +1334,45 @@ fn a_mumble_server_is_somewhere_out_on_the_internet() {
 }
 
 #[test]
+fn two_teams_channels_in_one_match_each_keep_their_own_people_and_how_it_goes() {
+    let (app, id) = voice_app();
+    let page = format!("/w/{id}/");
+    let says = |body: &str| assert!(status(&app, &id, "k", body).starts_with("HTTP/1.1 204"), "{body}");
+    says(r#"{"kind":"discord","channel":"111","status":"Red · 1","people":[{"id":"77","name":"gummy"}]}"#);
+    says(r#"{"kind":"discord","channel":"222","status":"Blu · 1","people":[{"id":"88","name":"aoki"}]}"#);
+    let voices = get(&app, &format!("{page}voices"), "");
+    assert!(voices.contains(r#""name":"gummy""#) && voices.contains(r#""name":"aoki""#), "{voices}");
+    let comms = get(&app, &format!("{page}voice-comms"), "");
+    assert!(comms.contains("Red · 1") && comms.contains("Blu · 1"), "{comms}");
+    // One leaves: the other's people and how it goes stand.
+    says(r#"{"kind":"discord","channel":"111","left":true}"#);
+    let voices = get(&app, &format!("{page}voices"), "");
+    assert!(!voices.contains("gummy") && voices.contains("aoki"), "{voices}");
+    let comms = get(&app, &format!("{page}voice-comms"), "");
+    assert!(!comms.contains("Red") && comms.contains("Blu · 1"), "{comms}");
+}
+
+#[test]
+fn what_the_bot_says_of_a_mumble_channel_it_was_since_asked_out_of_is_not_taken() {
+    let (app, id) = voice_app();
+    let page = format!("/w/{id}/");
+    let ask = |channel: &str| {
+        let body = format!(r#"{{"host":"mumble.example","channel":"{channel}"}}"#);
+        assert!(post(&app, &format!("{page}voice-mumble"), "", &body).starts_with("HTTP/1.1 204"));
+    };
+    ask("A");
+    ask("B");
+    assert!(
+        status(&app, &id, "k", r#"{"kind":"mumble","asked":1,"status":"Left: moved","people":[{"id":"77","name":"late"}]}"#)
+            .starts_with("HTTP/1.1 204")
+    );
+    assert!(get(&app, &format!("{page}voice-comms"), "").contains(r#""status":"connecting""#));
+    assert!(!get(&app, &format!("{page}voices"), "").contains("late"));
+    assert!(status(&app, &id, "k", r#"{"kind":"mumble","asked":2,"status":"B · 1"}"#).starts_with("HTTP/1.1 204"));
+    assert!(get(&app, &format!("{page}voice-comms"), "").contains("B · 1"));
+}
+
+#[test]
 fn behind_a_site_only_who_has_a_say_brings_mumble_in() {
     let (mut app, key, _dir) = site_app();
     app.voice_key = Some("k".into());
