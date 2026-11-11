@@ -24,16 +24,23 @@ impl Session {
         if matches!(took, Took::Held { .. } | Took::PauseTalk) && !self.voice_tended.swap(true, Ordering::AcqRel) {
             let s = self.clone();
             std::thread::spawn(move || {
-                while s.is_live() && !s.stop.load(Ordering::Relaxed) {
-                    std::thread::sleep(TEND_EVERY);
-                    let now = Instant::now();
-                    s.voice.step(&s.hub, now);
-                    s.keep_spoken();
-                    if s.voice.idle(now) {
+                loop {
+                    while s.is_live() && !s.stop.load(Ordering::Relaxed) {
+                        std::thread::sleep(TEND_EVERY);
+                        let now = Instant::now();
+                        s.voice.step(&s.hub, now);
+                        s.keep_spoken();
+                        if s.voice.idle(now) {
+                            break;
+                        }
+                    }
+                    s.voice_tended.store(false, Ordering::Release);
+                    // Voice that came just as this was done would wait for the next: tended on.
+                    let done = !s.is_live() || s.stop.load(Ordering::Relaxed) || s.voice.idle(Instant::now());
+                    if done || s.voice_tended.swap(true, Ordering::AcqRel) {
                         break;
                     }
                 }
-                s.voice_tended.store(false, Ordering::Release);
             });
         }
         Some(took)
