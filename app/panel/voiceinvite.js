@@ -16,6 +16,8 @@ const USUAL_DELAY = 90,
   MAX_DELAY = 300;
 // How long the button says it copied, in milliseconds.
 const COPIED_MS = 4000;
+// How soon the bot is asked about again while it is on its way, in milliseconds.
+const SOON_MS = 200;
 // Mumble's own port.
 const MUMBLE_PORT = 64738;
 
@@ -209,6 +211,7 @@ const ask = (/** @type {object} */ body) =>
 
 // Where the bot is, asked while the view is open: the view anew when that changed, else only
 // the line that says how it goes (so nothing is drawn anew under someone typing).
+let soon = 0;
 function look() {
   if (!given || !screen || list.hidden) return;
   fetch(new URL("voice-comms", HOME))
@@ -217,9 +220,12 @@ function look() {
       now => {
         if (!now) return;
         const shape = (/** @type {typeof comms} */ c) =>
-          `${Boolean(c.discord)}/${c.mumble ? `${c.mumble.host}/${c.mumble.channel}/${failed(c.mumble.status)}` : ""}`;
+          `${Boolean(c.discord)}/${c.mumble ? `${c.mumble.host}/${c.mumble.channel}/${failed(c.mumble.status)}/${c.mumble.status === "connecting"}` : ""}`;
         const changed = shape(now) !== shape(comms);
         comms = now;
+        // On its way: asked again soon, so the dot turns as the bot gets there.
+        clearTimeout(soon);
+        if (now.mumble?.status === "connecting") soon = window.setTimeout(look, SOON_MS);
         if (changed) return void show();
         const line = list.querySelector("#vcomms .vstatustext");
         const said = now.mumble ? `Mumble: ${now.mumble.status}` : now.discord && `Discord: ${now.discord.status}`;
