@@ -155,7 +155,10 @@ export function whoEvents(list, show) {
   });
   list.addEventListener("keydown", e => {
     const input = /** @type {HTMLInputElement} */ (e.target);
-    if (e.key === "Enter" && input.dataset?.steamid) put(input.dataset.steamid, { steamid: typedId }, show);
+    if (e.key !== "Enter" || !input.dataset?.steamid) return;
+    // Let go of, so the view is drawn anew (it is not, under someone typing).
+    input.blur();
+    put(input.dataset.steamid, { steamid: typedId }, show);
   });
   list.addEventListener("click", e => {
     const does =

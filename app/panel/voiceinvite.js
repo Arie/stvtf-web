@@ -63,12 +63,13 @@ const show = () => list.hidden || renderList(list);
 /** @param {string} status */
 const failed = status => /^(Could not join|Left)/.test(status);
 
-/** @param {string} status @param {string} [more] */
-function statusLine(status, more = "") {
+// How it goes: green in a channel, yellow on the way, red when it would not do.
+/** @param {string} status @param {string} [more] @param {string} [where] Discord or Mumble, said before it. */
+function statusLine(status, more = "", where = "") {
   let dot = "good";
   if (failed(status)) dot = "bad";
   else if (!/^In /.test(status)) dot = "wait";
-  const text = el("span", { className: "vstatustext" }, status);
+  const text = el("span", { className: "vstatustext" }, where ? `${where}: ${status}` : status);
   if (more) text.append(el("span", { className: "vhint" }, more));
   const line = el("div", { className: "vstatus" }, el("span", { className: `vdot ${dot}` }), text);
   line.id = "vcomms";
@@ -175,12 +176,12 @@ function connected() {
   const parts = [top("", "Comms for this match")];
   if (comms.mumble) {
     const m = comms.mumble;
-    const line = statusLine(`Mumble: ${m.status}`, `${m.delay} s behind`);
+    const line = statusLine(m.status, `${m.delay} s behind`, "Mumble");
     line.append(act("Reconnect the bot", "go:reconnect"));
     parts.push(line);
   } else if (comms.discord) {
     parts.push(
-      statusLine(`Discord: ${comms.discord.status}`),
+      statusLine(comms.discord.status, "", "Discord"),
       el(
         "div",
         { className: "vhint" },
