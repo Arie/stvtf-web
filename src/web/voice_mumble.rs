@@ -93,8 +93,19 @@ pub(super) fn ask(
     if !is_host(&ask.host) || port == 0 || channel.is_empty() || !fits(channel) || !fits(&password) || !(0.0..=MAX_DELAY).contains(&delay) {
         return respond(s, "400 Bad Request", TEXT, b"Invalid server, channel or delay");
     }
-    let job = MumbleJob { host: ask.host, port, password, channel: channel.to_string(), delay, status: "connecting".into() };
-    *lock(&m.mumble) = Some(job);
+    let mut wanted = lock(&m.mumble);
+    let mut job = MumbleJob { host: ask.host, port, password, channel: channel.to_string(), delay, status: "connecting".into(), asked: 1 };
+    if let Some(had) = wanted.as_ref() {
+        let there = (&had.host, had.port, &had.password, &had.channel) == (&job.host, job.port, &job.password, &job.channel);
+        // Only a new delay for where it sits: no joining anew.
+        if there && had.is_in() && had.delay.total_cmp(&delay).is_ne() {
+            job = MumbleJob { delay, ..had.clone() };
+        } else {
+            job.asked = had.asked + 1;
+        }
+    }
+    *wanted = Some(job);
+    drop(wanted);
     app.mumble_changes.changed();
     respond(s, "204 No Content", TEXT, b"")
 }
@@ -116,7 +127,7 @@ pub(super) fn wanted(s: &mut TcpStream, app: &App, sessions: &Sessions, request:
             let job = lock(&m.mumble).clone()?;
             Some(serde_json::json!({
                 "match": m.id, "invite": m.voice_invite(),
-                "host": job.host, "port": job.port, "password": job.password, "channel": job.channel, "delay": job.delay,
+                "host": job.host, "port": job.port, "password": job.password, "channel": job.channel, "delay": job.delay, "asked": job.asked,
             }))
         })
         .collect();

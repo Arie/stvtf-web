@@ -20,4 +20,14 @@ pub(crate) struct MumbleJob {
     /// How it goes, as the bot last said.
     #[serde(default)]
     pub(crate) status: String,
+    /// Counts each time the bot is asked to join: a new number, and it joins anew.
+    #[serde(default)]
+    pub(crate) asked: u64,
+}
+
+impl MumbleJob {
+    /// Whether the bot sits in the channel, as it last said.
+    pub(crate) fn is_in(&self) -> bool {
+        !(self.status == "connecting" || self.status.starts_with("Could not join") || self.status.starts_with("Left"))
+    }
 }

@@ -1265,6 +1265,28 @@ fn a_mumble_channel_is_asked_for_on_the_page_and_the_bot_hears_of_it() {
 }
 
 #[test]
+fn the_same_mumble_channel_asked_for_again_is_joined_anew_but_not_for_a_new_delay() {
+    let (app, id) = voice_app();
+    let page = format!("/w/{id}/");
+    let ask = |delay: u32| {
+        let body = format!(r#"{{"host":"mumble.example","channel":"B","delay":{delay}}}"#);
+        assert!(post(&app, &format!("{page}voice-mumble"), "", &body).starts_with("HTTP/1.1 204"));
+    };
+    let asked = || bot(&app, "GET", "k", "").split(r#""asked":"#).nth(1).unwrap().split([',', '}']).next().unwrap().to_string();
+    ask(90);
+    assert!(status(&app, &id, "k", r#"{"kind":"mumble","status":"B · 3"}"#).starts_with("HTTP/1.1 204"));
+    let before = asked();
+    // A new delay for where it sits: no joining anew, and how it goes stands.
+    ask(30);
+    assert!(get(&app, &format!("{page}voice-comms"), "").contains("B · 3"));
+    assert_eq!(asked(), before);
+    // The same asked for again: the bot is to join anew, and is on its way until it says so.
+    ask(30);
+    assert!(get(&app, &format!("{page}voice-comms"), "").contains(r#""status":"connecting""#));
+    assert_ne!(asked(), before);
+}
+
+#[test]
 fn behind_a_site_only_who_has_a_say_brings_mumble_in() {
     let (mut app, key, _dir) = site_app();
     app.voice_key = Some("k".into());
