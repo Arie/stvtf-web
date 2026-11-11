@@ -34,11 +34,11 @@ function muteButton(steamid, p, muted) {
   return b;
 }
 
-/** @param {{ steamid: string; player: number | null }} s */
+/** @param {Person} s */
 function row(s) {
   const muted = voice.isMuted(s.steamid);
   const p = s.player == null ? undefined : state.players.get(s.player);
-  const name = p?.name ?? s.steamid;
+  const name = p?.name ?? s.name ?? s.steamid;
   const el = document.createElement("div");
   el.className = "vrow";
   el.dataset.steamid = s.steamid;
@@ -51,7 +51,7 @@ function row(s) {
   return el;
 }
 
-/** @typedef {{ steamid: string; player: number | null }} Person */
+/** @typedef {{ steamid: string; player: number | null; name?: string | null }} Person */
 
 // Where each player's HUD card is, top to bottom: the list keeps the HUD's order.
 function hudOrder() {
@@ -63,7 +63,7 @@ function hudOrder() {
 }
 
 // Who is listed, by team: RED's and BLU's players now (bots aside) as the HUD has them, then the
-// rest heard.
+// rest heard: under a team those taken for it (a coach in its Discord), else under Others.
 /** @returns {{ team: string; name: string; people: Person[] }[]} */
 function groups() {
   /** @type {Map<string, Person[]>} */
@@ -75,9 +75,10 @@ function groups() {
   for (const p of players)
     if ((p.team === "red" || p.team === "blue") && p.steamid && p.steamid !== "BOT")
       by.get(p.team)?.push({ steamid: p.steamid, player: p.id });
+  const listed = new Set([...by.values()].flat().map(p => p.steamid));
   for (const s of voice.speakersHeard()) {
     const team = voice.teamOf(s.steamid);
-    if (team !== "red" && team !== "blue") by.get("")?.push(s);
+    if (!listed.has(s.steamid)) by.get(team === "red" || team === "blue" ? team : "")?.push(s);
   }
   return TEAMS.map(t => ({ ...t, people: by.get(t.team) ?? [] }));
 }
@@ -88,14 +89,22 @@ const shape = gs =>
   gs
     .map(
       g =>
-        `${g.team}:${g.people.map(p => `${p.steamid}/${p.player == null ? "" : state.players.get(p.player)?.class}`).join(",")}`,
+        `${g.team}:${g.people.map(p => `${p.steamid}/${p.player == null ? (p.name ?? "") : state.players.get(p.player)?.class}`).join(",")}`,
     )
     .join("|");
 
+// More for the end of the list (a room's admins get the voices from outside to match, see
+// room/voiceadmin.js).
+/** @type {(() => HTMLElement[]) | null} */
+let extra = null;
+/** @param {() => HTMLElement[]} more */
+export const setListExtra = more => (extra = more);
+
 /** @param {HTMLElement} list */
 export function renderList(list) {
-  // Not under a slider being dragged: it would come loose. Once let go, the list catches up.
-  if (list.querySelector("input[type=range]:active")) return void (list.dataset.stale = "1");
+  // Not under a slider being dragged or a choice being made: it would come loose. Once let go,
+  // the list catches up.
+  if (list.querySelector("input[type=range]:active, select:focus")) return void (list.dataset.stale = "1");
   delete list.dataset.stale;
   const gs = groups();
   list.dataset.shape = shape(gs);
@@ -119,7 +128,7 @@ export function renderList(list) {
     }
     parts.push(group, ...people.map(row));
   }
-  list.replaceChildren(...parts);
+  list.replaceChildren(...parts, ...(extra?.() ?? []));
   markTalking(list);
 }
 

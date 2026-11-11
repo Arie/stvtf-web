@@ -15,6 +15,7 @@ import { HOME, IN_ROOM, me, names, post } from "./home.js";
 import { copyLink, copyText } from "./copy.js";
 import { inkKey, people, signedIn } from "./people.js";
 import { inTf2 } from "./intf2.js";
+import { voiceAdmin } from "./voiceadmin.js";
 import { RoomView, latestView, morePoints, sender } from "./roomview.js";
 import { focusOf, viewArea } from "../map/view.js";
 /** @typedef {import("../../types/stream").PlaybackLine} PlaybackLine */
@@ -122,6 +123,7 @@ function roomBar() {
     );
   const showPeople = people(allow, showLead);
   inTf2();
+  voiceAdmin();
   drawing(marker);
   arcTool(arc, [marker, circle, light, text]);
   circleTool(circle, [marker, arc, light, text]);

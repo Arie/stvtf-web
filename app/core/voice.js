@@ -11,6 +11,8 @@ import { env } from "./env.js";
 const LEAD = 0.1;
 // How long a speaker counts as talking after their last frame, in milliseconds.
 const TALK_MS = 400;
+// How long a voice of no player stays listed after its last frame, in milliseconds.
+const FORGET_MS = 120_000;
 // The most seconds of a speaker queued ahead (past it, after a stall, frames are dropped), and the
 // most speakers (a client that claims a new SteamID each packet makes a new one each time).
 const MAX_AHEAD = 1,
@@ -21,7 +23,7 @@ const ON_KEY = "voice",
 
 /**
  * @typedef {{
- *   steamid: string; player: number | null; decoder: AudioDecoder | null; gain: GainNode | null;
+ *   steamid: string; player: number | null; name: string | null; team: string | null; decoder: AudioDecoder | null; gain: GainNode | null;
  *   at: number; n: number; last: number; queued: Set<AudioBufferSourceNode>;
  * }} Speaker
  */
@@ -120,10 +122,24 @@ function speaker(m) {
   let s = speakers.get(m.steamid);
   if (!s) {
     if (speakers.size >= MAX_SPEAKERS) return null;
-    s = { steamid: m.steamid, player: null, decoder: null, gain: null, at: 0, n: 0, last: 0, queued: new Set() };
+    s = {
+      steamid: m.steamid,
+      player: null,
+      name: null,
+      team: null,
+      decoder: null,
+      gain: null,
+      at: 0,
+      n: 0,
+      last: 0,
+      queued: new Set(),
+    };
     speakers.set(m.steamid, s);
   }
   s.player = m.player ?? null;
+  // A voice from outside the match that is no player's: its name, and the team it is taken for.
+  s.name = m.name ?? null;
+  s.team = m.team ?? null;
   if (audio && !s.gain) {
     s.gain = audio.createGain();
     s.gain.connect(audio.destination);
@@ -167,6 +183,7 @@ function play(s, data) {
 
 /** @param {VoiceLine} m */
 export function onVoice(m) {
+  if (m.injected) outside = true;
   if (!voiceOn() || !audio || !playing || !(m.rate > 0)) return;
   const s = speaker(m);
   if (!s) return;
@@ -211,9 +228,17 @@ export function isTalking(id) {
   return false;
 }
 
-// Everyone heard so far, for the speakers list.
+// Everyone heard so far, for the speakers list. A voice of no player that fell silent is forgotten
+// (matched to a player since, or gone): their mute and volume are kept.
 export function speakersHeard() {
-  return [...speakers.values()].map(s => ({ steamid: s.steamid, player: s.player, talking: talking(s) }));
+  const now = performance.now();
+  for (const s of [...speakers.values()]) if (s.player == null && now - s.last > FORGET_MS) forget(s.steamid);
+  return [...speakers.values()].map(s => ({
+    steamid: s.steamid,
+    player: s.player,
+    name: s.name,
+    talking: talking(s),
+  }));
 }
 
 // Teams muted, for this page (another match has other players), and those let through anyway.
@@ -222,11 +247,25 @@ const mutedTeams = new Set();
 /** @type {Set<string>} */
 const letThrough = new Set();
 
-// The team of whoever has `steamid` in the match, if anyone does.
+// The team of whoever has `steamid` in the match; of a voice that is no player's, the team its
+// lines say.
 /** @param {string} steamid */
 export function teamOf(steamid) {
   for (const p of state.players.values()) if (p.steamid === steamid) return p.team;
-  return null;
+  return speakers.get(steamid)?.team ?? null;
+}
+
+// Whether voice from outside the match (a team's Discord) has come.
+let outside = false;
+export const outsideVoice = () => outside;
+
+// How far a room's admins nudged the delay of voice from outside the match, in seconds.
+let nudge = 0;
+export const voiceNudge = () => nudge;
+/** @param {{ nudge: number }} m */
+export function voiceNudged(m) {
+  nudge = m.nudge;
+  voiceListeners.forEach(f => f());
 }
 
 // Whether `steamid` is muted: by the viewer (kept), or with their team (unless let through).

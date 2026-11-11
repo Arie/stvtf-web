@@ -230,6 +230,11 @@ export type VoiceLine = {
   steamid: string;
   rate: number;
   frames: string[];
+  /** From outside the match (a team's Discord). */
+  injected?: boolean;
+  /** Of an injected voice that is no player's: the team it is taken for, and its name. */
+  team?: Team;
+  name?: string;
 };
 
 /** An admin wiped the room's map. */

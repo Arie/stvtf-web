@@ -297,6 +297,22 @@
 #voicelist input[type="range"] {
   width: 70px;
 }
+/* A room's admins: the delay of voice from outside nudged, and whose voice each is. */
+#voicelist .vnudge .vby {
+  min-width: 44px;
+  text-align: center;
+}
+#voicelist .vmatch select {
+  width: 120px;
+  border: 0;
+  border-radius: 4px;
+  background: #ffffff1a;
+  color: #fff;
+  font: inherit;
+}
+#voicelist .vmatch option {
+  color: #000;
+}
 #voicelist .vteam {
   display: flex;
   align-items: center;

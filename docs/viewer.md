@@ -75,6 +75,12 @@ are on. A room on the match takes the same posts at `POST /r/<id>/voice`; its ad
 voices and their matches at `GET /r/<id>/voices`, and put one on a player (or take it off) with
 `POST /r/<id>/voice-match` `{"discord": "<user id>", "player": <id or null>}`.
 
+On the page such a voice is listed by its name, under the team it is taken for or under Others
+(two minutes after its last word, no longer). A room's admins get "From Discord" at the end of the
+speakers list once such voice comes: the delay nudged half a second at a time (30 s either way,
+for what is said from then on), and each voice without a link with the players to put it on;
+those whose name looks like its own come first, as a suggestion.
+
 Linking, so that it need not be done by hand: `GET /voice/link` signs a visitor in with Discord
 (`identify connections`) and keeps the Steam account Discord verified as theirs
 (`voice-links.json` under `--sessions`). The bot asks `GET /voice/who?discord=<user id>` with its

@@ -25,7 +25,7 @@ import { onArc } from "../room/arcs.js";
 import { onCircle } from "../room/circles.js";
 import { onLight } from "../room/lights.js";
 import { onNote } from "../room/notes.js";
-import { dropAll, onVoice, streamSwitched, voiceOn, voicePlayback } from "./voice.js";
+import { dropAll, onVoice, streamSwitched, voiceNudged, voiceOn, voicePlayback } from "./voice.js";
 import { loadMap } from "../map/view.js";
 /** @typedef {import("../../types/stream").GameEvent} GameEvent */
 /** @typedef {import("../../types/stream").StreamMessage} StreamMessage */
@@ -153,7 +153,7 @@ const ON_LINE = {
   world: () => {},
   // The game paused or went on: for the server's own use (held voice), nothing to show.
   pause: () => {},
-  voice_nudge: () => {},
+  voice_nudge: m => voiceNudged(/** @type {{ nudge: number }} */ (m)),
   seek: () => {
     // A room jumped: everything shown is from before it.
     $("feed").replaceChildren();
