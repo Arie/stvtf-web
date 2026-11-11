@@ -196,8 +196,10 @@ pub(super) fn voice_match(
     let Ok(v) = json_body::<Match>(reader, request) else {
         return respond(s, "400 Bad Request", TEXT, b"Invalid");
     };
+    // Looked up before anything is answered: the match is not held meanwhile.
+    let player = v.player.and_then(|p| lock(&m.hub).steamid_of(stvtf::output::PlayerId(p)).map(str::to_owned));
     let steamid = match (v.player, v.steamid.as_deref()) {
-        (Some(p), _) => match lock(&m.hub).steamid_of(stvtf::output::PlayerId(p)).map(str::to_owned) {
+        (Some(_), _) => match player {
             Some(steamid) => Some(steamid),
             None => return respond(s, "400 Bad Request", TEXT, b"No such player"),
         },
