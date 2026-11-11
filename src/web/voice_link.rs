@@ -105,7 +105,7 @@ fn ask_discord(d: &Discord, code: &str) -> Result<(String, Option<String>)> {
 
 /// `/voice/link`: off to Discord, to come back to `/voice/linked`.
 pub(super) fn link(s: &mut TcpStream, app: &App) -> std::io::Result<()> {
-    let Some(d) = &app.voice_links.discord else { return respond(s, "404 Not Found", TEXT, b"No linking here.") };
+    let Some(d) = &app.voice_links.discord else { return respond(s, "404 Not Found", TEXT, b"No linking here") };
     let state = random_id();
     let to = format!(
         "{}/oauth2/authorize?response_type=code&client_id={}&scope=identify+connections&redirect_uri={}&state={state}",
@@ -118,27 +118,22 @@ pub(super) fn link(s: &mut TcpStream, app: &App) -> std::io::Result<()> {
 
 /// `/voice/linked`: back from Discord with a code, in the browser that set out.
 pub(super) fn linked(s: &mut TcpStream, app: &App, request: &Request) -> std::io::Result<()> {
-    let Some(d) = &app.voice_links.discord else { return respond(s, "404 Not Found", TEXT, b"No linking here.") };
+    let Some(d) = &app.voice_links.discord else { return respond(s, "404 Not Found", TEXT, b"No linking here") };
     let state = param(&request.query, "state").unwrap_or_default();
     let code = param(&request.query, "code").map(form_decode).unwrap_or_default();
     if state.is_empty() || code.is_empty() || request.voice_link.as_deref() != Some(state) {
-        return respond(s, "400 Bad Request", TEXT, b"That sign-in did not start here; try the link again.");
+        return respond(s, "400 Bad Request", TEXT, b"Expired. Try again.");
     }
     match ask_discord(d, &code) {
         Ok((discord, Some(steamid))) => {
-            let done = format!("Linked: what you say in Discord is now {steamid}'s voice on stv.tf. You can close this page.");
+            let done = format!("Linked to {steamid}.");
             app.voice_links.link(discord, steamid);
             respond(s, "200 OK", TEXT, done.as_bytes())
         }
-        Ok((_, None)) => respond(
-            s,
-            "409 Conflict",
-            TEXT,
-            b"Discord knows no Steam account of yours: add Steam under User Settings, Connections in Discord, then try the link again.",
-        ),
+        Ok((_, None)) => respond(s, "409 Conflict", TEXT, b"No Steam on your Discord. Add it under Connections."),
         Err(e) => {
             eprintln!("stvtf-web: voice link failed: {e:#}");
-            respond(s, "502 Bad Gateway", TEXT, b"Discord did not answer as expected; try the link again.")
+            respond(s, "502 Bad Gateway", TEXT, b"Discord error. Try again.")
         }
     }
 }
