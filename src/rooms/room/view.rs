@@ -95,6 +95,8 @@ impl Room {
         if std::mem::replace(&mut *lock(&self.camera), camera) != camera {
             self.follow(&lock(&self.state));
         }
+        // Chosen, or moved by hand (a page sends no other): someone is at the controls.
+        self.touched();
         Ok(())
     }
 }

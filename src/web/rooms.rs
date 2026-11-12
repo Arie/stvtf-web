@@ -9,7 +9,7 @@ use super::{
 };
 use crate::App;
 use crate::matches::sessions::{Session, Sessions, logged};
-use crate::rooms::room::{ArcDraw, CircleDraw, Control, Draw, LightDraw, NoteDraw, Room, ViewPost};
+use crate::rooms::room::{ArcDraw, CircleDraw, Control, Draw, LightDraw, MapPost, NoteDraw, Room, ViewPost};
 use anyhow::Result;
 use std::io::{BufReader, Take};
 use std::net::{IpAddr, TcpStream};
@@ -186,7 +186,7 @@ fn change(
         }
         "claim" => respond(s, "403 Forbidden", TEXT, b"Only the site's streamers make themselves admin."),
         "name" => done(s, json_body::<Name>(reader, request).map(|n| room.rename(guest, &n.name))),
-        "control" | "draw" | "arc" | "circle" | "light" | "note" | "clear" | "admin" | "view" | "ink" if !room.is_admin(guest) => {
+        "control" | "draw" | "arc" | "circle" | "light" | "note" | "clear" | "admin" | "view" | "ink" | "map" if !room.is_admin(guest) => {
             respond(s, "403 Forbidden", TEXT, b"Only the room's admins do that.")
         }
         "view" => done(s, json_body::<ViewPost>(reader, request).and_then(|v| room.set_view(&v, guest))),
@@ -201,6 +201,7 @@ fn change(
             respond(s, "204 No Content", TEXT, b"")
         }
         "control" => done(s, json_body::<Control>(reader, request).and_then(|c| room.control(&c))),
+        "map" => done(s, json_body::<MapPost>(reader, request).and_then(|m| room.go(&m))),
         "admin" => done(s, json_body::<Admin>(reader, request).and_then(|a| room.set_admin(guest, a.person, a.admin))),
         _ => not_found(s),
     }

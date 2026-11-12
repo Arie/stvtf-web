@@ -89,6 +89,9 @@ pub(crate) struct Saved {
     /// The map of the match it is on, by number; none in files from before: the latest.
     #[serde(default)]
     part: Option<usize>,
+    /// It goes on to the next map by itself (see `State::follows`).
+    #[serde(default)]
+    follows: bool,
 }
 
 /// A page in the room, by its guest cookie if it is listed, until dropped.
@@ -111,7 +114,7 @@ impl Room {
     pub(crate) fn start(id: String, owner: &str, recording: Arc<Recording>) -> Arc<Room> {
         let at = if recording.is_live() { recording.length() } else { 0 };
         let part = recording.latest().n;
-        let state = State { paused: false, speed: 1.0, at, seek: (at > 0).then_some(at), stop: false, tick: None, part };
+        let state = State { paused: false, speed: 1.0, at, seek: (at > 0).then_some(at), stop: false, tick: None, part, follows: false };
         Room::run(id, People::new(owner), None, None, state, recording)
     }
 
@@ -120,7 +123,7 @@ impl Room {
         let at = at.clamp(recording.start(), recording.length());
         let speed = if SPEEDS.contains(&speed) { speed } else { 1.0 };
         let part = recording.latest().n;
-        let state = State { paused, speed, at, seek: Some(at), stop: false, tick: None, part };
+        let state = State { paused, speed, at, seek: Some(at), stop: false, tick: None, part, follows: false };
         Room::run(id, People::new(owner), None, None, state, recording)
     }
 
@@ -128,7 +131,8 @@ impl Room {
     pub(crate) fn restore(id: String, saved: Saved, recording: Arc<Recording>) -> Arc<Room> {
         let at = saved.at.clamp(recording.start(), recording.length());
         let part = saved.part.map_or(recording.latest().n, |n| n.min(recording.latest().n));
-        let state = State { paused: saved.paused, speed: saved.speed, at, seek: Some(at), stop: false, tick: None, part };
+        let state =
+            State { paused: saved.paused, speed: saved.speed, at, seek: Some(at), stop: false, tick: None, part, follows: saved.follows };
         let room = Room::run(id, saved.people, saved.leader, saved.view.map(Into::into), state, recording);
         if let Some(view) = lock(&room.view).clone() {
             announce(&room.hub, "view", &view);
@@ -189,6 +193,7 @@ impl Room {
             marker: lock(&self.marker).clone(),
             relay: lock(&self.relay_was).clone(),
             part: Some(st.part),
+            follows: st.follows,
         }
     }
 
@@ -273,6 +278,8 @@ impl Room {
 }
 
 #[cfg(test)]
+mod move_tests;
+#[cfg(test)]
 mod part_tests;
 #[cfg(test)]
 mod tests;
@@ -281,5 +288,6 @@ pub(crate) use circle::CircleDraw;
 pub(crate) use drawing::{Draw, Kept};
 pub(crate) use light::LightDraw;
 pub(crate) use note::NoteDraw;
+pub(crate) use part::MapPost;
 pub(crate) use play::Control;
 pub(crate) use view::ViewPost;

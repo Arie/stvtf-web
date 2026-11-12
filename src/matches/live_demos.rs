@@ -339,7 +339,8 @@ mod tests {
         write_demo(demos.create("cp_a", 100).unwrap(), "cp_a", &[100, 104, 110]);
         demos.said(&spoken(103));
         demos.said(&spoken(108));
-        let live = Download { file: "0-100".into(), map: "cp_a".into(), bytes: std::fs::metadata(dir.join("live-m-0-100.dem")).unwrap().len() };
+        let live =
+            Download { file: "0-100".into(), map: "cp_a".into(), bytes: std::fs::metadata(dir.join("live-m-0-100.dem")).unwrap().len() };
         assert_eq!(downloads(&dir, "m"), std::slice::from_ref(&live), "while it is played, too");
         // The demo as TF2 plays it, the comms in it at their ticks.
         let (name, demo) = build(&dir, "m", "0-100").unwrap();

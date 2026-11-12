@@ -11,20 +11,20 @@ use stvtf::Line;
 
 const T0: u64 = 1_700_000_000_000;
 
-fn push(rec: &Recording, line: &Line, at: u64) {
+pub(super) fn push(rec: &Recording, line: &Line, at: u64) {
     let text = serde_json::to_string(line).unwrap();
     let mut stamped: stvtf::output::Stamped = serde_json::from_str(&text).unwrap();
     stamped.time = Some(T0 + at);
     rec.push(&stamped, &text).unwrap();
 }
 
-fn stalemate() -> Line {
+pub(super) fn stalemate() -> Line {
     serde_json::from_str(r#"{"type":"stalemate","tick":5}"#).unwrap()
 }
 
 /// The room's player has nothing due: it is inside its part (a seek is done), and one that is
 /// watched has played what its part has.
-fn settle(room: &Room) {
+pub(super) fn settle(room: &Room) {
     until("the player to rest", || {
         let st = lock(&room.state);
         let (start, end) = room.reach(&st);
@@ -34,7 +34,7 @@ fn settle(room: &Room) {
 }
 
 /// The last playback line the room told its pages (once it told any).
-fn playback(room: &Room) -> Value {
+pub(super) fn playback(room: &Room) -> Value {
     let last = || {
         let page = subscribe(&room.hub, false);
         let lines: Vec<Value> = page.try_iter().map(|l| serde_json::from_str(&l).unwrap()).collect();
@@ -59,12 +59,15 @@ fn live_room_then_new_map() -> (Arc<Room>, Arc<Recording>, u64) {
     (room, rec, origin)
 }
 
-/// `cp_a` for a minute, `cp_b` for hours (the trim drops `cp_a`), then `cp_c`; a room opened on `cp_a`.
+/// `cp_a` for a minute, `cp_b` for hours (the trim drops `cp_a`), then `cp_c`; a room opened on
+/// `cp_a`, following live.
 fn room_on_a_part_then_trimmed() -> (Arc<Room>, Arc<Recording>) {
     let rec = Arc::new(Recording::live());
     push(&rec, &server("cp_a"), 0);
     push(&rec, &stalemate(), 60_000);
     let room = Room::start("r".into(), "me", rec.clone());
+    // As a watched one at live would: unwatched, it plays nothing.
+    lock(&room.state).follows = true;
     push(&rec, &server("cp_b"), 61_000);
     for s in 62..=4 * 3600 {
         push(&rec, &stalemate(), s * 1000);
@@ -135,6 +138,7 @@ fn a_room_whose_map_was_trimmed_goes_to_the_earliest_kept_and_waits() {
     let p = playback(&room);
     assert_eq!((p["map"].as_u64(), p["at"].as_u64()), (Some(1), p["start"].as_u64()));
     assert_eq!((p["over"].as_bool(), p["live"].as_bool(), p["paused"].as_bool()), (Some(true), Some(false), Some(true)));
+    assert!(!lock(&room.state).follows, "put on another map: it does not go on by itself");
     let inside = p["start"].as_u64().unwrap() + 5000;
     room.control(&Control { seek: Some(inside), ..Control::default() }).unwrap();
     settle(&room);

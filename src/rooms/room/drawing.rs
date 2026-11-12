@@ -115,6 +115,7 @@ impl Room {
         send_keeping(&self.hub, &line, "marker", kept_line(&marker));
         drop(marker);
         self.hand_marker(beams);
+        self.touched();
         Ok(())
     }
 
@@ -125,5 +126,6 @@ impl Room {
         self.keep_marker();
         let line = serde_json::json!({ "type": "clear", "by": by }).to_string().into();
         send_keeping(&self.hub, &line, "marker", kept_line(&lock(&self.marker)));
+        self.touched();
     }
 }

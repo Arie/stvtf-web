@@ -53,6 +53,9 @@ pub(super) struct State {
     pub(super) tick: Option<u32>,
     /// The map of the match it plays, by number.
     pub(super) part: usize,
+    /// It goes on to the next map by itself: it was at live when its map ended, and nobody did
+    /// anything in it since.
+    pub(super) follows: bool,
 }
 
 /// What an owner changes; unset fields stay.
@@ -103,6 +106,7 @@ impl Room {
             bail!("speed {speed} is not one of {SPEEDS:?}");
         }
         let mut st = lock(&self.state);
+        st.follows = false;
         if let Some(speed) = c.speed {
             st.speed = speed;
         }
@@ -220,11 +224,14 @@ impl Room {
     }
 
     /// At the end of what is played: of a map that the match went on from (`over`, its end), it
-    /// waits there; of what is recorded, a live match's goes on (at 1×, as it comes in), any other
-    /// pauses there.
+    /// waits there, unless it follows live and goes on; of what is recorded, a live match's goes on
+    /// (at 1×, as it comes in, following it unless paused), any other pauses there.
     fn at_end<'a>(&self, mut st: MutexGuard<'a, State>, over: Option<u64>) -> MutexGuard<'a, State> {
         let rec = &self.recording;
         if let Some(end) = over {
+            if self.move_on(&mut st) {
+                return st;
+            }
             if !st.paused && st.at < end {
                 st.at = end;
                 self.announce(&st);
@@ -233,7 +240,7 @@ impl Room {
         }
         if rec.is_live() {
             if !st.paused {
-                st.at = st.at.max(rec.length());
+                (st.at, st.follows) = (st.at.max(rec.length()), true);
             }
             if (st.speed - 1.0).abs() > f64::EPSILON {
                 st.speed = 1.0;
