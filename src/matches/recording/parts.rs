@@ -149,6 +149,13 @@ impl Inner {
     }
 }
 
+impl Recording {
+    /// The latest part; a recording with no server line yet has a nameless one.
+    pub(crate) fn latest(&self) -> Part {
+        lock(&self.inner).latest_part()
+    }
+}
+
 #[allow(dead_code, reason = "the rooms use them once they show maps")]
 impl Recording {
     /// The parts kept, oldest first.
@@ -159,11 +166,6 @@ impl Recording {
     /// Part `n`; none once dropped.
     pub(crate) fn part(&self, n: usize) -> Option<Part> {
         self.parts().into_iter().find(|p| p.n == n)
-    }
-
-    /// The latest part; a recording with no server line yet has a nameless one.
-    pub(crate) fn latest(&self) -> Part {
-        lock(&self.inner).latest_part()
     }
 
     /// Play times of the rounds' starts in part `n`.

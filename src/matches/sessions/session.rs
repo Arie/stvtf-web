@@ -147,19 +147,19 @@ impl Session {
         }
     }
 
-    /// Where the `.dem` files of what it plays are, by server tick, so rooms on it can be relayed:
+    /// Where the `.dem` files of what it plays are, by map load and server tick, so rooms on it can be relayed:
     /// a live match's as it records them, a demos.tf demo's, kept in `store`, or a fixed match's,
     /// beside its recording under the same name (`demo.dem` for `demo.jsonl.gz`).
     pub(crate) fn demo_of(&self, store: Option<&Store>) -> Option<DemoOf> {
         if let Some(d) = self.demos.get() {
             let d = d.clone();
-            return Some(Arc::new(move |tick| d.at(tick)));
+            return Some(Arc::new(move |map, again, tick| d.at(map, again, tick)));
         }
         let path = match &*lock(&self.source) {
             Some(Source::File(file)) => dem_beside(file),
             _ => store?.dir.join(demo_dem(self.demo?)),
         };
-        Some(Arc::new(move |_| path.exists().then(|| path.clone())))
+        Some(Arc::new(move |_, _, _| path.exists().then(|| path.clone())))
     }
 
     /// Rooms play `file`, the recording this session loops.

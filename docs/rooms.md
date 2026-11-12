@@ -74,8 +74,9 @@ seeking and at speed with it.
   keeps the room open.
 - A relay that cannot start (ports full, demo not there yet) is retried; one that stops is replaced.
 - It plays the match's `.dem` (stvtf's README, "Playing a demo"): a demos.tf demo's as
-  `demo-<number>.dem`, a live match's as `live-<match>-<tick>.dem`, one per server connection (a
-  new map sets the old aside as `live-<match>-past-<map>-<tick>.dem`, played no more). Written
+  `demo-<number>.dem`, a live match's as `live-<match>-<load>-<tick>.dem`, one per server
+  connection, `<load>` the number of the map load it is of (0 the first; another map, or ticks
+  starting over, is a new load), those of earlier loads kept for a room on an earlier map. Written
   only with `--relay-ports`. A live match's go when it ends; a demo's an hour after a room last
   played it, a live one's 3 hours after last written (swept every 5 minutes).
 - Demos of an older TF2 build (other class tables) cannot be played to a client; the sidebar

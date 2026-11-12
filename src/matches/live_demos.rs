@@ -1,8 +1,10 @@
 //! A live match's `.dem` files, recorded as it is watched so rooms on it can be relayed to TF2
 //! clients: one per connection to its server (a reconnect, a new map, a deploy starts another),
-//! named after the server tick of its first frame. A new map sets the old one's aside
-//! (`live-<match>-past-<map>-<tick>.dem`), played no more but there to look at; all go with the
-//! match, or with the store's sweep of old files.
+//! `live-<match>-<load>-<tick>.dem`: the server tick of its first frame, and the number of the
+//! load it belongs to (0 the first), a load being a map loaded (another map, or ticks starting
+//! over). Those of earlier loads stay, so rooms on them can be relayed; all go with the match, or
+//! with the store's sweep of old files. The names of the version before, `live-<match>-<tick>.dem`,
+//! are of load 0.
 //!
 //! Voice from outside the match that its players said (a team's Discord) is kept beside the demo
 //! it was heard in (`<demo>.voice`, a line each). A demo with any is not dropped but kept
@@ -24,8 +26,6 @@ use std::time::{Duration, SystemTime};
 const KEPT_PREFIX: &str = "kept-";
 /// What follows a demo's name in that of its voice.
 const VOICE: &str = ".voice";
-/// What follows the match in the name of a demo of a map before.
-const PAST: &str = "past-";
 
 /// Something a player said from outside the match, as the match's stream came to its tick: what
 /// writing it into a demo takes.
@@ -44,7 +44,8 @@ pub(crate) struct Spoken {
 /// A demo to download with its comms in it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub(crate) struct Download {
-    /// What names it in the match: the server tick of its first frame.
+    /// What names it in the match: `<load>-<tick>` of its first frame (`<tick>` alone, in the
+    /// names of the version before).
     pub(crate) file: String,
     pub(crate) map: String,
     pub(crate) bytes: u64,
@@ -69,17 +70,24 @@ fn map_of(demo: &Path) -> Option<String> {
     Some(stvtf::demo::Header::parse(&header).ok()?.map)
 }
 
-/// Match `id`'s demo whose first frame is at tick `file`, with comms: being recorded, or kept.
+/// The load and first tick a demo's `file` (what follows the match in its name) says.
+fn load_tick(file: &str) -> Option<(usize, u32)> {
+    let digits = |s: &str| !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit());
+    let (load, tick) = file.split_once('-').unwrap_or(("0", file));
+    (digits(load) && digits(tick)).then_some((load.parse().ok()?, tick.parse().ok()?))
+}
+
+/// Match `id`'s demo `file`, with comms: being recorded, or kept.
 fn with_comms(dir: &Path, id: &str, file: &str) -> Option<PathBuf> {
-    if file.is_empty() || !file.bytes().all(|b| b.is_ascii_digit()) || !id.bytes().all(|b| b.is_ascii_alphanumeric()) {
+    if load_tick(file).is_none() || !id.bytes().all(|b| b.is_ascii_alphanumeric()) {
         return None;
     }
     [LIVE_PREFIX, KEPT_PREFIX].iter().map(|p| dir.join(format!("{p}{id}-{file}.dem"))).find(|p| has_voice(p))
 }
 
-/// Match `id`'s demos with comms in `dir`, the earliest first.
+/// Match `id`'s demos with comms in `dir`, the earliest load first.
 pub(crate) fn downloads(dir: &Path, id: &str) -> Vec<Download> {
-    let mut found: Vec<(u64, Download)> = std::fs::read_dir(dir)
+    let mut found: Vec<((usize, u32), Download)> = std::fs::read_dir(dir)
         .into_iter()
         .flatten()
         .flatten()
@@ -89,10 +97,10 @@ pub(crate) fn downloads(dir: &Path, id: &str) -> Vec<Download> {
             let file = rest.strip_prefix(id)?.strip_prefix('-')?.strip_suffix(".dem")?;
             let path = with_comms(dir, id, file)?;
             let download = Download { file: file.to_string(), map: map_of(&path)?, bytes: e.metadata().ok()?.len() };
-            Some((file.parse().ok()?, download))
+            Some((load_tick(file)?, download))
         })
         .collect();
-    found.sort_by_key(|(tick, _)| *tick);
+    found.sort_by_key(|(at, _)| *at);
     found.into_iter().map(|(_, d)| d).collect()
 }
 
@@ -100,7 +108,7 @@ pub(crate) fn downloads(dir: &Path, id: &str) -> Vec<Download> {
 /// what to call it, and the demo.
 pub(crate) fn build(dir: &Path, id: &str, file: &str) -> Result<(String, Vec<u8>)> {
     let path = with_comms(dir, id, file).context("no such demo")?;
-    let first: i64 = file.parse()?;
+    let first = i64::from(load_tick(file).context("no such demo")?.1);
     let b64 = base64::engine::general_purpose::STANDARD;
     let mut voices = Vec::new();
     for line in std::io::BufReader::new(File::open(voice_of(&path))?).lines() {
@@ -156,13 +164,15 @@ pub(crate) fn sweep_kept(dir: &Path, max_age: Duration, budget: u64) {
 struct Part {
     path: PathBuf,
     map: String,
+    /// Which load of the match it is of, 0 the first.
+    load: usize,
     first_tick: u32,
 }
 
 pub(crate) struct LiveDemos {
     dir: PathBuf,
     id: String,
-    /// By first tick.
+    /// By load, then first tick.
     parts: Mutex<Vec<Part>>,
 }
 
@@ -176,33 +186,39 @@ impl LiveDemos {
             .flatten()
             .filter_map(|e| {
                 let name = e.file_name().to_string_lossy().into_owned();
-                let first_tick = name.strip_prefix(&prefix)?.strip_suffix(".dem")?.parse().ok()?;
-                let mut header = vec![0u8; stvtf::demo::HEADER_LEN];
-                std::io::Read::read_exact(&mut File::open(e.path()).ok()?, &mut header).ok()?;
-                let map = stvtf::demo::Header::parse(&header).ok()?.map;
-                Some(Part { path: e.path(), map, first_tick })
+                let (load, first_tick) = load_tick(name.strip_prefix(&prefix)?.strip_suffix(".dem")?)?;
+                Some(Part { map: map_of(&e.path())?, path: e.path(), load, first_tick })
             })
             .collect();
-        parts.sort_by_key(|p| p.first_tick);
+        parts.sort_by_key(|p| (p.load, p.first_tick));
         Arc::new(LiveDemos { dir: dir.to_owned(), id: id.to_string(), parts: Mutex::new(parts) })
     }
 
-    /// The demo with server tick `tick` of the map being watched: the last to start at or before
-    /// it, or the first if it is before them all.
-    pub(crate) fn at(&self, tick: u32) -> Option<PathBuf> {
+    /// The demo with server tick `tick` of the `again`-th load (0 the first) of `map`: the last of
+    /// its demos to start at or before it, or the first if it is before them all.
+    pub(crate) fn at(&self, map: &str, again: usize, tick: u32) -> Option<PathBuf> {
         let parts = lock(&self.parts);
-        parts.iter().rev().find(|p| p.first_tick <= tick).or(parts.first()).map(|p| p.path.clone())
+        let mut loads: Vec<usize> = parts.iter().filter(|p| p.map == map).map(|p| p.load).collect();
+        loads.dedup();
+        let load = *loads.get(again)?;
+        let mut of = parts.iter().filter(|p| p.load == load);
+        let first = of.next()?;
+        Some(of.take_while(|p| p.first_tick <= tick).last().unwrap_or(first).path.clone())
     }
 
-    /// The match ended: its demos go, those of maps before too, but for those with comms, which
+    /// The match ended: its demos go, those of loads before too, but for those with comms, which
     /// are kept.
     pub(crate) fn forget(&self) {
-        remove(&mut lock(&self.parts), false);
-        let past = format!("{LIVE_PREFIX}{}-{PAST}", self.id);
-        for e in std::fs::read_dir(&self.dir).into_iter().flatten().flatten() {
-            if e.file_name().to_string_lossy().starts_with(&past) {
-                let _ = std::fs::remove_file(e.path());
+        for p in lock(&self.parts).drain(..) {
+            let name = p.path.file_name().and_then(|n| n.to_str());
+            let kept = name.and_then(|n| n.strip_prefix(LIVE_PREFIX)).map(|n| p.path.with_file_name(format!("{KEPT_PREFIX}{n}")));
+            if let Some(kept) = kept.filter(|_| has_voice(&p.path)) {
+                let _ = std::fs::rename(voice_of(&p.path), voice_of(&kept));
+                let _ = std::fs::rename(&p.path, kept);
+                continue;
             }
+            let _ = std::fs::remove_file(voice_of(&p.path));
+            let _ = std::fs::remove_file(p.path);
         }
     }
 
@@ -219,40 +235,20 @@ impl LiveDemos {
     }
 }
 
-/// Forgets `parts`: a demo with comms is kept under another name, to download; the rest are
-/// deleted, or set `aside` while the match goes on.
-fn remove(parts: &mut Vec<Part>, aside: bool) {
-    for p in parts.drain(..) {
-        let name = p.path.file_name().and_then(|n| n.to_str());
-        let kept = name.and_then(|n| n.strip_prefix(LIVE_PREFIX)).map(|n| p.path.with_file_name(format!("{KEPT_PREFIX}{n}")));
-        if let Some(kept) = kept.filter(|_| has_voice(&p.path)) {
-            let _ = std::fs::rename(voice_of(&p.path), voice_of(&kept));
-            let _ = std::fs::rename(&p.path, kept);
-            continue;
-        }
-        let _ = std::fs::remove_file(voice_of(&p.path));
-        let tick = format!("{}.dem", p.first_tick);
-        let map: String = p.map.chars().map(|c| if c.is_ascii_alphanumeric() || c == '_' { c } else { '_' }).collect();
-        match name.and_then(|n| n.strip_suffix(&tick)).filter(|_| aside) {
-            Some(start) => drop(std::fs::rename(&p.path, p.path.with_file_name(format!("{start}{PAST}{map}-{tick}")))),
-            None => drop(std::fs::remove_file(p.path)),
-        }
-    }
-}
-
 impl stvtf::demo::Files for LiveDemos {
     fn create(&self, map: &str, first_tick: u32) -> std::io::Result<File> {
         let mut parts = lock(&self.parts);
-        // Another map, or the server's ticks started over (a restart): the ones before are set
-        // aside.
-        if parts.last().is_some_and(|p| p.map != map || p.first_tick > first_tick) {
-            remove(&mut parts, true);
-        }
+        // Another map, or the server's ticks started over (a restart): a new load.
+        let load = match parts.last() {
+            Some(p) if p.map != map || p.first_tick > first_tick => p.load + 1,
+            Some(p) => p.load,
+            None => 0,
+        };
         std::fs::create_dir_all(&self.dir)?;
-        let path = self.dir.join(format!("{LIVE_PREFIX}{}-{first_tick}.dem", self.id));
+        let path = self.dir.join(format!("{LIVE_PREFIX}{}-{load}-{first_tick}.dem", self.id));
         let file = File::create(&path)?;
         parts.retain(|p| p.path != path);
-        parts.push(Part { path, map: map.to_string(), first_tick });
+        parts.push(Part { path, map: map.to_string(), load, first_tick });
         Ok(file)
     }
 }
@@ -283,24 +279,41 @@ mod tests {
     fn a_tick_is_found_in_the_demo_it_falls_in() {
         let dir = TempDir::new("live-demos");
         let demos = LiveDemos::new(&dir, "m");
-        assert_eq!(demos.at(5), None);
+        assert_eq!(demos.at("cp_a", 0, 5), None);
         Write::write_all(&mut demos.create("cp_a", 100).unwrap(), &header("cp_a")).unwrap();
         demos.create("cp_a", 500).unwrap();
-        let (first, second) = (dir.join("live-m-100.dem"), dir.join("live-m-500.dem"));
-        assert_eq!(demos.at(50), Some(first.clone()), "before them all: the first");
-        assert_eq!(demos.at(499), Some(first.clone()));
-        assert_eq!(demos.at(500), Some(second.clone()));
-        assert_eq!(demos.at(9000), Some(second.clone()));
+        let (first, second) = (dir.join("live-m-0-100.dem"), dir.join("live-m-0-500.dem"));
+        assert_eq!(demos.at("cp_a", 0, 50), Some(first.clone()), "before them all: the first");
+        assert_eq!(demos.at("cp_a", 0, 499), Some(first.clone()));
+        assert_eq!(demos.at("cp_a", 0, 500), Some(second.clone()));
+        assert_eq!(demos.at("cp_a", 0, 9000), Some(second));
         // The next process finds the first, which has a header.
-        assert_eq!(LiveDemos::new(&dir, "m").at(9000), Some(first.clone()));
-        // A new map: the old one's are set aside, and played no more.
-        Write::write_all(&mut demos.create("cp_b", 10).unwrap(), &header("cp_b")).unwrap();
-        assert!(!first.exists() && !second.exists());
-        assert!(dir.join("live-m-past-cp_a-100.dem").exists() && dir.join("live-m-past-cp_a-500.dem").exists());
-        assert_eq!(demos.at(9000), Some(dir.join("live-m-10.dem")));
-        assert_eq!(LiveDemos::new(&dir, "m").at(50), Some(dir.join("live-m-10.dem")), "nor by the next process");
+        assert_eq!(LiveDemos::new(&dir, "m").at("cp_a", 0, 9000), Some(first));
+    }
+
+    #[test]
+    fn each_load_of_a_map_keeps_its_demos() {
+        let dir = TempDir::new("live-demos");
+        let demos = LiveDemos::new(&dir, "m");
+        for (map, tick) in [("cp_a", 100), ("cp_a", 500), ("cp_b", 10), ("cp_a", 20)] {
+            Write::write_all(&mut demos.create(map, tick).unwrap(), &header(map)).unwrap();
+        }
+        assert_eq!(demos.at("cp_a", 0, 499), Some(dir.join("live-m-0-100.dem")));
+        assert_eq!(demos.at("cp_a", 0, 9000), Some(dir.join("live-m-0-500.dem")), "a reconnect: the same load");
+        assert_eq!(demos.at("cp_b", 0, 9000), Some(dir.join("live-m-1-10.dem")));
+        assert_eq!(demos.at("cp_a", 1, 9000), Some(dir.join("live-m-2-20.dem")), "the same map again: its own");
+        assert_eq!(demos.at("cp_c", 0, 1), None);
+        let next = LiveDemos::new(&dir, "m");
+        assert_eq!(next.at("cp_a", 1, 25), Some(dir.join("live-m-2-20.dem")), "the next process finds them");
         demos.forget();
         assert_eq!(std::fs::read_dir(&*dir).unwrap().count(), 0);
+    }
+
+    #[test]
+    fn a_demo_named_by_the_version_before_is_the_first_load() {
+        let dir = TempDir::new("live-demos");
+        std::fs::write(dir.join("live-m-100.dem"), header("cp_a")).unwrap();
+        assert_eq!(LiveDemos::new(&dir, "m").at("cp_a", 0, 150), Some(dir.join("live-m-100.dem")));
     }
 
     /// A demo of `map` with frames at these server ticks.
@@ -326,11 +339,11 @@ mod tests {
         write_demo(demos.create("cp_a", 100).unwrap(), "cp_a", &[100, 104, 110]);
         demos.said(&spoken(103));
         demos.said(&spoken(108));
-        let live = Download { file: "100".into(), map: "cp_a".into(), bytes: std::fs::metadata(dir.join("live-m-100.dem")).unwrap().len() };
+        let live = Download { file: "0-100".into(), map: "cp_a".into(), bytes: std::fs::metadata(dir.join("live-m-0-100.dem")).unwrap().len() };
         assert_eq!(downloads(&dir, "m"), std::slice::from_ref(&live), "while it is played, too");
         // The demo as TF2 plays it, the comms in it at their ticks.
-        let (name, demo) = build(&dir, "m", "100").unwrap();
-        assert_eq!(name, "cp_a-comms-100.dem");
+        let (name, demo) = build(&dir, "m", "0-100").unwrap();
+        assert_eq!(name, "cp_a-comms-0-100.dem");
         let mut r = stvtf::demo::Reader::new(std::io::Cursor::new(&demo)).unwrap();
         assert_eq!((r.header.map.as_str(), r.header.frames), ("cp_a", 5), "three frames and two of voice");
         let mut ticks = Vec::new();
@@ -340,16 +353,16 @@ mod tests {
             }
         }
         assert_eq!(ticks, [0, 3, 4, 8, 10]);
-        // Another map: this one's demo and comms are kept, under another name; a demo nobody
-        // talked in is not.
+        // Another map: this one's stay as they are. The match gone, those with comms are kept
+        // under another name; a demo nobody talked in is not.
         write_demo(demos.create("cp_b", 10).unwrap(), "cp_b", &[10, 14]);
-        assert!(!dir.join("live-m-100.dem").exists());
-        assert_eq!(downloads(&dir, "m"), std::slice::from_ref(&live), "kept");
-        assert!(build(&dir, "m", "100").is_ok());
+        assert_eq!(downloads(&dir, "m"), std::slice::from_ref(&live), "still there");
+        assert!(build(&dir, "m", "0-100").is_ok());
         demos.forget();
+        assert!(dir.join("kept-m-0-100.dem").exists() && !dir.join("live-m-0-100.dem").exists());
         assert_eq!(downloads(&dir, "m"), [live], "the match gone, its comms stay");
-        assert!(!dir.join("live-m-10.dem").exists(), "the map nobody talked in is gone");
-        assert!(build(&dir, "m", "10").is_err() && build(&dir, "other", "100").is_err() && build(&dir, "m", "../x").is_err());
+        assert!(!dir.join("live-m-1-10.dem").exists(), "the map nobody talked in is gone");
+        assert!(build(&dir, "m", "1-10").is_err() && build(&dir, "other", "0-100").is_err() && build(&dir, "m", "../x").is_err());
     }
 
     #[test]
