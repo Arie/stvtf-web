@@ -159,6 +159,7 @@ impl Inner {
     fn file(&self) -> Result<Vec<u8>> {
         let mut gz = GzEncoder::new(Vec::new(), Compression::default());
         writeln!(gz, "origin\t{}\nmarks\t{}", self.start, self.marks_dropped)?;
+        gz.write_all(self.parts_header().as_bytes())?;
         for line in self.chunks.first().into_iter().flat_map(|c| c.hub.state()) {
             writeln!(gz, "hub\t{line}")?;
         }
@@ -264,6 +265,7 @@ impl Recording {
                 match key {
                     "origin" => inner.start = value.parse()?,
                     "marks" => inner.marks_dropped = value.parse()?,
+                    "parts" | "loads" => inner.read_header(key, value)?,
                     "hub" => publish(&inner.scratch, &serde_json::from_str(value)?),
                     _ => {
                         at = key.parse()?;
