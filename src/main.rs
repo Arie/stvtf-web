@@ -356,6 +356,17 @@ fn who_is_who(options: &Options, keys: Option<&Arc<web::token::Keys>>, voice_key
     web::voice_known::WhoHistory::new(options.sessions.as_deref(), home.as_deref().zip(voice_key), sites)
 }
 
+/// What is said is kept in a file too (`--logs`), the relays' notes with it: one for each
+/// process. A folder that cannot be written is not worth not starting for: stderr has it all.
+fn keep_log(options: &Options) {
+    if let Some(logs) = &options.logs
+        && let Err(e) = log::keep_in(logs, if options.relay_daemon.is_some() { "relay" } else { "web" })
+    {
+        log!("no log kept in {}: {e}", logs.display());
+    }
+    stvtf::relay::notes_to(log::line);
+}
+
 fn main() -> Result<()> {
     static STOP: AtomicBool = AtomicBool::new(false);
     static OPEN: AtomicUsize = AtomicUsize::new(0);
@@ -364,11 +375,7 @@ fn main() -> Result<()> {
         return Ok(());
     };
     watch::stop_on_ctrl_c(&STOP)?;
-    // What is said is kept in a file too, the relays' notes with it: one for each process.
-    if let Some(logs) = &options.logs {
-        log::keep_in(logs, if options.relay_daemon.is_some() { "relay" } else { "web" })?;
-    }
-    stvtf::relay::notes_to(log::line);
+    keep_log(&options);
     // The relay process: only the relays (the rest of the options are the image's for the web).
     if let (Some(socket), Some((host, ports))) = (&options.relay_daemon, &options.relays) {
         log!("relays on {host}, ports {}-{}", ports.start(), ports.end());
