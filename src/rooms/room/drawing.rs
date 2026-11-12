@@ -116,8 +116,9 @@ impl Room {
         }
         let beams = self.marker_in_tf2(marker).inspect_err(|_| *marker = before)?;
         send_keeping(&self.hub, &line, "marker", kept_line(marker));
+        let (notes, light) = (super::note::tf2_notes(marker), super::light::tf2_light(marker));
         drop(all);
-        self.hand_marker(beams);
+        self.hand_marker(beams, notes, light);
         self.touched();
         Ok(())
     }
@@ -125,10 +126,12 @@ impl Room {
     /// Admin `guest` wipes the marker.
     pub(crate) fn clear(&self, guest: &str) {
         let by = lock(&self.people).id(guest);
-        lock(&self.marker).remove(&self.marker_part.load(Ordering::Relaxed));
-        self.keep_marker();
         let line = serde_json::json!({ "type": "clear", "by": by }).to_string().into();
-        send_keeping(&self.hub, &line, "marker", kept_line(&self.current_marker()));
+        let mut all = lock(&self.marker);
+        all.remove(&self.marker_part.load(Ordering::Relaxed));
+        send_keeping(&self.hub, &line, "marker", kept_line(&[]));
+        drop(all);
+        self.keep_marker();
         self.touched();
     }
 }

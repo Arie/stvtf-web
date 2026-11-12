@@ -10,7 +10,7 @@ use crate::maps::drape::{self, Drape, Ground, Piece};
 use anyhow::{Result, bail};
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
-use stvtf::relay::Beam;
+use stvtf::relay::{Beam, Light, Note};
 
 /// The pages' inks for those who picked none (`app/room/telestrator.js`).
 const INKS: [[u8; 3]; 6] =
@@ -81,18 +81,13 @@ impl Room {
             all.truncate(MAX_MARKER_BEAMS);
             all
         });
-        self.hand_marker(beams);
+        self.hand_marker(beams, super::note::tf2_notes(&strokes), super::light::tf2_light(&strokes));
     }
 
     /// Hands the relay the marker's `beams`, or (None, or no relay yet) leaves it to hand over
     /// once it can.
-    pub(super) fn hand_marker(&self, beams: Option<Vec<Beam>>) {
+    pub(super) fn hand_marker(&self, beams: Option<Vec<Beam>>, notes: Vec<Note>, light: Option<Light>) {
         self.marker_dirty.store(true, Ordering::Relaxed);
-        // Before the relay's lock: the marker's is taken first elsewhere.
-        let (notes, light) = {
-            let marker = self.current_marker();
-            (super::note::tf2_notes(&marker), super::light::tf2_light(&marker))
-        };
         if let Some(beams) = beams
             && let Some(r) = &*lock(&self.relay)
         {

@@ -2,7 +2,7 @@
 
 use super::markers::{Markers, read_marker};
 use super::part::MapPost;
-use super::part_tests::{live_room_then_new_map, playback, push, settle, stalemate};
+use super::part_tests::{live_room_then_new_map, playback, push, room_on_a_part_then_trimmed, settle, stalemate};
 use super::tests::until;
 use super::view::View;
 use super::*;
@@ -250,13 +250,25 @@ fn a_marker_saved_before_parts_is_the_latest_maps() {
 }
 
 #[test]
-fn a_map_the_match_no_longer_keeps_takes_its_marker_with_it() {
-    let (room, _, _) = live_room_then_new_map();
-    room.draw(&Draw { stroke: 1, points: vec![[1.0, 2.0, 0.0]], end: true }, "me").unwrap();
-    let gone = read_marker(br#"[{"stroke":1,"by":1,"points":[[0.0,0.0,0.0]]}]"#, 9);
-    lock(&room.marker).extend(gone);
-    let saved = room.saved().markers;
-    assert_eq!(saved.keys().count(), 1, "the map that is kept: {saved:?}");
-    assert_eq!(saved.values().next().map(Vec::len), Some(1));
+fn a_map_the_trim_dropped_takes_its_marker_with_it_saved_or_not() {
+    let (room, _) = room_on_a_part_then_trimmed();
+    let stroke = || read_marker(br#"[{"stroke":1,"by":1,"points":[[0.0,0.0,0.0]]}]"#, 0).remove(&0).unwrap();
+    // Part 0 is trimmed, part 1 is kept.
+    lock(&room.marker).extend([(0, stroke()), (1, stroke())]);
+    until("the trimmed map's marker to go", || !lock(&room.marker).contains_key(&0));
+    assert!(lock(&room.marker).contains_key(&1), "the map kept keeps its marker");
+    room.stop();
+}
+
+/// A room file from before maps, with `marker` inline, on a live match of two maps.
+#[test]
+fn an_inline_marker_from_before_maps_is_the_latest_maps() {
+    let mut saved: Value = serde_json::from_str(part_tests::OLD_SAVED_ROOM).unwrap();
+    saved["marker"] = serde_json::json!([{"stroke":1,"by":1,"points":[[0.0,0.0,0.0]]}]);
+    let rec = live_on("cp_a");
+    push_server(&rec, "cp_b");
+    push_snapshot(&rec, 50);
+    let room = Room::restore("r".into(), serde_json::from_value(saved).unwrap(), rec.clone());
+    assert_eq!(room.saved().markers.keys().collect::<Vec<_>>(), [&rec.latest().n]);
     room.stop();
 }

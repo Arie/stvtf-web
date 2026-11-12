@@ -61,7 +61,7 @@ pub(super) fn live_room_then_new_map() -> (Arc<Room>, Arc<Recording>, u64) {
 
 /// `cp_a` for a minute, `cp_b` for hours (the trim drops `cp_a`), then `cp_c`; a room opened on
 /// `cp_a`, following live.
-fn room_on_a_part_then_trimmed() -> (Arc<Room>, Arc<Recording>) {
+pub(super) fn room_on_a_part_then_trimmed() -> (Arc<Room>, Arc<Recording>) {
     let rec = Arc::new(Recording::live());
     push(&rec, &server("cp_a"), 0);
     push(&rec, &stalemate(), 60_000);
@@ -87,7 +87,7 @@ fn two_maps_recording() -> Arc<Recording> {
 }
 
 /// A room as the version before parts saved it.
-const OLD_SAVED_ROOM: &str =
+pub(super) const OLD_SAVED_ROOM: &str =
     r#"{"paused":true,"speed":1.0,"at":600,"people":{"owner":"me","by_guest":{},"admins":[],"next":1},"leader":null,"view":null}"#;
 
 /// What a `demo_of` was asked: the map, which load of it, the tick.

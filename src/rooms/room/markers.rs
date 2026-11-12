@@ -39,11 +39,11 @@ impl Room {
         self.keep_marker();
     }
 
-    /// The markers to save: those of the maps still kept (the trim drops the rest).
-    pub(super) fn markers_kept(&self) -> Markers {
-        let kept: Vec<usize> = self.recording.parts().iter().map(|p| p.n).collect();
-        let mut all = lock(&self.marker);
-        all.retain(|n, strokes| !strokes.is_empty() && kept.contains(n));
-        all.clone()
+    /// Drops the markers of the maps the trim dropped (the oldest first): `seen` is the earliest
+    /// kept as of the last look.
+    pub(super) fn trim_markers(&self, seen: &mut usize) {
+        let Some(first) = self.recording.parts().first().map(|p| p.n).filter(|n| n > seen) else { return };
+        *seen = first;
+        lock(&self.marker).retain(|n, _| *n >= first);
     }
 }

@@ -206,7 +206,7 @@ impl Room {
             leader: lock(&self.leader).clone(),
             view: lock(&self.view).as_deref().map(str::to_string),
             marker: Vec::new(),
-            markers: self.markers_kept(),
+            markers: lock(&self.marker).clone(),
             relay: lock(&self.relay_was).clone(),
             part: Some(st.part),
             follows: st.follows,

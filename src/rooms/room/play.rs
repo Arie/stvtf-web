@@ -154,6 +154,7 @@ impl Room {
         let mut st = lock(&self.state);
         self.announce(&st);
         let mut announced = Instant::now();
+        let mut kept_from = 0;
         // The clock playing goes by, while it plays on undisturbed: a seek, a pause, the end of
         // what is recorded or another speed sets it down anew.
         let mut clock: Option<Clock> = None;
@@ -166,6 +167,7 @@ impl Room {
                 self.announce_now(&st, &mut announced);
             }
             self.rehome(&mut st);
+            self.trim_markers(&mut kept_from);
             let (start, _) = self.reach(&st);
             if st.seek.is_none() && st.at < start {
                 st.seek = Some(start);

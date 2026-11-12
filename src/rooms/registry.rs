@@ -566,6 +566,25 @@ mod tests {
     }
 
     #[test]
+    fn a_marker_file_from_before_maps_is_the_latest_maps() {
+        let (sessions, dir) = demo();
+        let rooms = Rooms::new(Some(store(&dir)), None);
+        let m = sessions.get("demo").unwrap();
+        let recording = m.recording().unwrap();
+        let r = rooms.open(&m, recording.clone(), "me", None).unwrap();
+        rooms.persist();
+        r.stop();
+        let old = br#"[{"stroke":1,"by":1,"points":[[0.0,0.0,0.0]]}]"#;
+        std::fs::write(dir.join("store").join(marker_file(&r.id)), old).unwrap();
+        let next = Rooms::new(Some(store(&dir)), None);
+        let again = next.get(&r.id, &sessions).expect("picked up");
+        let markers = again.saved().markers;
+        assert_eq!(markers.keys().collect::<Vec<_>>(), [&recording.latest().n]);
+        assert_eq!(markers.values().next().map(Vec::len), Some(1));
+        again.stop();
+    }
+
+    #[test]
     fn a_relayed_room_is_picked_up_once_no_process_plays_it() {
         let (sessions, dir) = demo();
         let rooms = Rooms::new(Some(store(&dir)), None);
