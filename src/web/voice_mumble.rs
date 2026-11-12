@@ -1,13 +1,14 @@
 //! Mumble for a match: `POST /w/<id>/voice-mumble` (a room's too) asks the voice bot into a
-//! channel of a Mumble server (again, to move it: with no password, the one given before), or
-//! sends it away (`{"leave": true}`). For whoever has a say in the match's voice
+//! channel of a Mumble server: one more (each team's, on one server or on several), or with the
+//! `id` of one it is in, to move that (with no password, the one given before for the server).
+//! `{"leave": true}` sends it away from all, with an `id` from that one. For whoever has a say in the match's voice
 //! (`voice_in::has_say`). The bot asks all that is wanted (`GET /voice/mumble`, with its key);
 //! how each goes it says to `voice_who`.
 
 use super::visitor::Who;
 use super::voice_in::{has_say, is_key};
 use super::{JSON, Request, TEXT, json_body, respond};
-use crate::matches::mumble_job::{DEFAULT_PORT, MumbleJob};
+use crate::matches::mumble_job::{DEFAULT_PORT, MAX_JOBS, MumbleJob};
 use crate::matches::sessions::{Session, Sessions};
 use crate::matches::voice_feed::{DEFAULT_DELAY, MAX_DELAY};
 use crate::{App, lock};
@@ -57,6 +58,9 @@ struct Ask {
     delay: Option<f64>,
     #[serde(default)]
     leave: bool,
+    /// Which of the match's channels: none for one more.
+    #[serde(default)]
+    id: Option<u32>,
 }
 
 /// A server's name or address, out on the internet: nothing of a link, a path or a port, and
@@ -79,6 +83,30 @@ fn is_host(host: &str, anywhere: bool) -> bool {
     name.contains('.') && !name.ends_with('.') && ![".local", ".internal", ".localhost", ".lan"].iter().any(|own| name.ends_with(own))
 }
 
+/// Puts `job` among those `wanted`: in the place of the one `at`, moved (those said to be in its
+/// channel are `gone`; only a new delay for where it sits is no joining anew), or as one more.
+/// Not when there are as many as a match may have.
+fn place(wanted: &mut Vec<MumbleJob>, at: Option<usize>, mut job: MumbleJob, gone: &dyn Fn(&MumbleJob)) -> bool {
+    let Some(at) = at else {
+        if wanted.len() >= MAX_JOBS {
+            return false;
+        }
+        wanted.push(job);
+        return true;
+    };
+    let had = &wanted[at];
+    let there = (&had.host, had.port, &had.password, &had.channel) == (&job.host, job.port, &job.password, &job.channel);
+    if there && had.is_in() && had.delay.total_cmp(&job.delay).is_ne() {
+        job = MumbleJob { delay: job.delay, ..had.clone() };
+    } else {
+        // Joined anew: who was there before is told again once it is in.
+        gone(had);
+        (job.id, job.asked) = (had.id, had.asked + 1);
+    }
+    wanted[at] = job;
+    true
+}
+
 /// `POST /w/<id>/voice-mumble`.
 pub(super) fn ask(
     s: &mut TcpStream,
@@ -95,40 +123,51 @@ pub(super) fn ask(
         return respond(s, "403 Forbidden", TEXT, b"Not allowed");
     }
     let Ok(ask) = json_body::<Ask>(reader, request) else { return respond(s, "400 Bad Request", TEXT, b"Invalid") };
+    // Those the bot said are in a channel go with it.
+    let gone = |job: &MumbleJob| {
+        if let Some(roster) = &job.roster {
+            m.voice.set_roster(&m.hub, roster, []);
+        }
+    };
     if ask.leave {
-        *lock(&m.mumble) = None;
-        m.voice.left_mumble();
+        let mut wanted = lock(&m.mumble);
+        let (left, stay): (Vec<_>, Vec<_>) = wanted.drain(..).partition(|j| ask.id.is_none_or(|id| id == j.id));
+        *wanted = stay;
+        drop(wanted);
+        left.iter().for_each(gone);
         app.mumble_changes.changed();
         return respond(s, "204 No Content", TEXT, b"");
     }
     let (port, delay) = (ask.port.unwrap_or(DEFAULT_PORT), ask.delay.unwrap_or(DEFAULT_DELAY));
     let channel = ask.channel.trim();
     let fits = |t: &str| t.chars().count() <= MAX_TEXT && !t.chars().any(char::is_control);
-    let before = lock(&m.mumble).as_ref().filter(|j| j.host == ask.host && j.port == port).map(|j| j.password.clone());
+    let mut wanted = lock(&m.mumble);
+    // The one named, else the one in that channel already, else one more.
+    let at = wanted.iter().position(|j| match ask.id {
+        Some(id) => id == j.id,
+        None => (j.host.as_str(), j.port, j.channel.as_str()) == (ask.host.as_str(), port, channel),
+    });
+    let on_server = |j: &&MumbleJob| j.host == ask.host && j.port == port;
+    let before = at.map(|at| &wanted[at]).filter(on_server).or_else(|| wanted.iter().find(on_server)).map(|j| j.password.clone());
     let password = ask.password.or(before).unwrap_or_default();
-    if !is_host(&ask.host, app.mumble_anywhere)
-        || port == 0
-        || channel.is_empty()
-        || !fits(channel)
-        || !fits(&password)
-        || !(0.0..=MAX_DELAY).contains(&delay)
-    {
+    let bad = !is_host(&ask.host, app.mumble_anywhere) || port == 0 || channel.is_empty() || !fits(channel) || !fits(&password);
+    if bad || !(0.0..=MAX_DELAY).contains(&delay) || (ask.id.is_some() && at.is_none()) {
         return respond(s, "400 Bad Request", TEXT, b"Invalid server, channel or delay");
     }
-    let mut wanted = lock(&m.mumble);
-    let mut job = MumbleJob { host: ask.host, port, password, channel: channel.to_string(), delay, status: "connecting".into(), asked: 1 };
-    if let Some(had) = wanted.as_ref() {
-        let there = (&had.host, had.port, &had.password, &had.channel) == (&job.host, job.port, &job.password, &job.channel);
-        // Only a new delay for where it sits: no joining anew.
-        if there && had.is_in() && had.delay.total_cmp(&delay).is_ne() {
-            job = MumbleJob { delay, ..had.clone() };
-        } else {
-            job.asked = had.asked + 1;
-            // Joined anew: who was there before is told again once it is in.
-            m.voice.left_mumble();
-        }
+    let job = MumbleJob {
+        host: ask.host,
+        port,
+        password,
+        channel: channel.to_string(),
+        delay,
+        status: "connecting".into(),
+        asked: 1,
+        id: wanted.iter().map(|j| j.id).max().unwrap_or(0) + 1,
+        roster: None,
+    };
+    if !place(&mut wanted, at, job, &gone) {
+        return respond(s, "400 Bad Request", TEXT, b"Too many channels");
     }
-    *wanted = Some(job);
     drop(wanted);
     app.mumble_changes.changed();
     respond(s, "204 No Content", TEXT, b"")
@@ -147,12 +186,16 @@ pub(super) fn wanted(s: &mut TcpStream, app: &App, sessions: &Sessions, request:
     let jobs: Vec<serde_json::Value> = sessions
         .live()
         .iter()
-        .filter_map(|m| {
-            let job = lock(&m.mumble).clone()?;
-            Some(serde_json::json!({
-                "match": m.id, "invite": m.voice_invite(),
-                "host": job.host, "port": job.port, "password": job.password, "channel": job.channel, "delay": job.delay, "asked": job.asked,
-            }))
+        .flat_map(|m| {
+            let jobs = lock(&m.mumble).clone();
+            jobs.into_iter()
+                .map(|job| {
+                    serde_json::json!({
+                        "match": m.id, "invite": m.voice_invite(), "job": job.id,
+                        "host": job.host, "port": job.port, "password": job.password, "channel": job.channel, "delay": job.delay, "asked": job.asked,
+                    })
+                })
+                .collect::<Vec<_>>()
         })
         .collect();
     respond(s, "200 OK", JSON, serde_json::json!({ "jobs": jobs, "version": version }).to_string().as_bytes())

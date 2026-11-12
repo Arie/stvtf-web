@@ -70,7 +70,7 @@ pub struct Session {
     /// the site's streamers, to pass on with the bot's command.
     pub(super) voice_invite: OnceLock<String>,
     /// The Mumble channel the voice bot is wanted in for it, if any.
-    pub(crate) mumble: Mutex<Option<MumbleJob>>,
+    pub(crate) mumble: Mutex<Vec<MumbleJob>>,
     /// How it goes in each Discord channel the voice bot is in for it, and when it last said.
     pub(crate) discord: Mutex<std::collections::BTreeMap<String, (String, Instant)>>,
 }
@@ -114,7 +114,7 @@ impl Session {
             voice: VoiceFeed::default(),
             voice_tended: AtomicBool::new(false),
             voice_invite: OnceLock::new(),
-            mumble: Mutex::new(None),
+            mumble: Mutex::default(),
             discord: Mutex::default(),
         }
     }

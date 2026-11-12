@@ -1211,7 +1211,7 @@ fn status(app: &App, id: &str, key: &str, body: &str) -> String {
 fn a_mumble_channel_is_asked_for_on_the_page_and_the_bot_hears_of_it() {
     let (app, id) = voice_app();
     let page = format!("/w/{id}/");
-    assert!(get(&app, &format!("{page}voice-comms"), "").ends_with(r#"{"discord":null,"mumble":null}"#), "none yet");
+    assert!(get(&app, &format!("{page}voice-comms"), "").ends_with(r#"{"discord":null,"mumble":[]}"#), "none yet");
     assert!(bot(&app, "GET", "k", "").contains(r#""jobs":[]"#));
     let ask = r#"{"host":"mumble.example","port":64738,"password":"pw","channel":"Team A","delay":0}"#;
     assert!(post(&app, &format!("{page}voice-mumble"), "", ask).starts_with("HTTP/1.1 204"));
@@ -1246,7 +1246,7 @@ fn a_mumble_channel_is_asked_for_on_the_page_and_the_bot_hears_of_it() {
             (request_to(&app, send.as_bytes()).1, started.elapsed())
         });
         std::thread::sleep(Duration::from_millis(150));
-        let other = r#"{"host":"other.example","channel":"B"}"#;
+        let other = r#"{"id":1,"host":"other.example","channel":"B"}"#;
         assert!(post(&app, &format!("{page}voice-mumble"), "", other).starts_with("HTTP/1.1 204"));
         let (answer, took) = waiting.join().unwrap();
         assert!(answer.contains("other.example"), "{answer}");
@@ -1260,7 +1260,7 @@ fn a_mumble_channel_is_asked_for_on_the_page_and_the_bot_hears_of_it() {
     // Sent away: the bot hears of it no more.
     assert!(post(&app, &format!("{page}voice-mumble"), "", r#"{"leave":true}"#).starts_with("HTTP/1.1 204"));
     assert!(bot(&app, "GET", "k", "").contains(r#""jobs":[]"#));
-    assert!(get(&app, &format!("{page}voice-comms"), "").contains(r#""mumble":null"#));
+    assert!(get(&app, &format!("{page}voice-comms"), "").contains(r#""mumble":[]"#));
 }
 
 #[test]
@@ -1375,12 +1375,12 @@ fn two_teams_channels_in_one_match_each_keep_their_own_people_and_how_it_goes() 
 fn what_the_bot_says_of_a_mumble_channel_it_was_since_asked_out_of_is_not_taken() {
     let (app, id) = voice_app();
     let page = format!("/w/{id}/");
-    let ask = |channel: &str| {
-        let body = format!(r#"{{"host":"mumble.example","channel":"{channel}"}}"#);
+    let ask = |channel: &str, which: &str| {
+        let body = format!(r#"{{{which}"host":"mumble.example","channel":"{channel}"}}"#);
         assert!(post(&app, &format!("{page}voice-mumble"), "", &body).starts_with("HTTP/1.1 204"));
     };
-    ask("A");
-    ask("B");
+    ask("A", "");
+    ask("B", r#""id":1,"#);
     assert!(
         status(&app, &id, "k", r#"{"kind":"mumble","asked":1,"status":"Left: moved","people":[{"id":"77","name":"late"}]}"#)
             .starts_with("HTTP/1.1 204")
@@ -1406,7 +1406,7 @@ fn those_in_a_mumble_channel_the_bot_was_taken_out_of_are_no_longer_listed() {
     );
     assert!(get(&app, &format!("{page}voices"), "").contains("in mumble"));
     // Moved to another channel: those of the old one go, at once.
-    ask(r#"{"host":"mumble.example","channel":"B"}"#);
+    ask(r#"{"id":1,"host":"mumble.example","channel":"B"}"#);
     let voices = get(&app, &format!("{page}voices"), "");
     assert!(!voices.contains("in mumble") && voices.contains("in discord"), "{voices}");
     // And taken out altogether.
@@ -1414,6 +1414,51 @@ fn those_in_a_mumble_channel_the_bot_was_taken_out_of_are_no_longer_listed() {
     ask(r#"{"leave":true}"#);
     let voices = get(&app, &format!("{page}voices"), "");
     assert!(!voices.contains("in mumble") && voices.contains("in discord"), "{voices}");
+}
+
+#[test]
+fn two_teams_are_each_in_a_mumble_channel_of_their_own_on_one_server_or_two() {
+    let (app, id) = voice_app();
+    let page = format!("/w/{id}/");
+    let ask = |body: &str| post(&app, &format!("{page}voice-mumble"), "", body);
+    let comms = || get(&app, &format!("{page}voice-comms"), "");
+    assert!(ask(r#"{"host":"mumble.example","password":"pw","channel":"Red"}"#).starts_with("HTTP/1.1 204"));
+    // The other team's channel on the same server: its password is the one given already.
+    assert!(ask(r#"{"host":"mumble.example","channel":"Blu"}"#).starts_with("HTTP/1.1 204"));
+    assert!(ask(r#"{"host":"other.example","channel":"Casters","delay":0}"#).starts_with("HTTP/1.1 204"));
+    let shown = comms();
+    for part in [r#""id":1"#, r#""id":2"#, r#""id":3"#, r#""channel":"Red""#, r#""channel":"Blu""#, r#""host":"other.example""#] {
+        assert!(shown.contains(part), "{part} in {shown}");
+    }
+    // The bot is asked into all three, each by its number, and says how each goes.
+    let jobs = bot(&app, "GET", "k", "");
+    assert_eq!(jobs.matches(r#""password":"pw""#).count(), 2, "{jobs}");
+    assert!(jobs.contains(r#""job":1"#) && jobs.contains(r#""job":2"#) && jobs.contains(r#""job":3"#), "{jobs}");
+    let says = |body: &str| assert!(status(&app, &id, "k", body).starts_with("HTTP/1.1 204"), "{body}");
+    says(
+        r#"{"kind":"mumble","job":1,"asked":1,"channel":"mumble:mumble.example:Red","status":"Red · 1","people":[{"id":"mumble:cert:r1","name":"on red"}]}"#,
+    );
+    says(
+        r#"{"kind":"mumble","job":2,"asked":1,"channel":"mumble:mumble.example:Blu","status":"Blu · 1","people":[{"id":"mumble:cert:b1","name":"on blu"}]}"#,
+    );
+    let shown = comms();
+    assert!(shown.contains("Red · 1") && shown.contains("Blu · 1") && shown.contains(r#""status":"connecting""#), "{shown}");
+    let voices = get(&app, &format!("{page}voices"), "");
+    assert!(voices.contains("on red") && voices.contains("on blu"), "{voices}");
+    // One is taken out by its number: the others stay, and so do their people.
+    assert!(ask(r#"{"leave":true,"id":1}"#).starts_with("HTTP/1.1 204"));
+    let (shown, voices) = (comms(), get(&app, &format!("{page}voices"), ""));
+    assert!(!shown.contains(r#""channel":"Red""#) && shown.contains("Blu · 1"), "{shown}");
+    assert!(!voices.contains("on red") && voices.contains("on blu"), "{voices}");
+    // One is moved by its number; a fifth is one too many; all leave together.
+    assert!(ask(r#"{"id":2,"host":"mumble.example","channel":"Blu 2"}"#).starts_with("HTTP/1.1 204"));
+    assert!(comms().contains(r#""channel":"Blu 2""#) && !comms().contains(r#""channel":"Blu""#));
+    for n in 0..2 {
+        assert!(ask(&format!(r#"{{"host":"more.example","channel":"c{n}"}}"#)).starts_with("HTTP/1.1 204"));
+    }
+    assert!(ask(r#"{"host":"more.example","channel":"one too many"}"#).starts_with("HTTP/1.1 400"));
+    assert!(ask(r#"{"leave":true}"#).starts_with("HTTP/1.1 204"));
+    assert!(comms().ends_with(r#""mumble":[]}"#), "{}", comms());
 }
 
 #[test]
@@ -1459,7 +1504,7 @@ fn who_is_who_is_said_before_anyone_speaks_by_player_or_by_steam_id() {
     // The bot is in a Discord channel, and says who is there: nobody has said a word.
     let there = r#"{"kind":"discord","status":"In General with 2 people","people":[{"id":"77","name":"coach"},{"id":"78","name":"sub"}]}"#;
     assert!(status(&app, &id, "k", there).starts_with("HTTP/1.1 204"));
-    assert!(get(&app, &format!("{page}voice-comms"), "").ends_with(r#"{"discord":{"status":"In General with 2 people"},"mumble":null}"#));
+    assert!(get(&app, &format!("{page}voice-comms"), "").ends_with(r#"{"discord":{"status":"In General with 2 people"},"mumble":[]}"#));
     let voices = get(&app, &format!("{page}voices"), "");
     assert!(voices.contains(r#"{"confirmed":false,"discord":"77","heard":false,"linked":null,"name":"coach","steamid":null}"#), "{voices}");
     // One on a player in the match, one on a Steam id as people write them.

@@ -42,8 +42,8 @@ pub(super) struct SavedMatch {
     pub(super) by: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(super) voice_invite: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub(super) mumble: Option<crate::matches::mumble_job::MumbleJob>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty", deserialize_with = "crate::matches::mumble_job::saved")]
+    pub(super) mumble: Vec<crate::matches::mumble_job::MumbleJob>,
 }
 
 /// The file in the store holding the mark of the process it belongs to.

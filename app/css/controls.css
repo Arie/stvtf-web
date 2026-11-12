@@ -205,6 +205,21 @@
   font: inherit;
   cursor: pointer;
 }
+/* Voice is on, but the browser plays nothing before a click: it asks for one. */
+#voicetoggle.wait {
+  box-shadow: 0 0 0 2px var(--gold);
+  animation: voicewait 1.6s ease-in-out infinite;
+}
+@keyframes voicewait {
+  50% {
+    box-shadow: 0 0 0 2px transparent;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  #voicetoggle.wait {
+    animation: none;
+  }
+}
 #voicetoggle:disabled {
   opacity: 0.5;
   cursor: default;
@@ -369,6 +384,10 @@
 }
 #voicelist .vinvite .vleave {
   background: #a33a3a;
+}
+/* Another channel for the match: the other team's. */
+#voicelist .vmore {
+  justify-content: flex-end;
 }
 #voicelist .vstatus {
   display: flex;

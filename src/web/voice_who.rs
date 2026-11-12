@@ -4,7 +4,8 @@
 //! - `POST <page>voice-status`, the bot's (its key and the match's invite): how it goes in the
 //!   channel it is in (`kind`: `discord` or `mumble`; `status`), who is in it (`people`), or
 //!   that it left.
-//! - `GET <page>voice-comms`: where the bot is, and how it goes.
+//! - `GET <page>voice-comms`: where the bot is (in Discord, and each Mumble channel), and how
+//!   it goes.
 //! - `GET <page>voices`: those in the channel and those heard, and whom each is put on.
 //! - `POST <page>voice-match`: someone is a player of the match, a `SteamID`, or nobody.
 //!
@@ -72,9 +73,12 @@ struct Report {
     /// The channel this is of: a match may have more than one (each team's).
     #[serde(default)]
     channel: Option<String>,
-    /// For Mumble: which asking for a channel (`MumbleJob::asked`) this answers.
+    /// For Mumble: which asking for a channel (`MumbleJob::asked`) this answers, and which of
+    /// the match's channels (`MumbleJob::id`) it is of.
     #[serde(default)]
     asked: Option<u64>,
+    #[serde(default)]
+    job: Option<u32>,
 }
 
 /// The most channels a match keeps the people and the going of.
@@ -111,12 +115,18 @@ pub(super) fn status(
             }
         }
         "mumble" => {
-            let mut job = lock(&m.mumble);
+            let mut jobs = lock(&m.mumble);
+            // Which of the match's channels: by its number, or the only one there is.
+            let only = jobs.len() == 1;
+            let job = jobs.iter_mut().find(|j| said.job.map_or(only, |id| id == j.id));
             // Of a channel it was since asked out of: nothing of it stands.
-            let Some(job) = job.as_mut().filter(|j| said.asked.is_none_or(|a| a == j.asked)) else {
+            let Some(job) = job.filter(|j| said.asked.is_none_or(|a| a == j.asked)) else {
                 return respond(s, "204 No Content", TEXT, b"");
             };
             job.status = text;
+            if said.people.is_some() {
+                job.roster = Some(channel.clone());
+            }
         }
         _ => return respond(s, "400 Bad Request", TEXT, b"Discord or Mumble"),
     }
@@ -161,9 +171,10 @@ pub(super) fn comms(s: &mut TcpStream, app: &App, m: Option<&Session>, who: &Who
     let going: Vec<String> =
         lock(&m.discord).values().filter(|(_, at)| at.elapsed() < DISCORD_SAID_FOR).map(|(status, _)| status.clone()).collect();
     let discord = (!going.is_empty()).then(|| serde_json::json!({ "status": going.join(" + ") }));
-    let mumble = lock(&m.mumble)
-        .as_ref()
-        .map(|j| serde_json::json!({ "host": j.host, "port": j.port, "channel": j.channel, "delay": j.delay, "status": j.status }));
+    let mumble: Vec<_> = lock(&m.mumble)
+        .iter()
+        .map(|j| serde_json::json!({ "id": j.id, "host": j.host, "port": j.port, "channel": j.channel, "delay": j.delay, "status": j.status }))
+        .collect();
     respond(s, "200 OK", JSON, serde_json::json!({ "discord": discord, "mumble": mumble }).to_string().as_bytes())
 }
 

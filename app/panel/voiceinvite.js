@@ -2,8 +2,9 @@
 // (panel/voicelist.js) a button swaps the list for this view, which is wider. With nothing
 // connected: Discord or Mumble. Discord: a button that copies the command that brings the voice
 // bot into a voice channel, to paste there or pass on to a team. Mumble: the server, its password
-// and the channel, and the bot joins at once. Once it is in a channel, only that one shows: how
-// it goes, and who is who (voicewho.js). See the viewer's Voice.
+// and the channel, and the bot joins at once. Once it is in a channel, those it is in show: how
+// each goes, a way to add another (the other team's), and who is who (voicewho.js). See the
+// viewer's Voice.
 import { $ } from "../core/core.js";
 import { HOME } from "../room/home.js";
 import { copyText } from "../room/copy.js";
@@ -42,12 +43,15 @@ export function serverOf(text) {
   return port >= 1 && port <= 65535 ? { host: m[1], port } : null;
 }
 
-/** @typedef {{ host: string; port: number; channel: string; delay: number; status: string }} InMumble */
+/** @typedef {{ id: number; host: string; port: number; channel: string; delay: number; status: string }} InMumble */
 /** @type {{ invite: string; bot: string | null } | null} */
 let given = null;
 // Where the bot is, as stv.tf last said.
-/** @type {{ discord: { status: string } | null; mumble: InMumble | null }} */
-let comms = { discord: null, mumble: null };
+/** @type {{ discord: { status: string } | null; mumble: InMumble[] }} */
+let comms = { discord: null, mumble: [] };
+// The Mumble channel being moved or taken out, by its number; none while one is added.
+/** @type {number | null} */
+let editing = null;
 // Which part of the view shows: none (the speakers list), the choice or what is connected, one
 // of the two set-ups, or the bot being moved.
 /** @type {"" | "home" | "discord" | "mumble" | "reconnect"} */
@@ -141,23 +145,24 @@ function discordSetup() {
   return parts;
 }
 
-/** @param {boolean} moving The bot is somewhere already: this moves it. */
-function mumbleSetup(moving) {
+/** @param {InMumble | null} was The channel the bot is in already, to move it; none to add one. */
+function mumbleSetup(was) {
   /** @type {HTMLElement[]} */
   const parts = [top("home", "Mumble")];
-  const was = comms.mumble;
   if (refused) parts.push(statusLine(refused, "", "", true));
-  else if (!moving && was && failed(was.status)) parts.push(statusLine(was.status));
-  const join = act(moving ? "Reconnect" : "Connect", "join");
+  else if (was && failed(was.status)) parts.push(statusLine(was.status));
+  const join = act(was ? "Reconnect" : "Connect", "join");
   join.className = "vcopy vmumble";
+  // A server the bot is on already: its password is known.
+  const known = was || comms.mumble.some(m => serverOf(typed.server)?.host === m.host);
   parts.push(
     field("server", "Server", "host:port"),
-    field("password", "Password", moving ? "unchanged" : "optional", "password"),
+    field("password", "Password", known ? "unchanged" : "optional", "password"),
     field("channel", "Channel", ""),
     delayRow(),
   );
   const buttons = el("div", { className: "vrow vinvite" }, join);
-  if (moving) {
+  if (was) {
     const leave = act("Disconnect", "leave");
     leave.className = "vcopy vleave";
     buttons.append(leave);
@@ -166,32 +171,40 @@ function mumbleSetup(moving) {
   return parts;
 }
 
-// The bot is in a channel: how it goes there, and who is who.
+// The bot is in a channel, or a few: how each goes, a way to add another, and who is who.
 function connected() {
   const parts = [top("", "Comms")];
-  if (comms.mumble) {
-    const m = comms.mumble;
-    const line = statusLine(m.status, `tv_delay ${m.delay} s`, "Mumble");
-    line.append(act("Reconnect", "go:reconnect"));
-    parts.push(line);
-  } else if (comms.discord) {
+  if (comms.discord) {
     parts.push(
       statusLine(comms.discord.status, "", "Discord"),
       el("div", { className: "vhint" }, "/stv delay · /stv leave"),
     );
   }
-  return [...parts, ...whoRows()];
+  for (const m of comms.mumble) {
+    const line = statusLine(m.status, `tv_delay ${m.delay} s`, "Mumble");
+    line.append(act("Reconnect", `go:reconnect:${m.id}`));
+    parts.push(line);
+  }
+  const more = el(
+    "div",
+    { className: "vrow vinvite vmore" },
+    act("+ Discord", "go:discord"),
+    act("+ Mumble", "go:mumble"),
+  );
+  return [...parts, more, ...whoRows()];
 }
 
 // The view that takes the list's place.
 function view() {
   if (!given) return [];
-  const up = comms.discord || (comms.mumble && !failed(comms.mumble.status));
-  if (screen === "reconnect" && comms.mumble) return mumbleSetup(true);
-  if (up) return connected();
+  const moved = screen === "reconnect" && comms.mumble.find(m => m.id === editing);
+  if (moved) return mumbleSetup(moved);
   if (screen === "discord") return discordSetup();
-  if (screen === "mumble" || comms.mumble) return mumbleSetup(false);
-  return choice();
+  if (screen === "mumble") return mumbleSetup(null);
+  // The only one, and it would not do: its form again, with why.
+  const [only] = comms.mumble;
+  if (!comms.discord && comms.mumble.length === 1 && failed(only.status)) return mumbleSetup(only);
+  return comms.discord || comms.mumble.length ? connected() : choice();
 }
 
 // In the speakers list: the way in.
@@ -209,8 +222,7 @@ const ask = (/** @type {object} */ body) =>
     body: JSON.stringify(body),
   });
 
-// Where the bot is, asked while the view is open: the view anew when that changed, else only
-// the line that says how it goes (so nothing is drawn anew under someone typing).
+// Where the bot is, asked while the view is open: the view anew when that changed.
 let soon = 0;
 function look() {
   if (!given || !screen || list.hidden) return;
@@ -220,16 +232,16 @@ function look() {
       now => {
         if (!now) return;
         const shape = (/** @type {typeof comms} */ c) =>
-          `${Boolean(c.discord)}/${c.mumble ? `${c.mumble.host}/${c.mumble.channel}/${failed(c.mumble.status)}/${c.mumble.status === "connecting"}` : ""}`;
+          `${c.discord?.status ?? ""}/${c.mumble.map(m => `${m.id}/${m.host}/${m.channel}/${m.delay}/${m.status}`).join("/")}`;
         const changed = shape(now) !== shape(comms);
+        // The bot came into Discord while its set-up showed: on to where it is.
+        if (screen === "discord" && now.discord && !comms.discord) screen = "home";
         comms = now;
         // On its way: asked again soon, so the dot turns as the bot gets there.
         clearTimeout(soon);
-        if (now.mumble?.status === "connecting") soon = window.setTimeout(look, SOON_MS);
-        if (changed) return void show();
-        const line = list.querySelector("#vcomms .vstatustext");
-        const said = now.mumble ? `Mumble: ${now.mumble.status}` : now.discord && `Discord: ${now.discord.status}`;
-        if (line?.firstChild && said) line.firstChild.textContent = said;
+        if (now.mumble.some((/** @type {InMumble} */ m) => m.status === "connecting"))
+          soon = window.setTimeout(look, SOON_MS);
+        if (changed) show();
       },
       () => {},
     );
@@ -262,32 +274,39 @@ function joinMumble() {
     refused = why;
     show();
   };
-  // No password typed while moving the bot: the one given before.
-  const password = typed.password || (screen === "reconnect" ? undefined : "");
-  ask({ ...server, password, channel: typed.channel.trim(), delay }).then(
+  // No password typed: the one given before for that server, if any.
+  const [id, channel] = [editing, typed.channel.trim()];
+  ask({ ...(id == null ? {} : { id }), ...server, password: typed.password || undefined, channel, delay }).then(
     r => {
       if (!r.ok) return void r.text().then(why => refuse(why || "Refused"));
-      comms = { discord: null, mumble: { ...server, channel: typed.channel.trim(), delay, status: "connecting" } };
       screen = "home";
-      show();
+      editing = null;
       look();
     },
     () => refuse("No answer"),
   );
 }
 
-/** @param {"" | "home" | "discord" | "mumble" | "reconnect"} to */
-function go(to) {
+// A server as it is typed: its port only when it is not Mumble's own.
+const serverText = (/** @type {InMumble} */ m) => (m.port === MUMBLE_PORT ? m.host : `${m.host}:${m.port}`);
+
+/** @param {"" | "home" | "discord" | "mumble" | "reconnect"} to @param {number | null} [id] The Mumble channel to move. */
+function go(to, id = null) {
   screen = to;
   refused = "";
-  if (to === "reconnect" && comms.mumble) {
-    const m = comms.mumble;
-    Object.assign(typed, {
-      server: m.port === MUMBLE_PORT ? m.host : `${m.host}:${m.port}`,
-      password: "",
-      channel: m.channel,
-    });
+  editing = null;
+  const [only] = comms.mumble;
+  // One to move: its own, or the only one when it would not do (its form shows by itself).
+  const m =
+    to === "reconnect" ? comms.mumble.find(j => j.id === id) : to === "home" && comms.mumble.length === 1 && only;
+  if (m && (to === "reconnect" || failed(m.status))) {
+    editing = m.id;
+    Object.assign(typed, { server: serverText(m), password: "", channel: m.channel });
     delay = m.delay;
+  } else if (to === "mumble") {
+    // Another channel: most likely on the server the bot is on already.
+    const last = comms.mumble.at(-1);
+    Object.assign(typed, { server: last ? serverText(last) : "", password: "", channel: "" });
   }
   setListView(to ? view : null);
   list.classList.toggle("wide", Boolean(to));
@@ -297,14 +316,17 @@ function go(to) {
 
 /** @param {string} does What the button clicked does. */
 function clicked(does) {
-  if (does.startsWith("go:")) return go(/** @type {any} */ (does.slice(3)));
+  if (does.startsWith("go:")) {
+    const [to, id] = does.slice(3).split(":");
+    return go(/** @type {any} */ (to), id ? Number(id) : null);
+  }
   if (does === "copy") return copyCommand();
   if (does === "join") return joinMumble();
   if (does === "leave") {
-    comms = { ...comms, mumble: null };
-    screen = "home";
-    show();
-    ask({ leave: true });
+    const id = editing;
+    comms = { ...comms, mumble: comms.mumble.filter(m => m.id !== id) };
+    ask(id == null ? { leave: true } : { leave: true, id }).then(look, () => {});
+    go("home");
   }
 }
 
