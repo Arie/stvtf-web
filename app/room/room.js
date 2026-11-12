@@ -17,6 +17,7 @@ import { drawOwn, markerFull, trimOwn } from "./telestrator.js";
 import { NOTE_MS, arcTool, circleTool, lightTool, note, worldAt } from "./tools.js";
 import { noteKey, noteTool } from "./notes.js";
 import { closeViewMenu, viewMenu } from "./viewmenu.js";
+import { mapsMenu } from "./maps.js";
 import { pushMirror } from "../map/camera.js";
 import { HOME, IN_ROOM, me, names, post } from "./home.js";
 import { copyLink, copyText } from "./copy.js";
@@ -91,6 +92,23 @@ function roomButton() {
   };
 }
 
+// The room's playback bar and maps control, both heard from the stream.
+/** @param {(c: import("./playbar.js").Control) => unknown} send */
+function roomPlayback(send) {
+  const go = async (/** @type {number} */ map) => {
+    const r = await post("map", { map });
+    if (!r.ok) note(await r.text());
+  };
+  const maps = mapsMenu(go);
+  const live = (/** @type {number} */ end) => send({ seek: end, paused: false });
+  const bar = playbar({ home: HOME, send, live, room: true, map: go });
+  playbackListeners.add(m => {
+    bar.heard(m);
+    maps(m, me.admin);
+  });
+  return { bar, maps };
+}
+
 function roomBar() {
   env.el.classList.add("room");
   // A room's link, to send.
@@ -103,12 +121,12 @@ function roomBar() {
     text = /** @type {HTMLButtonElement} */ ($("rb-text")),
     clear = /** @type {HTMLButtonElement} */ ($("rb-clear"));
   const control = (/** @type {import("./playbar.js").Control} */ c) => post("control", c);
-  const bar = playbar({ home: HOME, send: control, live: end => control({ seek: end, paused: false }), room: true });
-  playbackListeners.add(m => bar.heard(m));
+  const { bar, maps } = roomPlayback(control);
   /** @param {boolean} on */
   const allow = on => {
     me.admin = on;
     bar.allow(on);
+    if (bar.last) maps(bar.last, on);
     // A tool in hand is let go, while its button still takes the click.
     for (const t of [marker, arc, circle, light, text]) if (!on && t.classList.contains("on")) t.click();
     for (const c of [marker, arc, circle, light, text, clear, $("rb-view")])

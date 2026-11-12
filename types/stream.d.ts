@@ -175,6 +175,10 @@ export type PlaybackLine = {
   rounds: number[];
   /** A live match, still being recorded: its length grows. */
   live: boolean;
+  /** The match's map the room is on, and the maps kept (their numbers are not indexes); `over`: the room's has ended. */
+  map?: number;
+  over?: boolean;
+  maps?: { n: number; map: string; ready: boolean }[];
 };
 
 /** A piece of a room's telestrator stroke: map points with when they were drawn, in ms into the stroke. */

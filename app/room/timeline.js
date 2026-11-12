@@ -47,6 +47,7 @@ class Timeline {
     // spoilers.
     this.fetched = 0;
     this.fetching = false;
+    this.map = 0;
     this.start = 0;
     this.origin = 0;
     this.upTo = Infinity;
@@ -71,12 +72,15 @@ class Timeline {
   async more(all) {
     if (this.fetching || all <= this.fetched) return;
     this.fetching = true;
+    const map = this.map;
     try {
       const r = await (await fetch(new URL(`marks?from=${this.fetched}`, this.t.home))).json();
-      this.marks.push(...r.marks);
-      [this.fetched, this.shown] = [r.all, until(this.marks, this.upTo)];
+      if (map === this.map) {
+        this.marks.push(...r.marks);
+        [this.fetched, this.shown] = [r.all, until(this.marks, this.upTo)];
+      }
     } catch {}
-    this.fetching = false;
+    if (map === this.map) this.fetching = false;
     this.draw();
   }
 
@@ -160,15 +164,22 @@ class Timeline {
 
   /**
    * A playback line: the rounds so far, how many marks there are, and what is kept of which map.
-   * @param {{ rounds: number[]; marks?: number; start?: number; origin?: number }} m
+   * @param {{ rounds: number[]; marks?: number; start?: number; origin?: number; map?: number }} m
    */
   heard(m) {
+    if ((m.map ?? 0) !== this.map) this.nextMap(m.map ?? 0);
     this.starts = m.rounds;
     this.origin = m.origin ?? 0;
     const moved = (m.start ?? 0) !== this.start;
     this.start = m.start ?? 0;
     this.more(m.marks ?? 0);
     this.draw(moved);
+  }
+
+  // Another map: its marks are fetched from the first.
+  /** @param {number} map */
+  nextMap(map) {
+    [this.map, this.marks, this.fetched, this.shown, this.fetching] = [map, [], 0, 0, false];
   }
 
   /** Whether a viewer may jump: an admin. @param {((ms: number) => void) | null} jump */

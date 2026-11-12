@@ -3,6 +3,7 @@
 import { $, afterDraw, msPerTick, playbackStatus, setStatus, state } from "../core/core.js";
 import { env } from "../core/env.js";
 import { atTick } from "./roomview.js";
+import { mapState } from "./maps.js";
 import { timeline } from "./timeline.js";
 /** @typedef {import("../../types/stream").PlaybackLine} PlaybackLine */
 /** @typedef {{ paused?: boolean; speed?: number; seek?: number }} Control */
@@ -37,10 +38,11 @@ export function moment(s) {
 /**
  * @typedef {{
  *   home: URL; send: (c: Control) => unknown; live: (length: number) => void;
- *   replay?: (behind: boolean, p: PlaybackLine) => boolean; room?: boolean;
+ *   replay?: (behind: boolean, p: PlaybackLine) => boolean; room?: boolean; map?: (n: number) => void;
  * }} Options `home`: where the marks are; `send`: a control; `live`: the Live button (a live
  * match's); `replay`: whether the status says replay, from whether playback is behind a live match
- * (default: that); `room`: a room's, with no slow motion.
+ * (default: that); `room`: a room's, with no slow motion; `map`: Live on a map that is over,
+ * going to the next.
  */
 
 /** @param {Options} o */
@@ -94,7 +96,12 @@ class Playbar {
   wire() {
     const { play, live, speed, time, o } = this;
     play.onclick = () => this.last && this.control({ paused: !this.last.paused });
-    live.onclick = () => o.live(Math.round(this.length()));
+    live.onclick = () => {
+      const l = this.last;
+      if (!l?.over) return o.live(Math.round(this.length()));
+      const next = mapState(l).next;
+      if (next != null) o.map?.(next);
+    };
     speed.onclick = () => {
       const now = performance.now();
       const next = nextSpeed(this.speeds, speedNow(this.last?.speed ?? 1, this.asked, now));
@@ -170,9 +177,11 @@ class Playbar {
     this.shown.textContent = `${this.clockAt(this.dragging ? Number(this.time.value) : now)} / ${this.clockAt(len)}`;
     const widest = `${this.clockAt(len).length * 2 + 3}ch`;
     if (this.shown.style.minWidth !== widest) this.shown.style.minWidth = widest;
-    this.live.hidden = !l.live;
+    const over = mapState(l);
+    this.live.hidden = !(l.live || l.over);
+    this.live.disabled = !this.allowed || (Boolean(l.over) && over.next == null);
     this.live.classList.toggle("at", atLive);
-    if (!l.paused) say(this.o.replay ?? (b => b), behind, l, this.length() - now);
+    if (!l.paused || over.status) say(this.o.replay ?? (b => b), behind, l, this.length() - now);
   }
 
   /** The timeline `len` long, its marks and the playhead at `now`. @param {number} len @param {number} now @param {boolean} atLive */
@@ -218,7 +227,7 @@ class Playbar {
   /** Whether this viewer drives playback. @param {boolean} on */
   allow(on) {
     this.allowed = on;
-    for (const c of [this.play, this.time, this.speed, this.live]) c.disabled = !on;
+    for (const c of [this.play, this.time, this.speed]) c.disabled = !on;
     env.el.classList.toggle("seekable", on);
     this.marks.allow(on ? ms => this.control({ seek: ms }) : null);
   }
@@ -241,7 +250,8 @@ function say(replay, behind, p, by) {
   const status = $("status").textContent ?? "";
   // Behind is short, "−1:23", and says what it is behind on hover.
   let [want, why] = ["live", ""];
-  if (!p.live) want = "replay";
+  if (p.over) want = mapState(p).status;
+  else if (!p.live) want = "replay";
   else if (replay(behind, p)) [want, why] = behind ? [`−${clock(by)}`, `${clock(by)} behind SourceTV`] : ["replay", ""];
   if (playbackStatus(status) && status !== "paused" && status !== want) setStatus(want, true, why);
 }

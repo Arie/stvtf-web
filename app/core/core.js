@@ -233,7 +233,8 @@ export function setStatus(text, ok, why = "") {
 
 // Whether the status says how playback goes: live, paused, a replay, or how far behind SourceTV.
 /** @param {string} text */
-export const playbackStatus = text => ["live", "paused", "replay"].includes(text) || text.startsWith("−");
+export const playbackStatus = text =>
+  ["live", "paused", "replay", "Map over", "Next map ready"].includes(text) || text.startsWith("−");
 
 // The sidebar's word for a status line from stvtf, given the word it shows now. Signon runs
 // connecting, new, prespawn and spawn before data flows, and a server that is starting up or
