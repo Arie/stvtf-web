@@ -240,11 +240,24 @@ export function speakersHeard() {
   }));
 }
 
-// Teams muted, for this page (another match has other players), and those let through anyway.
+// Everyone muted, or teams, for this page (another match has other players), and those let
+// through anyway. Kept for the tab, so a reload does not let anyone be heard again.
+const MUTES_KEY = `stvtf.voice.mutes:${globalThis.location?.pathname ?? ""}`;
 /** @type {Set<string>} */
 const mutedTeams = new Set();
 /** @type {Set<string>} */
 const letThrough = new Set();
+let everyone = false;
+try {
+  const kept = JSON.parse((env.storage && sessionStorage.getItem(MUTES_KEY)) || "{}");
+  everyone = kept.everyone === true;
+  for (const team of Array.isArray(kept.teams) ? kept.teams : []) mutedTeams.add(String(team));
+} catch {}
+function saveMutes() {
+  try {
+    if (env.storage) sessionStorage.setItem(MUTES_KEY, JSON.stringify({ everyone, teams: [...mutedTeams] }));
+  } catch {}
+}
 
 // The team of whoever has `steamid` in the match; of a voice that is no player's, the team its
 // lines say.
@@ -254,12 +267,27 @@ export function teamOf(steamid) {
   return speakers.get(steamid)?.team ?? null;
 }
 
-// Whether `steamid` is muted: by the viewer (kept), or with their team (unless let through).
+// Whether `steamid` is muted: by the viewer (kept), with everyone, or with their team (unless
+// let through).
 /** @param {string} steamid */
 export function isMuted(steamid) {
+  const s = speakers.get(steamid);
+  return mutedAs(steamid, s?.player ?? null, s?.team ?? null);
+}
+
+// The same, of a voice as its line says it: the player it is (by id), else the team it is taken
+// for. Everyone muted, nobody is heard, whoever they are and whenever they first talk. A team
+// muted, so is a player the match's list does not have yet: they may be on it.
+/** @param {string} steamid @param {number | null} player @param {string | null} lineTeam */
+export function mutedAs(steamid, player, lineTeam) {
   if (prefs.muted.includes(steamid)) return true;
-  const team = teamOf(steamid);
-  return team != null && mutedTeams.has(team) && !letThrough.has(steamid);
+  if (letThrough.has(steamid)) return false;
+  if (everyone) return true;
+  if (!mutedTeams.size) return false;
+  const known = player == null ? null : state.players.get(player);
+  if (player != null && !known) return true;
+  const team = known?.team ?? teamOf(steamid) ?? lineTeam;
+  return team != null && mutedTeams.has(team);
 }
 
 /** @param {string} team */
@@ -285,34 +313,39 @@ export function toggleMuted(steamid) {
 }
 
 // Mutes or unmutes `team`, all its players: muting it again takes back those let through.
+// Unmuting one after everyone was muted leaves the other team muted, and no longer everyone.
 /** @param {string} team @param {boolean} muted */
 export function setTeamMuted(team, muted) {
   if (muted) {
     mutedTeams.add(team);
     for (const id of [...letThrough]) if (teamOf(id) === team) letThrough.delete(id);
-  } else mutedTeams.delete(team);
+  } else {
+    mutedTeams.delete(team);
+    everyone = false;
+  }
+  saveMutes();
   remuted();
 }
 
-// Whether everyone is muted: both teams, and those heard on neither.
+// Whether everyone is muted, with nobody let through.
 export function allMuted() {
-  if (!mutedTeams.has("red") || !mutedTeams.has("blue")) return false;
-  return [...speakers.keys()].every(id => isMuted(id));
+  return everyone && !letThrough.size;
 }
 
-// Everyone muted (both teams, and those heard on neither: one's own mutes kept), or nobody (one's
-// own mutes of those heard lifted too).
+// Everyone muted (those heard, and whoever talks later, on a team or not: one's own mutes kept),
+// or nobody (one's own mutes of those heard lifted too).
 /** @param {boolean} muted */
 export function muteEveryone(muted) {
   letThrough.clear();
+  everyone = muted;
   if (muted) {
     mutedTeams.add("red").add("blue");
-    for (const id of speakers.keys()) if (!isMuted(id)) prefs.muted.push(id);
   } else {
     mutedTeams.clear();
     prefs.muted = prefs.muted.filter(id => !speakers.has(id));
   }
   savePrefs();
+  saveMutes();
   remuted();
 }
 

@@ -81,6 +81,41 @@ test("mute all mutes both teams though nobody was heard, and keeps one's own mut
   v.setMuted(red, false);
 });
 
+test("after mute all nobody is heard, whoever starts talking later, until they are let through", async () => {
+  const v = await import("../../app/core/voice.js");
+  const { state } = await import("../../app/core/core.js");
+  state.players = new Map([[41, /** @type {any} */ ({ id: 41, steamid: "[U:1:41]", team: "red" })]]);
+  v.muteEveryone(false);
+  v.muteEveryone(true);
+  // A caster, a voice on neither team, a player the page knows nothing of yet: none had talked.
+  assert.equal(v.isMuted("discord:900"), true);
+  assert.equal(v.mutedAs("mumble:cert:abc", null, null), true);
+  assert.equal(v.mutedAs("[U:1:77]", 77, null), true);
+  assert.equal(v.allMuted(), true);
+  // One let through by a click is heard; everyone else stays muted, and the button says so.
+  v.toggleMuted("discord:900");
+  assert.deepEqual([v.isMuted("discord:900"), v.isMuted("discord:901"), v.allMuted()], [false, true, false]);
+  v.muteEveryone(true);
+  assert.equal(v.isMuted("discord:900"), true, "muting all again takes it back");
+  v.muteEveryone(false);
+  assert.deepEqual([v.isMuted("discord:900"), v.isMuted("[U:1:41]")], [false, false]);
+});
+
+test("with a team muted, a player whose team the page does not know yet is not heard", async () => {
+  const v = await import("../../app/core/voice.js");
+  const { state } = await import("../../app/core/core.js");
+  state.players = new Map([[41, /** @type {any} */ ({ id: 41, steamid: "[U:1:41]", team: "red" })]]);
+  v.muteEveryone(false);
+  v.setTeamMuted("blue", true);
+  assert.equal(v.mutedAs("[U:1:41]", 41, null), false, "RED is heard");
+  assert.equal(v.mutedAs("[U:1:55]", 55, null), true, "a player not in the match's list yet may be BLU");
+  assert.equal(v.mutedAs("discord:5", null, "blue"), true, "a voice taken for BLU");
+  assert.equal(v.mutedAs("discord:6", null, null), false, "a caster is on neither team");
+  state.players.set(55, /** @type {any} */ ({ id: 55, steamid: "[U:1:55]", team: "red" }));
+  assert.equal(v.mutedAs("[U:1:55]", 55, null), false, "known to be RED now");
+  v.setTeamMuted("blue", false);
+});
+
 test("a switch of stream (back to live) plays voice again", async () => {
   const v = await import("../../app/core/voice.js");
   v.voicePlayback({ paused: true, speed: 1 });
