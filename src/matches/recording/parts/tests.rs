@@ -11,11 +11,7 @@ fn line(json: &str) -> Line {
 
 /// `cp_a` for 24 s of play, then `cp_b`; the play time of the switch.
 fn two_maps() -> (Recording, u64) {
-    let r = Recording::live();
-    push_at(&r, &server("cp_a"), T0);
-    let time = live_lines(&r, 47, T0 + 500);
-    push_at(&r, &server("cp_b"), time);
-    (r, time - T0)
+    two_maps_to(Box::new(|_: &Save| {}))
 }
 
 /// A round started and won, a second apart, from `time`.
@@ -113,10 +109,7 @@ fn a_part_is_ready_at_its_first_snapshot() {
 fn a_recording_without_a_server_line_has_a_nameless_part() {
     let r = Recording::read(r#"{"type":"stalemate","tick":50}"#.as_bytes(), "test").unwrap();
     assert_eq!((r.latest().n, r.latest().map.as_str()), (0, ""));
-    assert_eq!(
-        Recording::default().latest(),
-        Part { n: 0, map: String::new(), again: 0, origin: 0, start: 0, end: None, ready: false }
-    );
+    assert_eq!(Recording::default().latest(), Part { n: 0, map: String::new(), again: 0, origin: 0, start: 0, end: None, ready: false });
 }
 
 #[test]
@@ -162,8 +155,8 @@ impl Recording {
         let open = if inner.open.is_empty() { u64::MAX } else { inner.chunks.last().map_or(u64::MAX, |c| c.start) };
         let mut parts: Vec<Part> = inner.part_list().into_iter().filter(|p| p.origin < open).collect();
         if let Some(p) = parts.last_mut() {
-        p.end = None;
-    }
+            p.end = None;
+        }
         parts
     }
 }
@@ -237,6 +230,8 @@ fn the_trim_drops_a_part_with_nothing_left_and_its_number_stays_gone() {
     assert!(parts[0].start > parts[0].origin, "its own start is trimmed too");
     let again = Recording::resume(file_of(&r).as_slice(), Box::new(|_: &Save| {})).unwrap();
     assert_eq!(again.latest().n, 1, "numbers go on past the dropped");
+    assert_eq!(again.latest().origin, parts[0].origin, "and so does where the map began");
+    assert_eq!(again.latest().start, parts[0].start);
 }
 
 #[test]

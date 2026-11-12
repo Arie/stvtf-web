@@ -91,11 +91,24 @@ impl Inner {
         self.parts_dropped += gone;
     }
 
+    /// The first part kept began at play time `origin`, before the first chunk kept maybe.
+    pub(super) fn begin_at(&mut self, origin: u64) {
+        if let Some(part) = self.parts.first_mut() {
+            part.origin = origin;
+        }
+    }
+
+    /// Play time the first part kept began at.
+    pub(super) fn first_origin(&self) -> u64 {
+        self.parts.first().map_or(self.start, |p| p.origin)
+    }
+
     /// The file's header lines for the parts: how many are dropped, and the loads dropped of
     /// each map, so numbers and counts go on after a restart.
     pub(super) fn parts_header(&self) -> String {
         let mut out = format!("parts\t{}\n", self.parts_dropped);
-        let mut loads: Vec<_> = self.names.iter().map(|(map, n)| (map, n.saturating_sub(self.parts.iter().filter(|p| p.map == *map).count()))).collect();
+        let mut loads: Vec<_> =
+            self.names.iter().map(|(map, n)| (map, n.saturating_sub(self.parts.iter().filter(|p| p.map == *map).count()))).collect();
         loads.sort();
         for (map, n) in loads.into_iter().filter(|(_, n)| *n > 0) {
             writeln!(out, "loads\t{map}\t{n}").expect("a string takes it");

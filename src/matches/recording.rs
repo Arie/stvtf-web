@@ -54,7 +54,7 @@ struct Inner {
     /// The match as it is at the latest line, for the next chunk's checkpoint.
     scratch: SharedHub,
     clock: Clock,
-    /// Play time of the first line kept.
+    /// Play time of the first line kept (of the first chunk).
     start: u64,
     chunks: Vec<Chunk>,
     /// Chunks and marks dropped before these.
@@ -158,7 +158,7 @@ impl Inner {
     /// The file: a header (with the match as it was at the first chunk), then the closed chunks.
     fn file(&self) -> Result<Vec<u8>> {
         let mut gz = GzEncoder::new(Vec::new(), Compression::default());
-        writeln!(gz, "origin\t{}\nmarks\t{}", self.start, self.marks_dropped)?;
+        writeln!(gz, "origin\t{}\nmarks\t{}", self.first_origin(), self.marks_dropped)?;
         gz.write_all(self.parts_header().as_bytes())?;
         for line in self.chunks.first().into_iter().flat_map(|c| c.hub.state()) {
             writeln!(gz, "hub\t{line}")?;
@@ -258,18 +258,24 @@ impl Recording {
         let r = Recording::live();
         {
             let mut inner = lock(&r.inner);
-            let (mut at, mut cut) = (0, false);
+            let (mut at, mut cut, mut origin) = (0, false, None);
             for text in BufReader::new(flate2::read::MultiGzDecoder::new(saved)).lines() {
                 let text = text?;
                 let Some((key, value)) = text.split_once('\t') else { bail!("not a recording") };
                 match key {
-                    "origin" => inner.start = value.parse()?,
+                    "origin" => origin = Some(value.parse()?),
                     "marks" => inner.marks_dropped = value.parse()?,
                     "parts" | "loads" => inner.read_header(key, value)?,
                     "hub" => publish(&inner.scratch, &serde_json::from_str(value)?),
                     _ => {
                         at = key.parse()?;
+                        if inner.chunks.is_empty() {
+                            inner.start = at;
+                        }
                         cut |= matches!(inner.add(at, &serde_json::from_str(value)?, value)?, Some(Save::All(_)));
+                        if let Some(origin) = origin.take() {
+                            inner.begin_at(origin);
+                        }
                     }
                 }
             }
