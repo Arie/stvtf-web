@@ -2,6 +2,7 @@
 
 use super::{Inner, Mark, Recording};
 use crate::lock;
+use crate::matches::hub::changes_map;
 use std::fmt::Write as _;
 use stvtf::Line;
 
@@ -10,6 +11,7 @@ use stvtf::Line;
 pub(crate) struct Part {
     /// Its number in the match, counting from 0, dropped ones too.
     pub(crate) n: usize,
+    /// Empty until a line says which map it is.
     pub(crate) map: String,
     /// How many earlier parts of the match (dropped ones too) were of this map.
     pub(crate) again: usize,
@@ -39,29 +41,30 @@ pub(super) struct PartStart {
 
 impl Inner {
     /// Notes `line`, at play time `at`, in the parts; true if it starts another part than the
-    /// first. A server line naming another map does, and so does a snapshot whose tick is lower
-    /// than the last one's (the server's ticks started over on the same map).
+    /// first (see `ends_part`). A part the server is changing to has no name until its server
+    /// line, or a snapshot, says which map it is.
     pub(super) fn begin_part(&mut self, at: u64, line: &Line) -> bool {
-        let known = lock(&self.scratch).map.clone();
+        let (known, between) = {
+            let h = lock(&self.scratch);
+            (h.map.clone(), h.between_maps())
+        };
         let named = if let Line::Server(server) = line { Some(server.map.as_str()) } else { None };
         let first = self.parts.is_empty();
-        let later = !first
-            && (named.zip(known.as_deref()).is_some_and(|(named, known)| named != known)
-                || matches!(line, Line::Snapshot(s) if self.last_tick.is_some_and(|tick| s.tick < tick)));
+        let later = self.ends_part(line, named, known.as_deref());
         if first || later {
-            let map = named.map(str::to_string).or(known).unwrap_or_default();
+            // A first part begun between maps (a file trimmed in the gap) waits for its name too.
+            let changing = if first { between } else { matches!(line, Line::Status(_)) };
+            let map = named.map(str::to_string).or(known.filter(|_| !changing)).unwrap_or_default();
             let again = self.load(&map);
             self.parts.push(PartStart { map, again, origin: at, ready: false });
             self.scores = None;
             self.last_tick = None;
-        } else if let Some(map) = named
+        } else if let Some(map) = named.map(str::to_string).or(known.filter(|_| matches!(line, Line::Snapshot(_))))
             && self.parts.last().is_some_and(|p| p.map.is_empty())
         {
-            // The first line was not a server line: this one names its map.
-            let again = self.load(map);
+            let again = self.load(&map);
             if let Some(part) = self.parts.last_mut() {
-                part.map = map.to_string();
-                part.again = again;
+                (part.map, part.again) = (map, again);
             }
         }
         if let Line::Snapshot(snapshot) = line {
@@ -71,6 +74,20 @@ impl Inner {
             }
         }
         later
+    }
+
+    /// Whether `line` ends the latest part: the server saying it is changing map, once the part
+    /// has a name and play; a server line naming another map than `known`, when none said so
+    /// first; a snapshot whose tick is lower than the last one's (the server's ticks started over).
+    fn ends_part(&self, line: &Line, named: Option<&str>, known: Option<&str>) -> bool {
+        let Some(latest) = self.parts.last() else { return false };
+        let named_part = !latest.map.is_empty();
+        match line {
+            Line::Status(status) => changes_map(status) && named_part && latest.ready,
+            Line::Server(_) => named_part && named.zip(known).is_some_and(|(named, known)| named != known),
+            Line::Snapshot(s) => self.last_tick.is_some_and(|tick| s.tick < tick),
+            _ => false,
+        }
     }
 
     /// Counts a load of `map`; how many there were before.
@@ -150,9 +167,16 @@ impl Inner {
 }
 
 impl Recording {
-    /// The latest part; a recording with no server line yet has a nameless one.
+    /// The latest part; nameless before its server line (a recording with none yet, or the
+    /// server changing map).
     pub(crate) fn latest(&self) -> Part {
         lock(&self.inner).latest_part()
+    }
+
+    /// The latest part with play to show, or the latest if none has: what a room opened now is on.
+    pub(crate) fn watchable(&self) -> Part {
+        let inner = lock(&self.inner);
+        inner.part_list().into_iter().rfind(|p| p.ready).unwrap_or_else(|| inner.latest_part())
     }
 }
 
@@ -173,12 +197,6 @@ impl Recording {
         inner.part_list().iter().find(|p| p.n == n).map(|p| inner.rounds_of(p)).unwrap_or_default()
     }
 
-    /// Play times of the rounds' starts in the latest part.
-    pub(super) fn latest_rounds(&self) -> Vec<u64> {
-        let inner = lock(&self.inner);
-        inner.rounds_of(&inner.latest_part())
-    }
-
     /// Marks of part `n` from the `from`th of the match on, and how many the match has in all.
     pub(crate) fn marks_in(&self, n: usize, from: usize) -> (Vec<Mark>, usize) {
         let inner = lock(&self.inner);
@@ -187,12 +205,9 @@ impl Recording {
         let marks = inner.marks.iter().enumerate().filter(|(i, m)| inner.marks_dropped + i >= from && part.holds(m.at));
         (marks.map(|(_, m)| m.clone()).collect(), all)
     }
-
-    /// Play time of the latest part's first line.
-    pub(super) fn latest_origin(&self) -> u64 {
-        lock(&self.inner).latest_part().origin
-    }
 }
 
+#[cfg(test)]
+mod gap_tests;
 #[cfg(test)]
 mod tests;

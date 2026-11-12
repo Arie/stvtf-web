@@ -123,7 +123,9 @@ impl Room {
 
     pub(super) fn announce(&self, st: &State) {
         let (part, over) = (self.part(st), self.part_over(st));
-        let maps: Vec<_> = self.recording.parts().iter().map(|p| serde_json::json!({ "n": p.n, "map": p.map, "ready": p.ready })).collect();
+        // A map with no name yet is not one a page lists.
+        let named = self.recording.parts().into_iter().filter(|p| !p.map.is_empty());
+        let maps: Vec<_> = named.map(|p| serde_json::json!({ "n": p.n, "map": p.map, "ready": p.ready })).collect();
         let line = serde_json::json!({
             "type": "playback",
             "paused": st.paused,

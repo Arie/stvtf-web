@@ -185,10 +185,10 @@ fn a_demo_is_announced_as_before() {
     settle(&room);
     let p = playback(&room);
     assert_eq!(p["start"].as_u64(), Some(rec.start()));
-    assert_eq!(p["origin"].as_u64(), Some(rec.origin()));
+    assert_eq!(p["origin"].as_u64(), Some(rec.latest().origin));
     assert_eq!(p["length"].as_u64(), Some(rec.length()));
-    assert_eq!(p["rounds"], serde_json::json!(rec.rounds()));
+    assert_eq!(p["rounds"], serde_json::json!(rec.rounds_in(0)));
     assert_eq!(p["live"].as_bool(), Some(rec.is_live()));
-    assert!(!rec.rounds().is_empty() && rec.length() > 0);
+    assert!(!rec.rounds_in(0).is_empty() && rec.length() > 0);
     room.stop();
 }

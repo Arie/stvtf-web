@@ -188,8 +188,9 @@ impl Inner {
     fn add(&mut self, at: u64, stamped: &Stamped, text: &str) -> Result<Option<Save>> {
         let mut save = None;
         let new_part = self.begin_part(at, &stamped.line);
-        // A new map's chunk starts from its server line, so a seek to its origin lands on the map.
-        let published = new_part && matches!(stamped.line, Line::Server(_));
+        // A new map's chunk starts from its first line (its server line, or the status saying the
+        // map changes), so a seek to its origin lands past the old map.
+        let published = new_part && matches!(stamped.line, Line::Server(_) | Line::Status(_));
         if published {
             publish(&self.scratch, &stamped.line);
         }
@@ -323,16 +324,6 @@ impl Recording {
         lock(&self.inner).start
     }
 
-    /// Play time of the latest part's first line.
-    pub(crate) fn origin(&self) -> u64 {
-        self.latest_origin()
-    }
-
-    /// Play times of the latest part's rounds' starts.
-    pub(crate) fn rounds(&self) -> Vec<u64> {
-        self.latest_rounds()
-    }
-
     /// What a timeline shows, from the `from`th on, and how many there are in all, the dropped
     /// ones too.
     pub(crate) fn marks(&self, from: usize) -> (Vec<Mark>, usize) {
@@ -420,7 +411,7 @@ mod tests {
         // 50..=1650 ticks: 0 to 24 s of play.
         let r = Recording::read(script(1650).as_bytes(), "test").unwrap();
         assert_eq!(r.length(), 24_000);
-        assert_eq!(r.rounds(), [13_500]);
+        assert_eq!(r.rounds_in(0), [13_500]);
         assert_eq!(lock(&r.inner).chunks.iter().map(|c| c.start).collect::<Vec<_>>(), [0, 10_500, 21_000]);
         assert_eq!(r.chunk(1).unwrap().len(), 14);
     }
@@ -519,7 +510,7 @@ mod tests {
         }
         let start = r.start();
         assert!(start > 0 && last * 1000 - start <= KEEP_MS, "{start}");
-        assert_eq!(r.origin(), 0, "the map began where it did");
+        assert_eq!(r.latest().origin, 0, "the map began where it did");
         assert!(r.chunk(0).is_none());
         let (hub, _, _) = r.seek(0);
         assert_eq!(hub.map.as_deref(), Some("cp_long"), "the match as it was at the start");

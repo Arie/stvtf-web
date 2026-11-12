@@ -118,11 +118,13 @@ impl Drop for Watching {
 }
 
 impl Room {
-    /// A room playing `recording` from the start, at 1×; a live match's from where it is now.
+    /// A room playing `recording` from the start, at 1×; a live match's from where it is now (the
+    /// map just played, while the next has none: there it goes on with the match).
     pub(crate) fn start(id: String, owner: &str, recording: Arc<Recording>) -> Arc<Room> {
         let at = if recording.is_live() { recording.length() } else { 0 };
-        let part = recording.latest().n;
-        let state = State { paused: false, speed: 1.0, at, seek: (at > 0).then_some(at), stop: false, tick: None, part, follows: false };
+        let part = recording.watchable().n;
+        let follows = recording.is_live() && part != recording.latest().n;
+        let state = State { paused: false, speed: 1.0, at, seek: (at > 0).then_some(at), stop: false, tick: None, part, follows };
         Room::run(id, People::new(owner), None, None, state, recording)
     }
 
@@ -130,7 +132,7 @@ impl Room {
     pub(crate) fn start_at(id: String, owner: &str, recording: Arc<Recording>, at: u64, speed: f64, paused: bool) -> Arc<Room> {
         let at = at.clamp(recording.start(), recording.length());
         let speed = if SPEEDS.contains(&speed) { speed } else { 1.0 };
-        let part = recording.latest().n;
+        let part = recording.watchable().n;
         let state = State { paused, speed, at, seek: Some(at), stop: false, tick: None, part, follows: false };
         Room::run(id, People::new(owner), None, None, state, recording)
     }
@@ -138,8 +140,8 @@ impl Room {
     /// The room `saved` was, back where it was.
     pub(crate) fn restore(id: String, saved: Saved, recording: Arc<Recording>) -> Arc<Room> {
         let at = saved.at.clamp(recording.start(), recording.length());
-        let recording_latest = recording.latest().n;
-        let part = saved.part.map_or(recording_latest, |n| n.min(recording_latest));
+        let watchable = recording.watchable().n;
+        let part = saved.part.filter(|n| *n <= recording.latest().n).unwrap_or(watchable);
         let state =
             State { paused: saved.paused, speed: saved.speed, at, seek: Some(at), stop: false, tick: None, part, follows: saved.follows };
         let room = Room::run(id, saved.people, saved.leader, saved.view.map(Into::into), state, recording);
@@ -149,7 +151,7 @@ impl Room {
         *lock(&room.relay_was) = saved.relay;
         let mut markers = saved.markers;
         if !saved.marker.is_empty() {
-            markers.entry(recording_latest).or_insert(saved.marker);
+            markers.entry(watchable).or_insert(saved.marker);
         }
         *lock(&room.marker) = markers;
         announce(&room.hub, "marker", &kept_line(&room.current_marker()));

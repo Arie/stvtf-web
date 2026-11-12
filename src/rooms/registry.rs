@@ -317,7 +317,7 @@ impl Rooms {
             })?,
         };
         if let Ok(marker) = store.take(&marker_file(id)) {
-            saved.room.markers = read_marker(&marker, recording.latest().n);
+            saved.room.markers = read_marker(&marker, recording.watchable().n);
         }
         let mut map = lock(&self.map);
         // Another page of it may have picked it up meanwhile.

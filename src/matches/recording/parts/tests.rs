@@ -3,9 +3,9 @@ use super::super::*;
 use crate::matches::hub::tests::snapshot;
 use crate::testing::server;
 
-const T0: u64 = 1_700_000_000_000;
+pub(super) const T0: u64 = 1_700_000_000_000;
 
-fn line(json: &str) -> Line {
+pub(super) fn line(json: &str) -> Line {
     serde_json::from_str(json).unwrap()
 }
 
@@ -30,7 +30,7 @@ fn two_maps_with_a_round_and_a_win_each() -> (Recording, u64) {
 }
 
 /// Snapshots of ticks `from` to `to`, half a second apart from `time`; the time after.
-fn snapshots(r: &Recording, from: u32, to: u32, mut time: u64) -> u64 {
+pub(super) fn snapshots(r: &Recording, from: u32, to: u32, mut time: u64) -> u64 {
     for tick in (from..=to).step_by(50) {
         push_at(r, &snapshot(tick, None, Vec::new()), time);
         time += 500;
@@ -72,7 +72,7 @@ fn a_new_map_starts_a_part_and_keeps_the_one_before() {
     assert_eq!((parts[0].origin, parts[0].end), (0, Some(at)));
     assert_eq!((parts[1].origin, parts[1].end), (at, None));
     assert_eq!(r.start(), 0, "nothing is dropped");
-    assert_eq!(r.origin(), at, "the latest map's");
+    assert_eq!(r.latest().origin, at, "the latest map's");
     assert!(r.seek(at - 1).0.map.as_deref() == Some("cp_a") && r.seek(at).0.map.as_deref() == Some("cp_b"));
 }
 
@@ -81,7 +81,6 @@ fn rounds_and_marks_are_their_parts() {
     let (r, at) = two_maps_with_a_round_and_a_win_each();
     assert_eq!((r.rounds_in(0).len(), r.rounds_in(1).len()), (1, 1));
     assert!(r.rounds_in(0).iter().all(|t| *t < at) && r.rounds_in(1).iter().all(|t| *t >= at));
-    assert_eq!(r.rounds(), r.rounds_in(1), "the latest part's");
     let (first, all) = r.marks_in(0, 0);
     assert!(!first.is_empty() && first.iter().all(|m| m.at < at) && all == r.marks(0).1);
     let (second, _) = r.marks_in(1, 0);
@@ -150,7 +149,7 @@ fn a_new_part_does_not_rewrite_the_file() {
 
 impl Recording {
     /// The parts as a resume can know them: none begun in the open chunk, the last one unended.
-    fn parts_closed(&self) -> Vec<Part> {
+    pub(super) fn parts_closed(&self) -> Vec<Part> {
         let inner = lock(&self.inner);
         let open = if inner.open.is_empty() { u64::MAX } else { inner.chunks.last().map_or(u64::MAX, |c| c.start) };
         let mut parts: Vec<Part> = inner.part_list().into_iter().filter(|p| p.origin < open).collect();
@@ -162,7 +161,7 @@ impl Recording {
 }
 
 /// What the file holds now.
-fn file_of(r: &Recording) -> Vec<u8> {
+pub(super) fn file_of(r: &Recording) -> Vec<u8> {
     lock(&r.inner).file().unwrap()
 }
 

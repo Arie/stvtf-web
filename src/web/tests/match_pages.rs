@@ -93,6 +93,33 @@ fn an_ended_live_match_is_at_its_end() {
 }
 
 #[test]
+fn while_the_server_changes_map_the_timeline_is_of_the_map_just_played() {
+    let app = app(Matches::Many(Sessions::new(false, 2, 20.0)));
+    let sessions = sessions_of(&app);
+    let m = sessions.open("192.0.2.1:27020 tv", None, None).unwrap();
+    let rec = m.recording().unwrap();
+    publish(&m.hub, &server("cp_a"));
+    publish(&m.hub, &crate::matches::hub::tests::snapshot(50, None, Vec::new()));
+    let stalemate = serde_json::from_str::<Line>(r#"{"type":"stalemate","tick":500}"#).unwrap();
+    while rec.length() < 50 || !rec.latest().ready {
+        publish(&m.hub, &stalemate);
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    for state in ["changelevel", "map_change"] {
+        publish(&m.hub, &serde_json::from_str(&format!(r#"{{"type":"status","state":"{state}"}}"#)).unwrap());
+    }
+    while rec.parts().len() < 2 {
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    let end = rec.parts()[0].end.unwrap();
+    let timeline = get(&app, &format!("/w/{}/timeline", m.id), "");
+    for want in [format!(r#""at":{end}"#), format!(r#""length":{end}"#), r#""origin":0"#.into(), r#""live":false"#.into()] {
+        assert!(timeline.contains(&want), "{want} in {timeline}");
+    }
+    sessions.stop_all();
+}
+
+#[test]
 fn many_matches_start_from_a_connect_string() {
     let app = app(Matches::Many(Sessions::new(false, 4, 20.0)));
     assert!(get(&app, "/", "").contains("<form"));
