@@ -13,7 +13,7 @@ import {
   streamParams,
   viewListeners,
 } from "../core/stream.js";
-import { drawOwn, markerFull, trimOwn } from "./telestrator.js";
+import { drawOwn, mapMovedListeners, markerFull, trimOwn } from "./telestrator.js";
 import { NOTE_MS, arcTool, circleTool, lightTool, note, worldAt } from "./tools.js";
 import { noteKey, noteTool } from "./notes.js";
 import { closeViewMenu, viewMenu } from "./viewmenu.js";
@@ -253,6 +253,7 @@ function watchBar() {
 function drawing(marker) {
   /** @type {{ id: number; last: [number, number] | null; began: number } | null} */
   let stroke = null;
+  mapMovedListeners.add(() => (stroke = null));
   marker.onclick = () => env.el.classList.toggle("drawing", marker.classList.toggle("on"));
   // Points the room took of each stroke, and strokes it refused (the map full, or more than TF2 shows).
   /** @type {Map<number, number>} */

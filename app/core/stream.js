@@ -20,7 +20,7 @@ import { hudNodes } from "../panel/hud.js";
 import { setFollow } from "./input.js";
 import { detailNeeded } from "./layers.js";
 import { cartState } from "../map/objectives/payload.js";
-import { onClear, onDraw, onMarker } from "../room/telestrator.js";
+import { onClear, onDraw, onMarker, onPlaybackMap } from "../room/telestrator.js";
 import { onArc } from "../room/arcs.js";
 import { onCircle } from "../room/circles.js";
 import { onLight } from "../room/lights.js";
@@ -226,6 +226,7 @@ function onPlayback(m) {
     setStatus("paused", true);
   } else if ($("status").textContent === "paused") setStatus("live", true);
   voicePlayback(m);
+  onPlaybackMap(m);
   for (const f of playbackListeners) f(m);
 }
 

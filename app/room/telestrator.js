@@ -1,7 +1,7 @@
 // A room's telestrator: admins' marker strokes in map coordinates, there until cleared.
 import { INK, TEAM, ctx, uiScale } from "../core/core.js";
 import { toScreen } from "../map/view.js";
-import { arcsFromMarker, clearArcs, drawArcs } from "./arcs.js";
+import { arcsFromMarker, clearArcs, drawArcs, setPending } from "./arcs.js";
 import { circlesFromMarker, clearCircles, drawCircles } from "./circles.js";
 import { clearLight, drawLight, lightFromMarker } from "./lights.js";
 import { clearNotes, drawNotes, notesFromMarker } from "./notes.js";
@@ -89,6 +89,7 @@ let keptMax = Infinity;
 /** @param {import("../../types/stream").MarkerLine} m */
 export function onMarker(m) {
   keptMax = m.max ?? Infinity;
+  fresh = true;
   arcsFromMarker(m.strokes);
   circlesFromMarker(m.strokes);
   lightFromMarker(m.strokes);
@@ -98,6 +99,28 @@ export function onMarker(m) {
   for (const k of m.strokes)
     if (!mine.has(k.stroke) && !k.arc && !k.circle && !k.note && !k.light)
       strokes.set(k.stroke, { points: k.points, start: -Infinity, ink: k.ink ?? inkOf(k.by) });
+}
+
+// Drawings belong to the map they were made on. The room's map changing drops what the page holds,
+// its own strokes too, but not what a marker line since the last playback line just gave: that is
+// the new map's, if the room sent it first.
+/** @type {number | null} */
+let map = null;
+let fresh = false;
+/** @type {Set<() => void>} Told when the room goes to another map. */
+export const mapMovedListeners = new Set();
+
+/** @param {{ map?: number }} m a playback line */
+export function onPlaybackMap(m) {
+  const moved = map != null && (m.map ?? 0) !== map;
+  const marked = fresh;
+  [map, fresh] = [m.map ?? 0, false];
+  if (!moved) return;
+  setPending(null);
+  for (const f of mapMovedListeners) f();
+  if (!marked) return onClear();
+  for (const id of mine) strokes.delete(id);
+  mine.clear();
 }
 
 export const markerFull = () => keptPoints() >= keptMax;
