@@ -4,8 +4,8 @@
 use super::{Request, TEXT, json_body, respond};
 use crate::App;
 use crate::matches::sessions::Session;
-use crate::matches::voice_feed::{MAX_DELAY, Speaker};
-use crate::matches::voice_hold::Took;
+use crate::voice::feed::{MAX_DELAY, Speaker};
+use crate::voice::hold::Took;
 use base64::Engine;
 use serde::Deserialize;
 use std::io::{BufReader, Take};

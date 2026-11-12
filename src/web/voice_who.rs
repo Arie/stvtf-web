@@ -17,7 +17,7 @@ use super::voice_in::{has_say, is_key, is_voice_id};
 use super::voice_known::Recalled;
 use super::{JSON, Request, TEXT, json_body, respond};
 use crate::matches::sessions::Session;
-use crate::matches::voice_feed::Put;
+use crate::voice::feed::Put;
 use crate::{App, lock};
 use serde::Deserialize;
 use std::io::{BufReader, Take};

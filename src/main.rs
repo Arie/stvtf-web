@@ -11,6 +11,7 @@ mod maps;
 mod matches;
 mod relays;
 mod rooms;
+mod voice;
 mod web;
 
 use crate::cli::{DEFAULT_TV_PASSWORD, Options, USAGE, parse_connect};

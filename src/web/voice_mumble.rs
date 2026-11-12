@@ -8,9 +8,9 @@
 use super::visitor::Who;
 use super::voice_in::{has_say, is_key};
 use super::{JSON, Request, TEXT, json_body, respond};
-use crate::matches::mumble_job::{DEFAULT_PORT, MAX_JOBS, MumbleJob};
 use crate::matches::sessions::{Session, Sessions};
-use crate::matches::voice_feed::{DEFAULT_DELAY, MAX_DELAY};
+use crate::voice::feed::{DEFAULT_DELAY, MAX_DELAY};
+use crate::voice::mumble::{DEFAULT_PORT, MAX_JOBS, MumbleJob};
 use crate::{App, lock};
 use serde::Deserialize;
 use std::io::{BufReader, Take};

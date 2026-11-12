@@ -5,7 +5,7 @@
 use crate::lock;
 use crate::matches::hub::{SharedHub, publish};
 use crate::matches::live_demos::Spoken;
-use crate::matches::voice_hold::{Said, Took, VoiceHold};
+use crate::voice::hold::{Said, Took, VoiceHold};
 use std::collections::BTreeMap;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};

@@ -1,9 +1,9 @@
-//! A live match's voice from outside it (see `matches::voice_feed`): taken in, and tended by a
+//! A live match's voice from outside it (see `voice::feed`): taken in, and tended by a
 //! thread of its own while there is any.
 
 use super::session::Session;
-use crate::matches::voice_feed::Speaker;
-use crate::matches::voice_hold::Took;
+use crate::voice::feed::Speaker;
+use crate::voice::hold::Took;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
