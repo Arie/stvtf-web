@@ -1,7 +1,8 @@
 //! A live match's `.dem` files, recorded as it is watched so rooms on it can be relayed to TF2
 //! clients: one per connection to its server (a reconnect, a new map, a deploy starts another),
-//! named after the server tick of its first frame. A new map drops the old one's, as the match's
-//! recording does; the rest go with the match, or with the store's sweep of old files.
+//! named after the server tick of its first frame. A new map sets the old one's aside
+//! (`live-<match>-past-<map>-<tick>.dem`), played no more but there to look at; all go with the
+//! match, or with the store's sweep of old files.
 //!
 //! Voice from outside the match that its players said (a team's Discord) is kept beside the demo
 //! it was heard in (`<demo>.voice`, a line each). A demo with any is not dropped but kept
@@ -23,6 +24,8 @@ use std::time::{Duration, SystemTime};
 const KEPT_PREFIX: &str = "kept-";
 /// What follows a demo's name in that of its voice.
 const VOICE: &str = ".voice";
+/// What follows the match in the name of a demo of a map before.
+const PAST: &str = "past-";
 
 /// Something a player said from outside the match, as the match's stream came to its tick: what
 /// writing it into a demo takes.
@@ -191,9 +194,16 @@ impl LiveDemos {
         parts.iter().rev().find(|p| p.first_tick <= tick).or(parts.first()).map(|p| p.path.clone())
     }
 
-    /// The match ended: its demos go, but for those with comms, which are kept.
+    /// The match ended: its demos go, those of maps before too, but for those with comms, which
+    /// are kept.
     pub(crate) fn forget(&self) {
-        remove(&mut lock(&self.parts));
+        remove(&mut lock(&self.parts), false);
+        let past = format!("{LIVE_PREFIX}{}-{PAST}", self.id);
+        for e in std::fs::read_dir(&self.dir).into_iter().flatten().flatten() {
+            if e.file_name().to_string_lossy().starts_with(&past) {
+                let _ = std::fs::remove_file(e.path());
+            }
+        }
     }
 
     /// A player said something from outside the match: kept beside the demo being recorded.
@@ -210,21 +220,22 @@ impl LiveDemos {
 }
 
 /// Forgets `parts`: a demo with comms is kept under another name, to download; the rest are
-/// deleted.
-fn remove(parts: &mut Vec<Part>) {
+/// deleted, or set `aside` while the match goes on.
+fn remove(parts: &mut Vec<Part>, aside: bool) {
     for p in parts.drain(..) {
-        let kept = p
-            .path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .and_then(|n| n.strip_prefix(LIVE_PREFIX))
-            .map(|n| p.path.with_file_name(format!("{KEPT_PREFIX}{n}")));
+        let name = p.path.file_name().and_then(|n| n.to_str());
+        let kept = name.and_then(|n| n.strip_prefix(LIVE_PREFIX)).map(|n| p.path.with_file_name(format!("{KEPT_PREFIX}{n}")));
         if let Some(kept) = kept.filter(|_| has_voice(&p.path)) {
             let _ = std::fs::rename(voice_of(&p.path), voice_of(&kept));
             let _ = std::fs::rename(&p.path, kept);
-        } else {
-            let _ = std::fs::remove_file(voice_of(&p.path));
-            let _ = std::fs::remove_file(p.path);
+            continue;
+        }
+        let _ = std::fs::remove_file(voice_of(&p.path));
+        let tick = format!("{}.dem", p.first_tick);
+        let map: String = p.map.chars().map(|c| if c.is_ascii_alphanumeric() || c == '_' { c } else { '_' }).collect();
+        match name.and_then(|n| n.strip_suffix(&tick)).filter(|_| aside) {
+            Some(start) => drop(std::fs::rename(&p.path, p.path.with_file_name(format!("{start}{PAST}{map}-{tick}")))),
+            None => drop(std::fs::remove_file(p.path)),
         }
     }
 }
@@ -232,9 +243,10 @@ fn remove(parts: &mut Vec<Part>) {
 impl stvtf::demo::Files for LiveDemos {
     fn create(&self, map: &str, first_tick: u32) -> std::io::Result<File> {
         let mut parts = lock(&self.parts);
-        // Another map, or the server's ticks started over (a restart): the ones before go.
+        // Another map, or the server's ticks started over (a restart): the ones before are set
+        // aside.
         if parts.last().is_some_and(|p| p.map != map || p.first_tick > first_tick) {
-            remove(&mut parts);
+            remove(&mut parts, true);
         }
         std::fs::create_dir_all(&self.dir)?;
         let path = self.dir.join(format!("{LIVE_PREFIX}{}-{first_tick}.dem", self.id));
@@ -281,10 +293,12 @@ mod tests {
         assert_eq!(demos.at(9000), Some(second.clone()));
         // The next process finds the first, which has a header.
         assert_eq!(LiveDemos::new(&dir, "m").at(9000), Some(first.clone()));
-        // A new map: the old one's go.
-        demos.create("cp_b", 10).unwrap();
+        // A new map: the old one's are set aside, and played no more.
+        Write::write_all(&mut demos.create("cp_b", 10).unwrap(), &header("cp_b")).unwrap();
         assert!(!first.exists() && !second.exists());
+        assert!(dir.join("live-m-past-cp_a-100.dem").exists() && dir.join("live-m-past-cp_a-500.dem").exists());
         assert_eq!(demos.at(9000), Some(dir.join("live-m-10.dem")));
+        assert_eq!(LiveDemos::new(&dir, "m").at(50), Some(dir.join("live-m-10.dem")), "nor by the next process");
         demos.forget();
         assert_eq!(std::fs::read_dir(&*dir).unwrap().count(), 0);
     }
