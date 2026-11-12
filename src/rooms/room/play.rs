@@ -51,6 +51,8 @@ pub(super) struct State {
     pub(super) stop: bool,
     /// The server tick of the last snapshot played, since the last seek.
     pub(super) tick: Option<u32>,
+    /// The map of the match it plays, by number.
+    pub(super) part: usize,
 }
 
 /// What an owner changes; unset fields stay.
@@ -108,7 +110,7 @@ impl Room {
             st.paused = paused;
         }
         if let Some(at) = c.seek {
-            st.seek = Some(at.clamp(self.recording.start(), self.recording.length()));
+            st.seek = Some(self.held(&st, at));
         }
         self.announce(&st);
         self.wake.notify_all();
@@ -116,17 +118,23 @@ impl Room {
     }
 
     pub(super) fn announce(&self, st: &State) {
+        let (part, over) = (self.part(st), self.part_over(st));
+        let maps: Vec<_> = self.recording.parts().iter().map(|p| serde_json::json!({ "n": p.n, "map": p.map, "ready": p.ready })).collect();
         let line = serde_json::json!({
             "type": "playback",
             "paused": st.paused,
             "speed": st.speed,
             "at": st.at,
-            "length": self.recording.length(),
-            // What is kept (from `start`), and where the map began.
-            "start": self.recording.start(),
-            "origin": self.recording.origin(),
-            "rounds": self.recording.rounds(),
-            "live": self.recording.is_live(),
+            "length": part.end.unwrap_or_else(|| self.recording.length()),
+            // What is kept of its map (from `start`), and where the map began.
+            "start": part.start,
+            "origin": part.origin,
+            "rounds": self.recording.rounds_in(part.n),
+            "live": self.recording.is_live() && !over,
+            // Its map's number, whether the match went on to another, and the maps kept.
+            "map": part.n,
+            "over": over,
+            "maps": maps,
             // Marks so far: a page fetches the ones it lacks.
             "marks": self.recording.marks(usize::MAX).1,
         });
@@ -153,9 +161,10 @@ impl Room {
             if rec.is_live() && announced.elapsed() >= ANNOUNCE_EVERY {
                 self.announce_now(&st, &mut announced);
             }
-            // What is played was dropped (a new map): on from what is kept.
-            if st.seek.is_none() && st.at < rec.start() {
-                st.seek = Some(rec.start());
+            // Where it plays was dropped: on from what is kept.
+            let (start, end) = self.reach(&st);
+            if st.seek.is_none() && st.at < start {
+                st.seek = Some(start);
             }
             if let Some(target) = st.seek.take() {
                 self.seek_to(&mut st, &mut cur, target);
@@ -163,8 +172,9 @@ impl Room {
                 continue;
             }
             cur.refill(rec);
-            let Some(&(t, _)) = cur.lines.front() else {
-                st = self.at_end(st);
+            // No line is played at or past the end of its map.
+            let Some(t) = cur.lines.front().map(|l| l.0).filter(|t| end.is_none_or(|end| *t < end)) else {
+                st = self.at_end(st, end);
                 clock = None;
                 continue;
             };
@@ -203,14 +213,21 @@ impl Room {
         st.tick = hub.tick();
         restore(&self.hub, hub);
         *cur = Cursor { chunk, done, looked: None, lines: VecDeque::new() };
-        st.at = target.max(rec.start());
+        st.at = self.held(st, target);
         self.announce(st);
     }
 
-    /// At the end of what is recorded: a live match's goes on (at 1×, as it comes in), any other
+    /// At the end of what is played: of a map that the match went on from (`over`, its end), it
+    /// waits there; of what is recorded, a live match's goes on (at 1×, as it comes in), any other
     /// pauses there.
-    fn at_end<'a>(&self, mut st: MutexGuard<'a, State>) -> MutexGuard<'a, State> {
+    fn at_end<'a>(&self, mut st: MutexGuard<'a, State>, over: Option<u64>) -> MutexGuard<'a, State> {
         let rec = &self.recording;
+        if let Some(end) = over {
+            if !st.paused {
+                st.at = st.at.max(end);
+            }
+            return self.sleep(st, IDLE_POLL);
+        }
         if rec.is_live() {
             if !st.paused {
                 st.at = st.at.max(rec.length());

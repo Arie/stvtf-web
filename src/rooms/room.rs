@@ -19,6 +19,7 @@ mod circle;
 mod drawing;
 mod light;
 mod note;
+mod part;
 mod play;
 mod relay;
 mod view;
@@ -85,6 +86,9 @@ pub(crate) struct Saved {
     pub(crate) marker: Vec<Kept>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     relay: Option<Was>,
+    /// The map of the match it is on, by number; none in files from before: the latest.
+    #[serde(default)]
+    part: Option<usize>,
 }
 
 /// A page in the room, by its guest cookie if it is listed, until dropped.
@@ -106,7 +110,8 @@ impl Room {
     /// A room playing `recording` from the start, at 1×; a live match's from where it is now.
     pub(crate) fn start(id: String, owner: &str, recording: Arc<Recording>) -> Arc<Room> {
         let at = if recording.is_live() { recording.length() } else { 0 };
-        let state = State { paused: false, speed: 1.0, at, seek: (at > 0).then_some(at), stop: false, tick: None };
+        let part = recording.latest().n;
+        let state = State { paused: false, speed: 1.0, at, seek: (at > 0).then_some(at), stop: false, tick: None, part };
         Room::run(id, People::new(owner), None, None, state, recording)
     }
 
@@ -114,14 +119,16 @@ impl Room {
     pub(crate) fn start_at(id: String, owner: &str, recording: Arc<Recording>, at: u64, speed: f64, paused: bool) -> Arc<Room> {
         let at = at.clamp(recording.start(), recording.length());
         let speed = if SPEEDS.contains(&speed) { speed } else { 1.0 };
-        let state = State { paused, speed, at, seek: Some(at), stop: false, tick: None };
+        let part = recording.latest().n;
+        let state = State { paused, speed, at, seek: Some(at), stop: false, tick: None, part };
         Room::run(id, People::new(owner), None, None, state, recording)
     }
 
     /// The room `saved` was, back where it was.
     pub(crate) fn restore(id: String, saved: Saved, recording: Arc<Recording>) -> Arc<Room> {
         let at = saved.at.clamp(recording.start(), recording.length());
-        let state = State { paused: saved.paused, speed: saved.speed, at, seek: Some(at), stop: false, tick: None };
+        let part = saved.part.map_or(recording.latest().n, |n| n.min(recording.latest().n));
+        let state = State { paused: saved.paused, speed: saved.speed, at, seek: Some(at), stop: false, tick: None, part };
         let room = Room::run(id, saved.people, saved.leader, saved.view.map(Into::into), state, recording);
         if let Some(view) = lock(&room.view).clone() {
             announce(&room.hub, "view", &view);
@@ -181,6 +188,7 @@ impl Room {
             view: lock(&self.view).as_deref().map(str::to_string),
             marker: lock(&self.marker).clone(),
             relay: lock(&self.relay_was).clone(),
+            part: Some(st.part),
         }
     }
 
@@ -244,9 +252,11 @@ impl Room {
         lock(&self.idle_since).map(|t| t.elapsed())
     }
 
-    /// The timeline's marks from the `from`th on, and how many there are.
+    /// The timeline's marks, those of its map, from the `from`th of the match on, and how many
+    /// the match has.
     pub(crate) fn marks(&self, from: usize) -> (Vec<crate::matches::recording::Mark>, usize) {
-        self.recording.marks(from)
+        let part = self.part(&lock(&self.state));
+        self.recording.marks_in(part.n, from)
     }
 
     pub(crate) fn owned_by(&self, guest: &str) -> bool {
@@ -262,6 +272,8 @@ impl Room {
     }
 }
 
+#[cfg(test)]
+mod part_tests;
 #[cfg(test)]
 mod tests;
 pub(crate) use arc::ArcDraw;

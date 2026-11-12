@@ -156,7 +156,6 @@ impl Recording {
     }
 }
 
-#[allow(dead_code, reason = "the rooms use them once they show maps")]
 impl Recording {
     /// The parts kept, oldest first.
     pub(crate) fn parts(&self) -> Vec<Part> {

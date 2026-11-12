@@ -7,7 +7,6 @@
 
 mod parts;
 
-#[allow(unused_imports, reason = "the rooms name it once they show maps")]
 pub(crate) use parts::Part;
 
 use crate::lock;

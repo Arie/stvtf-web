@@ -16,7 +16,7 @@ fn room(n: u32) -> Arc<Room> {
     Room::start("r".into(), "me", Arc::new(Recording::read(lines.as_bytes(), "test").unwrap()))
 }
 
-fn until(what: &str, done: impl Fn() -> bool) {
+pub(super) fn until(what: &str, done: impl Fn() -> bool) {
     let started = Instant::now();
     while !done() {
         assert!(started.elapsed() < Duration::from_secs(5), "waited for {what}");
@@ -230,25 +230,6 @@ fn catching_up_with_a_live_match_plays_on_at_1x() {
     r.control(&Control { seek: Some(0), speed: Some(4.0), ..Control::default() }).unwrap();
     until("live again", || lock(&r.state).at >= 900);
     until("1x", || (lock(&r.state).speed - 1.0).abs() < f64::EPSILON);
-    r.stop();
-}
-
-#[test]
-fn a_room_behind_on_the_old_map_plays_on_into_the_new() {
-    let rec = Arc::new(Recording::live());
-    let push = |line: &Line, time: u64| {
-        let text = serde_json::to_string(line).unwrap();
-        let mut stamped: stvtf::output::Stamped = serde_json::from_str(&text).unwrap();
-        stamped.time = Some(time);
-        rec.push(&stamped, &text).unwrap();
-    };
-    let t0 = 1_700_000_000_000;
-    push(&crate::testing::server("cp_one"), t0);
-    let r = Room::start_at("r".into(), "me", rec.clone(), 0, 1.0, true);
-    push(&crate::testing::server("cp_two"), t0 + 500);
-    let _w = r.join("me", None, None, true);
-    r.control(&Control { paused: Some(false), ..Control::default() }).unwrap();
-    until("the new map", || r.hub.lock().unwrap().map.as_deref() == Some("cp_two"));
     r.stop();
 }
 

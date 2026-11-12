@@ -95,7 +95,7 @@ impl Room {
     /// the demo before any (`any`).
     pub(super) fn want(&self, st: &State, offer: &Offer, any: bool) -> Option<stvtf::relay::Want> {
         let tick = st.tick.or(any.then_some(0))?;
-        let part = self.recording.latest();
+        let part = self.part(st);
         Some(stvtf::relay::Want {
             demo: (offer.demo_of)(&part.map, part.again, tick)?,
             tick,

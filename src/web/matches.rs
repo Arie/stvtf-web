@@ -132,12 +132,13 @@ pub(super) fn match_timeline(s: &mut TcpStream, m: &Arc<Session>, request: &Requ
         return respond(s, "202 Accepted", JSON, b"{}");
     };
     if part == "marks" {
-        return respond_marks(s, &request.query, |from| r.marks(from));
+        return respond_marks(s, &request.query, |from| r.marks_in(r.latest().n, from));
     }
     // A live match's is at its end, once it ended too: only a replay plays from the start.
     let at = if m.watches_server() { r.length() } else { lock(&m.hub).played.min(r.length()) };
     let (length, live, rounds, marks) = (r.length(), r.is_live(), r.rounds(), r.marks(usize::MAX).1);
-    let (start, origin) = (r.start(), r.origin());
+    let latest = r.latest();
+    let (start, origin) = (latest.start, r.origin());
     let body =
         serde_json::json!({ "at": at, "length": length, "start": start, "origin": origin, "live": live, "rounds": rounds, "marks": marks });
     respond(s, "200 OK", JSON, body.to_string().as_bytes())
