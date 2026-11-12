@@ -8,8 +8,10 @@ use crate::relays::pool::{Offer, RoomRelay, Was};
 use crate::rooms::people::People;
 use anyhow::Result;
 use drawing::kept_line;
+use markers::Markers;
 use play::State;
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex, OnceLock};
 use std::time::{Duration, Instant};
@@ -18,6 +20,7 @@ mod beams;
 mod circle;
 mod drawing;
 mod light;
+mod markers;
 mod note;
 mod part;
 mod play;
@@ -64,8 +67,10 @@ pub(crate) struct Room {
     relay_failed: Mutex<Option<(Instant, String)>>,
     /// The user id the view follows; the relay's camera does too.
     camera: Mutex<Option<u16>>,
-    /// The permanent marker strokes on the map.
-    marker: Mutex<Vec<Kept>>,
+    /// The permanent marker strokes, by the map they are on.
+    marker: Mutex<Markers>,
+    /// The map whose marker the pages and the relay were last told (the one drawings land on).
+    marker_part: AtomicUsize,
     /// The marker changed since the relay was last handed it.
     marker_dirty: AtomicBool,
 }
@@ -81,9 +86,12 @@ pub(crate) struct Saved {
     people: People,
     leader: Option<Leader>,
     view: Option<String>,
-    /// Saved in a file of its own (see `Rooms::save`); here in older files.
+    /// Saved in a file of its own (see `Rooms::save`).
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub(crate) markers: Markers,
+    /// The latest map's, in files from before maps.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub(crate) marker: Vec<Kept>,
+    marker: Vec<Kept>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     relay: Option<Was>,
     /// The map of the match it is on, by number; none in files from before: the latest.
@@ -130,7 +138,8 @@ impl Room {
     /// The room `saved` was, back where it was.
     pub(crate) fn restore(id: String, saved: Saved, recording: Arc<Recording>) -> Arc<Room> {
         let at = saved.at.clamp(recording.start(), recording.length());
-        let part = saved.part.map_or(recording.latest().n, |n| n.min(recording.latest().n));
+        let recording_latest = recording.latest().n;
+        let part = saved.part.map_or(recording_latest, |n| n.min(recording_latest));
         let state =
             State { paused: saved.paused, speed: saved.speed, at, seek: Some(at), stop: false, tick: None, part, follows: saved.follows };
         let room = Room::run(id, saved.people, saved.leader, saved.view.map(Into::into), state, recording);
@@ -138,8 +147,12 @@ impl Room {
             announce(&room.hub, "view", &view);
         }
         *lock(&room.relay_was) = saved.relay;
-        *lock(&room.marker) = saved.marker;
-        announce(&room.hub, "marker", &kept_line(&lock(&room.marker)));
+        let mut markers = saved.markers;
+        if !saved.marker.is_empty() {
+            markers.entry(recording_latest).or_insert(saved.marker);
+        }
+        *lock(&room.marker) = markers;
+        announce(&room.hub, "marker", &kept_line(&room.current_marker()));
         room.announce_people();
         room
     }
@@ -152,6 +165,7 @@ impl Room {
         state: State,
         recording: Arc<Recording>,
     ) -> Arc<Room> {
+        let part = state.part;
         let room = Arc::new(Room {
             id,
             hub: SharedHub::default(),
@@ -171,7 +185,8 @@ impl Room {
             relay_was: Mutex::new(None),
             relay_failed: Mutex::new(None),
             camera: Mutex::new(None),
-            marker: Mutex::new(Vec::new()),
+            marker: Mutex::new(Markers::new()),
+            marker_part: AtomicUsize::new(part),
             marker_dirty: AtomicBool::new(true),
         });
         announce(&room.hub, "marker", &kept_line(&[]));
@@ -190,7 +205,8 @@ impl Room {
             people: lock(&self.people).clone(),
             leader: lock(&self.leader).clone(),
             view: lock(&self.view).as_deref().map(str::to_string),
-            marker: lock(&self.marker).clone(),
+            marker: Vec::new(),
+            markers: self.markers_kept(),
             relay: lock(&self.relay_was).clone(),
             part: Some(st.part),
             follows: st.follows,
@@ -287,6 +303,7 @@ pub(crate) use arc::ArcDraw;
 pub(crate) use circle::CircleDraw;
 pub(crate) use drawing::{Draw, Kept};
 pub(crate) use light::LightDraw;
+pub(crate) use markers::read_marker;
 pub(crate) use note::NoteDraw;
 pub(crate) use part::MapPost;
 pub(crate) use play::Control;

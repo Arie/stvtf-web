@@ -1,7 +1,8 @@
 //! A room going on to another map: by an admin, or by itself when it follows live.
 
+use super::markers::{Markers, read_marker};
 use super::part::MapPost;
-use super::part_tests::{playback, push, settle, stalemate};
+use super::part_tests::{live_room_then_new_map, playback, push, settle, stalemate};
 use super::tests::until;
 use super::view::View;
 use super::*;
@@ -221,4 +222,41 @@ fn restarted_in_the_break(touch: Option<Touch>) -> usize {
 fn a_restart_in_the_break_keeps_whether_the_room_moves_by_itself() {
     assert_eq!(restarted_in_the_break(None), 1, "it followed: it goes on");
     assert_eq!(restarted_in_the_break(Some(Touch::Clear)), 0, "it did not: it stays");
+}
+
+/// The last `marker` line the room announced: what a page joining now is told.
+fn marker_line(room: &Room) -> Value {
+    let lines: Vec<Value> = subscribe(&room.hub, false).try_iter().map(|l| serde_json::from_str(&l).unwrap()).collect();
+    lines.into_iter().rfind(|l| l["type"] == "marker").expect("a marker line")
+}
+
+#[test]
+fn drawings_stay_with_the_map_they_were_made_on() {
+    let (room, _, _) = live_room_then_new_map();
+    room.note(&NoteDraw { text: "here".into(), at: None, player: Some(3) }, "me").unwrap();
+    room.go(&MapPost { map: 1 }).unwrap();
+    settle(&room);
+    assert_eq!(marker_line(&room)["strokes"].as_array().unwrap().len(), 0, "none on the next map");
+    room.go(&MapPost { map: 0 }).unwrap();
+    settle(&room);
+    assert_eq!(marker_line(&room)["strokes"][0]["note"]["text"], "here");
+    room.stop();
+}
+
+#[test]
+fn a_marker_saved_before_parts_is_the_latest_maps() {
+    let marker: Markers = read_marker(br#"[{"stroke":1,"by":1,"points":[[0.0,0.0,0.0]]}]"#, 1);
+    assert_eq!(marker.get(&1).map(Vec::len), Some(1));
+}
+
+#[test]
+fn a_map_the_match_no_longer_keeps_takes_its_marker_with_it() {
+    let (room, _, _) = live_room_then_new_map();
+    room.draw(&Draw { stroke: 1, points: vec![[1.0, 2.0, 0.0]], end: true }, "me").unwrap();
+    let gone = read_marker(br#"[{"stroke":1,"by":1,"points":[[0.0,0.0,0.0]]}]"#, 9);
+    lock(&room.marker).extend(gone);
+    let saved = room.saved().markers;
+    assert_eq!(saved.keys().count(), 1, "the map that is kept: {saved:?}");
+    assert_eq!(saved.values().next().map(Vec::len), Some(1));
+    room.stop();
 }

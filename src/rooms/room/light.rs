@@ -63,16 +63,16 @@ mod tests {
         let (r, _dir) = arc_room();
         r.set_ink("me", "#ff8000").unwrap();
         r.light(&LightDraw { at: [1256.0, 256.0] }, "me").unwrap();
-        let marker = r.saved().marker;
+        let marker = r.current_marker();
         assert_eq!(marker[0].light, Some([1256.0, 256.0, 200.0]), "on the high floor");
         let light = tf2_light(&marker).unwrap();
         assert_eq!((light.at, light.rgb), ([1256.0, 256.0, 200.0 + LIFT as f32], [255, 128, 0]));
         r.light(&LightDraw { at: [256.0, 256.0] }, "me").unwrap();
-        let marker = r.saved().marker;
+        let marker = r.current_marker();
         assert_eq!(marker.len(), 1, "one light");
         assert_ne!(marker[0].light, Some([1256.0, 256.0, 200.0]), "where the next click was");
         r.clear("me");
-        assert!(tf2_light(&r.saved().marker).is_none());
+        assert!(tf2_light(&r.current_marker()).is_none());
     }
 
     #[test]
@@ -81,6 +81,6 @@ mod tests {
         r.light(&LightDraw { at: [1256.0, 256.0] }, "me").unwrap();
         let e = r.light(&LightDraw { at: [700.0, 256.0] }, "me").unwrap_err();
         assert_eq!(e.to_string(), "Pick a spot on a floor.");
-        assert_eq!(r.saved().marker[0].light, Some([1256.0, 256.0, 200.0]));
+        assert_eq!(r.current_marker()[0].light, Some([1256.0, 256.0, 200.0]));
     }
 }

@@ -76,10 +76,10 @@ mod tests {
     fn a_circle_is_kept_on_the_floor_under_the_click_and_cleared_with_the_marker() {
         let (r, _dir) = arc_room();
         r.circle(&CircleDraw { at: [1256.0, 256.0] }, "me").unwrap();
-        let marker = r.saved().marker;
+        let marker = r.current_marker();
         assert_eq!(marker[0].circle, Some([1256.0, 256.0, 200.0]), "on the high floor");
         r.clear("me");
-        assert!(r.saved().marker.is_empty());
+        assert!(r.current_marker().is_empty());
     }
 
     #[test]
@@ -87,7 +87,7 @@ mod tests {
         let (r, _dir) = arc_room();
         let e = r.circle(&CircleDraw { at: [700.0, 256.0] }, "me").unwrap_err();
         assert_eq!(e.to_string(), "Pick a spot on a floor.");
-        assert!(r.saved().marker.is_empty());
+        assert!(r.current_marker().is_empty());
     }
 
     #[test]

@@ -98,21 +98,21 @@ mod tests {
     fn a_note_at_a_spot_is_kept_on_the_floor_there_and_cleared_with_the_marker() {
         let (r, _dir) = arc_room();
         r.note(&spot("  high ground ", [1256.0, 256.0]), "me").unwrap();
-        let marker = r.saved().marker;
+        let marker = r.current_marker();
         assert_eq!(marker[0].note, Some(Label { text: "high ground".into(), player: None }));
         assert_eq!(marker[0].points, [[1256.0, 256.0, 200.0]]);
         let notes = tf2_notes(&marker);
         assert_eq!(notes[0].at, [1256.0, 256.0, 200.0 + ABOVE as f32]);
         assert_eq!((notes[0].text.as_str(), notes[0].player), ("high ground", None));
         r.clear("me");
-        assert!(r.saved().marker.is_empty());
+        assert!(r.current_marker().is_empty());
     }
 
     #[test]
     fn a_note_on_a_player_follows_them() {
         let (r, _dir) = arc_room();
         r.note(&NoteDraw { text: "watch".into(), at: None, player: Some(12) }, "me").unwrap();
-        let notes = tf2_notes(&r.saved().marker);
+        let notes = tf2_notes(&r.current_marker());
         assert_eq!(notes[0].player, Some(12));
         assert_ne!(notes[0].id, 0);
     }
@@ -125,7 +125,7 @@ mod tests {
             put().unwrap();
         }
         assert_eq!(put().unwrap_err().to_string(), "At most 10 notes: clear them first.");
-        assert_eq!(r.saved().marker.len(), MAX_NOTES);
+        assert_eq!(r.current_marker().len(), MAX_NOTES);
         r.clear("me");
         put().unwrap();
     }
@@ -138,6 +138,6 @@ mod tests {
         assert_eq!(refused(spot(&"x".repeat(41), [256.0, 256.0])), "At most 40 characters.");
         assert_eq!(refused(spot("off", [700.0, 256.0])), "Pick a spot on a floor.");
         assert_eq!(refused(NoteDraw { text: "x".into(), at: None, player: None }), "A spot or a player, one of them.");
-        assert!(r.saved().marker.is_empty());
+        assert!(r.current_marker().is_empty());
     }
 }

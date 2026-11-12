@@ -5,7 +5,7 @@ use crate::lock;
 use crate::matches::recording::Recording;
 use crate::matches::sessions::{DEMO_PREFIX, LIVE_PREFIX, Session, Sessions, Store, Viewer, demo_dem, demo_output, logged};
 use crate::relays::pool::{DemoOf, Offer, Pool};
-use crate::rooms::room::{Room, Saved};
+use crate::rooms::room::{Room, Saved, read_marker};
 use anyhow::{Result, bail};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -309,9 +309,6 @@ impl Rooms {
             return None;
         }
         let mut saved: SavedRoom = serde_json::from_slice(&store.take(&file(id)).ok()?).ok()?;
-        if let Some(marker) = store.take(&marker_file(id)).ok().and_then(|m| serde_json::from_slice(&m).ok()) {
-            saved.room.marker = marker;
-        }
         let recording = match &saved.source {
             Source::Pinned(match_id) | Source::Live(match_id) => sessions.get(match_id)?.recording().ok()?,
             Source::Demo(demo) => self.shared(&format!("demo:{demo}"), || {
@@ -319,6 +316,9 @@ impl Rooms {
                 Some(Arc::new(Recording::read(flate2::read::GzDecoder::new(gz.as_slice()), &format!("demo {demo}")).ok()?))
             })?,
         };
+        if let Ok(marker) = store.take(&marker_file(id)) {
+            saved.room.markers = read_marker(&marker, recording.latest().n);
+        }
         let mut map = lock(&self.map);
         // Another page of it may have picked it up meanwhile.
         if let Some(room) = map.get(id) {
@@ -353,7 +353,7 @@ impl Rooms {
         let by = lock(&self.by).get(&room.id).map(|(b, _)| b.clone());
         let mut saved = SavedRoom { source, room: room.saved(), by };
         // Apart: not rewritten with where playback is every second.
-        let marker = std::mem::take(&mut saved.room.marker);
+        let marker = std::mem::take(&mut saved.room.markers);
         let written = serde_json::to_vec(&saved)
             .map_err(Into::into)
             .and_then(|plain| self.put_changed(store, &file(&room.id), &plain))
@@ -558,7 +558,11 @@ mod tests {
         r.stop();
 
         let next = Rooms::new(Some(store(&dir)), None);
-        assert_eq!(next.get(&r.id, &sessions).expect("picked up").saved().marker.len(), 2, "the marker came along");
+        assert_eq!(
+            next.get(&r.id, &sessions).expect("picked up").saved().markers.values().map(Vec::len).sum::<usize>(),
+            2,
+            "the marker came along"
+        );
     }
 
     #[test]

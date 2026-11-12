@@ -45,7 +45,7 @@ pub(super) fn playback(room: &Room) -> Value {
 }
 
 /// A watched room on a live match, opened on `cp_a`; then `cp_b` comes, whose play time is returned.
-fn live_room_then_new_map() -> (Arc<Room>, Arc<Recording>, u64) {
+pub(super) fn live_room_then_new_map() -> (Arc<Room>, Arc<Recording>, u64) {
     let rec = Arc::new(Recording::live());
     push(&rec, &server("cp_a"), 0);
     push(&rec, &snapshot(50, None, Vec::new()), 500);

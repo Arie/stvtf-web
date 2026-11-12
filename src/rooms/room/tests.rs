@@ -90,11 +90,11 @@ fn strokes_reach_every_page_and_stay_on_the_map() {
 fn a_marker_stroke_is_open_until_its_end() {
     let r = room(1);
     r.draw(&Draw { stroke: 1, points: vec![[1.0, 0.0, 0.0]], end: false }, "me").unwrap();
-    assert!(r.saved().marker[0].open);
+    assert!(r.current_marker()[0].open);
     r.draw(&Draw { stroke: 1, points: vec![], end: true }, "me").unwrap();
-    assert!(!r.saved().marker[0].open);
+    assert!(!r.current_marker()[0].open);
     r.draw(&Draw { stroke: 9, points: vec![], end: true }, "me").unwrap();
-    assert_eq!(r.saved().marker.len(), 1, "an end alone is no stroke");
+    assert_eq!(r.current_marker().len(), 1, "an end alone is no stroke");
 }
 
 #[test]
@@ -105,7 +105,7 @@ fn a_marker_stroke_keeps_the_ink_it_was_drawn_in() {
     r.set_ink("me", "#00ff00").unwrap();
     r.draw(&Draw { stroke: 1, points: vec![[2.0, 0.0, 0.0]], end: false }, "me").unwrap();
     r.draw(&Draw { stroke: 2, points: vec![[3.0, 0.0, 0.0]], end: false }, "me").unwrap();
-    let inks: Vec<Option<String>> = r.saved().marker.iter().map(|k| k.ink.clone()).collect();
+    let inks: Vec<Option<String>> = r.current_marker().iter().map(|k| k.ink.clone()).collect();
     assert_eq!(inks, [Some("#ff0000".into()), Some("#00ff00".into())]);
 }
 
@@ -129,7 +129,7 @@ fn marker_stays_for_pages_that_join_until_cleared() {
     r.clear("me");
     assert!(page.try_iter().any(|l| &*l == r#"{"by":1,"type":"clear"}"#));
     assert_eq!(&*joined(&r)[0], r#"{"max":8000,"strokes":[],"type":"marker"}"#, "nothing kept, said so");
-    assert_eq!(r.saved().marker.len(), 0);
+    assert_eq!(r.current_marker().len(), 0);
     let full = Draw { stroke: 3, points: vec![[0.0, 0.0, 0.0]; 200], end: false };
     let mut drawn = 0;
     while r.draw(&full, "me").is_ok() {
@@ -304,12 +304,12 @@ pub(super) fn arc_room() -> (Arc<Room>, crate::testing::TempDir) {
 fn an_arc_is_kept_with_the_marker_and_cleared_with_it() {
     let (r, _dir) = arc_room();
     r.arc(&ArcDraw { from: [256.0, 256.0], to: [1256.0, 256.0] }, "me").unwrap();
-    let marker = r.saved().marker;
+    let marker = r.current_marker();
     let arc = marker[0].arc.as_ref().expect("an arc");
     assert_eq!(arc.len(), 17);
     assert_eq!((arc[0][2], arc[16][2]), (0.0, 200.0), "from the low floor to the high one");
     r.clear("me");
-    assert!(r.saved().marker.is_empty());
+    assert!(r.current_marker().is_empty());
 }
 
 #[test]
@@ -317,7 +317,7 @@ fn an_arc_off_the_floors_is_refused() {
     let (r, _dir) = arc_room();
     let e = r.arc(&ArcDraw { from: [256.0, 256.0], to: [700.0, 256.0] }, "me").unwrap_err();
     assert_eq!(e.to_string(), "Pick a spot on a floor.");
-    assert!(r.saved().marker.is_empty());
+    assert!(r.current_marker().is_empty());
 }
 
 #[test]

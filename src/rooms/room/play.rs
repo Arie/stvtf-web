@@ -221,6 +221,8 @@ impl Room {
         *cur = Cursor { chunk, done, looked: None, lines: VecDeque::new() };
         st.at = self.held(st, target);
         self.announce(st);
+        // Every move between maps ends here: the marker goes with the room.
+        self.show_marker(self.part(st).n);
     }
 
     /// At the end of what is played: of a map that the match went on from (`over`, its end), it

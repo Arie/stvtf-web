@@ -7,6 +7,7 @@ use crate::matches::hub::send_keeping;
 use anyhow::{Result, bail};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 
 /// Most points in one drawing request.
 pub(super) const MAX_POINTS: usize = 256;
@@ -100,9 +101,11 @@ impl Room {
     /// marker as it was, when it then holds more points or notes than it may, or more than TF2
     /// shows.
     pub(super) fn change_marker(&self, change: impl FnOnce(&mut Vec<Kept>) -> Arc<str>) -> Result<()> {
-        let mut marker = lock(&self.marker);
+        let mut all = lock(&self.marker);
+        // The map the pages were told of, read under the marker's lock: a move changes it there.
+        let marker = all.entry(self.marker_part.load(Ordering::Relaxed)).or_default();
         let before = marker.clone();
-        let line = change(&mut marker);
+        let line = change(marker);
         if marker.iter().map(|k| k.points.len()).sum::<usize>() > MAX_KEPT_POINTS {
             *marker = before;
             bail!("The map is full of marker ({MAX_KEPT_POINTS} points): clear it first.");
@@ -111,9 +114,9 @@ impl Room {
             *marker = before;
             bail!("At most {MAX_NOTES} notes: clear them first.");
         }
-        let beams = self.marker_in_tf2(&marker).inspect_err(|_| *marker = before)?;
-        send_keeping(&self.hub, &line, "marker", kept_line(&marker));
-        drop(marker);
+        let beams = self.marker_in_tf2(marker).inspect_err(|_| *marker = before)?;
+        send_keeping(&self.hub, &line, "marker", kept_line(marker));
+        drop(all);
         self.hand_marker(beams);
         self.touched();
         Ok(())
@@ -122,10 +125,10 @@ impl Room {
     /// Admin `guest` wipes the marker.
     pub(crate) fn clear(&self, guest: &str) {
         let by = lock(&self.people).id(guest);
-        lock(&self.marker).clear();
+        lock(&self.marker).remove(&self.marker_part.load(Ordering::Relaxed));
         self.keep_marker();
         let line = serde_json::json!({ "type": "clear", "by": by }).to_string().into();
-        send_keeping(&self.hub, &line, "marker", kept_line(&lock(&self.marker)));
+        send_keeping(&self.hub, &line, "marker", kept_line(&self.current_marker()));
         self.touched();
     }
 }

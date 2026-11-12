@@ -74,7 +74,7 @@ impl Room {
     /// Hands the relay the marker as it is now, once TF2 clients are in to see it; until then it
     /// waits.
     pub(super) fn keep_marker(&self) {
-        let strokes = lock(&self.marker).clone();
+        let strokes = self.current_marker();
         let beams = self.ground_for_relay().map(|ground| {
             let mut all = self.marker_beams(&ground, &strokes);
             // A marker from before TF2 clients came in can be more than they are shown.
@@ -90,7 +90,7 @@ impl Room {
         self.marker_dirty.store(true, Ordering::Relaxed);
         // Before the relay's lock: the marker's is taken first elsewhere.
         let (notes, light) = {
-            let marker = lock(&self.marker);
+            let marker = self.current_marker();
             (super::note::tf2_notes(&marker), super::light::tf2_light(&marker))
         };
         if let Some(beams) = beams
