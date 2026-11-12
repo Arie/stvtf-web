@@ -23,8 +23,12 @@ export function initVoice() {
     return;
   }
   const show = () => {
-    button.textContent = voice.voiceOn() ? "🔊" : "🔇";
-    button.classList.toggle("on", voice.voiceOn());
+    // On from an earlier visit, a browser still plays nothing before a click: shown as off, and asking for one.
+    const waiting = voice.voiceWaiting();
+    button.textContent = voice.voiceOn() && !waiting ? "🔊" : "🔇";
+    button.title = waiting ? "Click to hear" : "The players' voice";
+    button.classList.toggle("on", voice.voiceOn() && !waiting);
+    button.classList.toggle("wait", waiting);
     if (!list.hidden) renderList(list);
   };
   button.onclick = () => {

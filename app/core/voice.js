@@ -89,12 +89,20 @@ export function setVoice(want) {
   voiceListeners.forEach(f => f());
 }
 
-// The audio, once there has been a click: voice turned on in an earlier visit waits for one.
+// The audio, once there has been a click or a key: voice turned on in an earlier visit waits for
+// one (a browser plays no sound before), and the page is told when it has come.
 function start() {
-  audio ??= new AudioContext();
+  if (!audio) {
+    audio = new AudioContext();
+    audio.onstatechange = () => voiceListeners.forEach(f => f());
+  }
   if (audio.state === "suspended") audio.resume().catch(() => {});
 }
-env.root.addEventListener("pointerdown", () => voiceOn() && start(), { capture: true, passive: true });
+for (const first of ["pointerdown", "keydown"])
+  env.root.addEventListener(first, () => voiceOn() && start(), { capture: true, passive: true });
+
+// Whether voice is on but nothing can be heard yet: the page waits for its first click.
+export const voiceWaiting = () => voiceOn() && audio?.state !== "running";
 
 /** @param {string} id */
 function forget(id) {

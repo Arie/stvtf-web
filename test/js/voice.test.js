@@ -30,6 +30,11 @@ test("a speaker's mute and volume are kept by SteamID", () => {
   assert.equal(volumeOf(id), 1, "full volume is the default again");
 });
 
+test("voice that is off, or cannot play here, waits for no click", async () => {
+  const v = await import("../../app/core/voice.js");
+  assert.equal(v.voiceWaiting(), false);
+});
+
 test("nobody talks before any voice came", () => {
   assert.equal(isTalking(3), false);
 });
