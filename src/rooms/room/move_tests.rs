@@ -9,12 +9,18 @@ use crate::matches::hub::{subscribe, tests::snapshot};
 use crate::testing::server;
 use serde_json::Value;
 
-/// A watched room on a live match on `map`, resting at live: it follows.
-fn live_room_at_live_on(map: &str) -> (Arc<Room>, Arc<Recording>) {
+/// A live match on `map`, 200 ms of it so far.
+fn live_on(map: &str) -> Arc<Recording> {
     let rec = Arc::new(Recording::live());
     push(&rec, &server(map), 0);
     push(&rec, &snapshot(50, None, Vec::new()), 50);
     push(&rec, &stalemate(), 200);
+    rec
+}
+
+/// A watched room on a live match on `map`, resting at live: it follows.
+fn live_room_at_live_on(map: &str) -> (Arc<Room>, Arc<Recording>) {
+    let rec = live_on(map);
     let room = Room::start("r".into(), "me", rec.clone());
     room.viewers.fetch_add(1, Ordering::Relaxed);
     until("the room to follow live", || lock(&room.state).follows);
@@ -68,20 +74,39 @@ fn on_map(room: &Room, n: usize) {
 #[derive(Debug, Clone, Copy)]
 enum Touch {
     Pause,
+    Speed,
+    Seek,
     Draw,
     Note,
     Clear,
     View,
+    HandView,
+}
+
+fn admin_view(take: bool) -> ViewPost {
+    ViewPost { view: View::Admin { cx: 1.0, cy: 2.0, w: 300.0, h: 200.0, rot: 0.0 }, take, page: String::new() }
 }
 
 impl Touch {
+    /// Before the map ends: a camera is moved by hand only in a view chosen first.
+    fn ready(self, room: &Room) {
+        if let Touch::HandView = self {
+            room.set_view(&admin_view(true), "me").unwrap();
+            until("the room to follow live again", || lock(&room.state).follows);
+        }
+    }
+
     fn on(self, room: &Room) {
         match self {
             Touch::Pause => room.control(&Control { paused: Some(true), ..Control::default() }).unwrap(),
+            Touch::Speed => room.control(&Control { speed: Some(2.0), ..Control::default() }).unwrap(),
+            // To its map's end, where it would go on: not back into it, which it would play first.
+            Touch::Seek => room.control(&Control { seek: Some(u64::MAX), ..Control::default() }).unwrap(),
             Touch::Draw => room.draw(&Draw { stroke: 1, points: vec![[1.0, 2.0, 0.0]], end: true }, "me").unwrap(),
             Touch::Note => room.note(&NoteDraw { text: "here".into(), at: None, player: Some(2) }, "me").unwrap(),
             Touch::Clear => room.clear("me"),
             Touch::View => room.set_view(&ViewPost { view: View::Auto, take: true, page: String::new() }, "me").unwrap(),
+            Touch::HandView => room.set_view(&admin_view(false), "me").unwrap(),
         }
     }
 }
@@ -104,8 +129,11 @@ fn a_room_following_live_moves_to_the_next_map_once_it_has_play() {
 #[test]
 fn a_room_behind_live_when_its_map_ended_stays() {
     let (room, rec) = live_room_at_live_on("cp_a");
+    // Unwatched, it plays nothing: it is still behind live when the map ends.
+    room.viewers.fetch_sub(1, Ordering::Relaxed);
     room.control(&Control { seek: Some(rec.length() - 150), ..Control::default() }).unwrap();
     new_map_with_play(&rec, "cp_b");
+    room.viewers.fetch_add(1, Ordering::Relaxed);
     settle_past(&room, rec.length());
     let p = playback(&room);
     assert_eq!((p["map"].as_u64(), p["over"].as_bool()), (Some(0), Some(true)), "the replay ran to the end, and waits");
@@ -113,11 +141,25 @@ fn a_room_behind_live_when_its_map_ended_stays() {
 }
 
 #[test]
+fn a_room_that_never_followed_plays_to_its_maps_end_and_stays() {
+    let rec = live_on("cp_a");
+    // Unwatched, it plays nothing: behind live until the next map has started.
+    let room = Room::start_at("r".into(), "me", rec.clone(), 50, 1.0, false);
+    new_map_with_play(&rec, "cp_b");
+    room.viewers.fetch_add(1, Ordering::Relaxed);
+    settle_past(&room, rec.length());
+    let p = playback(&room);
+    assert_eq!((p["map"].as_u64(), p["over"].as_bool()), (Some(0), Some(true)), "it played to the end, and waits");
+    room.stop();
+}
+
+#[test]
 fn a_room_touched_after_its_map_ended_stays() {
     std::thread::scope(|s| {
-        for touch in [Touch::Pause, Touch::Draw, Touch::Note, Touch::Clear, Touch::View] {
+        for touch in [Touch::Pause, Touch::Speed, Touch::Seek, Touch::Draw, Touch::Note, Touch::Clear, Touch::View, Touch::HandView] {
             s.spawn(move || {
                 let (room, rec) = live_room_at_live_on("cp_a");
+                touch.ready(&room);
                 push_server(&rec, "cp_b");
                 touch.on(&room);
                 push_snapshot(&rec, 50);
@@ -131,12 +173,17 @@ fn a_room_touched_after_its_map_ended_stays() {
 #[test]
 fn an_admin_moves_the_room_to_the_latest_map_at_live_and_to_an_earlier_one_at_its_start() {
     let (room, rec) = live_room_at_live_on("cp_a");
-    new_map_with_play(&rec, "cp_b");
+    // Paused as its map ends: it waits there, paused.
+    push_server(&rec, "cp_b");
+    room.control(&Control { paused: Some(true), ..Control::default() }).unwrap();
+    push_snapshot(&rec, 50);
+    assert_eq!(looked(&room), 0);
     let at = rec.latest().origin;
     room.go(&MapPost { map: 1 }).unwrap();
     on_map(&room, 1);
     settle(&room);
-    assert_eq!((playback(&room)["map"].as_u64(), playback(&room)["live"].as_bool()), (Some(1), Some(true)));
+    let p = playback(&room);
+    assert_eq!((p["map"].as_u64(), p["live"].as_bool(), p["paused"].as_bool()), (Some(1), Some(true), Some(false)));
     let page = subscribe(&room.hub, false);
     room.go(&MapPost { map: 0 }).unwrap();
     on_map(&room, 0);
@@ -150,19 +197,28 @@ fn an_admin_moves_the_room_to_the_latest_map_at_live_and_to_an_earlier_one_at_it
     room.stop();
 }
 
-#[test]
-fn a_restart_in_the_break_keeps_whether_the_room_moves_by_itself() {
+/// The map a room restarted in the break, after `touch` (none: left alone), is on once the next
+/// map has play.
+fn restarted_in_the_break(touch: Option<Touch>) -> usize {
     let (room, rec) = live_room_at_live_on("cp_a");
     push_server(&rec, "cp_b");
     settle(&room);
+    if let Some(touch) = touch {
+        touch.on(&room);
+    }
     let saved = serde_json::to_string(&room.saved()).unwrap();
     room.stop();
     let again = Room::restore("r".into(), serde_json::from_str(&saved).unwrap(), rec.clone());
     again.viewers.fetch_add(1, Ordering::Relaxed);
     settle(&again);
     push_snapshot(&rec, 50);
-    on_map(&again, 1);
-    settle(&again);
-    assert_eq!(playback(&again)["map"].as_u64(), Some(1));
+    let map = looked(&again);
     again.stop();
+    map
+}
+
+#[test]
+fn a_restart_in_the_break_keeps_whether_the_room_moves_by_itself() {
+    assert_eq!(restarted_in_the_break(None), 1, "it followed: it goes on");
+    assert_eq!(restarted_in_the_break(Some(Touch::Clear)), 0, "it did not: it stays");
 }

@@ -5,7 +5,14 @@ import { EMBEDDED } from "../embed/embed.js";
 import { clock, moment, playbar } from "./playbar.js";
 import { env } from "../core/env.js";
 import { setAutoZoom, setFollow } from "../core/input.js";
-import { EVENTS_URL, openStream, playbackListeners, streamParams, viewListeners } from "../core/stream.js";
+import {
+  EVENTS_URL,
+  followDropListeners,
+  openStream,
+  playbackListeners,
+  streamParams,
+  viewListeners,
+} from "../core/stream.js";
 import { drawOwn, markerFull, trimOwn } from "./telestrator.js";
 import { NOTE_MS, arcTool, circleTool, lightTool, note, worldAt } from "./tools.js";
 import { noteKey, noteTool } from "./notes.js";
@@ -342,6 +349,7 @@ function roomView() {
     (/** @type {import("./roomview.js").Send} */ s) => post("view", { ...s.view, take: s.take, page: views.page }),
     latestView,
   );
+  followDropListeners.add(() => views.dropped());
   viewListeners.add(m => {
     const fx = views.hear(m, seen());
     if (fx.mirror && m.mode === "admin") pushMirror(m);

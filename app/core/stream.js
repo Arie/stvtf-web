@@ -215,6 +215,9 @@ export const peopleListeners = new Set();
 export const viewListeners = new Set();
 /** @type {Set<(m: import("../../types/stream").RelayLine) => void>} */
 export const relayListeners = new Set();
+// A follow the page dropped by itself (the match reset): nobody's doing.
+/** @type {Set<() => void>} */
+export const followDropListeners = new Set();
 /** @param {import("../../types/stream").PlaybackLine} m */
 function onPlayback(m) {
   setClockRate(m.paused ? 0 : m.speed);
@@ -267,7 +270,10 @@ function resetMatch(keepFollow = false, keepHud = false) {
   state.clock = "";
   state.lastScores = null;
   state.spawnSeen = {};
-  if (state.follow != null && !keepFollow) setFollow(null);
+  if (state.follow != null && !keepFollow) {
+    setFollow(null);
+    for (const f of followDropListeners) f();
+  }
   if (keepHud) return;
   $("hud-blue").replaceChildren();
   $("hud-red").replaceChildren();

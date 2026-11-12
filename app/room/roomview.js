@@ -15,6 +15,7 @@
 // - A view is applied once when it changes, not on every camera move that comes in (many a
 //   second): the admin may click a player between two of them.
 // - Only what an admin does after a view is applied counts, not a move from before it.
+// - A follow the page drops by itself (the match reset under it) is not sent: nobody chose it.
 
 // An admin moving the camera this recently is moving it now: their page does not replay another's.
 export const HAND_MS = 400;
@@ -100,6 +101,11 @@ export class RoomView {
     if (mode !== "admin") return { send: { view: { mode }, take: true }, fx: {} };
     this.followSeen = null;
     return { send: { view: camera(), take: true }, fx: { auto: false, follow: null } };
+  }
+
+  /** The page stopped following by itself (the match reset): nothing to send. */
+  dropped() {
+    this.followSeen = null;
   }
 
   /**

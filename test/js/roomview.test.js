@@ -83,6 +83,17 @@ test("following stopped goes back to auto zoom or free as it was", () => {
   }
 });
 
+test("a follow the page drops by itself, at a map change, is not sent", () => {
+  for (const page of ["a", "b"]) {
+    const v = admin(page);
+    v.hear(line("admin", camera()), still());
+    if (page === "a") v.tick({ ...still(), follow: 7 }, camera);
+    v.hear(line("follow", { player: 7 }), { ...still(), follow: 7 });
+    v.dropped();
+    assert.equal(v.tick(still(), camera), null, page === "a" ? "the leader" : "a page that mirrors it");
+  }
+});
+
 test("any admin moving the camera by hand moves the admin's view, as a move", () => {
   const b = admin("b");
   b.hear(line("admin", camera()), still());
