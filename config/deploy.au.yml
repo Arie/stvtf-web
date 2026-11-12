@@ -2,7 +2,7 @@ servers:
   web:
     hosts: [direct.au.serveme.tf]
     # The AU web host is a 3.8 GB VPS that has frozen under memory pressure before.
-    cmd: "--public --max-matches 5 --demo /data/demo.jsonl.gz --sessions /data/sessions --home https://au.serveme.tf/stv --relay-socket /data/relay.sock"
+    cmd: "--public --max-matches 5 --demo /data/demo.jsonl.gz --sessions /data/sessions --logs /data/logs --home https://au.serveme.tf/stv --relay-socket /data/relay.sock"
     options:
       memory: 256m
 
@@ -17,7 +17,7 @@ accessories:
   relay:
     image: ghcr.io/arie/stvtf:<%= ENV["VERSION"] %>
     host: direct.au.serveme.tf
-    cmd: "--relay-daemon /data/relay.sock --relay-ports 28100-28103 --relay-host direct.au.serveme.tf"
+    cmd: "--logs /data/logs --relay-daemon /data/relay.sock --relay-ports 28100-28103 --relay-host direct.au.serveme.tf"
     volumes:
       - stvtf-cache:/data
     options:

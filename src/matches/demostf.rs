@@ -100,7 +100,7 @@ fn fetch_with(
     {
         k.store.touch(&demo_output(id));
         k.store.touch(&demo_dem(id));
-        eprintln!("stvtf-web: demo {id}: as kept, {} MiB", output.len() >> 20);
+        log!("demo {id}: as kept, {} MiB", output.len() >> 20);
         return Ok(Some(output));
     }
     let started = Instant::now();
@@ -141,12 +141,12 @@ fn fetch_with(
         if let Ok(output) = &output
             && let Err(e) = k.store.put(&demo_output(id), output)
         {
-            eprintln!("stvtf-web: keeping demo {id}: {e:#}");
+            log!("keeping demo {id}: {e:#}");
         }
     }
     let output = output?;
-    eprintln!(
-        "stvtf-web: demo {id}: {} MiB fetched in {:.1} s, decoded to {} MiB in {:.1} s",
+    log!(
+        "demo {id}: {} MiB fetched in {:.1} s, decoded to {} MiB in {:.1} s",
         demo.len() >> 20,
         fetched.as_secs_f64(),
         output.len() >> 20,

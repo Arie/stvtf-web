@@ -41,6 +41,20 @@ Europe. They are asked again after a day, or after ten minutes when no site knew
 word on who is who stands over a link; a match starter's does in their own match, and is a
 suggestion elsewhere.
 
+## Logs
+
+What the app and the relays say of themselves is on the containers' own logs (`kamal app logs`,
+`kamal accessory logs relay`), which go with the container at the next deploy, and with
+`--logs /data/logs` (every region has it) in `/data/logs/web.log` and `relay.log` too, each line
+with its time: set aside at 8 MB as `web.1.log` up to `.5`, so some 48 MB a process at most.
+They say when a match, a room or a relay starts and ends, who joined a room (by Steam id when
+signed in), and of each relay (by its port) the TF2 clients that came and went (by name, their
+address without its end), why they left, and every jump.
+
+```
+kamal app exec -d na --reuse 'tail -200 /data/logs/relay.log'
+```
+
 ## Relays
 
 The rooms' TF2 relays run apart from the app, as the Kamal accessory `relay`

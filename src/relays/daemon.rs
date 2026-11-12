@@ -189,7 +189,7 @@ pub(crate) fn serve(socket: &Path, relays: &Arc<Relays>, lease: Duration) -> Res
     // One left by a process before is in the way.
     let _ = std::fs::remove_file(socket);
     let listener = UnixListener::bind(socket).with_context(|| format!("listening on {}", socket.display()))?;
-    eprintln!("stvtf-web: relays at {}", socket.display());
+    log!("relays at {}", socket.display());
     let rooms: Rooms = Arc::default();
     let reaped = rooms.clone();
     std::thread::spawn(move || {
@@ -198,7 +198,7 @@ pub(crate) fn serve(socket: &Path, relays: &Arc<Relays>, lease: Duration) -> Res
             lock(&reaped).retain(|room, l| {
                 let keep = l.seen.elapsed() < lease && !l.relay.stopped();
                 if !keep {
-                    eprintln!("stvtf-web: relay of room {} stopped", logged(room));
+                    log!("relay of room {} stopped", logged(room));
                 }
                 keep
             });
@@ -227,6 +227,16 @@ fn answer(conn: UnixStream, rooms: &Rooms, relays: &Arc<Relays>) -> Result<()> {
     Ok(())
 }
 
+/// Says how starting a room's relay went: its port, to tell whose the relay's own notes are
+/// (not its password), or why there is none.
+fn said_of(room: &str, started: &Result<Option<LocalRelay>>) {
+    match started {
+        Ok(Some(relay)) => log!("relay of room {} started on port {}", logged(room), relay.was().port),
+        Ok(None) => log!("no relay for room {}: every port is taken", logged(room)),
+        Err(e) => log!("no relay for room {}: {e:#}", logged(room)),
+    }
+}
+
 fn handle(r: Request, rooms: &Rooms, relays: &Arc<Relays>) -> Value {
     match r {
         Request::Start { room, want, mut was } => {
@@ -241,7 +251,9 @@ fn handle(r: Request, rooms: &Rooms, relays: &Arc<Relays>) -> Value {
                 was = was.or_else(|| Some(l.relay.was()));
                 all.remove(&room);
             }
-            match relays.start(want.want(), was.as_ref()) {
+            let started = relays.start(want.want(), was.as_ref());
+            said_of(&room, &started);
+            match started {
                 Ok(Some(relay)) => {
                     let line = relay.line();
                     all.insert(room, Leased { relay, seen: Instant::now() });

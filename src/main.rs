@@ -4,6 +4,8 @@
 //! Events; without one, a page to start watching any server, each match at its own link.
 //! Map geometry comes from the map's BSP on fastdl.
 
+#[macro_use]
+mod log;
 mod cli;
 mod maps;
 mod matches;
@@ -155,7 +157,7 @@ fn warm(app: &App) {
     for map in known {
         let _one_at_a_time = lock(&app.overviews);
         if let Err(e) = overview(&app.cache, &format!("{map}.webp")) {
-            eprintln!("stvtf-web: overview of {map}: {e}");
+            log!("overview of {map}: {e}");
         }
     }
     for name in warm_maps() {
@@ -163,7 +165,7 @@ fn warm(app: &App) {
         let _one_at_a_time = lock(&map_lock);
         // Gzipped too: browsers take that, and the JSON is made on the way.
         if let Err(e) = map_geometry_gzip(&app.cache, name, true) {
-            eprintln!("stvtf-web: {name}: {e}");
+            log!("{name}: {e}");
         }
     }
 }
@@ -197,7 +199,7 @@ fn many(options: &Options, keys: Option<&Arc<web::token::Keys>>) -> Result<Sessi
         sessions.demos = options.relays.is_some() || options.relay_socket.is_some();
         let restored = sessions.restore();
         if restored > 0 {
-            eprintln!("stvtf-web: picked up {restored} running matches");
+            log!("picked up {restored} running matches");
         }
     }
     if let Some(file) = &options.demo {
@@ -277,7 +279,7 @@ fn matches(options: &Options, keys: Option<&Arc<web::token::Keys>>, stop: &'stat
         let hz = options.hz;
         std::thread::spawn(move || {
             if let Err(e) = watch_into(&fed, &target, &password, hz, None, stop) {
-                eprintln!("stvtf-web: {e}");
+                log!("{e}");
             }
             if stop.load(Ordering::Relaxed) {
                 std::process::exit(0);
@@ -325,7 +327,7 @@ fn keep_house(app: Arc<App>, stop: &'static AtomicBool) {
 /// Serves each connection on its own thread, up to `MAX_CONNECTIONS` at once.
 fn accept(listen: &str, app: &Arc<App>, open: &'static AtomicUsize) -> Result<()> {
     let listener = TcpListener::bind(listen)?;
-    eprintln!("stvtf-web: http://{listen}/");
+    log!("http://{listen}/");
     for conn in listener.incoming() {
         let Ok(s) = conn else { continue };
         let Some(open) = Connection::open(open) else { continue };
@@ -362,8 +364,14 @@ fn main() -> Result<()> {
         return Ok(());
     };
     watch::stop_on_ctrl_c(&STOP)?;
+    // What is said is kept in a file too, the relays' notes with it: one for each process.
+    if let Some(logs) = &options.logs {
+        log::keep_in(logs, if options.relay_daemon.is_some() { "relay" } else { "web" })?;
+    }
+    stvtf::relay::notes_to(log::line);
     // The relay process: only the relays (the rest of the options are the image's for the web).
     if let (Some(socket), Some((host, ports))) = (&options.relay_daemon, &options.relays) {
+        log!("relays on {host}, ports {}-{}", ports.start(), ports.end());
         return relays::daemon::serve(socket, &relays::pool::Relays::new(host, ports.clone()), relays::daemon::LEASE);
     }
     let keys = std::env::var("STVTF_TOKEN_KEY").ok().map(|k| web::token::Keys::from_hex(&k).map(Arc::new)).transpose()?;

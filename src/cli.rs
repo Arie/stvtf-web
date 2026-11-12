@@ -15,7 +15,7 @@ stvtf-web: live top-down viewer of a TF2 match in the browser
 
   stvtf-web HOST:TVPORT [--password tv] [--listen 127.0.0.1:8080] [--hz 20] [--cache DIR] [--backpack DIR]
   stvtf-web HOST[:PORT] [tv] / 'connect HOST:PORT; password \"tv\"'
-  stvtf-web [--public] [--max-matches 20] [--base-path /live] [--demo MATCH.jsonl[.gz]] [--demos DIR] [--sessions DIR] [--no-warm]   (watch any server: paste a connect string on the page; --no-warm: no maps built in advance)
+  stvtf-web [--public] [--max-matches 20] [--base-path /live] [--demo MATCH.jsonl[.gz]] [--demos DIR] [--sessions DIR] [--logs DIR] [--no-warm]   (watch any server: paste a connect string on the page; --no-warm: no maps built in advance)
      With STVTF_VOICE_KEY set, a voice bot posts a team's voice to live matches with it (POST /w/<id>/voice).
      With STVTF_TOKEN_KEY (64 hex digits) set, matches start only from a site's encrypted /start?t= links;
      --home URL then sends visitors of / to that site.
@@ -24,7 +24,7 @@ stvtf-web: live top-down viewer of a TF2 match in the browser
      --relay-socket SOCKET: the relays run in a process of their own instead (deploys leave them be):
   stvtf-web --relay-daemon SOCKET --relay-ports 27100-27199 --relay-host HOST   (that process)
   stvtf-web --replay FILE.jsonl [--listen 127.0.0.1:8080]   (stvtf output, at game speed)";
-const FLAGS: [&str; 16] = [
+const FLAGS: [&str; 17] = [
     "password",
     "listen",
     "hz",
@@ -36,6 +36,7 @@ const FLAGS: [&str; 16] = [
     "demo",
     "demos",
     "sessions",
+    "logs",
     "home",
     "relay-ports",
     "relay-host",
@@ -64,6 +65,8 @@ pub(crate) struct Options {
     pub(crate) demo: Option<PathBuf>,
     pub(crate) demos: Option<PathBuf>,
     pub(crate) sessions: Option<PathBuf>,
+    /// Where what the server says of itself is kept too, besides stderr.
+    pub(crate) logs: Option<PathBuf>,
     pub(crate) home: Option<String>,
     pub(crate) public: bool,
     /// Leave building the most played maps to their first viewers.
@@ -113,6 +116,7 @@ impl Options {
             demo: take("demo").map(PathBuf::from),
             demos: take("demos").map(PathBuf::from),
             sessions: take("sessions").map(PathBuf::from),
+            logs: take("logs").map(PathBuf::from),
             home: take("home"),
             public: take("public").is_some(),
             no_warm: take("no-warm").is_some(),

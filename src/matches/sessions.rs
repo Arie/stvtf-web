@@ -115,11 +115,11 @@ impl Sessions {
         }
         record(&s, self.store.as_ref(), false);
         s.link(reservation);
-        eprintln!("stvtf-web: match {} started on {server}, owner {}", s.label(), owner.unwrap_or("-"));
+        log!("match {} started on {server}, owner {}", s.label(), owner.unwrap_or("-"));
         if let Some(store) = &self.store
             && let Err(e) = store.save(&s)
         {
-            eprintln!("stvtf-web: saving match {}: {e:#}", s.id);
+            log!("saving match {}: {e:#}", s.id);
         }
         Ok(s)
     }
@@ -146,13 +146,13 @@ impl Sessions {
             if let Err(e) = demostf::play(&player.hub, demo, hz, &|| player.watched(), &player.stop, kept.as_ref(), &|gz| {
                 *lock(&player.source) = Some(Source::Output(gz));
             }) {
-                eprintln!("stvtf-web: match {} (demo {demo}) gave up: {e:#}", player.label());
+                log!("match {} (demo {demo}) gave up: {e:#}", player.label());
             }
             player.done.store(true, Ordering::Relaxed);
         });
         *lock(&s.thread) = Some(thread);
         map.insert(s.id.clone(), s.clone());
-        eprintln!("stvtf-web: match {} started on demo {demo}, owner {}", s.label(), owner.unwrap_or("-"));
+        log!("match {} started on demo {demo}, owner {}", s.label(), owner.unwrap_or("-"));
         Ok(s)
     }
 
@@ -210,7 +210,7 @@ impl Sessions {
         let thread = std::thread::spawn(move || {
             let demos = demos.map(|d| d as Arc<dyn stvtf::demo::Files>);
             if let Err(e) = watch_into(&watcher.hub, &server.to_string(), &watcher.password, hz, demos, &watcher.stop) {
-                eprintln!("stvtf-web: match {} gave up: {e}", watcher.label());
+                log!("match {} gave up: {e}", watcher.label());
             }
             watcher.done.store(true, Ordering::Relaxed);
         });
@@ -224,7 +224,7 @@ impl Sessions {
     pub fn restore(&self) -> usize {
         let Some(store) = &self.store else { return 0 };
         if let Err(e) = store.claim(&self.claim) {
-            eprintln!("stvtf-web: taking over {}: {e:#}", store.dir.display());
+            log!("taking over {}: {e:#}", store.dir.display());
         }
         let Ok(entries) = std::fs::read_dir(&store.dir) else { return 0 };
         let mut map = self.lock();
@@ -241,7 +241,7 @@ impl Sessions {
     /// Watches the match saved as `id` again, or drops its file if it cannot be read.
     fn pick_up(&self, map: &mut HashMap<String, Arc<Session>>, store: &Store, id: &str) -> Option<Arc<Session>> {
         let Ok(saved) = store.load(id) else {
-            eprintln!("stvtf-web: dropping unreadable saved match {id}");
+            log!("dropping unreadable saved match {id}");
             store.forget(id);
             return None;
         };
@@ -274,7 +274,7 @@ impl Sessions {
         let running: Vec<Arc<Session>> = self.lock().values().filter(|s| !s.pinned).cloned().collect();
         for s in running {
             if let Err(e) = store.save(&s) {
-                eprintln!("stvtf-web: saving match {}: {e:#}", s.id);
+                log!("saving match {}: {e:#}", s.id);
             }
         }
     }

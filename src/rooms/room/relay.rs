@@ -83,7 +83,7 @@ impl Room {
                 let why = format!("{e:#}");
                 let mut failed = lock(&self.relay_failed);
                 if failed.as_ref().is_none_or(|(_, before)| *before != why) {
-                    eprintln!("stvtf-web: room {}: {why}", logged(&self.id));
+                    log!("room {}: {why}", logged(&self.id));
                 }
                 *failed = Some((Instant::now(), why));
             }

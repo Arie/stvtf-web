@@ -71,7 +71,7 @@ impl Links {
         if let Some(file) = &self.file
             && let Err(e) = write_atomic(file, serde_json::json!(*known).to_string().as_bytes())
         {
-            eprintln!("stvtf-web: voice links not kept: {e}");
+            log!("voice links not kept: {e}");
         }
     }
 }
@@ -132,7 +132,7 @@ pub(super) fn linked(s: &mut TcpStream, app: &App, request: &Request) -> std::io
         }
         Ok((_, None)) => respond(s, "409 Conflict", TEXT, b"No Steam on your Discord. Add it under Connections."),
         Err(e) => {
-            eprintln!("stvtf-web: voice link failed: {e:#}");
+            log!("voice link failed: {e:#}");
             respond(s, "502 Bad Gateway", TEXT, b"Discord error. Try again.")
         }
     }

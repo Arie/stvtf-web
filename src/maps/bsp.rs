@@ -326,7 +326,7 @@ fn geometry_counted(data: &[u8]) -> Result<(Geometry, (usize, f64))> {
     let reach = bounds.and_then(|b| {
         // A map whose brushes cannot be read keeps every floor, as before.
         reach::reach(data, &disps, &b, &reach_seeds(&stands, &cap_areas, &track)).unwrap_or_else(|e| {
-            eprintln!("stvtf-web: playable area left out: {e:#}");
+            log!("playable area left out: {e:#}");
             None
         })
     });
@@ -453,7 +453,7 @@ fn fill(floors: &mut Vec<Floor>, keeps: impl Fn(&Floor) -> bool, stands: &[Posit
     let kept: Vec<bool> = floors.iter().map(|f| keeps(f) || stood_on(f)).collect();
     let kept_area: f64 = floors.iter().zip(&kept).filter(|(_, k)| **k).map(|(f, _)| outline_area(&f.p)).sum();
     if kept_area < area * MIN_FILL_SHARE {
-        eprintln!("stvtf-web: playable area left out: it has {:.0}% of the floor area", 100.0 * kept_area / area);
+        log!("playable area left out: it has {:.0}% of the floor area", 100.0 * kept_area / area);
         return false;
     }
     let mut kept = kept.into_iter();

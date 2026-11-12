@@ -191,7 +191,7 @@ impl Session {
         let s = self.clone();
         std::thread::spawn(move || {
             if let Err(e) = s.recording() {
-                eprintln!("stvtf-web: match {}: preparing a room: {e:#}", s.label());
+                log!("match {}: preparing a room: {e:#}", s.label());
             }
         });
     }
@@ -283,8 +283,8 @@ impl Session {
     }
 
     pub(super) fn ended(&self, why: &str) {
-        eprintln!(
-            "stvtf-web: match {} ended ({why}) after {} min, peak {} viewers, {} views",
+        log!(
+            "match {} ended ({why}) after {} min, peak {} viewers, {} views",
             self.label(),
             self.started.elapsed().as_secs() / 60,
             self.peak.load(Ordering::Relaxed),
@@ -325,7 +325,7 @@ impl Viewer {
         let n = s.viewers.fetch_add(1, Ordering::Relaxed) + 1;
         s.peak.fetch_max(n, Ordering::Relaxed);
         s.views.fetch_add(1, Ordering::Relaxed);
-        eprintln!("stvtf-web: match {} viewers {n}", s.label());
+        log!("match {} viewers {n}", s.label());
         *lock(&s.idle_since) = None;
         Viewer(s)
     }
@@ -334,7 +334,7 @@ impl Viewer {
 impl Drop for Viewer {
     fn drop(&mut self) {
         let n = self.0.viewers.fetch_sub(1, Ordering::Relaxed) - 1;
-        eprintln!("stvtf-web: match {} viewers {n}", self.0.label());
+        log!("match {} viewers {n}", self.0.label());
         if n == 0 {
             *lock(&self.0.idle_since) = Some(Instant::now());
         }
@@ -383,6 +383,6 @@ pub(super) fn record(s: &Arc<Session>, store: Option<&Store>, resume: bool) {
 /// Joins `s`, a match already running, for `owner`; logged, so the log shows everyone who asked
 /// for a match and not only who started it.
 pub(super) fn join(s: &Arc<Session>, owner: Option<&str>) -> Arc<Session> {
-    eprintln!("stvtf-web: match {} opened, owner {}", s.label(), owner.unwrap_or("-"));
+    log!("match {} opened, owner {}", s.label(), owner.unwrap_or("-"));
     s.clone()
 }

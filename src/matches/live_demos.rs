@@ -204,7 +204,7 @@ impl LiveDemos {
             .map_err(std::io::Error::other)
             .and_then(|line| writeln!(File::options().create(true).append(true).open(voice_of(&part.path))?, "{line}"));
         if let Err(e) = written {
-            eprintln!("stvtf-web: keeping voice for a demo: {e}");
+            log!("keeping voice for a demo: {e}");
         }
     }
 }

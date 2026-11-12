@@ -74,7 +74,7 @@ impl Relays {
         use std::net::ToSocketAddrs;
         let ip = (host, 0).to_socket_addrs().ok().and_then(|mut a| a.find(std::net::SocketAddr::is_ipv4)).map(|a| a.ip().to_string());
         if ip.is_none() {
-            eprintln!("stvtf-web: --relay-host {host} has no IPv4 address: rooms get no Open in TF2 link");
+            log!("--relay-host {host} has no IPv4 address: rooms get no Open in TF2 link");
         }
         Arc::new(Relays { host: host.to_string(), ip, free: Mutex::new(ports.into_iter().collect()) })
     }
@@ -105,7 +105,7 @@ impl Relays {
         let (b, p, s) = (bound.clone(), playback.clone(), stop.clone());
         let thread = std::thread::spawn(move || {
             if let Err(e) = b.relay().play(&p, &s, &mut |_| {}) {
-                eprintln!("stvtf-web: relay on port {port}: {e:#}");
+                log!("relay on port {port}: {e:#}");
             }
         });
         Ok(Some(LocalRelay { bound: Some(bound), password: config.password, playback, stop, thread }))

@@ -1,7 +1,7 @@
 servers:
   web:
     hosts: [direct.na.serveme.tf]
-    cmd: "--public --demo /data/demo.jsonl.gz --sessions /data/sessions --home https://na.serveme.tf/stv --relay-socket /data/relay.sock"
+    cmd: "--public --demo /data/demo.jsonl.gz --sessions /data/sessions --logs /data/logs --home https://na.serveme.tf/stv --relay-socket /data/relay.sock"
     options:
       # Caps the damage of a runaway map build, so it cannot take serveme.tf down with it.
       memory: 1g
@@ -17,7 +17,7 @@ accessories:
   relay:
     image: ghcr.io/arie/stvtf:<%= ENV["VERSION"] %>
     host: direct.na.serveme.tf
-    cmd: "--relay-daemon /data/relay.sock --relay-ports 28100-28119 --relay-host direct.na.serveme.tf"
+    cmd: "--logs /data/logs --relay-daemon /data/relay.sock --relay-ports 28100-28119 --relay-host direct.na.serveme.tf"
     volumes:
       - stvtf-cache:/data
     options:

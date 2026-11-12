@@ -335,7 +335,7 @@ impl Rooms {
         lock(&self.sources).insert(id.to_string(), saved.source);
         self.opened_by(id, saved.by.as_deref());
         map.insert(id.to_string(), room.clone());
-        eprintln!("stvtf-web: room {} picked up", logged(id));
+        log!("room {} picked up", logged(id));
         Some(room)
     }
 
@@ -359,7 +359,7 @@ impl Rooms {
             .and_then(|plain| self.put_changed(store, &file(&room.id), &plain))
             .and_then(|()| self.put_changed(store, &marker_file(&room.id), &serde_json::to_vec(&marker)?));
         if let Err(e) = written {
-            eprintln!("stvtf-web: saving room {}: {e:#}", logged(&room.id));
+            log!("saving room {}: {e:#}", logged(&room.id));
         }
     }
 
@@ -438,7 +438,7 @@ impl Rooms {
             store.forget(&file(id));
             store.forget(&marker_file(id));
         }
-        eprintln!("stvtf-web: room {} ended", logged(id));
+        log!("room {} ended", logged(id));
     }
 
     /// Drops saved rooms nobody came back for, demos no room plays, and the files of live matches

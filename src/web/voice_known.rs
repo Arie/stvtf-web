@@ -225,7 +225,7 @@ impl WhoHistory {
                 self.find(&who);
             }
             if let Err(e) = self.sync() {
-                eprintln!("stvtf-web: who is who not kept up: {e:#}");
+                log!("who is who not kept up: {e:#}");
             }
             if said.recv_timeout(ASK_EVERY) == Err(RecvTimeoutError::Disconnected) {
                 return;
@@ -252,7 +252,7 @@ impl WhoHistory {
         if let Some(file) = &self.0.file
             && let Err(e) = write_atomic(file, serde_json::json!(kept).to_string().as_bytes())
         {
-            eprintln!("stvtf-web: who is who not kept: {e}");
+            log!("who is who not kept: {e}");
         }
     }
 
@@ -327,7 +327,7 @@ impl WhoHistory {
                 Ok(None) => {}
                 Err(e) => {
                     all_said = false;
-                    eprintln!("stvtf-web: {} not asked who a Discord user is: {e:#}", site.name);
+                    log!("{} not asked who a Discord user is: {e:#}", site.name);
                 }
             }
         }

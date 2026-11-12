@@ -190,7 +190,7 @@ pub(crate) fn to_file(store: &Store, name: &str) -> Sink {
         if let Err(e) = saved
             && !std::mem::replace(&mut said, true)
         {
-            eprintln!("stvtf-web: saving {name}: {e:#}");
+            log!("saving {name}: {e:#}");
         }
     })
 }
