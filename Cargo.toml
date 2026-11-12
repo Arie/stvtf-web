@@ -3,7 +3,7 @@ name = "stvtf-web"
 version = "0.1.0"
 edition = "2024"
 description = "Live top-down web viewer for a TF2 match, fed by stvtf"
-license = "MIT"
+license = "Apache-2.0"
 # Not on crates.io (it depends on stvtf by path); also stops an accidental `cargo publish`.
 publish = false
 
