@@ -3,10 +3,11 @@
 //! to the voice bot (`GET /voice/who?discord=<id>`, with its key). Linking is off without a
 //! Discord application (`STVTF_DISCORD_CLIENT_ID`, `_SECRET` and `_REDIRECT`).
 
-use super::voice_in::{is_key, is_snowflake};
+use super::voice_in::is_key;
 use super::{JSON, Request, TEXT, form_decode, param, respond, respond_with, set_cookie, url_encode};
 use crate::maps::cache::write_atomic;
 use crate::matches::sessions::random_id;
+use crate::voice::ids::is_snowflake;
 use crate::{App, lock};
 use anyhow::{Context, Result, bail};
 use std::collections::HashMap;

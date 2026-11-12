@@ -6,6 +6,7 @@ use crate::App;
 use crate::matches::sessions::Session;
 use crate::voice::feed::{MAX_DELAY, Speaker};
 use crate::voice::hold::Took;
+use crate::voice::ids::is_voice_id;
 use base64::Engine;
 use serde::Deserialize;
 use std::io::{BufReader, Take};
@@ -48,17 +49,6 @@ fn is_steamid(s: &str) -> bool {
     s.strip_prefix("[U:1:")
         .and_then(|r| r.strip_suffix(']'))
         .is_some_and(|n| !n.is_empty() && n.len() <= 10 && n.bytes().all(|b| b.is_ascii_digit()))
-}
-
-/// A Discord id: digits.
-pub(super) fn is_snowflake(s: &str) -> bool {
-    !s.is_empty() && s.len() <= 20 && s.bytes().all(|b| b.is_ascii_digit())
-}
-
-/// Who someone is where they talk, or the channel they are in there: a Discord id, or for
-/// Mumble what the bot makes of the server and who they are on it (`mumble:<server>:<user>`).
-pub(super) fn is_voice_id(s: &str) -> bool {
-    !s.is_empty() && s.len() <= 128 && s.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b':' | b'_' | b'-'))
 }
 
 /// The most characters of a speaker's name kept.

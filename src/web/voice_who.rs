@@ -9,48 +9,27 @@
 //! - `GET <page>voices`: those in the channel and those heard, and whom each is put on.
 //! - `POST <page>voice-match`: someone is a player of the match, a `SteamID`, or nobody.
 //!
-//! What someone says of who is who is remembered (`voice_known`), and holds when the same
+//! What someone says of who is who is remembered (`voice::known`), and holds when the same
 //! person is in a channel again, in any region.
 
 use super::visitor::Who;
-use super::voice_in::{has_say, is_key, is_voice_id};
-use super::voice_known::Recalled;
+use super::voice_in::{has_say, is_key};
 use super::{JSON, Request, TEXT, json_body, respond};
 use crate::matches::sessions::Session;
 use crate::voice::feed::Put;
+use crate::voice::ids::{is_voice_id, steamid_of};
+use crate::voice::known::Recalled;
 use crate::{App, lock};
 use serde::Deserialize;
 use std::io::{BufReader, Take};
 use std::net::TcpStream;
 use std::time::{Duration, Instant};
 
-/// What Steam's 64-bit ids of people start from.
-const STEAM64_BASE: u64 = 76_561_197_960_265_728;
 /// The most people a channel is said to have, and the longest a name or a status.
 const MAX_PEOPLE: usize = 64;
 const MAX_TEXT: usize = 100;
 /// The bot says how Discord goes this often at least: past it, it is taken to be gone.
 pub(crate) const DISCORD_SAID_FOR: Duration = Duration::from_secs(45);
-
-/// A `SteamID` as people write them, as `[U:1:N]`: that itself, `STEAM_X:Y:Z`, the 64-bit number,
-/// or a profile link with that number in it.
-pub(crate) fn steamid_of(text: &str) -> Option<String> {
-    let t = text.trim().trim_end_matches('/');
-    let account = if let Some(n) = t.strip_prefix("[U:1:").and_then(|r| r.strip_suffix(']')).or_else(|| t.strip_prefix("U:1:")) {
-        n.parse::<u32>().ok()?
-    } else if let Some(rest) = t.to_ascii_uppercase().strip_prefix("STEAM_") {
-        let mut parts = rest.split(':').map(str::parse::<u32>);
-        let (_, y, z) = (parts.next()?.ok()?, parts.next()?.ok()?, parts.next()?.ok()?);
-        if y > 1 || parts.next().is_some() {
-            return None;
-        }
-        z.checked_mul(2)?.checked_add(y)?
-    } else {
-        let digits = t.rsplit('/').next()?;
-        u32::try_from(digits.parse::<u64>().ok()?.checked_sub(STEAM64_BASE)?).ok()?
-    };
-    (account > 0).then(|| format!("[U:1:{account}]"))
-}
 
 #[derive(Deserialize)]
 struct Member {
@@ -236,36 +215,4 @@ pub(super) fn voice_match(
     let caster = who.user.as_ref().is_some_and(|u| u.streamer);
     app.voice_who.remember(&v.discord, steamid.as_deref(), &m.voice.name_of(&v.discord).unwrap_or_default(), caster);
     respond(s, "204 No Content", TEXT, b"")
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn a_steam_id_is_read_as_people_write_them() {
-        for same in [
-            "[U:1:9]",
-            "U:1:9",
-            "STEAM_0:1:4",
-            "steam_1:1:4",
-            " 76561197960265737 ",
-            "https://steamcommunity.com/profiles/76561197960265737/",
-        ] {
-            assert_eq!(steamid_of(same).as_deref(), Some("[U:1:9]"), "{same}");
-        }
-        for none in [
-            "",
-            "gaben",
-            "https://steamcommunity.com/id/gaben",
-            "STEAM_0:2:4",
-            "STEAM_0:1",
-            "[U:1:x]",
-            "76561197960265728",
-            "123",
-            "[U:1:0]",
-        ] {
-            assert_eq!(steamid_of(none), None, "{none}");
-        }
-    }
 }
