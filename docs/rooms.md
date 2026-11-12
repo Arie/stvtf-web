@@ -6,6 +6,7 @@ pressed again, it returns to your room on that match. The match's own page never
 
 - The opener owns it and is its first admin. Admins make others admin; the owner stays one.
 - Admins pause (space), set speed (the speed button steps 1×, 2×, 4×) and seek (← → by 5 s); everyone sees the same.
+- Admins move the room to another map of a live match ([Maps](#maps)).
 - The marker (✒︎, `d` or `m`) draws on the map for everyone, the room's overlay too, until
   cleared (⌫ or `c`); in TF2 a fence along the floors, with an arrowhead at its end.
   Each admin picks a colour by the swatch after their name; `r` draws in red, `b` in blu, `y` in
@@ -46,21 +47,42 @@ An admin sets how everyone sees the map:
 Viewers move the camera only when free; admins always. The room's overlay follows the view and
 is not listed.
 
+## Maps
+
+A live match is a list of maps, one per map load, each its own part of the recording. A room is on
+one of them. A map ends where the server says it is changing; the next begins there, nameless
+until the server names it. The same map loaded again is another map.
+
+- When the server changes map, the room stays: playback runs to the map's last moment and waits
+  there, that moment still showing. Seeks stay inside the map.
+- A room that was following live when its map ended, and that nobody has touched since (a seek, a
+  pause, a speed, a drawing, a note, a clear, a view chosen, or the camera moved by hand), moves to
+  the next map by itself once that map has play to show, and lands at live. Any other room waits.
+- Admins move the room to any map kept: the latest at live, another at its start. A map no longer
+  kept is refused with `That map is gone.`
+- The marker is kept per map: it does not show on another map, and is there again when the room
+  comes back.
+- The bar says `Map over`, then `Next map ready`. Admins get a `Next map` button and, with more
+  than one map, a maps menu. Live on a map that is over goes to the next map.
+- The match's own page follows live as before; a viewer's own rewind there stays on its map, and
+  Live takes it back.
+
 ## Recording
 
 The match is kept in memory in 10-second chunks, each starting from a joinable state, so a seek
 replays at most one. Rooms on a match share it. A live match records from first watched: a room
 starts at live, can go back to the start, and waits at live rather than passing it (it counts as a
-viewer). A new map starts over; only the last 3 hours are kept. A room counts towards
+viewer). A part is kept per map load, within the last 3 hours. A room counts towards
 `--max-matches` and ends a minute after its last viewer.
 
 ## Across restarts
 
 With `--sessions`, each room is saved once a second (sealed; a demos.tf demo's output beside it as
 `demo-<number>.gz`), and the next process picks it up when its pages reconnect: position, pause,
-speed, people, admins, view. A live recording goes there as `live-<match>.gz`, a chunk at a time,
-so only the last seconds before a restart are lost; it goes when the match ends. A saved room
-nobody returns to within an hour is dropped (swept every 5 minutes).
+speed, people, admins, view, its map and whether it moves by itself, the marker of each map. A live
+recording goes there as `live-<match>.gz`, a chunk at a time, its parts with it, so only the last
+seconds before a restart are lost; it goes when the match ends. A saved room nobody returns to
+within an hour is dropped (swept every 5 minutes).
 
 ## In TF2
 
@@ -72,6 +94,7 @@ seeking and at speed with it.
 - A room gets a port and random password when its page (not overlay) opens, kept until it ends,
   through deploys ([relays](deploy.md#relays)) and restarts (same port while free). Someone in TF2
   keeps the room open.
+- A room that moves to another map signs the TF2 clients on to that map's demo (a map load).
 - A relay that cannot start (ports full, demo not there yet) is retried; one that stops is replaced.
 - It plays the match's `.dem` (stvtf's README, "Playing a demo"): a demos.tf demo's as
   `demo-<number>.dem`, a live match's as `live-<match>-<load>-<tick>.dem`, one per server
@@ -96,6 +119,9 @@ seeking and at speed with it.
 | `POST /r/<id>/ink` | admin: `{"ink": "#rrggbb"}` |
 | `POST /r/<id>/admin` | admin: `{"person": <number>, "admin": true\|false}` |
 | `POST /r/<id>/view` | admin: `{"mode": "free"\|"auto"}`, `{"mode": "follow", "player": <id>, "w", "h"}` (area round them) or `{"mode": "admin", "cx", "cy", "w", "h", "rot"}` (area they see), with `"page"` (the tab's name). `"take": true` chooses the view; without it, a camera move, counted only while the view is of its kind. That page leads from then on |
+| `POST /r/<id>/map` | admin: `{"map": <n>}`, the room to that map: the latest at live, another at its start; 400 `That map is gone.` when it is no longer kept |
+| `GET /r/<id>/marks` | the marks of the room's map |
+| `GET /w/<id>/timeline` | the match page's timeline, and its `marks`, of the newest map that has play |
 | `POST /r/<id>/control` | admin: `{"paused", "speed", "seek"}` (any; `seek` in ms) |
 | `POST /r/<id>/arc` | admin: `{"from": [x, y], "to": [x, y]}`, a jump arc between the floors under them, `from` the launch; 400 with why when there is no floor there, they are too close or the map is not built |
 | `POST /r/<id>/circle` | admin: `{"at": [x, y]}`, a circle on the floor under it; 400 with why when there is no floor there or the map is not built |
@@ -110,7 +136,7 @@ The room's event stream adds:
 | line | |
 |---|---|
 | `relay` | `connect`, `port`, `password` while it has one; `problem`: why it cannot play |
-| `marker` | the permanent marker: `strokes` (`stroke`, `by`, `points`, `ink`; a jump arc's `arc`, its points `[x, y, z]` from launch to landing; a circle's `circle`, its centre `[x, y, z]`; the spotlight's `light`, its spot `[x, y, z]`; a note's `note`, its `text` and `player`, its spot the point), `max` (8000 points); on join, empty too |
+| `marker` | the room's map's permanent marker: `strokes` (`stroke`, `by`, `points`, `ink`; a jump arc's `arc`, its points `[x, y, z]` from launch to landing; a circle's `circle`, its centre `[x, y, z]`; the spotlight's `light`, its spot `[x, y, z]`; a note's `note`, its `text` and `player`, its spot the point), `max` (8000 points); on join, empty too |
 | `arc` | a jump arc drawn: `stroke`, `by`, `ink`, `points` (`[x, y, z]`, launch to landing) |
 | `circle` | a circle put down: `stroke`, `by`, `ink`, `at` (`[x, y, z]`, its centre on the floor) |
 | `light` | the spotlight put down, in place of where it was: `stroke`, `by`, `ink`, `at` (`[x, y, z]`, on the floor) |
@@ -119,5 +145,5 @@ The room's event stream adds:
 | `view` | as posted, with `by` |
 | `people` | `id`, `name`, `admin`, `owner`, `signed`, and `ink`, `steamid` when set |
 | `draw` | as posted, with `by` |
-| `playback` | `paused`, `speed`, `at`, `length` (ms), `start` (first moment kept), `origin` (map start), `rounds`, `live` (a growing recording); on change and every second while playing |
+| `playback` | `paused`, `speed`, `at`, `length` (ms), `start` (first moment kept), `origin` (map start), `rounds`, all the room's map's; `live` (the newest map of a match still going); `map` (its number); `over` (the map has ended); `maps` (`n`, `map`, `ready` of each map kept that has a name); on change and every second while playing |
 | `seek` | before the state at the new position |
