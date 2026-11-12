@@ -1392,6 +1392,31 @@ fn what_the_bot_says_of_a_mumble_channel_it_was_since_asked_out_of_is_not_taken(
 }
 
 #[test]
+fn those_in_a_mumble_channel_the_bot_was_taken_out_of_are_no_longer_listed() {
+    let (app, id) = voice_app();
+    let page = format!("/w/{id}/");
+    let ask = |body: &str| assert!(post(&app, &format!("{page}voice-mumble"), "", body).starts_with("HTTP/1.1 204"));
+    let there =
+        r#"{"kind":"mumble","channel":"mumble:mumble.example:A","status":"A · 1","people":[{"id":"mumble:cert:a1","name":"in mumble"}]}"#;
+    ask(r#"{"host":"mumble.example","channel":"A"}"#);
+    assert!(status(&app, &id, "k", there).starts_with("HTTP/1.1 204"));
+    assert!(
+        status(&app, &id, "k", r#"{"kind":"discord","channel":"111","status":"D · 1","people":[{"id":"77","name":"in discord"}]}"#)
+            .starts_with("HTTP/1.1 204")
+    );
+    assert!(get(&app, &format!("{page}voices"), "").contains("in mumble"));
+    // Moved to another channel: those of the old one go, at once.
+    ask(r#"{"host":"mumble.example","channel":"B"}"#);
+    let voices = get(&app, &format!("{page}voices"), "");
+    assert!(!voices.contains("in mumble") && voices.contains("in discord"), "{voices}");
+    // And taken out altogether.
+    assert!(status(&app, &id, "k", &there.replace(":A", ":B")).starts_with("HTTP/1.1 204"));
+    ask(r#"{"leave":true}"#);
+    let voices = get(&app, &format!("{page}voices"), "");
+    assert!(!voices.contains("in mumble") && voices.contains("in discord"), "{voices}");
+}
+
+#[test]
 fn behind_a_site_only_who_has_a_say_brings_mumble_in() {
     let (mut app, key, _dir) = site_app();
     app.voice_key = Some("k".into());

@@ -97,6 +97,7 @@ pub(super) fn ask(
     let Ok(ask) = json_body::<Ask>(reader, request) else { return respond(s, "400 Bad Request", TEXT, b"Invalid") };
     if ask.leave {
         *lock(&m.mumble) = None;
+        m.voice.left_mumble();
         app.mumble_changes.changed();
         return respond(s, "204 No Content", TEXT, b"");
     }
@@ -123,6 +124,8 @@ pub(super) fn ask(
             job = MumbleJob { delay, ..had.clone() };
         } else {
             job.asked = had.asked + 1;
+            // Joined anew: who was there before is told again once it is in.
+            m.voice.left_mumble();
         }
     }
     *wanted = Some(job);

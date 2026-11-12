@@ -246,6 +246,11 @@ impl VoiceFeed {
         all.into_values().collect()
     }
 
+    /// Those in the Mumble channel are there no more: the bot was taken out of it, or moved.
+    pub(crate) fn left_mumble(&self) {
+        lock(&self.0).rosters.retain(|channel, _| !channel.starts_with("mumble"));
+    }
+
     /// Who is in the channels now, each as who they are where they talk.
     pub(crate) fn roster_ids(&self) -> Vec<String> {
         lock(&self.0).roster().map(|(id, _)| id.clone()).collect()
