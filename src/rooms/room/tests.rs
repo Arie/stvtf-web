@@ -234,7 +234,7 @@ fn catching_up_with_a_live_match_plays_on_at_1x() {
 }
 
 #[test]
-fn a_room_behind_on_the_old_map_goes_on_to_the_new() {
+fn a_room_behind_on_the_old_map_plays_on_into_the_new() {
     let rec = Arc::new(Recording::live());
     let push = |line: &Line, time: u64| {
         let text = serde_json::to_string(line).unwrap();
@@ -246,7 +246,6 @@ fn a_room_behind_on_the_old_map_goes_on_to_the_new() {
     push(&crate::testing::server("cp_one"), t0);
     let r = Room::start_at("r".into(), "me", rec.clone(), 0, 1.0, true);
     push(&crate::testing::server("cp_two"), t0 + 500);
-    until("the new map's start", || lock(&r.state).at == 500);
     let _w = r.join("me", None, None, true);
     r.control(&Control { paused: Some(false), ..Control::default() }).unwrap();
     until("the new map", || r.hub.lock().unwrap().map.as_deref() == Some("cp_two"));
