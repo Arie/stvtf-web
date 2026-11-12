@@ -142,7 +142,7 @@ impl Inner {
     /// Drops the chunks before play time `before`, and the marks and rounds before what is left;
     /// the round going on stays.
     fn trim(&mut self, before: u64) {
-        let n = self.chunks.partition_point(|c| c.start < before).min(self.chunks.len().saturating_sub(1));
+        let n = self.cut_at(self.chunks.partition_point(|c| c.start < before).min(self.chunks.len().saturating_sub(1)));
         self.chunks.drain(..n);
         self.dropped += n;
         self.start = self.chunks.first().map_or(self.start, |c| c.start);
@@ -371,12 +371,13 @@ impl Recording {
     }
 
     /// The hub just before play time `at` (the start, if before), the chunk it is in, and how
-    /// many of its lines are before it.
-    pub(crate) fn seek(&self, at: u64) -> (Hub, usize, usize) {
+    /// many of its lines are before it; in a map that ends at `end`, at or past it, the map's last
+    /// moment.
+    pub(crate) fn seek(&self, at: u64, end: Option<u64>) -> (Hub, usize, usize) {
         let (i, hub, at) = {
             let inner = lock(&self.inner);
-            let at = at.max(inner.start);
-            let i = inner.chunks.partition_point(|c| c.start <= at).saturating_sub(1);
+            let at = at.max(inner.start).min(end.unwrap_or(u64::MAX));
+            let i = inner.chunks.partition_point(|c| c.start <= at && end.is_none_or(|end| c.start < end)).saturating_sub(1);
             let Some(chunk) = inner.chunks.get(i) else { return (Hub::default(), inner.dropped, 0) };
             (inner.dropped + i, chunk.hub.checkpoint(), at)
         };
@@ -419,7 +420,7 @@ mod tests {
     #[test]
     fn seeking_matches_playing_through() {
         let r = Recording::read(script(1650).as_bytes(), "test").unwrap();
-        let (hub, i, played) = r.seek(15_000);
+        let (hub, i, played) = r.seek(15_000, None);
         assert_eq!(i, 1);
         // Lines at 0, 0.75, … 14.25 s are played: 20 of them.
         assert_eq!(hub.history.len(), 20);
@@ -429,7 +430,7 @@ mod tests {
     #[test]
     fn seeking_past_the_end_gives_nothing_to_play() {
         let r = Recording::read(script(1650).as_bytes(), "test").unwrap();
-        let (hub, i, played) = r.seek(99_000);
+        let (hub, i, played) = r.seek(99_000, None);
         assert_eq!((hub.history.len(), i, played), (33, 2, r.chunk(2).unwrap().len()));
     }
 
@@ -440,7 +441,7 @@ mod tests {
         // 0 to 14.5 s: a closed chunk, and an open one of 10 lines (10 to 14.5 s) so far.
         assert_eq!((r.length(), r.chunks(), r.is_live()), (14_500, 2, true));
         assert_eq!(r.chunk(1).unwrap().len(), 10);
-        let (hub, i, played) = r.seek(12_000);
+        let (hub, i, played) = r.seek(12_000, None);
         assert_eq!((hub.history.len(), i, played), (24, 1, 4));
         r.end();
         assert!(!r.is_live());
@@ -481,7 +482,7 @@ mod tests {
         live_lines(&again, 25, time + 60_000);
         assert_eq!((again.chunks(), again.length()), (4, 31_500));
         assert_eq!(again.chunk(2).unwrap().first().map(|(t, _)| *t), Some(19_500));
-        let (hub, _, _) = again.seek(31_500);
+        let (hub, _, _) = again.seek(31_500, None);
         assert_eq!(hub.history.len(), 40 + 24, "every line once");
         let resumed = Recording::resume(lock(&saved).as_slice(), Box::new(|_: &Save| {})).unwrap();
         assert_eq!(resumed.chunks(), 3, "the chunks saved before, and the one closed after");
@@ -512,11 +513,11 @@ mod tests {
         assert!(start > 0 && last * 1000 - start <= KEEP_MS, "{start}");
         assert_eq!(r.latest().origin, 0, "the map began where it did");
         assert!(r.chunk(0).is_none());
-        let (hub, _, _) = r.seek(0);
+        let (hub, _, _) = r.seek(0, None);
         assert_eq!(hub.map.as_deref(), Some("cp_long"), "the match as it was at the start");
         let again = Recording::resume(lock(&saved).as_slice(), to(&saved)).unwrap();
         assert_eq!(again.start(), start, "the file was trimmed too");
-        let (hub, _, _) = again.seek(0);
+        let (hub, _, _) = again.seek(0, None);
         assert_eq!(hub.map.as_deref(), Some("cp_long"), "and keeps the match as it was");
     }
 

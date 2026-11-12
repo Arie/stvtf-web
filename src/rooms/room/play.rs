@@ -218,23 +218,25 @@ impl Room {
     /// Playback goes to `target`: the hub as it was there, and the lines after.
     fn seek_to(&self, st: &mut State, cur: &mut Cursor, target: u64) {
         let rec = &self.recording;
-        let (hub, chunk, done) = rec.seek(target);
+        // Inside its map: at its end, its last moment, not the next map's first.
+        let target = self.held(st, target);
+        let (hub, chunk, done) = rec.seek(target, self.reach(st).1);
         // Where it went, paused or not: the relay follows at once.
         st.tick = hub.tick();
         restore(&self.hub, hub);
         *cur = Cursor { chunk, done, looked: None, lines: VecDeque::new() };
-        st.at = self.held(st, target);
+        st.at = target;
         self.announce(st);
         // Every move between maps ends here: the marker goes with the room.
         self.show_marker(self.part(st).n);
     }
 
-    /// At the end of what is played: of a map that the match went on from (`over`, its end), it
-    /// waits there, unless it follows live and goes on; of what is recorded, a live match's goes on
-    /// (at 1×, as it comes in, following it unless paused), any other pauses there.
-    fn at_end<'a>(&self, mut st: MutexGuard<'a, State>, over: Option<u64>) -> MutexGuard<'a, State> {
+    /// At the end of what is played (`end`, its map's, if it has one): of a map that the match went
+    /// on from, it waits there, unless it follows live and goes on; of what is recorded, a live
+    /// match's goes on (at 1×, as it comes in, following it unless paused), any other pauses there.
+    fn at_end<'a>(&self, mut st: MutexGuard<'a, State>, end: Option<u64>) -> MutexGuard<'a, State> {
         let rec = &self.recording;
-        if let Some(end) = over {
+        if let Some(end) = end.filter(|_| self.part_over(&st)) {
             if self.move_on(&mut st) {
                 return st;
             }
@@ -255,7 +257,7 @@ impl Room {
             return self.sleep(st, LIVE_POLL);
         }
         if !st.paused {
-            (st.paused, st.at) = (true, rec.length());
+            (st.paused, st.at) = (true, end.unwrap_or_else(|| rec.length()));
             self.announce(&st);
         }
         self.sleep(st, IDLE_POLL)

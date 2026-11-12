@@ -123,13 +123,9 @@ impl Hub {
     }
 
     /// Whether it shows play: a snapshot came since the latest map change or server line.
+    #[cfg(test)]
     pub(crate) fn has_snapshot(&self) -> bool {
         self.snapshot.is_some()
-    }
-
-    /// Whether it heard from the server and shows no play since: which map plays is not known yet.
-    pub(crate) fn between_maps(&self) -> bool {
-        self.status.is_some() && !self.has_snapshot()
     }
 
     pub(crate) fn tick(&self) -> Option<u32> {
@@ -396,17 +392,12 @@ impl Hub {
 
 pub(crate) type SharedHub = Arc<Mutex<Hub>>;
 
-/// Whether `status` says the server is changing map.
-pub(crate) fn changes_map(status: &Status) -> bool {
-    matches!(status, Status::Changelevel | Status::MapChange)
-}
-
 pub(crate) fn publish(hub: &SharedHub, line: &Line) {
     let json: Arc<str> = serde_json::to_string(line).expect("a line serializes").into();
     let route = route(line);
     let mut h = lock(hub);
     match line {
-        Line::Status(status) => h.on_status(changes_map(status), &json),
+        Line::Status(status) => h.on_status(*status == Status::MapChange, &json),
         Line::Server(server) => h.on_server(server, &json),
         Line::World(_) => h.world = Some(json.clone()),
         Line::Snapshot(snapshot) => h.on_snapshot(snapshot, &json),

@@ -15,7 +15,7 @@ pub(crate) struct MapPost {
 }
 
 impl Room {
-    /// An admin moves the room to map `m.map`: at live on the latest, at its start on another.
+    /// An admin moves the room to map `m.map`: at live on the latest, where it shows on another.
     pub(crate) fn go(&self, m: &MapPost) -> Result<()> {
         let Some(part) = self.recording.part(m.map) else { bail!("That map is gone.") };
         let mut st = lock(&self.state);
@@ -24,7 +24,8 @@ impl Room {
         if self.recording.is_live() && part.end.is_none() {
             (st.paused, st.seek) = (false, Some(self.recording.length()));
         } else {
-            st.seek = Some(part.start);
+            // Where its map shows: past the server's word that it changes to it.
+            st.seek = Some(part.shown);
         }
         self.wake.notify_all();
         Ok(())
@@ -51,7 +52,7 @@ impl Room {
 
     /// Whether the room waits at the end of a part that has a successor.
     pub(super) fn part_over(&self, st: &State) -> bool {
-        self.reach(st).1.is_some()
+        self.recording.went_on_from(&self.part(st))
     }
 
     /// Where the room may be, from the start of its part to its end: none while it is the latest
@@ -61,12 +62,12 @@ impl Room {
         (part.start, part.end)
     }
 
-    /// A room whose part was dropped (the trim) goes to the earliest kept, at its start, paused:
+    /// A room whose part was dropped (the trim) goes to the earliest kept, where it shows, paused:
     /// it does not play another map by itself.
     pub(super) fn rehome(&self, st: &mut State) {
         let (part, dropped) = self.placed(st);
         if dropped {
-            (st.part, st.paused, st.seek, st.follows) = (part.n, true, Some(part.start), false);
+            (st.part, st.paused, st.seek, st.follows) = (part.n, true, Some(part.shown), false);
         }
     }
 

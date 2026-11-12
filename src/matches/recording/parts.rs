@@ -2,9 +2,10 @@
 
 use super::{Inner, Mark, Recording};
 use crate::lock;
-use crate::matches::hub::changes_map;
+use std::collections::BTreeSet;
 use std::fmt::Write as _;
 use stvtf::Line;
+use stvtf::output::Status;
 
 /// A map load of the match.
 #[derive(Debug, Clone, PartialEq)]
@@ -18,10 +19,18 @@ pub(crate) struct Part {
     /// Play time of its first line, and of the first line kept of it.
     pub(crate) origin: u64,
     pub(crate) start: u64,
+    /// Play time it shows its map from (see `PartStart::shown`), its first line kept if later.
+    pub(crate) shown: u64,
     /// Play time of the next part's first line; None for the latest.
     pub(crate) end: Option<u64>,
     /// A snapshot of it came: it has play to show.
     pub(crate) ready: bool,
+}
+
+/// Whether `status` says the server is changing map: where a map ends. The live hub forgets the
+/// map only at `map_change` (signon starting over), which can come without a `changelevel`.
+fn changes_map(status: &Status) -> bool {
+    matches!(status, Status::Changelevel | Status::MapChange)
 }
 
 impl Part {
@@ -37,6 +46,12 @@ pub(super) struct PartStart {
     again: usize,
     origin: u64,
     ready: bool,
+    /// Play time it shows from: its first line, or for one the server said it is changing to, its
+    /// first snapshot.
+    shown: Option<u64>,
+    /// Named after the map before it, with that load's last tick: its first snapshot says whether
+    /// its ticks go on from there (the same load) or started over (another).
+    goes_on: Option<u32>,
 }
 
 impl Inner {
@@ -44,36 +59,59 @@ impl Inner {
     /// first (see `ends_part`). A part the server is changing to has no name until its server
     /// line, or a snapshot, says which map it is.
     pub(super) fn begin_part(&mut self, at: u64, line: &Line) -> bool {
-        let (known, between) = {
+        let (known, tick) = {
             let h = lock(&self.scratch);
-            (h.map.clone(), h.between_maps())
+            (h.map.clone(), h.tick())
         };
         let named = if let Line::Server(server) = line { Some(server.map.as_str()) } else { None };
-        let first = self.parts.is_empty();
         let later = self.ends_part(line, named, known.as_deref());
-        if first || later {
-            // A first part begun between maps (a file trimmed in the gap) waits for its name too.
-            let changing = if first { between } else { matches!(line, Line::Status(_)) };
+        if self.parts.is_empty() || later {
+            let changing = matches!(line, Line::Status(status) if changes_map(status));
             let map = named.map(str::to_string).or(known.filter(|_| !changing)).unwrap_or_default();
             let again = self.load(&map);
-            self.parts.push(PartStart { map, again, origin: at, ready: false });
+            let shown = (!changing).then_some(at);
+            self.parts.push(PartStart { map, again, origin: at, ready: false, shown, goes_on: None });
             self.scores = None;
             self.last_tick = None;
-        } else if let Some(map) = named.map(str::to_string).or(known.filter(|_| matches!(line, Line::Snapshot(_))))
+        } else if let Some(map) = named.map(str::to_string).or(known.clone().filter(|_| matches!(line, Line::Snapshot(_))))
             && self.parts.last().is_some_and(|p| p.map.is_empty())
         {
-            let again = self.load(&map);
-            if let Some(part) = self.parts.last_mut() {
-                (part.map, part.again) = (map, again);
-            }
+            let before = tick.filter(|_| known.as_deref() == Some(map.as_str()));
+            self.name_part(map, before);
         }
         if let Line::Snapshot(snapshot) = line {
-            self.last_tick = Some(snapshot.tick);
-            if let Some(part) = self.parts.last_mut() {
-                part.ready = true;
-            }
+            self.first_snapshot(at, snapshot.tick);
         }
         later
+    }
+
+    /// The latest part, nameless till now, is of `map`: another load of it, unless the map before
+    /// was `map` too, which got to tick `before`; its first snapshot then says.
+    fn name_part(&mut self, map: String, before: Option<u32>) {
+        let last_load = self.names.get(&map).and_then(|n| n.checked_sub(1));
+        let (again, goes_on) = match (before, last_load) {
+            (Some(tick), Some(again)) => (again, Some(tick)),
+            _ => (self.load(&map), None),
+        };
+        if let Some(part) = self.parts.last_mut() {
+            (part.map, part.again, part.goes_on) = (map, again, goes_on);
+        }
+    }
+
+    /// A snapshot at play time `at`, of `tick`: the latest part has play, and one named after the
+    /// map before it is another load of that if its ticks started over.
+    fn first_snapshot(&mut self, at: u64, tick: u32) {
+        self.last_tick = Some(tick);
+        let Some(part) = self.parts.last_mut() else { return };
+        part.ready = true;
+        part.shown.get_or_insert(at);
+        if part.goes_on.take().is_some_and(|before| tick < before) {
+            let map = part.map.clone();
+            let again = self.load(&map);
+            if let Some(part) = self.parts.last_mut() {
+                part.again = again;
+            }
+        }
     }
 
     /// Whether `line` ends the latest part: the server saying it is changing map, once the part
@@ -87,6 +125,16 @@ impl Inner {
             Line::Server(_) => named_part && named.zip(known).is_some_and(|(named, known)| named != known),
             Line::Snapshot(s) => self.last_tick.is_some_and(|tick| s.tick < tick),
             _ => false,
+        }
+    }
+
+    /// Where a trim may cut, from chunk `n` on: not inside a part that shows nothing yet (the
+    /// server changing map), so a file resumes knowing what came before it.
+    pub(super) fn cut_at(&self, n: usize) -> usize {
+        let Some(at) = self.chunks.get(n).map(|c| c.start) else { return n };
+        match self.parts.iter().rfind(|p| p.origin <= at) {
+            Some(part) if part.shown.is_none_or(|shown| shown > at) => self.chunks.partition_point(|c| c.start < part.origin),
+            _ => n,
         }
     }
 
@@ -124,8 +172,9 @@ impl Inner {
     /// each map, so numbers and counts go on after a restart.
     pub(super) fn parts_header(&self) -> String {
         let mut out = format!("parts\t{}\n", self.parts_dropped);
-        let mut loads: Vec<_> =
-            self.names.iter().map(|(map, n)| (map, n.saturating_sub(self.parts.iter().filter(|p| p.map == *map).count()))).collect();
+        // Two parts can be one load: a map that went on through a map change.
+        let kept = |map: &str| self.parts.iter().filter(|p| p.map == map).map(|p| p.again).collect::<BTreeSet<_>>().len();
+        let mut loads: Vec<_> = self.names.iter().map(|(map, n)| (map, n.saturating_sub(kept(map)))).collect();
         loads.sort();
         for (map, n) in loads.into_iter().filter(|(_, n)| *n > 0) {
             writeln!(out, "loads\t{map}\t{n}").expect("a string takes it");
@@ -150,14 +199,16 @@ impl Inner {
         let list = self.parts.iter().zip(ends).enumerate().filter_map(|(i, (p, end))| {
             let first = self.chunks.partition_point(|c| c.start < p.origin);
             let start = self.chunks.get(first)?.start;
-            let part = Part { n: self.parts_dropped + i, map: p.map.clone(), again: p.again, origin: p.origin, start, end, ready: p.ready };
+            let shown = p.shown.unwrap_or(p.origin).max(start);
+            let (n, map, again, origin, ready) = (self.parts_dropped + i, p.map.clone(), p.again, p.origin, p.ready);
+            let part = Part { n, map, again, origin, start, shown, end, ready };
             end.is_none_or(|end| start < end).then_some(part)
         });
         list.collect()
     }
 
     fn latest_part(&self) -> Part {
-        let nameless = Part { n: 0, map: String::new(), again: 0, origin: 0, start: 0, end: None, ready: false };
+        let nameless = Part { n: 0, map: String::new(), again: 0, origin: 0, start: 0, shown: 0, end: None, ready: false };
         self.part_list().pop().unwrap_or(nameless)
     }
 
@@ -171,6 +222,13 @@ impl Recording {
     /// server changing map).
     pub(crate) fn latest(&self) -> Part {
         lock(&self.inner).latest_part()
+    }
+
+    /// Whether the match went on from `part` to another map: not when all after it is a map
+    /// change that a recording which ended was cut at (stvtf output saved then), which is no map.
+    pub(crate) fn went_on_from(&self, part: &Part) -> bool {
+        let latest = self.latest();
+        part.end.is_some() && (self.is_live() || latest.n != part.n + 1 || latest.ready || !latest.map.is_empty())
     }
 
     /// The latest part with play to show, or the latest if none has: what a room opened now is on.

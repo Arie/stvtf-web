@@ -11,7 +11,7 @@ use crate::testing::server;
 use serde_json::Value;
 
 /// A live match on `map`, 200 ms of it so far.
-fn live_on(map: &str) -> Arc<Recording> {
+pub(super) fn live_on(map: &str) -> Arc<Recording> {
     let rec = Arc::new(Recording::live());
     push(&rec, &server(map), 0);
     push(&rec, &snapshot(50, None, Vec::new()), 50);
@@ -20,7 +20,7 @@ fn live_on(map: &str) -> Arc<Recording> {
 }
 
 /// A watched room on a live match on `map`, resting at live: it follows.
-fn live_room_at_live_on(map: &str) -> (Arc<Room>, Arc<Recording>) {
+pub(super) fn live_room_at_live_on(map: &str) -> (Arc<Room>, Arc<Recording>) {
     let rec = live_on(map);
     let room = Room::start("r".into(), "me", rec.clone());
     room.viewers.fetch_add(1, Ordering::Relaxed);
@@ -29,16 +29,16 @@ fn live_room_at_live_on(map: &str) -> (Arc<Room>, Arc<Recording>) {
 }
 
 /// The server changes map to `map`: no play of it yet.
-fn push_server(rec: &Recording, map: &str) {
+pub(super) fn push_server(rec: &Recording, map: &str) {
     push(rec, &server(map), rec.length() + 100);
 }
 
 /// A snapshot at `tick`: the latest map has play.
-fn push_snapshot(rec: &Recording, tick: u32) {
+pub(super) fn push_snapshot(rec: &Recording, tick: u32) {
     push(rec, &snapshot(tick, None, Vec::new()), rec.length() + 50);
 }
 
-fn new_map_with_play(rec: &Recording, map: &str) {
+pub(super) fn new_map_with_play(rec: &Recording, map: &str) {
     push_server(rec, map);
     push_snapshot(rec, 50);
 }
@@ -64,7 +64,7 @@ fn looked(room: &Room) -> usize {
     lock(&room.state).part
 }
 
-fn on_map(room: &Room, n: usize) {
+pub(super) fn on_map(room: &Room, n: usize) {
     until("the room on its map", || {
         let st = lock(&room.state);
         st.part == n && st.seek.is_none()
@@ -270,61 +270,5 @@ fn an_inline_marker_from_before_maps_is_the_latest_maps() {
     push_snapshot(&rec, 50);
     let room = Room::restore("r".into(), serde_json::from_value(saved).unwrap(), rec.clone());
     assert_eq!(room.saved().markers.keys().collect::<Vec<_>>(), [&rec.latest().n]);
-    room.stop();
-}
-
-/// The server says it is changing map: its two status lines, then nothing for a while.
-fn push_changing(rec: &Recording) {
-    let at = rec.length() + 100;
-    for state in ["changelevel", "map_change"] {
-        push(rec, &serde_json::from_str(&format!(r#"{{"type":"status","state":"{state}"}}"#)).unwrap(), at);
-    }
-}
-
-/// The kinds of line a page joining the room now is given.
-fn joined_with(room: &Room) -> Vec<String> {
-    subscribe(&room.hub, false).try_iter().map(|l| serde_json::from_str::<Value>(&l).unwrap()["type"].to_string()).collect()
-}
-
-#[test]
-fn a_room_keeps_the_last_moment_showing_through_the_gap() {
-    let (room, rec) = live_room_at_live_on("cp_a");
-    push_changing(&rec);
-    until("the room to say its map is over", || playback(&room)["over"] == true);
-    let p = playback(&room);
-    assert_eq!((p["map"].as_u64(), p["live"].as_bool()), (Some(0), Some(false)));
-    assert_eq!(p["maps"].as_array().unwrap().len(), 1, "a map with no name yet is not listed");
-    let kinds = joined_with(&room);
-    assert!(kinds.contains(&r#""snapshot""#.into()) && !kinds.contains(&r#""status""#.into()), "{kinds:?}");
-    new_map_with_play(&rec, "cp_b");
-    on_map(&room, 1);
-    settle(&room);
-    assert_eq!(playback(&room)["live"].as_bool(), Some(true));
-    room.stop();
-}
-
-#[test]
-fn a_room_opened_in_the_gap_is_on_the_map_just_played() {
-    let rec = live_on("cp_a");
-    push_changing(&rec);
-    let room = Room::start("r".into(), "me", rec.clone());
-    room.viewers.fetch_add(1, Ordering::Relaxed);
-    settle(&room);
-    let p = playback(&room);
-    assert_eq!((p["map"].as_u64(), p["over"].as_bool()), (Some(0), Some(true)));
-    assert_eq!(lock(&room.hub).map.as_deref(), Some("cp_a"));
-    // Opened at live: it goes on with the match.
-    new_map_with_play(&rec, "cp_b");
-    on_map(&room, 1);
-    room.stop();
-}
-
-#[test]
-fn a_room_restored_in_the_gap_is_on_the_map_just_played() {
-    let rec = live_on("cp_a");
-    push_changing(&rec);
-    let room = Room::restore("r".into(), serde_json::from_str(part_tests::OLD_SAVED_ROOM).unwrap(), rec.clone());
-    settle(&room);
-    assert_eq!(playback(&room)["map"].as_u64(), Some(0));
     room.stop();
 }

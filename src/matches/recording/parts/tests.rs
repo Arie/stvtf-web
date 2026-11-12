@@ -73,7 +73,7 @@ fn a_new_map_starts_a_part_and_keeps_the_one_before() {
     assert_eq!((parts[1].origin, parts[1].end), (at, None));
     assert_eq!(r.start(), 0, "nothing is dropped");
     assert_eq!(r.latest().origin, at, "the latest map's");
-    assert!(r.seek(at - 1).0.map.as_deref() == Some("cp_a") && r.seek(at).0.map.as_deref() == Some("cp_b"));
+    assert!(r.seek(at - 1, None).0.map.as_deref() == Some("cp_a") && r.seek(at, None).0.map.as_deref() == Some("cp_b"));
 }
 
 #[test]
@@ -108,7 +108,10 @@ fn a_part_is_ready_at_its_first_snapshot() {
 fn a_recording_without_a_server_line_has_a_nameless_part() {
     let r = Recording::read(r#"{"type":"stalemate","tick":50}"#.as_bytes(), "test").unwrap();
     assert_eq!((r.latest().n, r.latest().map.as_str()), (0, ""));
-    assert_eq!(Recording::default().latest(), Part { n: 0, map: String::new(), again: 0, origin: 0, start: 0, end: None, ready: false });
+    assert_eq!(
+        Recording::default().latest(),
+        Part { n: 0, map: String::new(), again: 0, origin: 0, start: 0, shown: 0, end: None, ready: false }
+    );
 }
 
 #[test]
@@ -259,6 +262,6 @@ fn ticks_starting_over_on_the_same_map_start_a_chunk_of_their_own() {
     snapshots(&r, 50, 500, time);
     let part = r.latest();
     assert_eq!((r.parts().len(), part.n), (2, 1));
-    let (_, i, played) = r.seek(part.origin);
+    let (_, i, played) = r.seek(part.origin, None);
     assert_eq!((played, r.chunk(i).unwrap()[0].0), (0, part.origin), "its origin is the start of a chunk");
 }

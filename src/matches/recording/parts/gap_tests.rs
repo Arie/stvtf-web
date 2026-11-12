@@ -41,7 +41,7 @@ fn a_map_ends_where_the_server_says_it_changes() {
     let parts = r.parts();
     assert_eq!(parts.iter().map(|p| (p.n, p.map.as_str(), p.again)).collect::<Vec<_>>(), [(0, "cp_a", 0), (1, "cp_b", 0)]);
     assert_eq!((parts[0].end, parts[1].origin), (Some(t), t));
-    let (hub, _, _) = r.seek(t - 1);
+    let (hub, _, _) = r.seek(t - 1, None);
     assert!(hub.has_snapshot() && hub.map.as_deref() == Some("cp_a"), "the map's last moment");
 }
 
@@ -93,18 +93,36 @@ fn a_server_line_without_a_status_still_starts_a_part() {
 }
 
 #[test]
-fn a_change_the_same_map_goes_on_from_is_another_load_of_it() {
-    // The connection drops and comes back to the map, its ticks going on.
-    let r = Recording::live();
+fn a_change_the_same_map_goes_on_from_is_the_same_load_of_it() {
+    // The connection drops and comes back to the map, its ticks going on: one demo, as `LiveDemos`
+    // has it.
+    let saved = Arc::default();
+    let r = Recording::live_to(to(&saved));
     let t = cp_a_then_changing(&r);
     then_on(&r, "cp_a", 1700, t);
-    assert_eq!(maps(&r), [("cp_a".into(), 0), ("cp_a".into(), 1)]);
+    assert_eq!(maps(&r), [("cp_a".into(), 0), ("cp_a".into(), 0)]);
+    let again = Recording::resume(lock(&saved).as_slice(), to(&saved)).unwrap();
+    assert_eq!(again.parts(), r.parts_closed());
+    push_at(&r, &server("cp_b"), T0 + r.length() + 1000);
+    assert_eq!(r.latest().again, 0, "and loads of other maps count as before");
     // Play with no server line: the map it was.
     let r = Recording::live();
     let t = cp_a_then_changing(&r);
     snapshots(&r, 1700, 2200, T0 + t + 1000);
-    assert_eq!(maps(&r), [("cp_a".into(), 0), ("cp_a".into(), 1)]);
+    assert_eq!(maps(&r), [("cp_a".into(), 0), ("cp_a".into(), 0)]);
     assert!(r.latest().ready);
+}
+
+#[test]
+fn a_seek_to_a_maps_end_is_its_last_moment() {
+    let r = Recording::live();
+    let t = cp_a_then_changing(&r);
+    then_on(&r, "cp_b", 50, t);
+    let (hub, i, played) = r.seek(t, Some(t));
+    assert!(hub.has_snapshot() && hub.map.as_deref() == Some("cp_a"));
+    assert_eq!(r.chunk(i).unwrap().get(played).map(|l| l.0), None, "nothing of it left to play");
+    assert_eq!(r.seek(u64::MAX, Some(t)).1, i, "nor past it");
+    assert_ne!(r.seek(t, None).1, i, "the next map's starts there");
 }
 
 #[test]
@@ -118,8 +136,9 @@ fn a_resumed_recording_has_the_parts_of_a_map_change() {
     assert_eq!(again.parts(), r.parts_closed());
 }
 
-#[test]
-fn a_file_trimmed_in_the_gap_resumes_nameless_until_its_server_line() {
+/// `cp_a` for 10 minutes, the server changing map, a reconnect while it loads (a chunk starts
+/// among those lines), then `map` from tick `from`, until the trim drops `cp_a`.
+fn trimmed_in_the_gap(map: &str, from: u32) -> Recording {
     let r = Recording::live();
     push_at(&r, &server("cp_a"), T0);
     push_at(&r, &snapshot(50, None, Vec::new()), T0 + 500);
@@ -129,21 +148,28 @@ fn a_file_trimmed_in_the_gap_resumes_nameless_until_its_server_line() {
     }
     push_at(&r, &status("changelevel"), T0 + 600_000);
     push_at(&r, &status("map_change"), T0 + 600_000);
-    // Tries to connect again while the server loads: a chunk starts among them, which the trim keeps.
     let connecting = line(r#"{"type":"status","state":"connecting","server":"tv","build":"1"}"#);
     for s in 601..=615 {
         push_at(&r, &connecting, T0 + s * 1000);
     }
     push_at(&r, &status("new"), T0 + 616_000);
-    push_at(&r, &server("cp_b"), T0 + 616_000);
-    push_at(&r, &snapshot(50, None, Vec::new()), T0 + 616_500);
+    push_at(&r, &server(map), T0 + 616_000);
+    push_at(&r, &snapshot(from, None, Vec::new()), T0 + 616_500);
     let mut s = 617;
     while r.start() == 0 {
         push_at(&r, &stalemate, T0 + s * 1000);
         s += 1;
     }
-    assert_eq!(r.start(), 610_000, "the trim cut in the gap");
-    let again = Recording::resume(file_of(&r).as_slice(), Box::new(|_: &Save| {})).unwrap();
-    assert_eq!(again.parts(), r.parts_closed());
-    assert_eq!((again.latest().n, again.latest().map.as_str(), again.latest().again), (1, "cp_b", 0));
+    r
+}
+
+#[test]
+fn the_trim_keeps_a_map_change_from_its_start_so_a_file_resumes_with_its_numbers() {
+    for (map, from, again) in [("cp_b", 50, 0), ("cp_a", 100, 0), ("cp_a", 10, 1)] {
+        let r = trimmed_in_the_gap(map, from);
+        assert_eq!(r.start(), 600_000, "not cut inside it");
+        assert_eq!((r.latest().n, r.latest().map.as_str(), r.latest().again), (1, map, again));
+        let resumed = Recording::resume(file_of(&r).as_slice(), Box::new(|_: &Save| {})).unwrap();
+        assert_eq!(resumed.parts(), r.parts_closed(), "{map} from {from}");
+    }
 }

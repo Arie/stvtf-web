@@ -296,6 +296,8 @@ impl Room {
 }
 
 #[cfg(test)]
+mod gap_tests;
+#[cfg(test)]
 mod move_tests;
 #[cfg(test)]
 mod part_tests;
