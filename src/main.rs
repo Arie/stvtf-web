@@ -85,11 +85,11 @@ struct App {
     /// The key the voice bot posts with (`STVTF_VOICE_KEY`); without it no voice is taken in.
     voice_key: Option<String>,
     /// Discord users and the Steam accounts linked to them, for voice from Discord.
-    voice_links: web::voice_link::Links,
+    voice_links: voice::links::Links,
     /// Where the voice bot is added to a Discord server (`STVTF_VOICE_BOT`), for the invite.
     voice_bot: Option<String>,
     /// The bell the voice bot waits on for Mumble channels asked for.
-    mumble_changes: web::voice_mumble::Changes,
+    mumble_changes: voice::mumble::Changes,
     /// Whether a Mumble server may be on this machine or its network (`STVTF_MUMBLE_ANYWHERE=1`): at a LAN.
     mumble_anywhere: bool,
     /// Whom people in voice channels were said to be, from one match to the next.
@@ -406,9 +406,9 @@ fn main() -> Result<()> {
         streams: Mutex::default(),
         rooms: rooms::registry::Rooms::new(store, relays).with_maps(options.cache.clone()),
         voice_key: voice_key.clone(),
-        voice_links: web::voice_link::Links::from_env(options.sessions.as_deref()),
+        voice_links: voice::links::Links::from_env(options.sessions.as_deref()),
         voice_bot: std::env::var("STVTF_VOICE_BOT").ok().filter(|u| !u.is_empty()),
-        mumble_changes: web::voice_mumble::Changes::default(),
+        mumble_changes: voice::mumble::Changes::default(),
         mumble_anywhere: std::env::var("STVTF_MUMBLE_ANYWHERE").is_ok_and(|v| v == "1"),
         voice_who,
     });

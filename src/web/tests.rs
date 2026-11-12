@@ -1026,7 +1026,8 @@ fn linking_app(connections: &str) -> App {
     ]);
     let mut app = app(Matches::Many(Sessions::new(false, 4, 20.0)));
     app.voice_key = Some("k".into());
-    app.voice_links = voice_link::Links::with_discord(discord.trim_end_matches('/'), "id1", "secret", "https://stv.example/voice/linked");
+    app.voice_links =
+        crate::voice::links::Links::with_discord(discord.trim_end_matches('/'), "id1", "secret", "https://stv.example/voice/linked");
     app
 }
 
