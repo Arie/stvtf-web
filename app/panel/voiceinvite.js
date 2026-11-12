@@ -81,7 +81,6 @@ function statusLine(status, more = "", where = "", bad = failed(status)) {
   const text = el("span", { className: "vstatustext" }, where ? `${where}: ${status}` : status);
   if (more) text.append(el("span", { className: "vhint" }, more));
   const line = el("div", { className: "vstatus" }, el("span", { className: `vdot ${dot}` }), text);
-  line.id = "vcomms";
   return line;
 }
 
