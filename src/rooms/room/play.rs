@@ -161,8 +161,8 @@ impl Room {
             if rec.is_live() && announced.elapsed() >= ANNOUNCE_EVERY {
                 self.announce_now(&st, &mut announced);
             }
-            // Where it plays was dropped: on from what is kept.
-            let (start, end) = self.reach(&st);
+            self.rehome(&mut st);
+            let (start, _) = self.reach(&st);
             if st.seek.is_none() && st.at < start {
                 st.seek = Some(start);
             }
@@ -172,7 +172,9 @@ impl Room {
                 continue;
             }
             cur.refill(rec);
-            // No line is played at or past the end of its map.
+            // No line is played at or past the end of its map; looked at after the lines, so a
+            // line seen has its part.
+            let (_, end) = self.reach(&st);
             let Some(t) = cur.lines.front().map(|l| l.0).filter(|t| end.is_none_or(|end| *t < end)) else {
                 st = self.at_end(st, end);
                 clock = None;
@@ -223,8 +225,9 @@ impl Room {
     fn at_end<'a>(&self, mut st: MutexGuard<'a, State>, over: Option<u64>) -> MutexGuard<'a, State> {
         let rec = &self.recording;
         if let Some(end) = over {
-            if !st.paused {
-                st.at = st.at.max(end);
+            if !st.paused && st.at < end {
+                st.at = end;
+                self.announce(&st);
             }
             return self.sleep(st, IDLE_POLL);
         }

@@ -16,11 +16,19 @@ impl Room {
     }
 
     /// Where the room may be, from the start of its part to its end: none while it is the latest
-    /// (it goes as far as the recording does). A room whose part was dropped waits at the start
-    /// of the earliest kept.
+    /// (it goes as far as the recording does).
     pub(super) fn reach(&self, st: &State) -> (u64, Option<u64>) {
+        let part = self.part(st);
+        (part.start, part.end)
+    }
+
+    /// A room whose part was dropped (the trim) goes to the earliest kept, at its start, paused:
+    /// it does not play another map by itself.
+    pub(super) fn rehome(&self, st: &mut State) {
         let (part, dropped) = self.placed(st);
-        (part.start, if dropped { Some(part.start) } else { part.end })
+        if dropped {
+            (st.part, st.paused, st.seek) = (part.n, true, Some(part.start));
+        }
     }
 
     /// The part the room is on, or the earliest kept (true) if that was dropped.

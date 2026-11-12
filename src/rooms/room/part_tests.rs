@@ -6,6 +6,7 @@ use crate::matches::hub::{subscribe, tests::snapshot};
 use crate::relays::pool::{DemoOf, Offer, Pool, Relays};
 use crate::testing::server;
 use serde_json::Value;
+use std::fmt::Write as _;
 use stvtf::Line;
 
 const T0: u64 = 1_700_000_000_000;
@@ -32,11 +33,15 @@ fn settle(room: &Room) {
     });
 }
 
-/// The last playback line the room told its pages.
+/// The last playback line the room told its pages (once it told any).
 fn playback(room: &Room) -> Value {
-    let page = subscribe(&room.hub, false);
-    let lines: Vec<Value> = page.try_iter().map(|l| serde_json::from_str(&l).unwrap()).collect();
-    lines.into_iter().rfind(|l| l["type"] == "playback").expect("a playback line")
+    let last = || {
+        let page = subscribe(&room.hub, false);
+        let lines: Vec<Value> = page.try_iter().map(|l| serde_json::from_str(&l).unwrap()).collect();
+        lines.into_iter().rfind(|l| l["type"] == "playback")
+    };
+    until("a playback line", || last().is_some());
+    last().unwrap()
 }
 
 /// A watched room on a live match, opened on `cp_a`; then `cp_b` comes, whose play time is returned.
@@ -129,6 +134,11 @@ fn a_room_whose_map_was_trimmed_goes_to_the_earliest_kept_and_waits() {
     settle(&room);
     let p = playback(&room);
     assert_eq!((p["map"].as_u64(), p["at"].as_u64()), (Some(1), p["start"].as_u64()));
+    assert_eq!((p["over"].as_bool(), p["live"].as_bool(), p["paused"].as_bool()), (Some(true), Some(false), Some(true)));
+    let inside = p["start"].as_u64().unwrap() + 5000;
+    room.control(&Control { seek: Some(inside), ..Control::default() }).unwrap();
+    settle(&room);
+    assert_eq!(playback(&room)["at"].as_u64(), Some(inside), "it is on that map now");
     room.stop();
 }
 
@@ -148,8 +158,33 @@ fn the_relay_is_pointed_at_the_demo_of_the_rooms_load_of_the_map() {
     room.want(&st, room.offer.get().unwrap(), true);
     assert_eq!(lock(&asked).last().map(|(map, again, _)| (map.as_str(), *again)), Some(("cp_a", 0)));
     drop(st);
+    room.stop();
     let (room, asked) = room_on_part_with_demo_of(2);
     let st = lock(&room.state);
     room.want(&st, room.offer.get().unwrap(), true);
     assert_eq!(lock(&asked).last().map(|(map, again, _)| (map.as_str(), *again)), Some(("cp_a", 1)));
+    drop(st);
+    room.stop();
+}
+
+#[test]
+fn a_demo_is_announced_as_before() {
+    let mut lines = String::new();
+    for tick in 1..=40 {
+        writeln!(lines, "{{\"type\":\"stalemate\",\"tick\":{tick}}}").unwrap();
+        if tick == 10 {
+            writeln!(lines, r#"{{"type":"round_start","full_reset":false,"tick":{tick}}}"#).unwrap();
+        }
+    }
+    let rec = Arc::new(Recording::read(lines.as_bytes(), "test").unwrap());
+    let room = Room::start("r".into(), "me", rec.clone());
+    settle(&room);
+    let p = playback(&room);
+    assert_eq!(p["start"].as_u64(), Some(rec.start()));
+    assert_eq!(p["origin"].as_u64(), Some(rec.origin()));
+    assert_eq!(p["length"].as_u64(), Some(rec.length()));
+    assert_eq!(p["rounds"], serde_json::json!(rec.rounds()));
+    assert_eq!(p["live"].as_bool(), Some(rec.is_live()));
+    assert!(!rec.rounds().is_empty() && rec.length() > 0);
+    room.stop();
 }
