@@ -224,6 +224,13 @@ test("an embedding page can switch known layers only", () => {
   assert.equal(layerOn("made_up"), undefined);
 });
 
+test("a demo on its way says how far its download is, then that it is decoded", () => {
+  assert.deepEqual(statusText("waiting for data", { state: "fetching", percent: 40 }), ["downloading 40%", ""]);
+  assert.deepEqual(statusText("downloading 40%", { state: "fetching", percent: null }), ["downloading", ""]);
+  assert.deepEqual(statusText("downloading", { state: "decoding" }), ["decoding", ""]);
+  assert.deepEqual(statusText("decoding", { state: "full" }), ["live", ""]);
+});
+
 test("the sidebar keeps one word while SourceTV signs on, however often it is dropped", () => {
   const run = (shown, ...lines) =>
     lines.map(m => (shown = statusText(shown, typeof m === "string" ? { state: m } : m)[0]));

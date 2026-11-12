@@ -30,7 +30,11 @@ viewers now, at most and in all, seconds watched, seconds since the latest snaps
 
 ## demos.tf demos
 
-Fetched, decoded once (one at a time), kept in memory only as gzipped stvtf output. Plays once at
+Fetched to disk (many at a time) and decoded (one at a time: it holds the file in memory) to
+gzipped stvtf output; the page says how far that is (`downloading 40%`, `decoding`). With
+`--sessions` the output is kept there as `demo-<id>.gz` (and the file as `demo-<id>.dem`, where
+relays play it), so the next to open the demo waits for neither: for a month since last played,
+and 5 GB of them at most (the longest unplayed go first). Plays once at
 game speed, holding still while unwatched; everyone who opens it watches together. Ends like a
 live match, 3 minutes after its last viewer; not picked up after a restart. Counts towards
 `--max-matches`. Page: `/w/d<id>/`. Once ended, that link sends the visitor to `--home` with the

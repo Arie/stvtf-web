@@ -3,7 +3,7 @@
 
 use crate::lock;
 use crate::matches::recording::Recording;
-use crate::matches::sessions::{DEMO_PREFIX, LIVE_PREFIX, Session, Sessions, Store, Viewer, demo_dem, logged};
+use crate::matches::sessions::{DEMO_PREFIX, LIVE_PREFIX, Session, Sessions, Store, Viewer, demo_dem, demo_output, logged};
 use crate::relays::pool::{DemoOf, Offer, Pool};
 use crate::rooms::room::{Room, Saved};
 use anyhow::{Result, bail};
@@ -23,6 +23,10 @@ const LIVE_DEMO_KEPT: Duration = Duration::from_hours(3);
 /// go first).
 const COMMS_DEMOS_KEPT: Duration = Duration::from_hours(14 * 24);
 const COMMS_DEMOS_BUDGET: u64 = 10 << 30;
+/// demos.tf demos kept for the next to play them (the file, and what it decodes to): for a
+/// month since last played, and at most 5 GB of them (the longest unplayed go first).
+const DEMOS_KEPT: Duration = Duration::from_hours(30 * 24);
+const DEMOS_BUDGET: u64 = 5 << 30;
 
 #[derive(Default)]
 pub(crate) struct Rooms {
@@ -83,13 +87,39 @@ fn file(id: &str) -> String {
 fn marker_file(id: &str) -> String {
     format!("{}-marker", file(id))
 }
-fn demo_file(demo: u64) -> String {
-    format!("{DEMO_PREFIX}{demo}.gz")
-}
 
 /// How long ago a file in the store was written or touched.
 fn age(entry: &std::fs::DirEntry) -> std::io::Result<Duration> {
     entry.metadata()?.modified().map(|t| SystemTime::now().duration_since(t).unwrap_or_default())
+}
+
+/// Whether `name` is a demos.tf demo's file kept for the next to play it: not one half fetched.
+fn kept_demo(name: &str) -> bool {
+    name.starts_with(DEMO_PREFIX) && std::path::Path::new(name).extension().is_none_or(|e| e != "part")
+}
+
+/// Drops the demos.tf demos' files in `dir` not played for `max_age`, and the longest unplayed
+/// past `budget` bytes of them; not one played within the hour (a match or a room may be on it).
+fn sweep_demos(dir: &std::path::Path, max_age: Duration, budget: u64) {
+    let mut kept: Vec<(Duration, u64, PathBuf)> = std::fs::read_dir(dir)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter(|e| {
+            let name = e.file_name().to_string_lossy().into_owned();
+            kept_demo(&name)
+        })
+        .filter_map(|e| Some((age(&e).ok()?, e.metadata().ok()?.len(), e.path())))
+        .collect();
+    kept.sort_by_key(|(age, ..)| *age);
+    let mut total = 0;
+    for (age, bytes, path) in kept {
+        total += bytes;
+        if age > STALE && (total > budget || age > max_age) {
+            total -= bytes;
+            let _ = std::fs::remove_file(path);
+        }
+    }
 }
 
 impl Rooms {
@@ -163,10 +193,10 @@ impl Rooms {
         let id = crate::matches::sessions::random_id();
         let source = Self::source(from);
         if let (Source::Demo(demo), Some(store)) = (&source, &self.store)
-            && !store.has(&demo_file(*demo))
+            && !store.has(&demo_output(*demo))
         {
             let Some(output) = from.output() else { bail!("the demo is still being fetched") };
-            store.put(&demo_file(*demo), &output)?;
+            store.put(&demo_output(*demo), &output)?;
         }
         let room = Room::start(id, owner, recording);
         self.give_maps(&room);
@@ -285,7 +315,7 @@ impl Rooms {
         let recording = match &saved.source {
             Source::Pinned(match_id) | Source::Live(match_id) => sessions.get(match_id)?.recording().ok()?,
             Source::Demo(demo) => self.shared(&format!("demo:{demo}"), || {
-                let gz = store.take(&demo_file(*demo)).ok()?;
+                let gz = store.take(&demo_output(*demo)).ok()?;
                 Some(Arc::new(Recording::read(flate2::read::GzDecoder::new(gz.as_slice()), &format!("demo {demo}")).ok()?))
             })?,
         };
@@ -317,7 +347,7 @@ impl Rooms {
         let Some(store) = &self.store else { return };
         let Some(source) = lock(&self.sources).get(&room.id).cloned() else { return };
         if let Source::Demo(demo) = source {
-            store.touch(&demo_file(demo));
+            store.touch(&demo_output(demo));
             store.touch(&demo_dem(demo));
         }
         let by = lock(&self.by).get(&room.id).map(|(b, _)| b.clone());
@@ -399,7 +429,7 @@ impl Rooms {
     /// Forgets room `id`, ended, and its files.
     fn forget_room(&self, id: &str) {
         let mut sources = lock(&self.sources);
-        let source = sources.remove(id);
+        sources.remove(id);
         lock(&self.watching).remove(id);
         lock(&self.private).remove(id);
         lock(&self.by).remove(id);
@@ -407,12 +437,6 @@ impl Rooms {
         if let Some(store) = &self.store {
             store.forget(&file(id));
             store.forget(&marker_file(id));
-            // A demo's file goes with the last room on it.
-            if let Some(Source::Demo(demo)) = source
-                && !sources.values().any(|s| *s == Source::Demo(demo))
-            {
-                store.forget(&demo_file(demo));
-            }
         }
         eprintln!("stvtf-web: room {} ended", logged(id));
     }
@@ -430,11 +454,14 @@ impl Rooms {
             // A live match's demos, and the voice kept beside them.
             let dem = std::path::Path::new(name.strip_suffix(".voice").unwrap_or(&name)).extension().is_some_and(|e| e == "dem");
             let keep = if name.starts_with(LIVE_PREFIX) && dem { LIVE_DEMO_KEPT } else { STALE };
+            // A demos.tf demo's files are kept within a budget (below); one half fetched is not.
+            let demos_tf = kept_demo(&name);
             let ours = [ROOM_PREFIX, DEMO_PREFIX, LIVE_PREFIX].iter().any(|p| name.starts_with(p));
-            if ours && age(&entry).is_ok_and(|a| a > keep) {
+            if ours && !demos_tf && age(&entry).is_ok_and(|a| a > keep) {
                 store.forget(&name);
             }
         }
+        sweep_demos(&store.dir, DEMOS_KEPT, DEMOS_BUDGET);
         crate::matches::live_demos::sweep_kept(&store.dir, COMMS_DEMOS_KEPT, COMMS_DEMOS_BUDGET);
     }
 }
@@ -616,23 +643,32 @@ mod tests {
     }
 
     #[test]
-    fn a_demo_s_file_is_shared_by_its_rooms_and_goes_with_the_last() {
-        let (sessions, dir) = demo();
-        let store = store(&dir);
-        store.put(&demo_file(7), b"gz").unwrap();
-        let rooms = Rooms::new(Some(store.clone()), None);
-        let recording = sessions.get("demo").unwrap().recording().unwrap();
-        let (a, b) = (Room::start("a".repeat(32), "me", recording.clone()), Room::start("b".repeat(32), "me", recording));
-        rooms.add(&a, Source::Demo(7));
-        rooms.add(&b, Source::Demo(7));
-        let wa = a.join("me", None, None, true);
-        let wb = b.join("me", None, None, true);
-        drop(wa);
-        rooms.reap(Duration::ZERO);
-        assert!(store.has(&demo_file(7)), "b still plays it");
-        drop(wb);
-        rooms.reap(Duration::ZERO);
-        assert!(!store.has(&demo_file(7)));
+    fn a_demo_s_files_stay_for_the_next_to_play_it_within_an_age_and_a_budget() {
+        let dir = TempDir::new("demos-kept");
+        let aged = |name: &str, bytes: usize, hours: u64| {
+            let path = dir.join(name);
+            std::fs::write(&path, vec![0; bytes]).unwrap();
+            let at = SystemTime::now() - Duration::from_hours(hours);
+            std::fs::File::options().write(true).open(&path).unwrap().set_modified(at).unwrap();
+        };
+        aged("demo-1.gz", 10, 0);
+        aged("demo-2.gz", 10, 2);
+        aged("demo-2.dem", 100, 2);
+        aged("demo-3.dem", 100, 5);
+        aged("demo-4.gz", 10, 100);
+        aged("room-x", 10, 100);
+        let left = || {
+            let mut names: Vec<String> =
+                std::fs::read_dir(&*dir).unwrap().flatten().map(|e| e.file_name().to_string_lossy().into_owned()).collect();
+            names.sort();
+            names
+        };
+        // Too old goes; so does the longest unplayed past the budget. Others' files are left.
+        sweep_demos(&dir, Duration::from_hours(48), 150);
+        assert_eq!(left(), ["demo-1.gz", "demo-2.dem", "demo-2.gz", "room-x"]);
+        // One played within the hour stays, whatever the budget.
+        sweep_demos(&dir, Duration::from_hours(48), 0);
+        assert_eq!(left(), ["demo-1.gz", "room-x"]);
     }
 
     fn saved_at(s: &Saved) -> u64 {

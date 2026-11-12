@@ -242,6 +242,19 @@ export const playbackStatus = text => ["live", "paused", "replay"].includes(text
 // reason a connection failed is the why, for the tooltip.
 /** @param {string} shown @param {import("../../types/stream").StatusLine} m */
 export function statusText(shown, m) {
+  return demoText(m) ?? connectionText(shown, m);
+}
+
+// A demo on its way: fetched (how far, where that is known), then decoded. None for any other line.
+/** @param {import("../../types/stream").StatusLine} m @returns {[string, string] | null} */
+function demoText(m) {
+  if (m.state === "decoding") return ["decoding", ""];
+  if (m.state !== "fetching") return null;
+  return [typeof m.percent === "number" ? `downloading ${m.percent}%` : "downloading", ""];
+}
+
+/** @param {string} shown @param {import("../../types/stream").StatusLine} m @returns {[string, string]} */
+function connectionText(shown, m) {
   const why = m.reason || "";
   switch (m.state) {
     case "full":

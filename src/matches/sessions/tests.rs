@@ -88,8 +88,8 @@ fn a_start_link_with_a_reservation_links_the_match() {
 
 #[test]
 fn a_demo_plays_once_for_everyone_who_opens_it() {
-    // Waiting for their turn to fetch, the demos never reach demos.tf.
-    let fetching = lock(&demostf::FETCHING);
+    // Held before they fetch, the demos never reach demos.tf.
+    let fetching = lock(&demostf::HELD);
     let dir = TempDir::new("demo-sessions");
     let mut s = Sessions::new(false, 3, 20.0);
     s.store = Some(Store { dir: dir.to_path_buf(), keys: None });

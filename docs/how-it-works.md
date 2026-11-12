@@ -106,7 +106,7 @@ One connection takes one slot, whoever watches. See stvtf's README, "Output".
 A room is also a SourceTV address. TF2 connects to it as to any SourceTV, and sees the room's moment:
 paused, seeking, at its speed. A relay serves it, playing a `.dem`:
 
-- **demos.tf**: the demo's own file, kept while it is open.
+- **demos.tf**: the demo's own file, kept for the next to play it (see docs/site.md).
 - **Live**: stvtf records the stream it gets as a `.dem` as it goes: the build's data tables, the
   signon of the connection, one frame per datagram with every message as the server sent it, the
   header rewritten every 100 ms so it plays while it grows. One file per connection. Its frames

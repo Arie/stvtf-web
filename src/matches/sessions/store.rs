@@ -164,9 +164,14 @@ pub(crate) const DEMO_PREFIX: &str = "demo-";
 /// What the names of a live match's files in the store start with.
 pub(crate) const LIVE_PREFIX: &str = "live-";
 
-/// A demos.tf demo's file in the store, kept while a match or room plays it.
+/// A demos.tf demo's file in the store, kept for the next to play it where relays do.
 pub(crate) fn demo_dem(demo: u64) -> String {
     format!("{DEMO_PREFIX}{demo}.dem")
+}
+
+/// What a demos.tf demo decodes to (gzipped stvtf output), kept for the next to play it.
+pub(crate) fn demo_output(demo: u64) -> String {
+    format!("{DEMO_PREFIX}{demo}.gz")
 }
 
 /// A live match's recording beside its file.

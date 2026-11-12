@@ -140,16 +140,10 @@ impl Sessions {
             let _ = session.by.set(by.to_string());
         }
         let s = Arc::new(session);
-        let (player, hz, store) = (s.clone(), self.hz, self.store.clone().filter(|_| self.demos));
+        let kept = self.store.clone().map(|store| demostf::Kept { store, dem: self.demos });
+        let (player, hz) = (s.clone(), self.hz);
         let thread = std::thread::spawn(move || {
-            let keep_demo = |dem: &[u8]| {
-                if let Some(store) = &store
-                    && let Err(e) = store.replace(&demo_dem(demo), dem)
-                {
-                    eprintln!("stvtf-web: keeping demo {demo}: {e:#}");
-                }
-            };
-            if let Err(e) = demostf::play(&player.hub, demo, hz, &|| player.watched(), &player.stop, &keep_demo, &|gz| {
+            if let Err(e) = demostf::play(&player.hub, demo, hz, &|| player.watched(), &player.stop, kept.as_ref(), &|gz| {
                 *lock(&player.source) = Some(Source::Output(gz));
             }) {
                 eprintln!("stvtf-web: match {} (demo {demo}) gave up: {e:#}", player.label());
@@ -365,4 +359,4 @@ mod tests;
 pub(crate) use address::is_public;
 pub(crate) use ids::{demo_id, id_demo, is_id, logged, random_id};
 pub(crate) use session::{Listed, Session, Viewer};
-pub(crate) use store::{DEMO_PREFIX, LIVE_PREFIX, Store, demo_dem, live_file};
+pub(crate) use store::{DEMO_PREFIX, LIVE_PREFIX, Store, demo_dem, demo_output, live_file};
