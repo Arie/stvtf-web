@@ -564,6 +564,8 @@ test("a link to a moment watches from there", async () => {
   await page.goto(`${base}?t=0:10`);
   await until(page, () => /^0:1\d \//.test(document.getElementById("rb-clock").textContent ?? ""));
   await until(page, () => document.getElementById("status").textContent === "replay");
+  // The address follows playback.
+  await until(page, () => /[?]t=0:1[1-9]$/.test(location.href));
   await page.click("#rb-play");
   await page.click("#copylink");
   await until(page, () => /[?]t=0:1\d$/.test(location.href));

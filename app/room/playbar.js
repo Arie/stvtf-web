@@ -141,6 +141,16 @@ class Playbar {
     return Math.min(this.length(), Math.max(this.start(), from.at + ran));
   }
 
+  /** Whether playback is behind a live match. */
+  behind() {
+    return Boolean(this.last?.live) && this.length() - this.at() >= LIVE_MS;
+  }
+
+  /** Whether playback is at a live match's live. */
+  atLive() {
+    return Boolean(this.last?.live) && !this.last?.paused && !this.behind();
+  }
+
   /** @param {Control} c */
   control(c) {
     if (c.seek != null) this.jumped = { at: c.seek, since: performance.now() };
@@ -150,8 +160,8 @@ class Playbar {
   show() {
     const l = this.last;
     if (!l) return;
-    const behind = Boolean(l.live) && this.length() - this.at() >= LIVE_MS,
-      atLive = Boolean(l.live) && !l.paused && !behind;
+    const behind = this.behind(),
+      atLive = this.atLive();
     const len = Math.max(this.start() + 1, this.length());
     // At live the timeline is all played and the playhead, which could only waver at its end, hides.
     const now = atLive ? this.length() : this.at();

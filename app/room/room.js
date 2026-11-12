@@ -23,6 +23,8 @@ import { focusOf, viewArea } from "../map/view.js";
 const MIN_STEP_PX = 3;
 // How often a match page looks where its shared playback is, in milliseconds.
 const SHARED_MS = 1000;
+// How often the address follows playback, in milliseconds.
+const MOMENT_MS = 250;
 
 // The playback bar in a room, the Room button and a viewer's own timeline on a match's page;
 // neither on the overlay or another site.
@@ -143,12 +145,11 @@ function roomBar() {
   });
 }
 
-// This page's address at `since` into the map (?t=), kept in the address bar too.
-/** @param {number} since */
+// This page's address at `since` (?t=); null: live.
+/** @param {number | null} since */
 function momentLink(since) {
   const url = new URL(location.href);
-  url.search = `?t=${clock(Math.max(0, since))}`;
-  history.replaceState(null, "", url);
+  url.search = since == null ? "" : `?t=${clock(Math.max(0, since))}`;
   return url;
 }
 
@@ -214,6 +215,12 @@ function watchBar() {
       );
   shared();
   setInterval(shared, SHARED_MS);
+  // The address follows playback.
+  setInterval(() => {
+    if (wanted != null || !bar.last) return;
+    const url = momentLink(bar.atLive() ? null : bar.since());
+    if (url.href !== location.href) history.replaceState(null, "", url);
+  }, MOMENT_MS);
 }
 
 // The marker: while it is on, dragging draws instead of panning; what it draws stays until cleared.
