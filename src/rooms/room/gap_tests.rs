@@ -1,8 +1,9 @@
 //! A room while the server changes map: the map just played stays showing.
 
-use super::move_tests::{live_on, live_room_at_live_on, new_map_with_play, on_map, push_server};
+use super::move_tests::{decided, live_on, live_room_at_live_on, new_map_with_play, on_map, push_server};
 use super::part::MapPost;
 use super::part_tests::{OLD_SAVED_ROOM, playback, push, settle};
+use super::stream_tests::a_pass;
 use super::tests::until;
 use super::*;
 use crate::matches::hub::{subscribe, tests::snapshot};
@@ -183,5 +184,31 @@ fn stvtf_output_saved_as_the_server_changed_map_ends_as_one_without_it() {
     let p = playback(&room);
     assert_eq!((p["map"].as_u64(), p["over"].as_bool(), p["live"].as_bool()), (Some(0), Some(false), Some(false)));
     assert_eq!((p["maps"].as_array().unwrap().len(), p["at"].as_u64()), (1, Some(rec.length())));
+    room.stop();
+}
+
+#[test]
+fn a_map_that_goes_on_after_all_plays_on_with_what_came_while_it_seemed_over() {
+    let (room, rec) = live_room_at_live_on("cp_a");
+    let page = subscribe(&room.hub, false);
+    // Announced, then the same map again (a reconnect): over, its frames tail.
+    push_server(&rec, "cp_a");
+    assert!(decided(&room, 0));
+    for tick in [150, 200] {
+        push(&rec, &snapshot(tick, None, Vec::new()), rec.length() + 50);
+    }
+    a_pass(&room);
+    assert!(rec.latest().over(), "frames within 5 s of ticks: still over");
+    // Past 5 s of ticks: it went on.
+    push(&rec, &snapshot(500, None, Vec::new()), rec.length() + 50);
+    until("the room to play on", || lock(&room.state).tick == Some(500));
+    let ticks: Vec<_> = page
+        .try_iter()
+        .map(|l| serde_json::from_str::<Value>(&l).unwrap())
+        .filter(|l| l["type"] == "snapshot")
+        .map(|l| l["tick"].clone())
+        .collect();
+    assert!(ticks.contains(&150.into()) && ticks.contains(&200.into()), "{ticks:?}");
+    assert!(!lock(&room.state).follows);
     room.stop();
 }

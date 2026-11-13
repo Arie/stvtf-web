@@ -26,7 +26,8 @@ fn heard_in_the_gap(line: &Line) -> bool {
 impl Room {
     /// Looks whether the room's map ended: the first time it sees it over, it follows if it was at
     /// live then (playing, at 1×, near the end); a map that went on after all is not over, and
-    /// that is decided afresh. A room following goes on: true when it did (the seek is due).
+    /// that is decided afresh: the room plays on from where it waited, with the frames dropped
+    /// meanwhile as tail. A room following goes on. True when a seek is due.
     pub(super) fn at_map_end(&self, st: &mut State) -> bool {
         let part = self.part(st);
         let over = self.end_of(&part).is_some();
@@ -35,7 +36,12 @@ impl Room {
             st.follows = !st.paused && (st.speed - 1.0).abs() < f64::EPSILON && near;
             st.over = Some(part.n);
         } else if !over && st.over.is_some() {
+            let went_on = st.over == Some(part.n);
             (st.follows, st.over) = (false, None);
+            if went_on {
+                st.seek = Some(st.at);
+                return true;
+            }
         }
         over && self.move_on(st)
     }
