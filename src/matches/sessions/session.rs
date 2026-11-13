@@ -374,6 +374,9 @@ pub(super) fn record(s: &Arc<Session>, store: Option<&Store>, resume: bool) {
             }
             let Ok(mut stamped) = serde_json::from_str::<stvtf::output::Stamped>(&json) else { continue };
             stamped.time = Some(std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_millis() as u64));
+            if let (stvtf::Line::Snapshot(snap), Some(demos)) = (&stamped.line, s.demos.get()) {
+                demos.reached(snap.tick);
+            }
             let _ = recording.push(&stamped, &json);
         }
         recording.end();

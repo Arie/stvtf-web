@@ -19,6 +19,7 @@ use serde::{Deserialize, Serialize};
 use std::fs::File;
 use std::io::{BufRead, Write};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
 
@@ -174,6 +175,8 @@ pub(crate) struct LiveDemos {
     id: String,
     /// By load, then first tick.
     parts: Mutex<Vec<Part>>,
+    /// The server tick the match got to in the latest load, 0 before it is known (a restart).
+    reached: AtomicU32,
 }
 
 impl LiveDemos {
@@ -191,7 +194,7 @@ impl LiveDemos {
             })
             .collect();
         parts.sort_by_key(|p| (p.load, p.first_tick));
-        Arc::new(LiveDemos { dir: dir.to_owned(), id: id.to_string(), parts: Mutex::new(parts) })
+        Arc::new(LiveDemos { dir: dir.to_owned(), id: id.to_string(), parts: Mutex::new(parts), reached: AtomicU32::new(0) })
     }
 
     /// The demo with server tick `tick` of the `again`-th load (0 the first) of `map`: the last of
@@ -222,6 +225,11 @@ impl LiveDemos {
         }
     }
 
+    /// The match got to server tick `tick`.
+    pub(crate) fn reached(&self, tick: u32) {
+        self.reached.store(tick, Ordering::Relaxed);
+    }
+
     /// A player said something from outside the match: kept beside the demo being recorded.
     pub(crate) fn said(&self, said: &Spoken) {
         let parts = lock(&self.parts);
@@ -238,12 +246,17 @@ impl LiveDemos {
 impl stvtf::demo::Files for LiveDemos {
     fn create(&self, map: &str, first_tick: u32) -> std::io::Result<File> {
         let mut parts = lock(&self.parts);
-        // Another map, or the server's ticks started over (a restart): a new load.
+        // Another map, or the server's ticks started over (the same map again, a restart): a new
+        // load. A reconnect goes on from where the match got to.
+        let reached = self.reached.load(Ordering::Relaxed);
         let load = match parts.last() {
-            Some(p) if p.map != map || p.first_tick > first_tick => p.load + 1,
+            Some(p) if p.map != map || first_tick < p.first_tick.max(reached) => p.load + 1,
             Some(p) => p.load,
             None => 0,
         };
+        if parts.last().is_none_or(|p| p.load != load) {
+            self.reached.store(0, Ordering::Relaxed);
+        }
         std::fs::create_dir_all(&self.dir)?;
         let path = self.dir.join(format!("{LIVE_PREFIX}{}-{load}-{first_tick}.dem", self.id));
         let file = File::create(&path)?;
@@ -307,6 +320,21 @@ mod tests {
         assert_eq!(next.at("cp_a", 1, 25), Some(dir.join("live-m-2-20.dem")), "the next process finds them");
         demos.forget();
         assert_eq!(std::fs::read_dir(&*dir).unwrap().count(), 0);
+    }
+
+    #[test]
+    fn the_same_map_loaded_again_right_away_has_demos_of_its_own() {
+        let dir = TempDir::new("live-demos");
+        let demos = LiveDemos::new(&dir, "m");
+        Write::write_all(&mut demos.create("cp_a", 68).unwrap(), &header("cp_a")).unwrap();
+        demos.reached(9000);
+        Write::write_all(&mut demos.create("cp_a", 68).unwrap(), &header("cp_a")).unwrap();
+        assert_eq!(demos.at("cp_a", 0, 100), Some(dir.join("live-m-0-68.dem")));
+        assert_eq!(demos.at("cp_a", 1, 100), Some(dir.join("live-m-1-68.dem")), "ticks started over: another load");
+        demos.reached(300);
+        demos.create("cp_a", 400).unwrap();
+        assert_eq!(demos.at("cp_a", 1, 500), Some(dir.join("live-m-1-400.dem")), "a reconnect: the same load");
+        assert_eq!(demos.at("cp_a", 2, 500), None);
     }
 
     #[test]
