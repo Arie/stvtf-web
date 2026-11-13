@@ -18,7 +18,7 @@
 //! hold everywhere as said. What a match's starter said holds in their match, and elsewhere is a
 //! suggestion: shown as one, and it never takes the place of the surer.
 
-use super::ids::{is_voice_id, steamid_of};
+use super::ids::{is_voice_id, parse_steamid};
 use crate::lock;
 use crate::maps::cache::write_atomic;
 use anyhow::{Context, Result};
@@ -86,7 +86,7 @@ pub(crate) enum Recalled {
 }
 
 #[derive(Default, Serialize, Deserialize)]
-struct Kept {
+struct WhoList {
     /// Counts what is said here.
     version: u64,
     /// The version of the home's list had so far.
@@ -98,7 +98,7 @@ struct Kept {
     known: HashMap<String, Known>,
 }
 
-impl Kept {
+impl WhoList {
     /// Whether what is known of `who` gives way to something as sure as `sure`: nothing, nobody,
     /// and what is no surer do.
     fn yields(&self, who: &str, sure: u8) -> bool {
@@ -107,21 +107,21 @@ impl Kept {
 }
 
 /// How the list's home is asked: a method, a path, and a body to send; its answer's body.
-type Asking = Box<dyn Fn(&str, &str, Option<&str>) -> Result<String> + Send + Sync>;
+type HomeClient = Box<dyn Fn(&str, &str, Option<&str>) -> Result<String> + Send + Sync>;
 /// How a site is asked who a Discord user is: the Steam account (its 64-bit id) they linked
 /// there, if any.
-pub(crate) type Fetching = Box<dyn Fn(&str) -> Result<Option<String>> + Send + Sync>;
+pub(crate) type SiteLookup = Box<dyn Fn(&str) -> Result<Option<String>> + Send + Sync>;
 
 /// A site with links, by its name.
 pub(crate) struct Site {
     pub(crate) name: String,
-    pub(crate) ask: Fetching,
+    pub(crate) ask: SiteLookup,
 }
 
 struct Inner {
     file: Option<PathBuf>,
-    kept: Mutex<Kept>,
-    home: Option<Asking>,
+    kept: Mutex<WhoList>,
+    home: Option<HomeClient>,
     /// The sites asked who a Discord user is.
     sites: Vec<Site>,
     /// Those to ask the sites about, and when each was last asked and whether a site knew them.
@@ -132,18 +132,18 @@ struct Inner {
 }
 
 #[derive(Clone)]
-pub(crate) struct WhoHistory(Arc<Inner>);
+pub(crate) struct WhoIsWho(Arc<Inner>);
 
-impl Default for WhoHistory {
+impl Default for WhoIsWho {
     fn default() -> Self {
         Self::new(None, None, Vec::new())
     }
 }
 
 /// The list as read from the store: as kept now, or as it was (each id and its `SteamID`).
-fn read(file: &Path) -> Option<Kept> {
+fn read(file: &Path) -> Option<WhoList> {
     let data = std::fs::read(file).ok()?;
-    if let Ok(kept) = serde_json::from_slice::<Kept>(&data) {
+    if let Ok(kept) = serde_json::from_slice::<WhoList>(&data) {
         return Some(kept);
     }
     let old: HashMap<String, String> = serde_json::from_slice(&data).ok()?;
@@ -152,11 +152,11 @@ fn read(file: &Path) -> Option<Kept> {
         .into_iter()
         .map(|(id, steamid)| (id, Known { steamid: Some(steamid), name: String::new(), src: String::new(), by: String::new(), v: 1 }))
         .collect();
-    Some(Kept { version: 1, had: 0, untold, known })
+    Some(WhoList { version: 1, had: 0, untold, known })
 }
 
 /// Asks the stv.tf at `url` with the bot's `key`.
-fn over_http(url: &str, key: &str) -> Asking {
+fn over_http(url: &str, key: &str) -> HomeClient {
     let (url, bearer) = (url.trim_end_matches('/').to_string(), format!("Bearer {key}"));
     let agent = ureq::AgentBuilder::new().timeout(TIMEOUT).redirects(0).build();
     Box::new(move |method, path, body| {
@@ -169,14 +169,14 @@ fn over_http(url: &str, key: &str) -> Asking {
     })
 }
 
-impl WhoHistory {
+impl WhoIsWho {
     /// The list kept in `dir`; with a `home` (its address and the bot's key), kept the same as
     /// the one there; with `sites`, they are asked who a Discord user is.
     pub(crate) fn new(dir: Option<&Path>, home: Option<(&str, &str)>, sites: Vec<Site>) -> Self {
         Self::asking(dir, home.map(|(url, key)| over_http(url, key)), sites)
     }
 
-    fn asking(dir: Option<&Path>, home: Option<Asking>, sites: Vec<Site>) -> Self {
+    fn asking(dir: Option<&Path>, home: Option<HomeClient>, sites: Vec<Site>) -> Self {
         let file = dir.map(|d| d.join(FILE));
         let kept = file.as_deref().and_then(read).unwrap_or_default();
         let (wanted, looked) = Default::default();
@@ -224,7 +224,7 @@ impl WhoHistory {
         })
     }
 
-    fn save(&self, kept: &Kept) {
+    fn save(&self, kept: &WhoList) {
         if let Some(file) = &self.0.file
             && let Err(e) = write_atomic(file, serde_json::json!(kept).to_string().as_bytes())
         {
@@ -248,7 +248,7 @@ impl WhoHistory {
     }
 
     /// Whether `who` was put in the list so: not when it is full.
-    fn put(&self, kept: &mut Kept, who: &str, steamid: Option<&str>, name: &str, src: &str, by: &str) -> bool {
+    fn put(&self, kept: &mut WhoList, who: &str, steamid: Option<&str>, name: &str, src: &str, by: &str) -> bool {
         if kept.known.len() >= MAX_KNOWN && !kept.known.contains_key(who) {
             return false;
         }
@@ -300,7 +300,7 @@ impl WhoHistory {
         for site in &self.0.sites {
             match (site.ask)(who) {
                 Ok(Some(steam)) => {
-                    if let Some(steamid) = steamid_of(&steam) {
+                    if let Some(steamid) = parse_steamid(&steam) {
                         lock(&self.0.looked).insert(who.to_string(), (Instant::now(), true));
                         self.take_site_answer(who, Some((&site.name, &steamid)));
                         return;
@@ -384,7 +384,7 @@ impl WhoHistory {
             }
         }
         let had = lock(&self.0.kept).had;
-        let theirs: Theirs = serde_json::from_str(&ask("GET", &format!("/voice/known?since={had}"), None)?)?;
+        let theirs: HomeChanges = serde_json::from_str(&ask("GET", &format!("/voice/known?since={had}"), None)?)?;
         let mut kept = lock(&self.0.kept);
         if theirs.known.is_empty() && kept.had == theirs.version {
             return Ok(());
@@ -403,13 +403,13 @@ impl WhoHistory {
 }
 
 #[derive(Deserialize)]
-struct Theirs {
+struct HomeChanges {
     version: u64,
-    known: Vec<Said>,
+    known: Vec<RegionEntry>,
 }
 
 #[derive(Deserialize)]
-pub(crate) struct Said {
+pub(crate) struct RegionEntry {
     pub(crate) id: String,
     #[serde(default)]
     pub(crate) steamid: Option<String>,
@@ -429,13 +429,13 @@ mod tests {
     #[test]
     fn who_someone_was_said_to_be_is_kept_in_a_file_until_they_are_said_to_be_nobody() {
         let dir = TempDir::new("voicewho");
-        let who = WhoHistory::new(Some(&dir), None, Vec::new());
+        let who = WhoIsWho::new(Some(&dir), None, Vec::new());
         who.remember("mumble:cert:abc", Some("[U:1:9]"), "arie", true);
         who.remember("77", Some("[U:1:5]"), "gummy", true);
-        let again = WhoHistory::new(Some(&dir), None, Vec::new());
+        let again = WhoIsWho::new(Some(&dir), None, Vec::new());
         assert_eq!(again.get("mumble:cert:abc").as_deref(), Some("[U:1:9]"));
         again.remember("77", None, "gummy", true);
-        assert_eq!(WhoHistory::new(Some(&dir), None, Vec::new()).get("77"), None);
+        assert_eq!(WhoIsWho::new(Some(&dir), None, Vec::new()).get("77"), None);
     }
 
     #[test]
@@ -444,27 +444,27 @@ mod tests {
         std::fs::write(dir.join(FILE), r#"{"77":"[U:1:5]"}"#).unwrap();
         let told = Arc::new(Mutex::new(Vec::new()));
         let hears = told.clone();
-        let home: Asking = Box::new(move |method, _, body| {
+        let home: HomeClient = Box::new(move |method, _, body| {
             if method == "POST" {
                 lock(&hears).push(body.unwrap().to_string());
             }
             Ok(r#"{"version":0,"known":[]}"#.into())
         });
-        let who = WhoHistory::asking(Some(&dir), Some(home), Vec::new());
+        let who = WhoIsWho::asking(Some(&dir), Some(home), Vec::new());
         assert_eq!(who.get("77").as_deref(), Some("[U:1:5]"));
         who.sync().unwrap();
         assert_eq!(*lock(&told), [r#"{"by":"","id":"77","name":"","src":"","steamid":"[U:1:5]"}"#]);
     }
 
     /// A list whose home is the list `home`, asked as its routes would be.
-    fn away(home: &WhoHistory, down: &Arc<Mutex<bool>>) -> WhoHistory {
+    fn away(home: &WhoIsWho, down: &Arc<Mutex<bool>>) -> WhoIsWho {
         let (home, down) = (home.clone(), down.clone());
-        WhoHistory::asking(
+        WhoIsWho::asking(
             None,
             Some(Box::new(move |method, path, body| {
                 anyhow::ensure!(!*lock(&down), "down");
                 if method == "POST" {
-                    let said: Said = serde_json::from_str(body.unwrap())?;
+                    let said: RegionEntry = serde_json::from_str(body.unwrap())?;
                     home.take_from_region(&said.id, said.steamid.as_deref(), &said.name, &said.src, &said.by);
                     return Ok(String::new());
                 }
@@ -477,7 +477,7 @@ mod tests {
 
     #[test]
     fn what_is_said_in_one_region_is_known_in_the_next_through_the_home() {
-        let (home, down) = (WhoHistory::default(), Arc::new(Mutex::new(false)));
+        let (home, down) = (WhoIsWho::default(), Arc::new(Mutex::new(false)));
         let (na, au) = (away(&home, &down), away(&home, &down));
         na.remember("77", Some("[U:1:5]"), "gummy", true);
         na.sync().unwrap();
@@ -500,7 +500,7 @@ mod tests {
 
     #[test]
     fn what_a_site_says_of_someone_is_kept_but_not_over_a_casters_word_and_goes_when_no_site_knows_them() {
-        let (home, down) = (WhoHistory::default(), Arc::new(Mutex::new(false)));
+        let (home, down) = (WhoIsWho::default(), Arc::new(Mutex::new(false)));
         let (na, au) = (away(&home, &down), away(&home, &down));
         // A caster says 78 plays on another account than the one they linked.
         na.remember("78", Some("[U:1:60]"), "aoki", true);
@@ -525,7 +525,7 @@ mod tests {
         let links: HashMap<String, String> = links.iter().map(|(d, s)| (d.to_string(), s.to_string())).collect();
         let (asked, name) = (asked.clone(), name.to_string());
         let site = name.clone();
-        let ask: Fetching = Box::new(move |who| {
+        let ask: SiteLookup = Box::new(move |who| {
             lock(&asked).push(format!("{site} {who}"));
             anyhow::ensure!(!down, "down");
             Ok(links.get(who).cloned())
@@ -541,7 +541,7 @@ mod tests {
             knows("na", &[("77", "76561197960265737")], &asked, false),
             knows("au", &[], &asked, false),
         ];
-        let who = WhoHistory::asking(None, None, sites);
+        let who = WhoIsWho::asking(None, None, sites);
         for id in ["77", "77", "mumble:cert:abc", "78"] {
             who.look_up(id);
         }
@@ -558,7 +558,7 @@ mod tests {
     #[test]
     fn those_asked_about_long_ago_make_way_for_someone_new() {
         let asked = Arc::new(Mutex::new(Vec::new()));
-        let who = WhoHistory::asking(None, None, vec![knows("eu", &[], &asked, false)]);
+        let who = WhoIsWho::asking(None, None, vec![knows("eu", &[], &asked, false)]);
         let long_ago = Instant::now().checked_sub(LINK_FOR + LINK_FOR).unwrap();
         lock(&who.0.looked).extend((0..MAX_KNOWN).map(|n| (n.to_string(), (long_ago, true))));
         who.look_up("77777777");
@@ -568,7 +568,7 @@ mod tests {
     #[test]
     fn a_site_not_answering_takes_no_link_away() {
         let asked = Arc::new(Mutex::new(Vec::new()));
-        let who = WhoHistory::asking(None, None, vec![knows("eu", &[], &asked, true), knows("na", &[], &asked, false)]);
+        let who = WhoIsWho::asking(None, None, vec![knows("eu", &[], &asked, true), knows("na", &[], &asked, false)]);
         who.take_site_answer("77", Some(("eu", "[U:1:5]")));
         who.ask_sites("77");
         assert_eq!(who.get("77").as_deref(), Some("[U:1:5]"));
@@ -576,7 +576,7 @@ mod tests {
 
     #[test]
     fn a_match_starters_word_is_a_suggestion_elsewhere_and_gives_way_to_the_surer() {
-        let who = WhoHistory::default();
+        let who = WhoIsWho::default();
         let player = |steamid: &str, sure| Some(Recalled::Player { steamid: steamid.into(), sure });
         who.remember("77", Some("[U:1:5]"), "gummy", false);
         assert_eq!(who.recall("77"), player("[U:1:5]", false));

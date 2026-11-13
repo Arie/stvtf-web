@@ -94,7 +94,7 @@ struct App {
     /// at a LAN.
     mumble_anywhere: bool,
     /// Whom people in voice channels were said to be, from one match to the next.
-    voice_who: voice::known::WhoHistory,
+    voice_who: voice::who::WhoIsWho,
 }
 
 /// Counts an event stream against its client's limit until dropped.
@@ -355,16 +355,16 @@ fn accept(listen: &str, app: &Arc<App>, open: &'static AtomicUsize) -> Result<()
 /// it for all regions (`STVTF_VOICE_HOME`; none on that one itself), and with the sites asked
 /// who a Discord user is (`STVTF_LINK_SITES`, each as `--home`; else the one this belongs to),
 /// where voice is taken in and the sites share a key.
-fn who_is_who(options: &Options, keys: Option<&Arc<web::token::Keys>>, voice_key: Option<&str>) -> voice::known::WhoHistory {
+fn who_is_who(options: &Options, keys: Option<&Arc<web::token::Keys>>, voice_key: Option<&str>) -> voice::who::WhoIsWho {
     let home = std::env::var("STVTF_VOICE_HOME").ok().filter(|u| !u.is_empty());
     let sites = std::env::var("STVTF_LINK_SITES").ok().filter(|l| !l.is_empty()).or_else(|| options.home.clone()).unwrap_or_default();
     let sites: Vec<_> = match (keys, voice_key) {
         (Some(keys), Some(_)) => {
-            sites.split(',').map(str::trim).filter(|s| !s.is_empty()).map(|s| web::voice_known::site(s, keys.clone())).collect()
+            sites.split(',').map(str::trim).filter(|s| !s.is_empty()).map(|s| web::voice_who_sync::site(s, keys.clone())).collect()
         }
         _ => Vec::new(),
     };
-    voice::known::WhoHistory::new(options.sessions.as_deref(), home.as_deref().zip(voice_key), sites)
+    voice::who::WhoIsWho::new(options.sessions.as_deref(), home.as_deref().zip(voice_key), sites)
 }
 
 /// What is said is kept in a file too (`--logs`), the relays' notes with it: one for each

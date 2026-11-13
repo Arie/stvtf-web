@@ -9,7 +9,7 @@
 //! - `GET <page>voices`: those in the channel and those heard, and whom each is put on.
 //! - `POST <page>voice-match`: someone is a player of the match, a `SteamID`, or nobody.
 //!
-//! What someone says of who is who is remembered (`voice::known`), and holds when the same
+//! What someone says of who is who is remembered (`voice::who`), and holds when the same
 //! person is in a channel again, in any region.
 
 use super::visitor::Who;
@@ -17,8 +17,8 @@ use super::voice_in::{has_say, is_key};
 use super::{JSON, Request, TEXT, json_body, respond};
 use crate::matches::sessions::Session;
 use crate::voice::feed::Put;
-use crate::voice::ids::{is_voice_id, steamid_of};
-use crate::voice::known::Recalled;
+use crate::voice::ids::{is_voice_id, parse_steamid};
+use crate::voice::who::Recalled;
 use crate::{App, lock};
 use serde::Deserialize;
 use std::io::{BufReader, Take};
@@ -200,13 +200,13 @@ pub(super) fn voice_match(
         return respond(s, "400 Bad Request", TEXT, b"Invalid");
     };
     // Looked up before anything is answered: the match is not held meanwhile.
-    let player = v.player.and_then(|p| lock(&m.hub).steamid_of(stvtf::output::PlayerId(p)).map(str::to_owned));
+    let player = v.player.and_then(|p| lock(&m.hub).steamid_of_player(stvtf::output::PlayerId(p)).map(str::to_owned));
     let steamid = match (v.player, v.steamid.as_deref()) {
         (Some(_), _) => match player {
             Some(steamid) => Some(steamid),
             None => return respond(s, "400 Bad Request", TEXT, b"No such player"),
         },
-        (None, Some(text)) => match steamid_of(text) {
+        (None, Some(text)) => match parse_steamid(text) {
             Some(steamid) => Some(steamid),
             None => {
                 return respond(s, "400 Bad Request", TEXT, b"Invalid Steam ID");
@@ -214,7 +214,7 @@ pub(super) fn voice_match(
         },
         (None, None) => None,
     };
-    if !m.voice.set_match(&v.voice_id, steamid.clone()) {
+    if !m.voice.put_on(&v.voice_id, steamid.clone()) {
         return respond(s, "400 Bad Request", TEXT, b"Not found");
     }
     let caster = who.user.as_ref().is_some_and(|u| u.streamer);

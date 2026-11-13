@@ -52,7 +52,7 @@ impl Part {
 
 /// What a recording keeps of a part as it goes.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub(super) struct Kept {
+pub(super) struct PartState {
     #[serde(rename = "n")]
     load: usize,
     map: String,
@@ -72,7 +72,7 @@ pub(super) struct Kept {
     snap: Option<(u64, u32)>,
 }
 
-impl Kept {
+impl PartState {
     /// A snapshot at play time `at`, `tick`: a run of ticks breaks where they jump more than a
     /// second, or play time runs more than a second past them (a frozen frame, then the break).
     fn run(&mut self, at: u64, tick: u32, interval: f64) {
@@ -99,7 +99,7 @@ impl Kept {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub(super) struct Seed {
     loads: Loads,
-    part: Option<Kept>,
+    part: Option<PartState>,
 }
 
 impl Seed {
@@ -135,7 +135,7 @@ impl Inner {
     pub(super) fn note_line(&mut self, at: u64, line: &Line) {
         if self.parts.is_empty() {
             let map = lock(&self.scratch).map.clone().unwrap_or_default();
-            self.parts.push(Kept { load: self.loads.latest(), map, origin: at, last: at, ..Kept::default() });
+            self.parts.push(PartState { load: self.loads.latest(), map, origin: at, last: at, ..PartState::default() });
         }
         match line {
             Line::Server(server) => self.on_server(at, &server.map),
@@ -183,7 +183,7 @@ impl Inner {
         if starts && snapped {
             let map = map.unwrap_or_default();
             let (first_tick, first_at, run) = (Some(tick), Some(at), Some((at, tick)));
-            self.parts.push(Kept { load: n, map, origin: at, last: at, first_tick, first_at, run, snap: run, ..Kept::default() });
+            self.parts.push(PartState { load: n, map, origin: at, last: at, first_tick, first_at, run, snap: run, ..PartState::default() });
             self.scores = None;
             return;
         }
@@ -327,14 +327,14 @@ impl Inner {
         };
         let n = header.parts;
         let origin = header.origin.unwrap_or(at);
-        let part = Kept {
+        let part = PartState {
             load: n,
             map: map.clone().unwrap_or_default(),
             origin,
             last: origin,
             ready: tick.is_some(),
             first_tick: tick,
-            ..Kept::default()
+            ..PartState::default()
         };
         if tick.is_some() {
             self.loads = Loads::from(n, map, tick);

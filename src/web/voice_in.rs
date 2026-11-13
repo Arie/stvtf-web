@@ -18,7 +18,7 @@ const MAX_FRAMES: usize = 32;
 const MAX_FRAME: usize = 2000;
 
 #[derive(Deserialize)]
-struct Said {
+struct VoicePost {
     /// The match's voice invite, from the link the bot was given.
     #[serde(default)]
     invite: Option<String>,
@@ -65,7 +65,7 @@ pub(super) fn voice_in(
     if !is_key(key, request.bearer.as_deref()) {
         return respond(s, "401 Unauthorized", TEXT, b"");
     }
-    let Ok(said) = json_body::<Said>(reader, request) else { return respond(s, "400 Bad Request", TEXT, b"not voice") };
+    let Ok(said) = json_body::<VoicePost>(reader, request) else { return respond(s, "400 Bad Request", TEXT, b"not voice") };
     // The key says it is our bot; the invite, that whoever brought it in was let into this match.
     if !is_key(m.voice_invite(), said.invite.as_deref()) {
         return respond(s, "403 Forbidden", TEXT, b"not invited");

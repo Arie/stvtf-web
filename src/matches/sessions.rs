@@ -146,7 +146,7 @@ impl Sessions {
             let _ = session.by.set(by.to_string());
         }
         let s = Arc::new(session);
-        let kept = self.store.clone().map(|store| demostf::Kept { store, dem: self.demos });
+        let kept = self.store.clone().map(|store| demostf::DemoFiles { store, dem: self.demos });
         let (player, hz) = (s.clone(), self.hz);
         let thread = std::thread::spawn(move || {
             if let Err(e) = demostf::play(&player.hub, demo, hz, &|| player.watched(), &player.stop, kept.as_ref(), &|gz| {

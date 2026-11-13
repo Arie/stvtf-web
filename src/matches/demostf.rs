@@ -37,7 +37,7 @@ const CONNECT_FOR: Duration = Duration::from_secs(30);
 const STALLED_FOR: Duration = Duration::from_secs(60);
 
 /// Where a demo's files are kept from one play to the next.
-pub(crate) struct Kept {
+pub(crate) struct DemoFiles {
     pub(crate) store: Store,
     /// Whether the demo file is kept too (relays play it), not only what it decodes to.
     pub(crate) dem: bool,
@@ -82,7 +82,7 @@ fn file_url(id: u64, body: &str) -> Result<String> {
 /// Demo `id` as gzipped stvtf output, with `snapshot_hz` snapshots a second; None when told to
 /// `stop` meanwhile. From what is `kept` of it, else downloaded and decoded (and then kept): the
 /// pages on `hub` hear how far that is.
-fn fetch(hub: &SharedHub, id: u64, snapshot_hz: f32, stop: &AtomicBool, kept: Option<&Kept>) -> Result<Option<Vec<u8>>> {
+fn fetch(hub: &SharedHub, id: u64, snapshot_hz: f32, stop: &AtomicBool, kept: Option<&DemoFiles>) -> Result<Option<Vec<u8>>> {
     #[cfg(test)]
     let _held = lock(&HELD);
     if stop.load(Ordering::Relaxed) {
@@ -99,7 +99,7 @@ fn fetch_with(
     id: u64,
     snapshot_hz: f32,
     stop: &AtomicBool,
-    kept: Option<&Kept>,
+    kept: Option<&DemoFiles>,
     download: Download,
 ) -> Result<Option<Vec<u8>>> {
     let file = kept.map(|k| k.store.dir.join(demo_dem(id)));
@@ -231,7 +231,7 @@ pub(crate) fn play(
     snapshot_hz: f32,
     play: &dyn Fn() -> bool,
     stop: &AtomicBool,
-    kept: Option<&Kept>,
+    kept: Option<&DemoFiles>,
     keep: &dyn Fn(Arc<Vec<u8>>),
 ) -> Result<()> {
     let played = fetch(hub, id, snapshot_hz, stop, kept).and_then(|output| match output {
@@ -295,7 +295,7 @@ mod tests {
         let hub = SharedHub::default();
         // Kept already, so nothing is asked of demos.tf: told to stop, it plays none of it.
         let dir = crate::testing::TempDir::new("demostf-stopped");
-        let kept = Kept { store: Store { dir: dir.join("store"), keys: None }, dem: false };
+        let kept = DemoFiles { store: Store { dir: dir.join("store"), keys: None }, dem: false };
         kept.store.put(&demo_output(1), &decode(1, &recorded(), 20.0).unwrap()).unwrap();
         play(&hub, 1, 20.0, &|| true, &AtomicBool::new(true), Some(&kept), &drop).unwrap();
         assert_eq!(crate::matches::hub::subscribe(&hub, false).try_iter().count(), 0);
@@ -383,8 +383,8 @@ mod tests {
     }
 
     /// A store, and whether relays play its demos; a download of the recorded demo that counts.
-    fn kept(dir: &crate::testing::TempDir, dem: bool) -> Kept {
-        Kept { store: Store { dir: dir.join("store"), keys: None }, dem }
+    fn kept(dir: &crate::testing::TempDir, dem: bool) -> DemoFiles {
+        DemoFiles { store: Store { dir: dir.join("store"), keys: None }, dem }
     }
 
     #[test]

@@ -1,11 +1,11 @@
-//! The list of who is who between regions (`voice::known`): its routes, and asking a site.
+//! The list of who is who between regions (`voice::who`): its routes, and asking a site.
 
 use super::token::Keys;
 use super::voice_in::is_key;
 use super::{JSON, Request, TEXT, json_body, param, respond};
 use crate::App;
-use crate::voice::ids::{is_voice_id, steamid_of};
-use crate::voice::known::{CASTER, MAX_NAME, Said, Site, TIMEOUT};
+use crate::voice::ids::{is_voice_id, parse_steamid};
+use crate::voice::who::{CASTER, MAX_NAME, RegionEntry, Site, TIMEOUT};
 use anyhow::Context;
 use std::io::{BufReader, Take};
 use std::net::TcpStream;
@@ -47,8 +47,8 @@ pub(super) fn learn(s: &mut TcpStream, reader: &mut BufReader<Take<TcpStream>>, 
     if !is_key(key, request.bearer.as_deref()) {
         return respond(s, "401 Unauthorized", TEXT, b"");
     }
-    let Ok(said) = json_body::<Said>(reader, request) else { return respond(s, "400 Bad Request", TEXT, b"Invalid") };
-    let steamid = said.steamid.as_deref().map(steamid_of);
+    let Ok(said) = json_body::<RegionEntry>(reader, request) else { return respond(s, "400 Bad Request", TEXT, b"Invalid") };
+    let steamid = said.steamid.as_deref().map(parse_steamid);
     if !is_voice_id(&said.id) || steamid == Some(None) {
         return respond(s, "400 Bad Request", TEXT, b"Invalid");
     }

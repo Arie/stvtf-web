@@ -105,7 +105,7 @@ impl Hub {
     }
 
     /// The `SteamID` of player `id` in the latest snapshot.
-    pub(crate) fn steamid_of(&self, id: PlayerId) -> Option<&str> {
+    pub(crate) fn steamid_of_player(&self, id: PlayerId) -> Option<&str> {
         self.steamids.iter().find(|(_, p, ..)| *p == id).map(|(s, ..)| s.as_str())
     }
 

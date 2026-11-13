@@ -16,7 +16,7 @@ pub(crate) fn is_voice_id(s: &str) -> bool {
 
 /// A `SteamID` as people write them, as `[U:1:N]`: that itself, `STEAM_X:Y:Z`, the 64-bit number,
 /// or a profile link with that number in it.
-pub(crate) fn steamid_of(text: &str) -> Option<String> {
+pub(crate) fn parse_steamid(text: &str) -> Option<String> {
     let t = text.trim().trim_end_matches('/');
     let account = if let Some(n) = t.strip_prefix("[U:1:").and_then(|r| r.strip_suffix(']')).or_else(|| t.strip_prefix("U:1:")) {
         n.parse::<u32>().ok()?
@@ -48,7 +48,7 @@ mod tests {
             " 76561197960265737 ",
             "https://steamcommunity.com/profiles/76561197960265737/",
         ] {
-            assert_eq!(steamid_of(same).as_deref(), Some("[U:1:9]"), "{same}");
+            assert_eq!(parse_steamid(same).as_deref(), Some("[U:1:9]"), "{same}");
         }
         for none in [
             "",
@@ -61,7 +61,7 @@ mod tests {
             "123",
             "[U:1:0]",
         ] {
-            assert_eq!(steamid_of(none), None, "{none}");
+            assert_eq!(parse_steamid(none), None, "{none}");
         }
     }
 }

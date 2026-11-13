@@ -5,7 +5,7 @@ use super::super::tests::{push_at, to};
 use super::super::*;
 use super::real_tests::viaduct;
 use super::tests::{Stream, T0, line, snapshots};
-use super::{Kept, Seed};
+use super::{PartState, Seed};
 use crate::testing::server;
 
 /// What the file holds now.
@@ -179,7 +179,7 @@ fn a_file_with_parts_and_loads_but_no_seed_opens() {
 
 #[test]
 fn a_seed_saved_before_runs_of_play_reads() {
-    let mut seed = serde_json::to_value(Seed { loads: Loads::default(), part: Some(Kept::default()) }).unwrap();
+    let mut seed = serde_json::to_value(Seed { loads: Loads::default(), part: Some(PartState::default()) }).unwrap();
     let part = seed["part"].as_object_mut().unwrap();
     assert!(part.remove("run").is_some() && part.remove("snap").is_some());
     let read: Seed = serde_json::from_value(seed).unwrap();

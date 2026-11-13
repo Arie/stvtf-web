@@ -74,7 +74,7 @@ struct Inner {
     scores: Option<(u64, [u16; 2])>,
     /// The match's map loads, and its parts kept, oldest first.
     loads: Loads,
-    parts: Vec<parts::Kept>,
+    parts: Vec<parts::PartState>,
     /// The file is written whole at the next chunk closed: its header says what chunks alone do
     /// not (the first part's number).
     rewrite: bool,

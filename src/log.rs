@@ -13,7 +13,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 const MAX_BYTES: u64 = 8 << 20;
 const KEPT: u32 = 5;
 
-struct Kept {
+struct LogFile {
     dir: PathBuf,
     name: String,
     file: File,
@@ -21,14 +21,14 @@ struct Kept {
     max: u64,
 }
 
-static LOG: OnceLock<Mutex<Kept>> = OnceLock::new();
+static LOG: OnceLock<Mutex<LogFile>> = OnceLock::new();
 
-impl Kept {
-    fn open(dir: &Path, name: &str, max: u64) -> std::io::Result<Kept> {
+impl LogFile {
+    fn open(dir: &Path, name: &str, max: u64) -> std::io::Result<LogFile> {
         std::fs::create_dir_all(dir)?;
         let file = OpenOptions::new().create(true).append(true).open(dir.join(format!("{name}.log")))?;
         let bytes = file.metadata()?.len();
-        Ok(Kept { dir: dir.to_path_buf(), name: name.to_string(), file, bytes, max })
+        Ok(LogFile { dir: dir.to_path_buf(), name: name.to_string(), file, bytes, max })
     }
 
     fn path(&self, n: u32) -> PathBuf {
@@ -41,7 +41,7 @@ impl Kept {
             for n in (0..KEPT).rev() {
                 let _ = std::fs::rename(self.path(n), self.path(n + 1));
             }
-            *self = Kept::open(&self.dir, &self.name, self.max)?;
+            *self = LogFile::open(&self.dir, &self.name, self.max)?;
         }
         let line = format!("{text}\n");
         self.file.write_all(line.as_bytes())?;
@@ -52,7 +52,7 @@ impl Kept {
 
 /// Keeps what is said from here on in `dir` too, as `<name>.log`.
 pub(crate) fn keep_in(dir: &Path, name: &str) -> std::io::Result<()> {
-    let kept = Kept::open(dir, name, MAX_BYTES)?;
+    let kept = LogFile::open(dir, name, MAX_BYTES)?;
     let _ = LOG.set(Mutex::new(kept));
     Ok(())
 }
@@ -104,7 +104,7 @@ mod tests {
     #[test]
     fn a_full_file_is_set_aside_and_only_so_many_are_kept() {
         let dir = TempDir::new("logs");
-        let mut log = Kept::open(&dir, "web", 20).unwrap();
+        let mut log = LogFile::open(&dir, "web", 20).unwrap();
         for n in 0..40 {
             log.say(&format!("line number {n:02}")).unwrap();
         }
@@ -114,7 +114,7 @@ mod tests {
         assert_eq!(names, ["web.1.log", "web.2.log", "web.3.log", "web.4.log", "web.5.log", "web.log"]);
         assert!(std::fs::read_to_string(dir.join("web.log")).unwrap().ends_with("line number 39\n"));
         // What was there is added to, not written over, when the server starts again.
-        Kept::open(&dir, "web", 1000).unwrap().say("after a restart").unwrap();
+        LogFile::open(&dir, "web", 1000).unwrap().say("after a restart").unwrap();
         assert!(std::fs::read_to_string(dir.join("web.log")).unwrap().contains("line number 39\nafter a restart\n"));
     }
 }

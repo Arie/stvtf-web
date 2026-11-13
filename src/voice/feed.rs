@@ -260,7 +260,7 @@ impl VoiceFeed {
 
     /// Someone says whom `voice_id` is: a player's `SteamID`, or nobody. Whether there is such a
     /// person, in the channel or heard.
-    pub(crate) fn set_match(&self, voice_id: &str, steamid: Option<String>) -> bool {
+    pub(crate) fn put_on(&self, voice_id: &str, steamid: Option<String>) -> bool {
         let mut st = lock(&self.0);
         if !st.roster().any(|(id, _)| id == voice_id) && !st.known.values().any(|s| s.voice_id.as_deref() == Some(voice_id)) {
             return false;
@@ -286,7 +286,7 @@ impl VoiceFeed {
         let mut st = lock(&self.0);
         let known = st.known.get(&said.who).cloned().unwrap_or_default();
         // The one they are put on (by someone, or by their name), else their own.
-        let steamid_of = |key: &str| {
+        let put_on_steamid = |key: &str| {
             let voice_id = key.strip_prefix(UNLINKED).or_else(|| st.known.get(key)?.voice_id.as_deref());
             let own = (!key.starts_with(UNLINKED)).then(|| key.to_string());
             match voice_id.and_then(|d| st.matched.get(d)) {
@@ -299,7 +299,7 @@ impl VoiceFeed {
                 }),
             }
         };
-        let steamid = steamid_of(&said.who);
+        let steamid = put_on_steamid(&said.who);
         let hub = lock(hub);
         let player = steamid.as_deref().and_then(|s| hub.player_with(s));
         let (team, name) = if player.is_some() {
@@ -308,7 +308,7 @@ impl VoiceFeed {
             // The sides those in their channel play on now.
             let (mut red, mut blue) = (0, 0);
             let mates = st.known.iter().filter(|(_, k)| known.channel.is_some() && k.channel == known.channel);
-            for (_, team) in mates.filter_map(|(key, _)| hub.player_with(&steamid_of(key)?)) {
+            for (_, team) in mates.filter_map(|(key, _)| hub.player_with(&put_on_steamid(key)?)) {
                 match team {
                     Team::Red => red += 1,
                     Team::Blue => blue += 1,
@@ -562,11 +562,11 @@ mod tests {
             confirmed: false,
         };
         assert_eq!(feed.voices(&hub), [heard]);
-        assert!(feed.set_match("77", Some(STEAMID.into())));
+        assert!(feed.put_on("77", Some(STEAMID.into())));
         feed.take_in(&hub, &alt, frames(1), Some(0.0), now);
         let out = voices(&page);
         assert_eq!((out[0]["player"].as_u64(), out[0]["steamid"].as_str()), (Some(7), Some(STEAMID)));
-        assert!(feed.set_match("77", None));
+        assert!(feed.put_on("77", None));
         feed.take_in(&hub, &alt, frames(1), Some(0.0), now);
         assert_eq!(voices(&page)[0]["steamid"], "[U:1:99]", "their own again");
     }
@@ -621,7 +621,7 @@ mod tests {
         feed.take_in(&hub, &unlinked("77", "Gummy"), frames(1), Some(0.0), now);
         assert_eq!(voices(&page)[0]["player"], 7);
         // Someone says who is who, a player or nobody: confirmed, and no guess comes in its place.
-        assert!(feed.set_match("78", Some("[U:1:6]".into())) && feed.set_match("77", None));
+        assert!(feed.put_on("78", Some("[U:1:6]".into())) && feed.put_on("77", None));
         let who: Vec<_> = feed.voices(&hub).into_iter().map(|h| (h.name, h.steamid, h.confirmed)).collect();
         assert_eq!(who[0], ("Gummy".to_string(), None, true));
         assert_eq!(who[1], ("aoki".to_string(), Some("[U:1:6]".to_string()), true));
@@ -682,9 +682,9 @@ mod tests {
     fn only_a_voice_heard_is_matched() {
         let (hub, feed, now) = (SharedHub::default(), VoiceFeed::default(), Instant::now());
         at(&hub, 1000);
-        assert!(!feed.set_match("77", Some(STEAMID.into())));
+        assert!(!feed.put_on("77", Some(STEAMID.into())));
         feed.take_in(&hub, &unlinked("77", "arie"), frames(1), None, now);
-        assert!(feed.set_match("77", Some(STEAMID.into())));
+        assert!(feed.put_on("77", Some(STEAMID.into())));
     }
 
     #[test]
@@ -693,13 +693,13 @@ mod tests {
         at(&hub, 1000);
         let page = subscribe_to(&hub, false, true);
         feed.take_in(&hub, &unlinked("77", "arie"), frames(1), None, now);
-        feed.set_match("77", Some(STEAMID.into()));
+        feed.put_on("77", Some(STEAMID.into()));
         at(&hub, 7000);
         feed.step(&hub, now);
         let out = voices(&page);
         assert_eq!((out[0]["player"].as_u64(), out[0]["steamid"].as_str()), (Some(7), Some(STEAMID)), "what was held too");
         assert_eq!(feed.voices(&hub)[0].steamid.as_deref(), Some(STEAMID));
-        feed.set_match("77", None);
+        feed.put_on("77", None);
         feed.take_in(&hub, &unlinked("77", "arie"), frames(1), Some(0.0), now);
         assert!(voices(&page)[0]["player"].is_null(), "and no more once unmatched");
     }
