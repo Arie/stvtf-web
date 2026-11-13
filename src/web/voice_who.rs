@@ -71,7 +71,7 @@ pub(super) fn post_voice_status(
     m: Option<&Session>,
     request: &Request,
 ) -> std::io::Result<()> {
-    let Some(key) = &app.voice_key else { return respond(s, "404 Not Found", TEXT, b"") };
+    let Some(key) = &app.voice.key else { return respond(s, "404 Not Found", TEXT, b"") };
     if !is_key(key, request.bearer.as_deref()) {
         return respond(s, "401 Unauthorized", TEXT, b"");
     }
@@ -100,7 +100,7 @@ pub(super) fn post_voice_status(
 
 /// How it goes in a Discord `channel` the bot is in for match `m`, or that it left.
 fn discord_status(m: &Session, said: &Report, channel: &str, text: String) {
-    let mut going = lock(&m.discord);
+    let mut going = lock(&m.comms.discord);
     going.retain(|_, (_, at)| at.elapsed() < DISCORD_SAID_FOR);
     if said.left {
         going.remove(channel);
@@ -112,7 +112,7 @@ fn discord_status(m: &Session, said: &Report, channel: &str, text: String) {
 /// How it goes in one of match `m`'s Mumble channels: by its number, or the only one there is.
 /// Whether it was taken: not of a channel the bot was since asked out of.
 fn mumble_status(m: &Session, said: &Report, channel: &str, text: String) -> bool {
-    let mut jobs = lock(&m.mumble);
+    let mut jobs = lock(&m.comms.mumble);
     let only = jobs.len() == 1;
     let job = jobs.iter_mut().find(|j| said.job.map_or(only, |id| id == j.id));
     let Some(job) = job.filter(|j| said.asked.is_none_or(|a| a == j.asked)) else { return false };
@@ -130,26 +130,26 @@ fn take_roster(app: &App, m: &Session, channel: &str, people: Vec<Member>) {
         .filter(|p| is_voice_id(&p.id))
         .take(MAX_PEOPLE)
         .map(|p| (p.id, p.name.chars().filter(|c| !c.is_control()).take(MAX_TEXT).collect::<String>()));
-    m.voice.set_roster(&m.hub, channel, people);
+    m.comms.feed.set_roster(&m.hub, channel, people);
     recall(app, m);
 }
 
 /// Whom those in the match's channels were said to be before holds here too, until someone says
 /// otherwise; a Discord user nothing is known of is asked about at the sites.
 fn recall(app: &App, m: &Session) {
-    for id in m.voice.roster_ids() {
-        match app.voice_who.recall(&id) {
-            Some(Recalled::Player { steamid, sure }) => m.voice.set_known_before(&id, Put::Player { steamid, confirmed: sure }),
-            Some(Recalled::Nobody) => m.voice.set_known_before(&id, Put::Nobody),
+    for id in m.comms.feed.roster_ids() {
+        match app.voice.who.recall(&id) {
+            Some(Recalled::Player { steamid, sure }) => m.comms.feed.set_known_before(&id, Put::Player { steamid, confirmed: sure }),
+            Some(Recalled::Nobody) => m.comms.feed.set_known_before(&id, Put::Nobody),
             None => {}
         }
-        app.voice_who.look_up(&id);
+        app.voice.who.look_up(&id);
     }
 }
 
 /// The match whose voice `who` has a say in, if it is one and they have.
 fn theirs<'a>(app: &App, m: Option<&'a Session>, who: &Who) -> Option<&'a Session> {
-    m.filter(|m| m.is_live() && app.voice_key.is_some() && has_say(app, m, who))
+    m.filter(|m| m.is_live() && app.voice.key.is_some() && has_say(app, m, who))
 }
 
 /// `GET <page>voice-comms`: where the bot is, in Discord or Mumble, and how it goes. No content
@@ -158,9 +158,9 @@ pub(super) fn get_voice_comms(s: &mut TcpStream, app: &App, m: Option<&Session>,
     let Some(m) = theirs(app, m, who) else { return respond(s, "204 No Content", TEXT, b"") };
     // Each Discord channel's going, one after the other.
     let going: Vec<String> =
-        lock(&m.discord).values().filter(|(_, at)| at.elapsed() < DISCORD_SAID_FOR).map(|(status, _)| status.clone()).collect();
+        lock(&m.comms.discord).values().filter(|(_, at)| at.elapsed() < DISCORD_SAID_FOR).map(|(status, _)| status.clone()).collect();
     let discord = (!going.is_empty()).then(|| serde_json::json!({ "status": going.join(" + ") }));
-    let mumble: Vec<_> = lock(&m.mumble)
+    let mumble: Vec<_> = lock(&m.comms.mumble)
         .iter()
         .map(|j| serde_json::json!({ "id": j.id, "host": j.host, "port": j.port, "channel": j.channel, "delay": j.delay, "status": j.status }))
         .collect();
@@ -172,7 +172,7 @@ pub(super) fn get_voices(s: &mut TcpStream, app: &App, m: Option<&Session>, who:
     let Some(m) = theirs(app, m, who) else { return respond(s, "204 No Content", TEXT, b"") };
     // What the sites said since of those in the channel shows at once.
     recall(app, m);
-    respond(s, "200 OK", JSON, serde_json::json!(m.voice.voices(&m.hub)).to_string().as_bytes())
+    respond(s, "200 OK", JSON, serde_json::json!(m.comms.feed.voices(&m.hub)).to_string().as_bytes())
 }
 
 #[derive(Deserialize)]
@@ -196,7 +196,7 @@ pub(super) fn post_voice_match(
     request: &Request,
     who: &Who,
 ) -> std::io::Result<()> {
-    let Some(m) = m.filter(|m| m.is_live() && app.voice_key.is_some()) else {
+    let Some(m) = m.filter(|m| m.is_live() && app.voice.key.is_some()) else {
         return respond(s, "409 Conflict", TEXT, b"No voice here");
     };
     if !has_say(app, m, who) {
@@ -220,10 +220,10 @@ pub(super) fn post_voice_match(
         },
         (None, None) => None,
     };
-    if !m.voice.put_on(&v.voice_id, steamid.clone()) {
+    if !m.comms.feed.put_on(&v.voice_id, steamid.clone()) {
         return respond(s, "400 Bad Request", TEXT, b"Not found");
     }
     let caster = who.user.as_ref().is_some_and(|u| u.streamer);
-    app.voice_who.remember(&v.voice_id, steamid.as_deref(), &m.voice.name_of(&v.voice_id).unwrap_or_default(), caster);
+    app.voice.who.remember(&v.voice_id, steamid.as_deref(), &m.comms.feed.name_of(&v.voice_id).unwrap_or_default(), caster);
     respond(s, "204 No Content", TEXT, b"")
 }

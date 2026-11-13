@@ -19,9 +19,9 @@ impl Session {
         if !self.is_live() {
             return None;
         }
-        let took = self.voice.take_in(&self.hub, who, frames, delay, Instant::now());
+        let took = self.comms.feed.take_in(&self.hub, who, frames, delay, Instant::now());
         self.keep_spoken();
-        if matches!(took, Took::Held { .. } | Took::PauseTalk) && !self.voice_tended.swap(true, Ordering::AcqRel) {
+        if matches!(took, Took::Held { .. } | Took::PauseTalk) && !self.comms.tended.swap(true, Ordering::AcqRel) {
             let s = self.clone();
             std::thread::spawn(move || s.tend_voice());
         }
@@ -36,14 +36,14 @@ impl Session {
             while going() {
                 std::thread::sleep(TEND_EVERY);
                 let now = Instant::now();
-                self.voice.step(&self.hub, now);
+                self.comms.feed.step(&self.hub, now);
                 self.keep_spoken();
-                if self.voice.idle(now) {
+                if self.comms.feed.idle(now) {
                     break;
                 }
             }
-            self.voice_tended.store(false, Ordering::Release);
-            if !going() || self.voice.idle(Instant::now()) || self.voice_tended.swap(true, Ordering::AcqRel) {
+            self.comms.tended.store(false, Ordering::Release);
+            if !going() || self.comms.feed.idle(Instant::now()) || self.comms.tended.swap(true, Ordering::AcqRel) {
                 return;
             }
         }
@@ -51,7 +51,7 @@ impl Session {
 
     /// What players said goes beside the demo being recorded, to download with the comms in it.
     fn keep_spoken(&self) {
-        let spoken = self.voice.take_spoken();
+        let spoken = self.comms.feed.take_spoken();
         if let Some(demos) = self.demos.get() {
             for s in &spoken {
                 demos.append_voice(s);

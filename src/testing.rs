@@ -122,12 +122,7 @@ pub(crate) fn app(matches: Matches) -> App {
         home: None,
         streams: Mutex::default(),
         rooms: rooms::registry::Rooms::default(),
-        voice_key: None,
-        voice_links: voice::links::Links::default(),
-        voice_bot: None,
-        mumble_changes: voice::mumble::Changes::default(),
-        mumble_anywhere: false,
-        voice_who: voice::who::WhoIsWho::default(),
+        voice: voice::VoiceSetup::default(),
     }
 }
 

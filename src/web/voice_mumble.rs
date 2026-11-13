@@ -49,7 +49,7 @@ pub(super) fn post_mumble(
     request: &Request,
     who: &Who,
 ) -> std::io::Result<()> {
-    let Some(m) = m.filter(|m| m.is_live() && app.voice_key.is_some()) else {
+    let Some(m) = m.filter(|m| m.is_live() && app.voice.key.is_some()) else {
         return respond(s, "404 Not Found", TEXT, b"No voice here");
     };
     if !has_say(app, m, who) {
@@ -58,21 +58,21 @@ pub(super) fn post_mumble(
     let Ok(ask) = json_body::<Ask>(reader, request) else { return respond(s, "400 Bad Request", TEXT, b"Invalid") };
     if ask.leave {
         leave_mumble(m, ask.id);
-        app.mumble_changes.changed();
+        app.voice.mumble_changes.changed();
         return respond(s, "204 No Content", TEXT, b"");
     }
     // Decided with the match held, answered once it is not.
     if let Err(why) = want(app, m, ask) {
         return respond(s, "400 Bad Request", TEXT, why.as_bytes());
     }
-    app.mumble_changes.changed();
+    app.voice.mumble_changes.changed();
     respond(s, "204 No Content", TEXT, b"")
 }
 
 /// The bot leaves match `m`'s Mumble channel `id`, or with none all of them.
 fn leave_mumble(m: &Session, id: Option<u32>) {
     let left: Vec<MumbleJob> = {
-        let mut wanted = lock(&m.mumble);
+        let mut wanted = lock(&m.comms.mumble);
         let (left, stay) = wanted.drain(..).partition(|j| id.is_none_or(|id| id == j.id));
         *wanted = stay;
         left
@@ -85,7 +85,7 @@ fn leave_mumble(m: &Session, id: Option<u32>) {
 /// Those the bot said are in `job`'s channel go with it.
 fn drop_roster(m: &Session, job: &MumbleJob) {
     if let Some(roster) = &job.roster {
-        m.voice.set_roster(&m.hub, roster, []);
+        m.comms.feed.set_roster(&m.hub, roster, []);
     }
 }
 
@@ -95,7 +95,7 @@ fn want(app: &App, m: &Session, ask: Ask) -> Result<(), &'static str> {
     let (port, delay) = (ask.port.unwrap_or(DEFAULT_PORT), ask.delay.unwrap_or(DEFAULT_DELAY));
     let channel = ask.channel.trim();
     let fits = |t: &str| t.chars().count() <= MAX_TEXT && !t.chars().any(char::is_control);
-    let mut wanted = lock(&m.mumble);
+    let mut wanted = lock(&m.comms.mumble);
     let at = wanted.iter().position(|j| match ask.id {
         Some(id) => id == j.id,
         None => (j.host.as_str(), j.port, j.channel.as_str()) == (ask.host.as_str(), port, channel),
@@ -103,7 +103,7 @@ fn want(app: &App, m: &Session, ask: Ask) -> Result<(), &'static str> {
     let on_server = |j: &&MumbleJob| j.host == ask.host && j.port == port;
     let before = at.map(|at| &wanted[at]).filter(on_server).or_else(|| wanted.iter().find(on_server)).map(|j| j.password.clone());
     let password = ask.password.or(before).unwrap_or_default();
-    let bad = !is_host(&ask.host, app.mumble_anywhere) || port == 0 || channel.is_empty() || !fits(channel) || !fits(&password);
+    let bad = !is_host(&ask.host, app.voice.mumble_anywhere) || port == 0 || channel.is_empty() || !fits(channel) || !fits(&password);
     if bad || !(0.0..=MAX_DELAY).contains(&delay) || (ask.id.is_some() && at.is_none()) {
         return Err("Invalid server, channel or delay");
     }
@@ -128,17 +128,17 @@ fn want(app: &App, m: &Session, ask: Ask) -> Result<(), &'static str> {
 /// post its voice, and the `version` of that. Asked with `?since=<version>` it waits (a while)
 /// until something changed since.
 pub(super) fn get_mumble_jobs(s: &mut TcpStream, app: &App, sessions: &Sessions, request: &Request) -> std::io::Result<()> {
-    let Some(key) = &app.voice_key else { return respond(s, "404 Not Found", TEXT, b"") };
+    let Some(key) = &app.voice.key else { return respond(s, "404 Not Found", TEXT, b"") };
     if !is_key(key, request.bearer.as_deref()) {
         return respond(s, "401 Unauthorized", TEXT, b"");
     }
     let since = super::param(&request.query, "since").and_then(|v| v.parse::<u64>().ok());
-    let version = app.mumble_changes.wait(since);
+    let version = app.voice.mumble_changes.wait(since);
     let jobs: Vec<serde_json::Value> = sessions
         .live()
         .iter()
         .flat_map(|m| {
-            let jobs = lock(&m.mumble).clone();
+            let jobs = lock(&m.comms.mumble).clone();
             jobs.into_iter()
                 .map(|job| {
                     serde_json::json!({

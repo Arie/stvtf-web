@@ -17,7 +17,7 @@ const STATE_FOR: u64 = 600;
 
 /// `/voice/link`: off to Discord, to come back to `/voice/linked`.
 pub(super) fn link(s: &mut TcpStream, app: &App) -> std::io::Result<()> {
-    let Some(d) = &app.voice_links.discord else { return respond(s, "404 Not Found", TEXT, b"No linking here") };
+    let Some(d) = &app.voice.links.discord else { return respond(s, "404 Not Found", TEXT, b"No linking here") };
     let state = random_id();
     let to = format!(
         "{}/oauth2/authorize?response_type=code&client_id={}&scope=identify+connections&redirect_uri={}&state={state}",
@@ -30,7 +30,7 @@ pub(super) fn link(s: &mut TcpStream, app: &App) -> std::io::Result<()> {
 
 /// `/voice/linked`: back from Discord with a code, in the browser that set out.
 pub(super) fn linked(s: &mut TcpStream, app: &App, request: &Request) -> std::io::Result<()> {
-    let Some(d) = &app.voice_links.discord else { return respond(s, "404 Not Found", TEXT, b"No linking here") };
+    let Some(d) = &app.voice.links.discord else { return respond(s, "404 Not Found", TEXT, b"No linking here") };
     let state = param(&request.query, "state").unwrap_or_default();
     let code = param(&request.query, "code").map_or_default(form_decode);
     if state.is_empty() || code.is_empty() || request.voice_link.as_deref() != Some(state) {
@@ -39,7 +39,7 @@ pub(super) fn linked(s: &mut TcpStream, app: &App, request: &Request) -> std::io
     match ask_discord(d, &code) {
         Ok((discord, Some(steamid))) => {
             let done = format!("Linked to {steamid}.");
-            app.voice_links.link(discord, steamid);
+            app.voice.links.link(discord, steamid);
             respond(s, "200 OK", TEXT, done.as_bytes())
         }
         Ok((_, None)) => respond(s, "409 Conflict", TEXT, b"No Steam on your Discord. Add it under Connections."),
@@ -52,13 +52,13 @@ pub(super) fn linked(s: &mut TcpStream, app: &App, request: &Request) -> std::io
 
 /// `/voice/who?discord=<id>`: the Steam id linked to a Discord user, to the bot.
 pub(super) fn who(s: &mut TcpStream, app: &App, request: &Request) -> std::io::Result<()> {
-    let Some(key) = &app.voice_key else { return respond(s, "404 Not Found", TEXT, b"") };
+    let Some(key) = &app.voice.key else { return respond(s, "404 Not Found", TEXT, b"") };
     if !is_key(key, request.bearer.as_deref()) {
         return respond(s, "401 Unauthorized", TEXT, b"");
     }
     let Some(discord) = param(&request.query, "discord").filter(|d| is_snowflake(d)) else {
         return respond(s, "400 Bad Request", TEXT, b"a Discord id");
     };
-    let who = serde_json::json!({ "steamid": app.voice_links.steamid(discord) });
+    let who = serde_json::json!({ "steamid": app.voice.links.steamid(discord) });
     respond(s, "200 OK", JSON, who.to_string().as_bytes())
 }

@@ -266,9 +266,9 @@ impl Sessions {
             let _ = s.by.set(by);
         }
         if let Some(invite) = saved.voice_invite {
-            let _ = s.voice_invite.set(invite);
+            let _ = s.comms.invite.set(invite);
         }
-        *lock(&s.mumble) = saved.mumble;
+        *lock(&s.comms.mumble) = saved.mumble;
         s.link(saved.reservation);
         Some(s)
     }

@@ -116,7 +116,7 @@ fn a_mumble_server_is_somewhere_out_on_the_internet() {
 #[test]
 fn at_a_lan_a_mumble_server_may_be_on_the_network_there() {
     let (mut app, id) = voice_app();
-    app.mumble_anywhere = true;
+    app.voice.mumble_anywhere = true;
     let page = format!("/w/{id}/");
     for near in [r#"{"host":"192.168.1.20","channel":"a"}"#, r#"{"host":"mumble.lan","channel":"a"}"#, r#"{"host":"mumble","channel":"a"}"#]
     {
@@ -238,7 +238,7 @@ fn two_teams_are_each_in_a_mumble_channel_of_their_own_on_one_server_or_two() {
 #[test]
 fn behind_a_site_only_who_has_a_say_brings_mumble_in() {
     let (mut app, key, _dir) = site_app();
-    app.voice_key = Some("k".into());
+    app.voice.key = Some("k".into());
     let exp = unix_now() + 60;
     let start = format!(r#"{{"connect":"connect 192.0.2.9:27020; password \"tv\"","owner":"7656","exp":{exp}}}"#);
     let opened = get(&app, &format!("/start?t={}", token::seal(&key, &start, [3; 12])), "");
@@ -277,7 +277,7 @@ fn free_while_answering(app: &App, send: &[u8], free: impl Fn() -> bool) -> bool
 fn a_refusal_is_answered_with_the_match_not_held() {
     let (app, id) = voice_app();
     let m = sessions_of(&app).get(&id).unwrap();
-    let free = || m.mumble.try_lock().is_ok();
+    let free = || m.comms.mumble.try_lock().is_ok();
     let bad = r#"{"host":"","channel":"a"}"#;
     let send = format!("POST /w/{id}/voice-mumble HTTP/1.1\r\nContent-Length: {}\r\n\r\n{bad}", bad.len());
     assert!(free_while_answering(&app, send.as_bytes(), free), "a channel refused");

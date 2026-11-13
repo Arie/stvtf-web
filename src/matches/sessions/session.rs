@@ -7,8 +7,7 @@ use crate::matches::live_demos::LiveDemos;
 use crate::matches::recording::Recording;
 use crate::matches::replay;
 use crate::relays::pool::DemoOf;
-use crate::voice::feed::VoiceFeed;
-use crate::voice::mumble::MumbleJob;
+use crate::voice::MatchComms;
 use anyhow::{Result, bail};
 use serde::Serialize;
 use std::net::SocketAddr;
@@ -63,16 +62,8 @@ pub struct Session {
     pub(super) demos: OnceLock<Arc<LiveDemos>>,
     /// Who started it, for the limit per person: a Steam id or an address.
     pub(super) by: OnceLock<String>,
-    /// Voice from outside the match (a team's Discord), and whether a thread tends it.
-    pub(crate) voice: VoiceFeed,
-    pub(super) voice_tended: AtomicBool,
-    /// What a Discord channel's voice comes in with: given to whoever started the match, and to
-    /// the site's streamers, to pass on with the bot's command.
-    pub(super) voice_invite: OnceLock<String>,
-    /// The Mumble channel the voice bot is wanted in for it, if any.
-    pub(crate) mumble: Mutex<Vec<MumbleJob>>,
-    /// How it goes in each Discord channel the voice bot is in for it, and when it last said.
-    pub(crate) discord: Mutex<std::collections::BTreeMap<String, (String, Instant)>>,
+    /// Its team voice comms.
+    pub(crate) comms: MatchComms,
 }
 
 /// A recorded match: a saved file, or a demo's gzipped output.
@@ -111,17 +102,13 @@ impl Session {
             preparing: AtomicBool::new(false),
             demos: OnceLock::new(),
             by: OnceLock::new(),
-            voice: VoiceFeed::default(),
-            voice_tended: AtomicBool::new(false),
-            voice_invite: OnceLock::new(),
-            mumble: Mutex::default(),
-            discord: Mutex::default(),
+            comms: MatchComms::default(),
         }
     }
 
     /// The match's voice invite: a secret made once, kept with the match.
     pub(crate) fn voice_invite(&self) -> &str {
-        self.voice_invite.get_or_init(|| super::random_id()[..INVITE_LEN].to_string())
+        self.comms.invite.get_or_init(|| super::random_id()[..INVITE_LEN].to_string())
     }
 
     /// Whether the visitor known as `key` (see `web::visitor::Who`) started it.

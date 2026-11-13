@@ -32,18 +32,18 @@ pub(crate) fn site(home: &str, keys: Arc<Keys>) -> Site {
 
 /// `GET /voice/known?since=<version>`, another stv.tf's: what changed since.
 pub(super) fn get_known(s: &mut TcpStream, app: &App, request: &Request) -> std::io::Result<()> {
-    let Some(key) = &app.voice_key else { return respond(s, "404 Not Found", TEXT, b"") };
+    let Some(key) = &app.voice.key else { return respond(s, "404 Not Found", TEXT, b"") };
     if !is_key(key, request.bearer.as_deref()) {
         return respond(s, "401 Unauthorized", TEXT, b"");
     }
     let since = param(&request.query, "since").and_then(|v| v.parse().ok()).unwrap_or(0);
-    let (version, known) = app.voice_who.since(since);
+    let (version, known) = app.voice.who.since(since);
     respond(s, "200 OK", JSON, serde_json::json!({ "version": version, "known": known }).to_string().as_bytes())
 }
 
 /// `POST /voice/known`, another stv.tf's: what was said on a page there.
 pub(super) fn post_known(s: &mut TcpStream, reader: &mut BufReader<Take<TcpStream>>, app: &App, request: &Request) -> std::io::Result<()> {
-    let Some(key) = &app.voice_key else { return respond(s, "404 Not Found", TEXT, b"") };
+    let Some(key) = &app.voice.key else { return respond(s, "404 Not Found", TEXT, b"") };
     if !is_key(key, request.bearer.as_deref()) {
         return respond(s, "401 Unauthorized", TEXT, b"");
     }
@@ -59,6 +59,6 @@ pub(super) fn post_known(s: &mut TcpStream, reader: &mut BufReader<Take<TcpStrea
     if !matches!(said.by.as_str(), "" | CASTER) {
         return respond(s, "400 Bad Request", TEXT, b"Invalid");
     }
-    app.voice_who.take_from_region(&said.id, steamid.flatten().as_deref(), &name, &said.src, &said.by);
+    app.voice.who.take_from_region(&said.id, steamid.flatten().as_deref(), &name, &said.src, &said.by);
     respond(s, "204 No Content", TEXT, b"")
 }

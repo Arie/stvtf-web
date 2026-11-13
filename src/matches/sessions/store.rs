@@ -88,8 +88,8 @@ impl Store {
             map,
             history,
             by: s.by.get().cloned(),
-            voice_invite: s.voice_invite.get().cloned(),
-            mumble: lock(&s.mumble).clone(),
+            voice_invite: s.comms.invite.get().cloned(),
+            mumble: lock(&s.comms.mumble).clone(),
         };
         self.put(&s.id, &serde_json::to_vec(&saved)?)?;
         *last_saved = Some(changes);

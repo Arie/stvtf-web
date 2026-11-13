@@ -23,7 +23,7 @@ fn a_voice_post_needs_the_key_and_a_live_match() {
     let no_stream = post_voice(&app, &id, Some("k"), VOICE);
     assert!(no_stream.starts_with("HTTP/1.1 409"), "nothing to hold it against yet: {no_stream}");
     let mut keyless = voice_app();
-    keyless.0.voice_key = None;
+    keyless.0.voice.key = None;
     assert!(post_voice(&keyless.0, &keyless.1, Some("k"), VOICE).starts_with("HTTP/1.1 404"), "off without a key");
 }
 
@@ -96,8 +96,8 @@ fn linking_app(connections: &str) -> App {
         ("/users/@me/connections", connections.as_bytes().to_vec()),
     ]);
     let mut app = app(Matches::Many(Sessions::new(false, 4, 20.0)));
-    app.voice_key = Some("k".into());
-    app.voice_links =
+    app.voice.key = Some("k".into());
+    app.voice.links =
         crate::voice::links::Links::with_discord(discord.trim_end_matches('/'), "id1", "secret", "https://stv.example/voice/linked");
     app
 }
@@ -182,7 +182,7 @@ fn voice_comes_in_only_with_the_matchs_invite() {
 #[test]
 fn behind_a_site_the_invite_is_for_who_started_the_match_and_for_streamers() {
     let (mut app, key, _dir) = site_app();
-    app.voice_key = Some("k".into());
+    app.voice.key = Some("k".into());
     let exp = unix_now() + 60;
     let start = format!(r#"{{"connect":"connect 192.0.2.9:27020; password \"tv\"","owner":"7656","exp":{exp}}}"#);
     let opened = get(&app, &format!("/start?t={}", token::seal(&key, &start, [3; 12])), "");
@@ -239,7 +239,7 @@ fn someone_in_mumble_is_known_by_who_they_are_on_their_server() {
     publish(&m.hub, &crate::matches::hub::tests::snapshot(1000, None, Vec::new()));
     let said = r#"{"discord":"mumble:mumble.example:user:97","name":"Arie","channel":"mumble:mumble.example:12","frames":["aA=="]}"#;
     assert!(post_voice(&app, &id, Some("k"), said).starts_with("HTTP/1.1 200"));
-    assert_eq!(m.voice.voices(&m.hub)[0].voice_id, "mumble:mumble.example:user:97");
+    assert_eq!(m.comms.feed.voices(&m.hub)[0].voice_id, "mumble:mumble.example:user:97");
     let odd = r#"{"discord":"mumble:<script>","frames":["aA=="]}"#;
     assert!(post_voice(&app, &id, Some("k"), odd).starts_with("HTTP/1.1 400"));
 }

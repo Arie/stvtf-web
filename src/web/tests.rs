@@ -119,7 +119,7 @@ fn post_watch(app: &App, connect: &str) -> String {
 /// An app that takes voice with key "k", and the id of a live match on it (watching nowhere).
 fn voice_app() -> (App, String) {
     let mut app = app(Matches::Many(Sessions::new(false, 4, 20.0)));
-    app.voice_key = Some("k".into());
+    app.voice.key = Some("k".into());
     let started = post_watch(&app, "connect+192.0.2.1%3A27020%3B+password+%22tv%22");
     let location = started.lines().find_map(|l| l.strip_prefix("Location: ")).unwrap();
     let id = location.trim_matches('/').trim_start_matches("w/").to_string();
