@@ -77,7 +77,8 @@ impl Inner {
             self.parts.push(PartStart { map, again, origin: at, ready: false, shown, after, played: None, goes_on: None });
             self.scores = None;
             self.last_tick = None;
-        } else if let Some(map) = named.map(str::to_string).or(known.clone().filter(|_| matches!(line, Line::Snapshot(_))))
+        } else if !self.take_back(line, tick)
+            && let Some(map) = named.map(str::to_string).or(known.clone().filter(|_| matches!(line, Line::Snapshot(_))))
             && self.parts.last().is_some_and(|p| p.map.is_empty())
         {
             let before = tick.filter(|_| known.as_deref() == Some(map.as_str()));
@@ -87,6 +88,19 @@ impl Inner {
             self.first_snapshot(at, snapshot.tick);
         }
         later
+    }
+
+    /// A snapshot in a part after another that no line named yet, its ticks going on from the
+    /// map before (`tick`): that map still plays, late behind the server's word that it changes,
+    /// so the part never was. True if it is taken back.
+    fn take_back(&mut self, line: &Line, tick: Option<u32>) -> bool {
+        let Line::Snapshot(snapshot) = line else { return false };
+        // The map before still kept: one trimmed away is not taken back to.
+        let nameless = self.parts.len() > 1 && self.parts.last().is_some_and(|p| p.after && p.map.is_empty());
+        let Some(before) = tick.filter(|before| nameless && snapshot.tick >= *before) else { return false };
+        self.parts.pop();
+        self.last_tick = Some(before);
+        true
     }
 
     /// The latest part, nameless till now, is of `map`: another load of it, unless the map before
@@ -106,7 +120,8 @@ impl Inner {
     /// map before it is another load of that if its ticks started over.
     fn first_snapshot(&mut self, at: u64, tick: u32) {
         self.last_tick = Some(tick);
-        let Some(part) = self.parts.last_mut() else { return };
+        // One after another with no name has nothing to show yet.
+        let Some(part) = self.parts.last_mut().filter(|p| !(p.after && p.map.is_empty())) else { return };
         part.ready = true;
         part.shown.get_or_insert(at);
         part.played.get_or_insert(at);

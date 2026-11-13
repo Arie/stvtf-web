@@ -105,12 +105,31 @@ fn a_change_the_same_map_goes_on_from_is_the_same_load_of_it() {
     assert_eq!(again.parts(), r.parts_closed());
     push_at(&r, &server("cp_b"), T0 + r.length() + 1000);
     assert_eq!(r.latest().again, 0, "and loads of other maps count as before");
-    // Play with no server line: the map it was.
+}
+
+#[test]
+fn a_map_that_plays_on_after_the_server_said_it_was_changing_was_not_over() {
+    let saved = Arc::default();
+    let r = Recording::live_to(to(&saved));
+    push_at(&r, &server("cp_a"), T0);
+    let time = snapshots(&r, 50, 1650, T0 + 500);
+    // A snapshot late behind the server's word (the SourceTV delay), then the change.
+    push_at(&r, &status("changelevel"), time);
+    push_at(&r, &snapshot(1700, None, Vec::new()), time + 86);
+    push_at(&r, &status("map_change"), time + 100);
+    let change = time + 100 - T0;
+    then_on(&r, "cp_b", 50, change);
+    let parts = r.parts();
+    assert_eq!(maps(&r), [("cp_a".into(), 0), ("cp_b".into(), 0)]);
+    assert_eq!((parts[0].end, parts[1].origin), (Some(change), change));
+    let again = Recording::resume(lock(&saved).as_slice(), to(&saved)).unwrap();
+    assert_eq!(again.parts(), r.parts_closed(), "its file has the same parts");
+    // Play with no server line, its ticks going on: the map never ended.
     let r = Recording::live();
     let t = cp_a_then_changing(&r);
     snapshots(&r, 1700, 2200, T0 + t + 1000);
-    assert_eq!(maps(&r), [("cp_a".into(), 0), ("cp_a".into(), 0)]);
-    assert!(r.latest().ready);
+    assert_eq!(maps(&r), [("cp_a".into(), 0)]);
+    assert!(r.latest().end.is_none() && !r.went_on_from(&r.latest()));
 }
 
 #[test]

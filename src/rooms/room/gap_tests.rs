@@ -79,6 +79,29 @@ fn a_map_with_no_name_yet_is_no_map_to_go_to() {
 }
 
 #[test]
+fn a_room_following_live_stays_on_its_map_through_a_snapshot_late_behind_the_change() {
+    let (room, rec) = live_room_at_live_on("cp_a");
+    let page = subscribe(&room.hub, false);
+    let stroke = || read_marker(br#"[{"stroke":1,"by":1,"points":[[0.0,0.0,0.0]]}]"#, 0).remove(&0).unwrap();
+    lock(&room.marker).insert(0, stroke());
+    push(&rec, &status("changelevel"), rec.length() + 100);
+    push(&rec, &snapshot(60, None, Vec::new()), rec.length() + 86);
+    push(&rec, &status("map_change"), rec.length() + 14);
+    until("the room to say its map is over", || playback(&room)["over"] == true);
+    new_map_with_play(&rec, "cp_b");
+    on_map(&room, 1);
+    let lines: Vec<Value> = page.try_iter().map(|l| serde_json::from_str(&l).unwrap()).collect();
+    for p in lines.iter().filter(|l| l["type"] == "playback") {
+        let maps = p["maps"].as_array().unwrap();
+        assert!(maps.iter().all(|m| m["map"] != "cp_a" || m["n"] == 0), "{p}");
+        assert!(p["map"] == 0 || maps.iter().any(|m| m["n"] == p["map"] && m["map"] == "cp_b" && m["ready"] == true), "{p}");
+    }
+    assert_eq!(lock(&room.hub).map.as_deref(), Some("cp_b"));
+    assert!(lock(&room.marker).contains_key(&0), "its marker is still its map's");
+    room.stop();
+}
+
+#[test]
 fn a_room_opened_in_the_gap_is_on_the_map_just_played() {
     let rec = live_on("cp_a");
     push_changing(&rec);

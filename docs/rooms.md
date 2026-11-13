@@ -51,7 +51,8 @@ is not listed.
 
 A live match is a list of maps, one per map load, each its own part of the recording. A room is on
 one of them. A map ends where the server says it is changing; the next begins there, nameless
-until the server names it. The same map loaded again is another map.
+until the server names it; play of the map before that comes after (its ticks going on) means it
+was not over. The same map loaded again is another map.
 
 - When the server changes map, the room stays: playback runs to the map's last moment and waits
   there, that moment still showing. Seeks stay inside the map.
