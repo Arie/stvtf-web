@@ -256,7 +256,8 @@ impl Room {
     fn at_end<'a>(&self, mut st: MutexGuard<'a, State>, end: Option<u64>, cur: &mut Cursor) -> MutexGuard<'a, State> {
         let rec = &self.recording;
         if let Some(end) = end.filter(|_| self.part_over(&st)) {
-            if !st.paused && st.at < end {
+            // At its end, not past it: live went as far as lines that were not play.
+            if st.at > end || (!st.paused && st.at < end) {
                 st.at = end;
                 self.announce(&st);
             }

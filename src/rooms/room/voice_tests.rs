@@ -2,7 +2,7 @@
 
 use super::move_tests::on_map;
 use super::move_tests::{decided, live_room_at_live_on, push_server};
-use super::part_tests::push;
+use super::part_tests::{playback, push};
 use super::stream_tests::{a_pass, at_live};
 use super::tests::until;
 use super::*;
@@ -139,5 +139,20 @@ fn a_room_waiting_hears_the_gap_past_the_next_maps_frozen_frame_until_it_plays()
     on_map(&room, 1);
     a_pass(&room);
     assert_eq!((relayed(&room), heard(&page)), (vec![1, 2], vec![1, 2]), "once each");
+    room.stop();
+}
+
+#[test]
+fn a_room_at_live_past_its_maps_last_frame_is_held_at_its_end_when_it_ends() {
+    let (room, rec) = live_room_at_live_on("cp_a");
+    // Said after the last frame: the recording is longer than the map's play.
+    say(&rec, 1, false);
+    until("at live past the last frame", || lock(&room.state).at == rec.length());
+    push_server(&rec, "cp_b");
+    assert!(decided(&room, 0));
+    a_pass(&room);
+    let p = playback(&room);
+    let last = rec.part(0).unwrap().last;
+    assert_eq!((p["at"].as_u64(), p["length"].as_u64()), (Some(last), Some(last)));
     room.stop();
 }
