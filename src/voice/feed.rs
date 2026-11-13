@@ -3,7 +3,7 @@
 //! recording). The hold goes by the hub's stream: its tick, its pauses, its new starts.
 
 use crate::lock;
-use crate::matches::hub::{NamedPlayer, SharedHub, VoiceClock, publish};
+use crate::matches::hub::{Hub, NamedPlayer, SharedHub, VoiceClock, publish};
 use crate::matches::live_demos::Spoken;
 use crate::voice::hold::{Said, Took, VoiceHold};
 use std::collections::BTreeMap;
@@ -94,13 +94,6 @@ pub(crate) fn alike(a: &str, b: &str) -> bool {
 const MAX_KNOWN: usize = 256;
 const MAX_CHANNELS: usize = 8;
 
-impl State {
-    /// Those in any channel now: who they are there, and their name.
-    fn roster(&self) -> impl Iterator<Item = (&String, &String)> {
-        self.rosters.values().flatten()
-    }
-}
-
 #[derive(Default)]
 struct State {
     hold: Option<VoiceHold>,
@@ -122,6 +115,98 @@ struct State {
     said: Option<Instant>,
     /// What players said, as it went out, for the demo being recorded: until taken.
     spoken: Vec<Spoken>,
+}
+
+impl State {
+    /// Those in any channel now: who they are there, and their name.
+    fn roster(&self) -> impl Iterator<Item = (&String, &String)> {
+        self.rosters.values().flatten()
+    }
+
+    /// Those nobody placed here are put on whom they were said to be before, while that one
+    /// plays here; said to be nobody before, unless they have a link of their own.
+    fn apply_known_before(&mut self, players: &[NamedPlayer]) {
+        let playing = |steamid: &str| players.iter().any(|p| p.steamid == steamid);
+        let linked = |id: &str| self.known.values().any(|k| k.voice_id.as_deref() == Some(id) && k.steamid.is_some());
+        let holding: Vec<(String, Put)> = self
+            .known_before
+            .iter()
+            .filter(|(id, before)| {
+                let placed = matches!(self.matched.get(*id), Some(Put::Nobody | Put::Player { confirmed: true, .. }));
+                let holds = match before {
+                    Put::Player { steamid, .. } => playing(steamid),
+                    Put::Nobody => !linked(id),
+                };
+                !placed && holds
+            })
+            .map(|(id, before)| (id.clone(), before.clone()))
+            .collect();
+        self.matched.extend(holding);
+    }
+
+    /// Those still not placed are put on the one player whose name looks like theirs, when there
+    /// is just one and nobody else has that player: a guess, shown as one until someone says so.
+    fn guess_by_name(&mut self, players: &[NamedPlayer]) {
+        let playing = |steamid: &str| players.iter().any(|p| p.steamid == steamid);
+        let mut people: BTreeMap<String, (String, Option<String>)> =
+            self.roster().map(|(id, name)| (id.clone(), (name.clone(), None))).collect();
+        for k in self.known.values() {
+            if let Some(id) = &k.voice_id {
+                let name = k.name.clone().or_else(|| people.get(id).map(|p| p.0.clone())).unwrap_or_default();
+                people.insert(id.clone(), (name, k.steamid.clone()));
+            }
+        }
+        let mut taken: Vec<String> =
+            self.matched.values().filter_map(|p| if let Put::Player { steamid, .. } = p { Some(steamid.clone()) } else { None }).collect();
+        taken.extend(people.values().filter_map(|(_, own)| own.clone()).filter(|s| playing(s)));
+        for (id, (name, own)) in people {
+            if self.matched.contains_key(&id) || own.is_some_and(|s| playing(&s)) {
+                continue;
+            }
+            let mut like = players.iter().filter(|p| alike(&p.name, &name) && !taken.contains(&p.steamid));
+            if let (Some(NamedPlayer { steamid, .. }), None) = (like.next(), like.next()) {
+                taken.push(steamid.clone());
+                self.matched.insert(id, Put::Player { steamid: steamid.clone(), confirmed: false });
+            }
+        }
+    }
+
+    /// The `SteamID` the speaker known by `key` is put on (by someone, or by their name), else
+    /// their own; none when said to be no player, not even the one they linked.
+    fn steamid_put_on(&self, key: &str) -> Option<String> {
+        let voice_id = key.strip_prefix(UNLINKED).or_else(|| self.known.get(key)?.voice_id.as_deref());
+        let own = (!key.starts_with(UNLINKED)).then(|| key.to_string());
+        match voice_id.and_then(|d| self.matched.get(d)) {
+            Some(Put::Player { steamid, .. }) => Some(steamid.clone()),
+            Some(Put::Nobody) => None,
+            None => own.or_else(|| match self.known_before.get(voice_id?) {
+                Some(Put::Player { steamid, .. }) => Some(steamid.clone()),
+                _ => None,
+            }),
+        }
+    }
+
+    /// The side most of the players in voice channel `channel` play on now, if one has more.
+    fn channel_team(&self, hub: &Hub, channel: Option<&str>) -> Option<Team> {
+        let channel = channel?;
+        let (mut red, mut blue) = (0, 0);
+        let mates = self.known.iter().filter(|(_, k)| k.channel.as_deref() == Some(channel));
+        for (_, team) in mates.filter_map(|(key, _)| hub.player_with(&self.steamid_put_on(key)?)) {
+            match team {
+                Team::Red => red += 1,
+                Team::Blue => blue += 1,
+                _ => {}
+            }
+        }
+        (red != blue).then_some(if red > blue { Team::Red } else { Team::Blue })
+    }
+
+    /// What a player said, kept for the demo being recorded, while there is room.
+    fn record_spoken(&mut self, spoken: Spoken) {
+        if self.spoken.len() < MAX_SPOKEN {
+            self.spoken.push(spoken);
+        }
+    }
 }
 
 /// The most kept so, when nothing takes it (no demo is recorded).
@@ -175,45 +260,12 @@ impl VoiceFeed {
     }
 
     /// Puts those nobody placed here on a player: the one they were said to be before, if that
-    /// one plays here; else the one player whose name looks like theirs, when there is just one
-    /// and nobody else has that player: a guess, shown as one until someone says so.
+    /// one plays here; else by their name.
     fn guess(&self, hub: &SharedHub) {
         let mut st = lock(&self.0);
         let players = lock(hub).players();
-        let playing = |steamid: &str| players.iter().any(|p| p.steamid == steamid);
-        for (id, before) in st.known_before.clone() {
-            let placed = matches!(st.matched.get(&id), Some(Put::Nobody | Put::Player { confirmed: true, .. }));
-            // Said to be nobody before: not for someone with a link of their own.
-            let linked = || st.known.values().any(|k| k.voice_id.as_deref() == Some(&id) && k.steamid.is_some());
-            let holds = match &before {
-                Put::Player { steamid, .. } => playing(steamid),
-                Put::Nobody => !linked(),
-            };
-            if !placed && holds {
-                st.matched.insert(id, before);
-            }
-        }
-        let mut people: BTreeMap<String, (String, Option<String>)> =
-            st.roster().map(|(id, name)| (id.clone(), (name.clone(), None))).collect();
-        for k in st.known.values() {
-            if let Some(id) = &k.voice_id {
-                let name = k.name.clone().or_else(|| people.get(id).map(|p| p.0.clone())).unwrap_or_default();
-                people.insert(id.clone(), (name, k.steamid.clone()));
-            }
-        }
-        let mut taken: Vec<String> =
-            st.matched.values().filter_map(|p| if let Put::Player { steamid, .. } = p { Some(steamid.clone()) } else { None }).collect();
-        taken.extend(people.values().filter_map(|(_, own)| own.clone()).filter(|s| playing(s)));
-        for (id, (name, own)) in people {
-            if st.matched.contains_key(&id) || own.is_some_and(|s| playing(&s)) {
-                continue;
-            }
-            let mut like = players.iter().filter(|p| alike(&p.name, &name) && !taken.contains(&p.steamid));
-            if let (Some(NamedPlayer { steamid, .. }), None) = (like.next(), like.next()) {
-                taken.push(steamid.clone());
-                st.matched.insert(id, Put::Player { steamid: steamid.clone(), confirmed: false });
-            }
-        }
+        st.apply_known_before(&players);
+        st.guess_by_name(&players);
     }
 
     /// Those in the channel and those heard, their own link, and whom each is put on.
@@ -284,47 +336,18 @@ impl VoiceFeed {
     /// players are on.
     fn line(&self, hub: &SharedHub, said: Said, tick: u32, pause: bool) -> Line {
         let mut st = lock(&self.0);
-        let known = st.known.get(&said.who).cloned().unwrap_or_default();
-        // The one they are put on (by someone, or by their name), else their own.
-        let put_on_steamid = |key: &str| {
-            let voice_id = key.strip_prefix(UNLINKED).or_else(|| st.known.get(key)?.voice_id.as_deref());
-            let own = (!key.starts_with(UNLINKED)).then(|| key.to_string());
-            match voice_id.and_then(|d| st.matched.get(d)) {
-                Some(Put::Player { steamid, .. }) => Some(steamid.clone()),
-                // Said to be no player: not even the one they linked.
-                Some(Put::Nobody) => None,
-                None => own.or_else(|| match st.known_before.get(voice_id?) {
-                    Some(Put::Player { steamid, .. }) => Some(steamid.clone()),
-                    _ => None,
-                }),
-            }
-        };
-        let steamid = put_on_steamid(&said.who);
+        let steamid = st.steamid_put_on(&said.who);
         let hub = lock(hub);
         let player = steamid.as_deref().and_then(|s| hub.player_with(s));
-        let (team, name) = if player.is_some() {
-            (None, None)
-        } else {
-            // The sides those in their channel play on now.
-            let (mut red, mut blue) = (0, 0);
-            let mates = st.known.iter().filter(|(_, k)| known.channel.is_some() && k.channel == known.channel);
-            for (_, team) in mates.filter_map(|(key, _)| hub.player_with(&put_on_steamid(key)?)) {
-                match team {
-                    Team::Red => red += 1,
-                    Team::Blue => blue += 1,
-                    _ => {}
-                }
-            }
-            let team = (red != blue).then_some(if red > blue { Team::Red } else { Team::Blue });
-            (team, known.name.clone())
-        };
+        // Not a player: by name, on the side most of their channel plays on.
+        let known = st.known.get(&said.who).filter(|_| player.is_none());
+        let team = known.and_then(|k| st.channel_team(&hub, k.channel.as_deref()));
+        let name = known.and_then(|k| k.name.clone());
         // A player's, said in the running game: what a demo with the comms in it is made of.
         let slot = steamid.as_deref().filter(|_| player.is_some() && !pause).and_then(|s| Some((hub.slot_of(s)?, account(s)?)));
         drop(hub);
-        if let Some((slot, account)) = slot
-            && st.spoken.len() < MAX_SPOKEN
-        {
-            st.spoken.push(Spoken { tick, slot, account, frames: said.frames.clone() });
+        if let Some((slot, account)) = slot {
+            st.record_spoken(Spoken { tick, slot, account, frames: said.frames.clone() });
         }
         Line::Voice(Voice {
             tick,
