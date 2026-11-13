@@ -466,8 +466,8 @@ fn join_lines(h: &Hub) -> Vec<Arc<str>> {
     lines
 }
 
-/// Puts `from` (a [`Hub::checkpoint`] played on) in place, keeping the pages and the room's lines, and
-/// starts the pages over from it.
+/// Puts `from` (a [`Hub::checkpoint`] played on) in place, keeping the pages and the room's lines,
+/// and starts the pages over from it.
 pub(crate) fn restore(hub: &SharedHub, mut from: Hub) {
     let mut h = lock(hub);
     from.clients = std::mem::take(&mut h.clients);

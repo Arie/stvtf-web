@@ -33,7 +33,8 @@ pub(crate) fn replay(hub: &SharedHub, path: &Path, play: &dyn Fn() -> bool) -> R
     Ok(())
 }
 
-/// Plays the file once at its recorded speed; returns how many lines it skipped (see [`play_lines`]).
+/// Plays the file once at its recorded speed; returns how many lines it skipped (see
+/// [`play_lines`]).
 fn play_once(hub: &SharedHub, path: &Path, play: &dyn Fn() -> bool) -> Result<usize> {
     static NEVER: AtomicBool = AtomicBool::new(false);
     play_lines(hub, open(path)?, &path.display().to_string(), play, &NEVER)
@@ -70,7 +71,8 @@ pub(crate) fn play_lines(hub: &SharedHub, reader: impl Read, name: &str, play: &
     Ok(skipped)
 }
 
-/// A saved line, or None (counted in `skipped`, the first one logged) when today's stvtf cannot read it.
+/// A saved line, or None (counted in `skipped`, the first one logged) when today's stvtf cannot
+/// read it.
 pub(crate) fn read_line(line: &str, name: &str, n: usize, skipped: &mut usize) -> Option<Stamped> {
     match serde_json::from_str(line) {
         Ok(s) => Some(s),

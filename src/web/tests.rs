@@ -18,7 +18,8 @@ mod room_pages;
 mod streams;
 mod voice;
 
-/// Runs `serve` on one connection, with `send` written by the client; returns serve's result and the response.
+/// Runs `serve` on one connection, with `send` written by the client; returns serve's result and
+/// the response.
 fn exchange(app: &App, send: &[u8]) -> (Result<()>, Vec<u8>) {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let mut client = TcpStream::connect(listener.local_addr().unwrap()).unwrap();

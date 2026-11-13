@@ -137,7 +137,8 @@ impl Room {
         Room::run(id, People::new(owner), None, None, state, recording)
     }
 
-    /// A room playing `recording` from `at`, at `speed` (1× unless one of [`SPEEDS`]), paused or not.
+    /// A room playing `recording` from `at`, at `speed` (1× unless one of [`SPEEDS`]), paused or
+    /// not.
     pub(crate) fn start_at(id: String, owner: &str, recording: Arc<Recording>, at: u64, speed: f64, paused: bool) -> Arc<Room> {
         let at = at.clamp(recording.start(), recording.length());
         let speed = if SPEEDS.contains(&speed) { speed } else { 1.0 };

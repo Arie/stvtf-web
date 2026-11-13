@@ -175,8 +175,9 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Option<Args>> {
     Ok(Some(Args { positional, flags }))
 }
 
-/// Liberal in what it takes: `connect HOST:PORT; password "tv"`, `HOST:PORT tv`, `HOST; password tv`
-/// or just `HOST`. Without a port, `SourceTV`'s default 27020; quotes and `connect` are optional.
+/// Liberal in what it takes: `connect HOST:PORT; password "tv"`, `HOST:PORT tv`, `HOST; password
+/// tv` or just `HOST`. Without a port, `SourceTV`'s default 27020; quotes and `connect` are
+/// optional.
 pub(crate) fn parse_connect(line: &str) -> Option<(String, Option<String>)> {
     const CONNECT: &str = "connect ";
     let mut line = line.trim();

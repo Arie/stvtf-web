@@ -1,4 +1,5 @@
-//! Who is asking: the visitor's address behind our proxy and Cloudflare, and who a start counts against.
+//! Who is asking: the visitor's address behind our proxy and Cloudflare, and who a start counts
+//! against.
 
 use super::token;
 use crate::matches::sessions;
@@ -72,7 +73,8 @@ pub(super) fn is_cloudflare(ip: IpAddr) -> bool {
     })
 }
 
-/// What a client is counted by: its address, or for IPv6 its /64, which one user usually has all of.
+/// What a client is counted by: its address, or for IPv6 its /64, which one user usually has all
+/// of.
 pub(super) fn client_key(ip: IpAddr) -> IpAddr {
     match ip.to_canonical() {
         IpAddr::V6(v6) => IpAddr::V6((v6.to_bits() & !u128::from(u64::MAX)).into()),

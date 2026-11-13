@@ -1,9 +1,9 @@
-//! Mumble for a match: `POST /w/<id>/voice-mumble` (a room's too) asks the voice bot into a
-//! channel of a Mumble server: one more (each team's, on one server or on several), or with the
-//! `id` of one it is in, to move that (with no password, the one given before for the server).
-//! `{"leave": true}` sends it away from all, with an `id` from that one. For whoever has a say in the match's voice
-//! (`voice_in::has_say`). The bot asks all that is wanted (`GET /voice/mumble`, with its key);
-//! how each goes it says to `voice_who`.
+//! Mumble for a match: `POST /w/<id>/voice-mumble` (a room's too) asks the voice bot into a channel
+//! of a Mumble server: one more (each team's, on one server or on several), or with the `id` of one
+//! it is in, to move that (with no password, the one given before for the server). `{"leave":
+//! true}` sends it away from all, with an `id` from that one. For whoever has a say in the match's
+//! voice (`voice_in::has_say`). The bot asks all that is wanted (`GET /voice/mumble`, with its
+//! key); how each goes it says to `voice_who`.
 
 use super::visitor::Who;
 use super::voice_in::{has_say, is_key};

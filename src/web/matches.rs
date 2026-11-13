@@ -135,7 +135,8 @@ pub(super) fn match_timeline(s: &mut TcpStream, m: &Arc<Session>, request: &Requ
         return respond_marks(s, &request.query, |from| r.marks_in(r.watchable().n, from));
     }
     let part = r.watchable();
-    // While the server changes map, the one just played, at its end; the match is live all the same.
+    // While the server changes map, the one just played, at its end; the match is live all the
+    // same.
     let length = part.last;
     // A live match's is at its end, once it ended too: only a replay plays from the start.
     let at = if m.watches_server() { length } else { lock(&m.hub).played.min(length) };

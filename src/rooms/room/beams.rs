@@ -46,7 +46,8 @@ impl Room {
         Ok(Some(all))
     }
 
-    /// `marker` as beams, each stroke in the ink it was drawn in, a finished one with its arrowhead.
+    /// `marker` as beams, each stroke in the ink it was drawn in, a finished one with its
+    /// arrowhead.
     fn marker_beams(&self, ground: &Ground, marker: &[Kept]) -> Vec<Beam> {
         let mut all = Vec::new();
         for k in marker {

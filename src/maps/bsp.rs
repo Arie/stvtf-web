@@ -48,7 +48,8 @@ pub struct Geometry {
     pub spawns: Spawns,
     pub packs: Vec<Pack>,
     pub cap_areas: Vec<CapArea>,
-    /// The playable area: lowest and highest corner, unrounded (widened from f32, as served before).
+    /// The playable area: lowest and highest corner, unrounded (widened from f32, as served
+    /// before).
     pub bounds: Option<[[f64; 3]; 2]>,
     /// Upward faces, from low to high.
     pub floors: Vec<Floor>,
@@ -175,7 +176,8 @@ fn texture_names(data: &[u8]) -> Result<Vec<String>> {
     (0..texdata.len() / TEXDATA_SIZE)
         .map(|i| {
             let id = index_at(&texdata, i * TEXDATA_SIZE + TEXDATA_NAME)?;
-            // A name missing from the tables is only used to skip tool textures, so it is left empty.
+            // A name missing from the tables is only used to skip tool textures, so it is left
+            // empty.
             let start = index_at(&table, id * STRING_TABLE_ENTRY).unwrap_or(0);
             let s = strings.get(start..).unwrap_or_default();
             let s = &s[..s.iter().position(|&c| c == 0).unwrap_or(s.len())];
@@ -546,8 +548,8 @@ pub(crate) mod tests {
     use super::*;
     use std::sync::OnceLock;
 
-    /// The map `name` from `testdata/maps`, or None when it is not there: the test then skips itself,
-    /// except where the maps are required (CI).
+    /// The map `name` from `testdata/maps`, or None when it is not there: the test then skips
+    /// itself, except where the maps are required (CI).
     pub(super) fn map(name: &str) -> Option<Vec<u8>> {
         let path = format!("{}/testdata/maps/{name}.bsp", env!("CARGO_MANIFEST_DIR"));
         let data = std::fs::read(&path).ok();
@@ -868,7 +870,8 @@ pub(crate) mod tests {
         assert_eq!(blue2.min, [-2400.0, -3136.0, 680.0]);
         assert_eq!(s.points.len(), 44, "56 minus 12 unused team-less ones");
         let count = |team: Team, point: i64| s.points.iter().filter(|p| p.team == team && p.point == Some(point)).count();
-        // Last spawns belong to the team's own last point, forward spawns to mid and the enemy second.
+        // Last spawns belong to the team's own last point, forward spawns to mid and the enemy
+        // second.
         assert_eq!(count(Team::Red, 4), 16);
         assert_eq!(count(Team::Blue, 0), 16);
         assert_eq!((count(Team::Red, 2), count(Team::Red, 1)), (3, 3));
@@ -901,7 +904,8 @@ pub(crate) mod tests {
     }
 
     /// Builds every map in `cache/`, for a look at how the playable-area filter and the material
-    /// kinds do on real maps. Run: `cargo test --release league_maps_build -- --ignored --nocapture`.
+    /// kinds do on real maps. Run: `cargo test --release league_maps_build -- --ignored
+    /// --nocapture`.
     #[test]
     #[ignore = "needs the maps in cache/; run by hand"]
     fn league_maps_build() {

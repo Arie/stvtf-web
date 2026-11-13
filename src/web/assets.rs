@@ -110,8 +110,8 @@ fn serve_backpack(s: &mut TcpStream, app: &App, file: &str) -> std::io::Result<(
     }
 }
 
-/// Changes whenever a page file does, so browsers holding `/app/` files for a day fetch new ones after a deploy;
-/// the modules' relative imports carry it along.
+/// Changes whenever a page file does, so browsers holding `/app/` files for a day fetch new ones
+/// after a deploy; the modules' relative imports carry it along.
 pub(crate) fn app_version() -> &'static str {
     static VERSION: std::sync::OnceLock<String> = std::sync::OnceLock::new();
     VERSION.get_or_init(|| format!("{:016x}", fnv1a(APP.iter().flat_map(|(.., body)| body.iter().copied()))))

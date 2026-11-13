@@ -8,7 +8,8 @@ use super::format::{
 use super::{Vec3, World};
 use anyhow::{Result, anyhow, bail};
 
-/// `ddispinfo_t`: its size and the fields read, and `dDispVert`: its size and its direction and distance.
+/// `ddispinfo_t`: its size and the fields read, and `dDispVert`: its size and its direction and
+/// distance.
 const DISPINFO_SIZE: usize = 176;
 const DISPINFO_VERTEX_START: usize = 12;
 const DISPINFO_POWER: usize = 20;
@@ -20,8 +21,8 @@ const MAX_POWER: usize = 4;
 /// All the grid points read from one map: real maps have far fewer, and a crafted one could
 /// otherwise make every face's displacement read the same points again and again.
 const MAX_GRID_POINTS: usize = 1 << 20;
-/// `samples` gives at most about this many points per displacement (a real 512-unit one at a
-/// step of 8 gives 4225, a 1400-unit one 8400), coarsening all its cells alike when more would come.
+/// `samples` gives at most about this many points per displacement (a real 512-unit one at a step
+/// of 8 gives 4225, a 1400-unit one 8400), coarsening all its cells alike when more would come.
 const MAX_SAMPLES: usize = 16384;
 /// Displacements read per map (real maps have up to about 1200): with `MAX_SAMPLES` a crafted
 /// map's samples are then at most about 400 MB. The rest keep their base faces.
@@ -53,7 +54,8 @@ impl Displacement {
         (0..n - 1).flat_map(move |i| (0..n - 1).map(move |j| [g[i * n + j], g[i * n + j + 1], g[(i + 1) * n + j + 1], g[(i + 1) * n + j]]))
     }
 
-    /// Points on the surface that are no more than `step` apart (a step of 0 gives the grid's points).
+    /// Points on the surface that are no more than `step` apart (a step of 0 gives the grid's
+    /// points).
     pub fn samples(&self, step: f32) -> Vec<Vec3> {
         if step <= 0.0 || step.is_nan() {
             return self.grid.clone();
@@ -70,7 +72,8 @@ impl Displacement {
                 })
                 .collect()
         };
-        // Points a split makes: the cell's far edges belong to the next cell, except at the surface's edge.
+        // Points a split makes: the cell's far edges belong to the next cell, except at the
+        // surface's edge.
         let count = |splits: &[usize]| -> usize {
             splits
                 .iter()
@@ -181,8 +184,9 @@ mod tests {
     #[test]
     fn swiftwater_terrain_is_at_its_real_height() {
         let Some(data) = swiftwater() else { return };
-        // Terrain near (2260, -100), inside a cell rather than on its edge, sits at about -708; its base faces are at -548 and -480.
-        // It is out of the players' reach, so its cells are looked at before the floors are filtered.
+        // Terrain near (2260, -100), inside a cell rather than on its edge, sits at about -708; its
+        // base faces are at -548 and -480. It is out of the players' reach, so its cells are looked
+        // at before the floors are filtered.
         let ds = displacements(&data, &World::read(&data).unwrap()).unwrap();
         let cells = ds.iter().flat_map(Displacement::cells);
         let zs: Vec<f32> = cells

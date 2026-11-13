@@ -90,7 +90,8 @@ struct App {
     voice_bot: Option<String>,
     /// The bell the voice bot waits on for Mumble channels asked for.
     mumble_changes: voice::mumble::Changes,
-    /// Whether a Mumble server may be on this machine or its network (`STVTF_MUMBLE_ANYWHERE=1`): at a LAN.
+    /// Whether a Mumble server may be on this machine or its network (`STVTF_MUMBLE_ANYWHERE=1`):
+    /// at a LAN.
     mumble_anywhere: bool,
     /// Whom people in voice channels were said to be, from one match to the next.
     voice_who: voice::known::WhoHistory,
@@ -151,7 +152,8 @@ impl App {
     }
 }
 
-/// Fetches demos.tf's overviews and builds the most played maps, so their first viewer does not wait.
+/// Fetches demos.tf's overviews and builds the most played maps, so their first viewer does not
+/// wait.
 fn warm(app: &App) {
     let known = {
         let _one_at_a_time = lock(&app.overviews);

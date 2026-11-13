@@ -149,7 +149,8 @@ fn map_geometry_is_gzipped_for_browsers_that_take_it() {
     assert_eq!(body, json.as_bytes());
 }
 
-/// A cache holding a BSP that cannot be built: it is gone once a build was tried, no network needed.
+/// A cache holding a BSP that cannot be built: it is gone once a build was tried, no network
+/// needed.
 fn broken_map(name: &str) -> (TempDir, PathBuf) {
     let dir = TempDir::new("map");
     let bsp = dir.join(format!("{name}.bsp"));

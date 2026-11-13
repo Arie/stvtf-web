@@ -213,8 +213,9 @@ impl Rooms {
         }
     }
 
-    /// Whether `by` may open another room (or private playback): fewer than the limit of theirs,
-    /// or their oldest goes. A room only once nobody has watched it for [`crate::matches::sessions::MAKES_ROOM`].
+    /// Whether `by` may open another room (or private playback): fewer than the limit of theirs, or
+    /// their oldest goes. A room only once nobody has watched it for
+    /// [`crate::matches::sessions::MAKES_ROOM`].
     fn make_room_for(&self, by: Option<&str>, private: bool) -> Result<()> {
         let Some(by) = by else { return Ok(()) };
         let privates = lock(&self.private).clone();

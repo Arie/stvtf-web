@@ -116,7 +116,8 @@ pub(super) fn serve_room(
                 let listed = param(&request.query, "overlay") != Some("1");
                 let site = who.user.as_ref().map(|u| u.name.as_str());
                 let _watching = room.join(&who.key, name.as_deref(), site, listed);
-                // By Steam id when signed in: whose room it was, when something is asked of it later.
+                // By Steam id when signed in: whose room it was, when something is asked of it
+                // later.
                 log!("room {} joined by {}", logged(&room.id), who.user.as_ref().map_or("a guest", |u| u.uid.as_str()));
                 stream(s, &room.hub, request.gzip, wants_detail(&request.query), wants_voice(&request.query))?;
             }

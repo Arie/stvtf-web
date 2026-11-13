@@ -58,7 +58,8 @@ fn map_geometry_from(fastdl: &str, cache: &Path, name: &str, fetch: bool) -> Res
     let body = match bsp::geometry(&data) {
         Ok(g) => serde_json::to_vec(&g)?,
         Err(e) => {
-            // A broken download would otherwise fail every request for this map; the next one fetches it again.
+            // A broken download would otherwise fail every request for this map; the next one
+            // fetches it again.
             let _ = std::fs::remove_file(&bsp_path);
             return Err(e);
         }
@@ -309,7 +310,8 @@ mod tests {
         assert_eq!(std::fs::read_dir(&cache).unwrap().count(), 0);
     }
 
-    /// Downloading, building, keeping the geometry and dropping the BSP, and the gzipped copy of it.
+    /// Downloading, building, keeping the geometry and dropping the BSP, and the gzipped copy of
+    /// it.
     #[test]
     fn a_map_is_downloaded_and_built_once() {
         let Some(data) = process() else { return };

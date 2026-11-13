@@ -59,8 +59,8 @@ fn demo_url_from(api: &str, id: u64) -> Result<String> {
     file_url(id, &body)
 }
 
-/// Where demos.tf's answer `body` says demo `id` is: on one of its own hosts, so a token cannot make
-/// us fetch anything else.
+/// Where demos.tf's answer `body` says demo `id` is: on one of its own hosts, so a token cannot
+/// make us fetch anything else.
 fn file_url(id: u64, body: &str) -> Result<String> {
     let info: Info = serde_json::from_str(body).with_context(|| format!("demos.tf's answer about demo {id}"))?;
     let host = info.url.strip_prefix("https://").and_then(|rest| rest.split('/').next()).unwrap_or_default();
@@ -189,7 +189,8 @@ fn download(url: &str, id: u64, limit: u64, out: &mut dyn Write, stop: &AtomicBo
 /// A demo file as gzipped stvtf output.
 fn decode(id: u64, demo: &[u8], snapshot_hz: f32) -> Result<Vec<u8>> {
     // Kept for the whole match: half the size of a fast level (a 24-minute demo is under 6 MiB).
-    // Buffered: flate2 runs the compressor on every write, and serde writes a line in many small pieces.
+    // Buffered: flate2 runs the compressor on every write, and serde writes a line in many small
+    // pieces.
     let mut gz = BufWriter::new(GzEncoder::new(Vec::new(), Compression::default()));
     let mut written = Ok(());
     stvtf::decode::demo_file(demo, snapshot_hz, &mut |line| {

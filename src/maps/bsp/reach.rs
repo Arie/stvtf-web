@@ -592,7 +592,8 @@ impl Reach {
         self.reached.any(col, col + g.dims[2])
     }
 
-    /// Whether players can get to the space just above the floor `p` (`x, y, x, y, …`) at height `z`.
+    /// Whether players can get to the space just above the floor `p` (`x, y, x, y, …`) at height
+    /// `z`.
     pub(super) fn keeps(&self, p: &[f64], z: f64) -> bool {
         let Some(left) = self.floor_work_left.get().checked_sub(samples_work(p)) else { return true };
         self.floor_work_left.set(left);

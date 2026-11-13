@@ -37,7 +37,8 @@ const KINDS: [(Kind, &[&str]); 9] = [
 const PATCH_SUFFIX: &str = "_wvt_patch";
 
 /// `name` without a leading `maps/<map>/` and a trailing `_x_y_z` (any of them negative) or
-/// `_wvt_patch`: the patched copy of a texture in a map's pak is named after the map and where it is.
+/// `_wvt_patch`: the patched copy of a texture in a map's pak is named after the map and where it
+/// is.
 fn original(name: &str) -> &str {
     let name = name.strip_prefix("maps/").map_or(name, |rest| rest.split_once('/').map_or(rest, |(_, name)| name));
     if let Some(name) = name.strip_suffix(PATCH_SUFFIX) {

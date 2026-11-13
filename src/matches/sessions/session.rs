@@ -147,9 +147,9 @@ impl Session {
         }
     }
 
-    /// Where the `.dem` files of what it plays are, by map load and server tick, so rooms on it can be relayed:
-    /// a live match's as it records them, a demos.tf demo's, kept in `store`, or a fixed match's,
-    /// beside its recording under the same name (`demo.dem` for `demo.jsonl.gz`).
+    /// Where the `.dem` files of what it plays are, by map load and server tick, so rooms on it can
+    /// be relayed: a live match's as it records them, a demos.tf demo's, kept in `store`, or a
+    /// fixed match's, beside its recording under the same name (`demo.dem` for `demo.jsonl.gz`).
     pub(crate) fn demo_of(&self, store: Option<&Store>) -> Option<DemoOf> {
         if let Some(d) = self.demos.get() {
             let d = d.clone();

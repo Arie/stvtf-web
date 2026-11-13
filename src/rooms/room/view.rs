@@ -15,7 +15,8 @@ pub(crate) enum View {
     Free,
     /// Everyone on auto zoom.
     Auto,
-    /// Everyone following one player, seeing as much of the map round them as the admin: `w` by `h`.
+    /// Everyone following one player, seeing as much of the map round them as the admin: `w` by
+    /// `h`.
     Follow {
         player: u16,
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -23,7 +24,8 @@ pub(crate) enum View {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         h: Option<f64>,
     },
-    /// Everyone seeing what the admin sees: the map area `w` by `h` round `cx`, `cy`, turned by `rot`.
+    /// Everyone seeing what the admin sees: the map area `w` by `h` round `cx`, `cy`, turned by
+    /// `rot`.
     Admin { cx: f64, cy: f64, w: f64, h: f64, rot: f64 },
 }
 
