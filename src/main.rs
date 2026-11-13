@@ -292,6 +292,12 @@ fn matches(options: &Options, keys: Option<&Arc<web::token::Keys>>, stop: &'stat
     Ok(Matches::One(hub))
 }
 
+/// The ids of the matches watched live now: the sweep leaves their demos.
+fn live_ids(matches: &Matches) -> std::collections::HashSet<String> {
+    let Matches::Many(sessions) = matches else { return std::collections::HashSet::new() };
+    sessions.live().iter().map(|s| s.id.clone()).collect()
+}
+
 /// Stops idle matches and saves the running ones, and on Ctrl-C disconnects them all cleanly
 /// before exiting.
 fn keep_house(app: Arc<App>, stop: &'static AtomicBool) {
@@ -318,7 +324,7 @@ fn keep_house(app: Arc<App>, stop: &'static AtomicBool) {
             }
             // Old files of rooms, demos and live matches.
             if round % SWEEP_ROUNDS == 0 {
-                app.rooms.sweep();
+                app.rooms.sweep(&live_ids(&app.matches));
             }
             std::thread::sleep(HOUSEKEEPING);
         }
@@ -413,7 +419,7 @@ fn main() -> Result<()> {
         voice_who,
     });
     app.voice_who.keep_up();
-    app.rooms.sweep();
+    app.rooms.sweep(&live_ids(&app.matches));
     if let Matches::Many(_) = app.matches {
         keep_house(app.clone(), &STOP);
         if !options.no_warm {

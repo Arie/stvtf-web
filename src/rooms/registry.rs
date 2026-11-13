@@ -8,7 +8,7 @@ use crate::relays::pool::{DemoOf, Offer, Pool};
 use crate::rooms::room::{Room, Saved, read_marker};
 use anyhow::{Result, bail};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, Weak};
 use std::time::{Duration, Instant, SystemTime};
@@ -40,7 +40,7 @@ pub(crate) struct Rooms {
     /// Live rooms keep their match watched.
     watching: Mutex<HashMap<String, Viewer>>,
     /// Private playbacks: one viewer's own, from a match page; not saved.
-    private: Mutex<std::collections::HashSet<String>>,
+    private: Mutex<HashSet<String>>,
     /// The ports rooms are relayed on, if they are (`--relay-ports`).
     relays: Option<Arc<Pool>>,
     /// Where the maps' geometry is kept, for the relays to draw strokes on their floors.
@@ -50,7 +50,7 @@ pub(crate) struct Rooms {
     /// Who opened each room, for the limits per person, and when.
     by: Mutex<HashMap<String, (String, Instant)>>,
     /// Quiet room files found to have no relay.
-    unrelayed: Mutex<std::collections::HashSet<String>>,
+    unrelayed: Mutex<HashSet<String>>,
 }
 
 /// Private playbacks at once, at most.
@@ -442,17 +442,20 @@ impl Rooms {
     }
 
     /// Drops saved rooms nobody came back for, demos no room plays, and the files of live matches
-    /// gone: those not written or used for an hour. A live match's `.dem` files go after the
-    /// recording's three hours (one on a long map is written to all along; an earlier one, from
-    /// before a reconnect, still holds part of what the recording keeps). Run at start and from
-    /// time to time.
-    pub(crate) fn sweep(&self) {
+    /// gone: those not written or used for an hour. A live match's `.dem` files go three hours
+    /// after they were last written, unless the match is still running (`live`, by id): it drops
+    /// those of the maps its recording dropped itself. Run at start and from time to time.
+    pub(crate) fn sweep(&self, live: &HashSet<String>) {
         let Some(store) = &self.store else { return };
         let Ok(entries) = std::fs::read_dir(&store.dir) else { return };
         for entry in entries.flatten() {
             let name = entry.file_name().to_string_lossy().into_owned();
             // A live match's demos, and the voice kept beside them.
             let dem = std::path::Path::new(name.strip_suffix(".voice").unwrap_or(&name)).extension().is_some_and(|e| e == "dem");
+            let running = name.strip_prefix(LIVE_PREFIX).and_then(|n| n.split_once('-')).is_some_and(|(id, _)| live.contains(id));
+            if dem && running {
+                continue;
+            }
             let keep = if name.starts_with(LIVE_PREFIX) && dem { LIVE_DEMO_KEPT } else { STALE };
             // A demos.tf demo's files are kept within a budget (below); one half fetched is not.
             let demos_tf = kept_demo(&name);
@@ -692,6 +695,23 @@ mod tests {
         // One played within the hour stays, whatever the budget.
         sweep_demos(&dir, Duration::from_hours(48), 0);
         assert_eq!(left(), ["demo-1.gz", "room-x"]);
+    }
+
+    #[test]
+    fn the_sweep_leaves_the_demos_of_a_match_still_running() {
+        let dir = TempDir::new("sweep-live");
+        let store = store(&dir);
+        std::fs::create_dir_all(&store.dir).unwrap();
+        let hours_ago = SystemTime::now() - Duration::from_hours(4);
+        for name in ["live-aaaa-0-100.dem", "live-aaaa-0-100.dem.voice", "live-bbbb-0-100.dem", "live-bbbb-0-100.dem.voice"] {
+            std::fs::write(store.dir.join(name), b"x").unwrap();
+            std::fs::File::options().write(true).open(store.dir.join(name)).unwrap().set_modified(hours_ago).unwrap();
+        }
+        Rooms::new(Some(store.clone()), None).sweep(&["aaaa".to_string()].into());
+        let mut left: Vec<String> =
+            std::fs::read_dir(&store.dir).unwrap().flatten().map(|e| e.file_name().to_string_lossy().into_owned()).collect();
+        left.sort();
+        assert_eq!(left, ["live-aaaa-0-100.dem", "live-aaaa-0-100.dem.voice"], "a map played hours ago, the match still on");
     }
 
     fn saved_at(s: &Saved) -> u64 {
