@@ -271,8 +271,14 @@ impl WhoHistory {
         {
             let mut looked = lock(&self.0.looked);
             let fresh = |(at, found): &(Instant, bool)| at.elapsed() < if *found { LINK_FOR } else { NO_LINK_FOR };
-            if looked.get(who).is_some_and(fresh) || looked.len() >= MAX_KNOWN {
+            if looked.get(who).is_some_and(fresh) {
                 return;
+            }
+            if looked.len() >= MAX_KNOWN {
+                looked.retain(|_, e| fresh(e));
+                if looked.len() >= MAX_KNOWN {
+                    return;
+                }
             }
             looked.insert(who.to_string(), (Instant::now(), false));
         }
@@ -545,6 +551,16 @@ mod tests {
         assert_eq!(*lock(&asked), ["eu 77", "na 77", "eu 78", "na 78", "au 78"]);
         assert_eq!(who.recall("77"), Some(Recalled::Player { steamid: "[U:1:9]".into(), sure: true }));
         assert_eq!(who.recall("78"), None);
+    }
+
+    #[test]
+    fn those_asked_about_long_ago_make_way_for_someone_new() {
+        let asked = Arc::new(Mutex::new(Vec::new()));
+        let who = WhoHistory::asking(None, None, vec![knows("eu", &[], &asked, false)]);
+        let long_ago = Instant::now().checked_sub(LINK_FOR + LINK_FOR).unwrap();
+        lock(&who.0.looked).extend((0..MAX_KNOWN).map(|n| (n.to_string(), (long_ago, true))));
+        who.look_up("77777777");
+        assert_eq!(*lock(&who.0.wanted), ["77777777"]);
     }
 
     #[test]
