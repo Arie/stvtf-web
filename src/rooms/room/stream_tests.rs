@@ -92,7 +92,9 @@ fn a_room_at_live_when_its_map_ends_goes_on_and_one_away_from_it_stays() {
     assert_eq!(through_a_change(live), (true, 1));
     // Unwatched, these play nothing: they are where they were put when the map ends.
     let at = |behind: u64, speed| {
-        move |rec: &Arc<Recording>, last: u64| Room::start_at("r".into(), "me", rec.clone(), last - behind, speed, false)
+        move |rec: &Arc<Recording>, last: u64| {
+            Room::start_at("r".into(), "me", rec.clone(), StartAt { at: last - behind, speed, paused: false })
+        }
     };
     assert_eq!(through_a_change(at(2000, 1.0)), (true, 1), "2 s behind is at live");
     assert_eq!(through_a_change(at(10_000, 1.0)), (false, 0), "10 s behind");

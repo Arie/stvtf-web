@@ -130,7 +130,7 @@ fn a_room_rewound_to_the_end_of_the_map_just_played_shows_its_last_moment() {
     push_changing(&rec);
     let end = rec.parts()[0].last;
     for at in [end, u64::MAX] {
-        let room = Room::start_at("r".into(), "me", rec.clone(), at, 1.0, true);
+        let room = Room::start_at("r".into(), "me", rec.clone(), StartAt { at, speed: 1.0, paused: true });
         settle(&room);
         assert_eq!(playback(&room)["at"].as_u64(), Some(end));
         shows_the_last_moment(&room);
@@ -158,7 +158,7 @@ fn an_admin_moves_the_room_to_where_a_map_after_a_change_shows() {
     let part = rec.part(1).unwrap();
     assert_eq!(part.start, part.origin, "its first snapshot");
     // Paused: it stays where it lands.
-    let room = Room::start_at("r".into(), "me", rec.clone(), rec.length(), 1.0, true);
+    let room = Room::start_at("r".into(), "me", rec.clone(), StartAt { at: rec.length(), speed: 1.0, paused: true });
     room.move_to_map(&MapChoice { load: 1 }).unwrap();
     on_map(&room, 1);
     settle(&room);
@@ -219,7 +219,7 @@ fn a_room_sought_to_the_end_of_a_map_with_a_frame_late_behind_the_change_shows_n
     push(&rec, &status("changelevel"), rec.length() + 100);
     push(&rec, &snapshot(130, None, Vec::new()), rec.length() + 86);
     push(&rec, &status("map_change"), rec.length() + 14);
-    let room = Room::start_at("r".into(), "me", rec.clone(), u64::MAX, 1.0, true);
+    let room = Room::start_at("r".into(), "me", rec.clone(), StartAt { at: u64::MAX, speed: 1.0, paused: true });
     settle(&room);
     assert_eq!(lock(&room.hub).tick(), Some(130), "the late frame");
     shows_the_last_moment(&room);

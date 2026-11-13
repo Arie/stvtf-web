@@ -5,7 +5,7 @@ use crate::lock;
 use crate::matches::recording::Recording;
 use crate::matches::sessions::{DEMO_PREFIX, LIVE_PREFIX, Session, Sessions, Store, Viewer, demo_dem, demo_output, logged};
 use crate::relays::pool::{DemoOf, Offer, Pool};
-use crate::rooms::room::{Room, Saved, read_marker};
+use crate::rooms::room::{Room, Saved, StartAt, read_marker};
 use anyhow::{Result, bail};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -30,27 +30,42 @@ const DEMOS_BUDGET: u64 = 5 << 30;
 
 #[derive(Default)]
 pub(crate) struct Rooms {
-    map: Mutex<HashMap<String, Arc<Room>>>,
+    /// The rooms open here, by id.
+    open: Mutex<HashMap<String, Entry>>,
     /// Where they are saved, if anywhere.
     store: Option<Store>,
-    /// What each plays.
-    sources: Mutex<HashMap<String, Source>>,
     /// Demos' recordings rooms picked up play, while one does: rooms on the same share it.
     shared: Mutex<HashMap<String, Weak<Recording>>>,
-    /// Live rooms keep their match watched.
-    watching: Mutex<HashMap<String, Viewer>>,
-    /// Private playbacks: one viewer's own, from a match page; not saved.
-    private: Mutex<HashSet<String>>,
     /// The ports rooms are relayed on, if they are (`--relay-ports`).
     relays: Option<Arc<Pool>>,
     /// Where the maps' geometry is kept, for the relays to draw strokes on their floors.
     maps: Option<PathBuf>,
-    /// A hash of each room file as last written here: one the same again is only touched.
-    written: Mutex<HashMap<String, u64>>,
-    /// Who opened each room, for the limits per person, and when.
-    by: Mutex<HashMap<String, (String, Instant)>>,
     /// Quiet room files found to have no relay.
     unrelayed: Mutex<HashSet<String>>,
+}
+
+/// A room open here, and what goes with it.
+struct Entry {
+    room: Arc<Room>,
+    /// What it plays; none for a private playback, which is not saved.
+    source: Option<Source>,
+    /// A room on a live match keeps it watched, till the entry goes.
+    _viewer: Option<Viewer>,
+    /// Who opened it, for the limits per person, and when.
+    by: Option<(String, Instant)>,
+    /// A hash of each of its files as last written here: one the same again is only touched.
+    written: HashMap<String, u64>,
+}
+
+impl Entry {
+    fn new(room: &Arc<Room>, source: Option<Source>, by: Option<&str>) -> Entry {
+        let by = by.map(|by| (by.to_string(), Instant::now()));
+        Entry { room: room.clone(), source, _viewer: None, by, written: HashMap::new() }
+    }
+
+    fn is_private(&self) -> bool {
+        self.source.is_none()
+    }
 }
 
 /// Private playbacks at once, at most.
@@ -75,6 +90,11 @@ struct SavedRoom {
     room: Saved,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     by: Option<String>,
+}
+
+/// What keeps match `from` watched for a room on it: a live one only.
+fn watching(from: &Arc<Session>, source: &Source) -> Option<Viewer> {
+    matches!(source, Source::Live(_)).then(|| Viewer::new(from.clone()))
 }
 
 /// What the names of a room's files in the store start with.
@@ -160,7 +180,7 @@ impl Rooms {
 
     /// The live match room `id` is on, if it is on one.
     pub(crate) fn live_match(&self, id: &str, sessions: &Sessions) -> Option<Arc<Session>> {
-        let source = lock(&self.sources).get(id).cloned()?;
+        let source = lock(&self.open).get(id)?.source.clone()?;
         match source {
             Source::Live(m) => sessions.get(&m).filter(|s| s.is_live()),
             Source::Pinned(_) | Source::Demo(_) => None,
@@ -169,12 +189,9 @@ impl Rooms {
 
     /// The room `owner` opened on match `from` and still has, if any (not a private playback).
     pub(crate) fn owned(&self, from: &Session, owner: &str) -> Option<Arc<Room>> {
-        let source = Self::source(from);
-        // One lock at a time: others take the map before the rest.
-        let rooms: Vec<Arc<Room>> = lock(&self.map).values().cloned().collect();
-        let private = lock(&self.private).clone();
-        let sources = lock(&self.sources).clone();
-        rooms.into_iter().find(|r| sources.get(&r.id) == Some(&source) && !private.contains(&r.id) && r.owned_by(owner))
+        let source = Some(Self::source(from));
+        let ours: Vec<Arc<Room>> = lock(&self.open).values().filter(|e| e.source == source).map(|e| e.room.clone()).collect();
+        ours.into_iter().find(|r| r.owned_by(owner))
     }
 
     /// What a room on match `from` plays.
@@ -200,17 +217,11 @@ impl Rooms {
         }
         let room = Room::start(id, owner, recording);
         self.give_maps(&room);
-        self.opened_by(&room.id, by);
-        self.watch(&room.id, from, &source);
         self.offer(&room, from.demo_of(self.store.as_ref()));
-        self.add(&room, source);
+        let entry = Entry { _viewer: watching(from, &source), ..Entry::new(&room, Some(source), by) };
+        lock(&self.open).insert(room.id.clone(), entry);
+        self.save(&room);
         Ok(room)
-    }
-
-    fn opened_by(&self, room: &str, by: Option<&str>) {
-        if let Some(by) = by {
-            lock(&self.by).insert(room.to_string(), (by.to_string(), Instant::now()));
-        }
     }
 
     /// Whether `by` may open another room (or private playback): fewer than the limit of theirs, or
@@ -218,68 +229,51 @@ impl Rooms {
     /// [`crate::matches::sessions::MAKES_ROOM`].
     fn make_room_for(&self, by: Option<&str>, private: bool) -> Result<()> {
         let Some(by) = by else { return Ok(()) };
-        let privates = lock(&self.private).clone();
-        let mut theirs: Vec<(Instant, String)> = lock(&self.by)
-            .iter()
-            .filter(|(id, (b, _))| b == by && privates.contains(*id) == private)
-            .map(|(id, (_, t))| (*t, id.clone()))
-            .collect();
         let max = if private { PRIVATE_PER_PERSON } else { ROOMS_PER_PERSON };
+        let mut theirs: Vec<(Instant, Arc<Room>)> = lock(&self.open)
+            .values()
+            .filter_map(|e| Some((e.by.as_ref().filter(|(b, _)| b == by && e.is_private() == private)?.1, e.room.clone())))
+            .collect();
         if theirs.len() < max {
             return Ok(());
         }
-        theirs.sort();
-        let map = lock(&self.map).clone();
-        let oldest = theirs
-            .into_iter()
-            .map(|(_, id)| id)
-            .find(|id| private || map.get(id).is_none_or(|r| r.idle_for().is_some_and(|t| t >= crate::matches::sessions::MAKES_ROOM)));
-        let Some(id) = oldest else { bail!("You have {max} rooms open already: close one first.") };
-        if let Some(room) = lock(&self.map).remove(&id) {
-            room.stop();
+        theirs.sort_by_key(|(at, _)| *at);
+        let makes_room = |r: &Room| private || r.idle_for().is_some_and(|t| t >= crate::matches::sessions::MAKES_ROOM);
+        let Some((_, oldest)) = theirs.into_iter().find(|(_, r)| makes_room(r)) else {
+            bail!("You have {max} rooms open already: close one first.")
+        };
+        let removed = lock(&self.open).remove(&oldest.id);
+        if let Some(entry) = removed {
+            entry.room.stop();
+            self.forget_room(&oldest.id);
         }
-        self.forget_room(&id);
         Ok(())
     }
 
-    /// A private playback of match `from` for `owner`, from `at`: theirs alone, not saved. It
-    /// counts against `by`, as for [`Rooms::open`].
-    #[allow(clippy::too_many_arguments)]
+    /// A private playback of match `from` for `owner`, from where `start` says: theirs alone, not
+    /// saved. It counts against `by`, as for [`Rooms::open`].
     pub(crate) fn open_private(
         &self,
         from: &Arc<Session>,
         recording: Arc<Recording>,
         owner: &str,
-        at: u64,
-        speed: f64,
-        paused: bool,
+        start: StartAt,
         by: Option<&str>,
     ) -> Result<Arc<Room>> {
         self.make_room_for(by, true)?;
-        if lock(&self.private).len() >= MAX_PRIVATE {
+        if lock(&self.open).values().filter(|e| e.is_private()).count() >= MAX_PRIVATE {
             bail!("too many watching on their own");
         }
-        let room = Room::start_at(crate::matches::sessions::random_id(), owner, recording, at, speed, paused);
+        let room = Room::start_at(crate::matches::sessions::random_id(), owner, recording, start);
         self.give_maps(&room);
-        self.opened_by(&room.id, by);
-        if from.demo_id().is_none() && !from.is_pinned() {
-            self.watch(&room.id, from, &Source::Live(from.id.clone()));
-        }
-        lock(&self.private).insert(room.id.clone());
-        lock(&self.map).insert(room.id.clone(), room.clone());
+        let entry = Entry { _viewer: watching(from, &Self::source(from)), ..Entry::new(&room, None, by) };
+        lock(&self.open).insert(room.id.clone(), entry);
         Ok(room)
     }
 
     /// Rooms that count towards the match limit: not private playbacks.
     pub(crate) fn shared_count(&self) -> usize {
-        self.count() - lock(&self.private).len()
-    }
-
-    /// A room on a live match keeps it watched.
-    fn watch(&self, room: &str, from: &Arc<Session>, source: &Source) {
-        if matches!(source, Source::Live(_)) {
-            lock(&self.watching).insert(room.to_string(), Viewer::new(from.clone()));
-        }
+        lock(&self.open).values().filter(|e| !e.is_private()).count()
     }
 
     /// The recording rooms on `key` play, or `make`'s.
@@ -294,16 +288,10 @@ impl Rooms {
         Some(r)
     }
 
-    fn add(&self, room: &Arc<Room>, source: Source) {
-        lock(&self.sources).insert(room.id.clone(), source);
-        lock(&self.map).insert(room.id.clone(), room.clone());
-        self.save(room);
-    }
-
     /// Room `id`: open here, or saved by the process this one replaced and picked up now.
     pub(crate) fn get(&self, id: &str, sessions: &Sessions) -> Option<Arc<Room>> {
-        if let Some(room) = lock(&self.map).get(id) {
-            return Some(room.clone());
+        if let Some(e) = lock(&self.open).get(id) {
+            return Some(e.room.clone());
         }
         let store = self.store.as_ref()?;
         if !crate::matches::sessions::is_id(id) {
@@ -320,66 +308,74 @@ impl Rooms {
         if let Ok(marker) = store.take(&marker_file(id)) {
             saved.room.markers = read_marker(&marker, recording.watchable().load);
         }
-        let mut map = lock(&self.map);
+        let mut open = lock(&self.open);
         // Another page of it may have picked it up meanwhile.
-        if let Some(room) = map.get(id) {
-            return Some(room.clone());
+        if let Some(e) = open.get(id) {
+            return Some(e.room.clone());
         }
         let room = Room::restore(id.to_string(), saved.room, recording);
         self.give_maps(&room);
         self.offer(&room, self.demo_of(&saved.source, sessions));
-        if let Source::Live(match_id) = &saved.source
-            && let Some(m) = sessions.get(match_id)
-        {
-            self.watch(id, &m, &saved.source);
-        }
-        lock(&self.sources).insert(id.to_string(), saved.source);
-        self.opened_by(id, saved.by.as_deref());
-        map.insert(id.to_string(), room.clone());
+        let viewer = match &saved.source {
+            Source::Live(match_id) => sessions.get(match_id).and_then(|m| watching(&m, &saved.source)),
+            Source::Pinned(_) | Source::Demo(_) => None,
+        };
+        open.insert(id.to_string(), Entry { _viewer: viewer, ..Entry::new(&room, Some(saved.source), saved.by.as_deref()) });
         log!("room {} picked up", logged(id));
         Some(room)
     }
 
+    #[cfg(test)]
     pub(crate) fn count(&self) -> usize {
-        lock(&self.map).len()
+        lock(&self.open).len()
+    }
+
+    /// The rooms open now.
+    fn rooms(&self) -> Vec<Arc<Room>> {
+        lock(&self.open).values().map(|e| e.room.clone()).collect()
     }
 
     /// Whether an open room is on `map`: its geometry may be built (to draw on, in TF2 too).
     pub(crate) fn on_map(&self, map: &str) -> bool {
-        let rooms: Vec<Arc<Room>> = lock(&self.map).values().cloned().collect();
-        rooms.iter().any(|r| r.map() == map)
+        self.rooms().iter().any(|r| r.map() == map)
     }
 
     fn save(&self, room: &Room) {
         let Some(store) = &self.store else { return };
-        let Some(source) = lock(&self.sources).get(&room.id).cloned() else { return };
+        let Some((source, by)) = lock(&self.open).get(&room.id).and_then(|e| Some((e.source.clone()?, e.by.clone().map(|(b, _)| b))))
+        else {
+            return;
+        };
         if let Source::Demo(demo) = source {
             store.touch(&demo_output(demo));
             store.touch(&demo_dem(demo));
         }
-        let by = lock(&self.by).get(&room.id).map(|(b, _)| b.clone());
         let mut saved = SavedRoom { source, room: room.saved(), by };
         // Apart: not rewritten with where playback is every second.
         let marker = std::mem::take(&mut saved.room.markers);
         let written = serde_json::to_vec(&saved)
             .map_err(Into::into)
-            .and_then(|plain| self.put_changed(store, &file(&room.id), &plain))
-            .and_then(|()| self.put_changed(store, &marker_file(&room.id), &serde_json::to_vec(&marker)?));
+            .and_then(|plain| self.put_changed(store, &room.id, &file(&room.id), &plain))
+            .and_then(|()| self.put_changed(store, &room.id, &marker_file(&room.id), &serde_json::to_vec(&marker)?));
         if let Err(e) = written {
             log!("saving room {}: {e:#}", logged(&room.id));
         }
     }
 
-    /// Writes `plain` as `name`, or only touches it (for the sweep) if it holds that already.
-    fn put_changed(&self, store: &Store, name: &str, plain: &[u8]) -> Result<()> {
+    /// Writes `plain` as room `id`'s file `name`, or only touches it (for the sweep) if it holds
+    /// that already.
+    fn put_changed(&self, store: &Store, id: &str, name: &str, plain: &[u8]) -> Result<()> {
         use std::hash::{BuildHasher, BuildHasherDefault};
         let hash = BuildHasherDefault::<std::collections::hash_map::DefaultHasher>::default().hash_one(plain);
-        if lock(&self.written).get(name) == Some(&hash) && store.has(name) {
+        let same = lock(&self.open).get(id).is_some_and(|e| e.written.get(name) == Some(&hash));
+        if same && store.has(name) {
             store.touch(name);
             return Ok(());
         }
         store.put(name, plain)?;
-        lock(&self.written).insert(name.to_string(), hash);
+        if let Some(e) = lock(&self.open).get_mut(id) {
+            e.written.insert(name.to_string(), hash);
+        }
         Ok(())
     }
 
@@ -392,7 +388,7 @@ impl Rooms {
             let name = entry.file_name().to_string_lossy().into_owned();
             let Some(id) = name.strip_prefix(ROOM_PREFIX).filter(|id| crate::matches::sessions::is_id(id)) else { continue };
             let quiet = age(&entry).is_ok_and(|a| a > QUIET && a < STALE);
-            if !quiet || lock(&self.map).contains_key(id) || lock(&self.unrelayed).contains(id) {
+            if !quiet || lock(&self.open).contains_key(id) || lock(&self.unrelayed).contains(id) {
                 continue;
             }
             let relayed =
@@ -407,23 +403,21 @@ impl Rooms {
 
     /// Saves every room as it is now.
     pub(crate) fn persist(&self) {
-        let rooms: Vec<Arc<Room>> = lock(&self.map).values().cloned().collect();
-        for room in rooms {
+        for room in self.rooms() {
             self.save(&room);
         }
     }
 
     /// Ends the rooms nobody has watched for `linger`, and forgets them.
     pub(crate) fn reap(&self, linger: Duration) {
-        let rooms: Vec<Arc<Room>> = lock(&self.map).values().cloned().collect();
-        for room in rooms {
+        for room in self.rooms() {
             room.tend_relay();
         }
         let mut ended = Vec::new();
-        lock(&self.map).retain(|id, room| {
-            let keep = room.idle_for().is_none_or(|t| t < linger);
+        lock(&self.open).retain(|id, e| {
+            let keep = e.room.idle_for().is_none_or(|t| t < linger);
             if !keep {
-                room.stop();
+                e.room.stop();
                 ended.push(id.clone());
             }
             keep
@@ -433,14 +427,8 @@ impl Rooms {
         }
     }
 
-    /// Forgets room `id`, ended, and its files.
+    /// Forgets the files of room `id`, ended.
     fn forget_room(&self, id: &str) {
-        let mut sources = lock(&self.sources);
-        sources.remove(id);
-        lock(&self.watching).remove(id);
-        lock(&self.private).remove(id);
-        lock(&self.by).remove(id);
-        lock(&self.written).retain(|name, _| !name.starts_with(&file(id)));
         if let Some(store) = &self.store {
             store.forget(&file(id));
             store.forget(&marker_file(id));
@@ -512,7 +500,7 @@ mod tests {
         let rooms = Rooms::new(None, None);
         assert!(!rooms.on_map("cp_a"));
         let room = Room::start("r".into(), "me", rec);
-        lock(&rooms.map).insert("r".into(), room.clone());
+        lock(&rooms.open).insert("r".into(), Entry::new(&room, None, None));
         assert!(rooms.on_map("cp_a") && !rooms.on_map("cp_b"));
         room.stop();
     }
@@ -633,8 +621,8 @@ mod tests {
         }
         next.pick_up_relayed(&sessions);
         assert_eq!(next.count(), 1, "the relayed one only");
-        assert!(lock(&next.map).contains_key(&relayed.id));
-        for r in lock(&next.map).values() {
+        assert!(lock(&next.open).contains_key(&relayed.id));
+        for r in next.rooms() {
             r.stop();
         }
     }
@@ -654,14 +642,18 @@ mod tests {
         assert!(rooms.get(&a.id, &sessions).is_none(), "the unwatched one went");
         assert!(rooms.get(&b.id, &sessions).is_some() && rooms.get(&c.id, &sessions).is_some());
         // Private playbacks: the oldest goes, watched or not.
-        let private = || rooms.open_private(&m, m.recording().unwrap(), "me", 0, 1.0, false, Some("ip:192.0.2.9")).unwrap();
+        let private = || {
+            rooms
+                .open_private(&m, m.recording().unwrap(), "me", StartAt { at: 0, speed: 1.0, paused: false }, Some("ip:192.0.2.9"))
+                .unwrap()
+        };
         let first = private();
         let _watching = first.join("me", None, None, false);
         let (_, _) = (private(), private());
         private();
-        assert!(!lock(&rooms.map).contains_key(&first.id));
-        assert_eq!(lock(&rooms.private).len(), 3);
-        for r in lock(&rooms.map).values() {
+        assert!(!lock(&rooms.open).contains_key(&first.id));
+        assert_eq!(lock(&rooms.open).values().filter(|e| e.is_private()).count(), 3);
+        for r in rooms.rooms() {
             r.stop();
         }
     }

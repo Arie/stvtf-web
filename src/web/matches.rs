@@ -11,6 +11,7 @@ use super::{
 };
 use crate::matches::sessions;
 use crate::matches::sessions::{Session, Sessions, Viewer};
+use crate::rooms::room::StartAt;
 use crate::{App, lock};
 use anyhow::{Result, anyhow};
 use std::fmt::Write as _;
@@ -119,7 +120,8 @@ pub(super) fn rewind(
     };
     let Who { key: guest, cookie, user } = who(app, request);
     let by = counted(user.as_ref(), None, client);
-    match app.rooms.open_private(m, recording, &guest, r.at, r.speed.unwrap_or(1.0), r.paused, by.as_deref()) {
+    match app.rooms.open_private(m, recording, &guest, StartAt { at: r.at, speed: r.speed.unwrap_or(1.0), paused: r.paused }, by.as_deref())
+    {
         Ok(room) => opened(s, app, &room.id, cookie.as_deref()),
         Err(e) => Ok(refuse(s, "503 Service Unavailable", &e)?),
     }

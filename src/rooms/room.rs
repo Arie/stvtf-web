@@ -103,6 +103,15 @@ impl From<Leader> for (u32, String, String) {
     }
 }
 
+/// Where a private playback starts: at `at`, at `speed` (1× unless one of [`SPEEDS`]), paused or
+/// not.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct StartAt {
+    pub(crate) at: u64,
+    pub(crate) speed: f64,
+    pub(crate) paused: bool,
+}
+
 /// What a room is, saved for the next process: where playback is, who is in it, and the view.
 #[derive(Debug, Serialize, Deserialize)]
 pub(crate) struct Saved {
@@ -157,9 +166,9 @@ impl Room {
         Room::run(id, People::new(owner), None, None, state, recording)
     }
 
-    /// A room playing `recording` from `at`, at `speed` (1× unless one of [`SPEEDS`]), paused or
-    /// not.
-    pub(crate) fn start_at(id: String, owner: &str, recording: Arc<Recording>, at: u64, speed: f64, paused: bool) -> Arc<Room> {
+    /// A room playing `recording` from where `start` says.
+    pub(crate) fn start_at(id: String, owner: &str, recording: Arc<Recording>, start: StartAt) -> Arc<Room> {
+        let StartAt { at, speed, paused } = start;
         let at = at.clamp(recording.start(), recording.length());
         let speed = if SPEEDS.contains(&speed) { speed } else { 1.0 };
         let load = recording.watchable().load;

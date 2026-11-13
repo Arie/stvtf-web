@@ -179,7 +179,7 @@ fn a_room_behind_live_when_its_map_ended_stays() {
 fn a_room_that_never_followed_plays_to_its_maps_end_and_stays() {
     let rec = live_on("cp_a");
     play_on(&rec, 10_000);
-    let room = Room::start_at("r".into(), "me", rec.clone(), 50, 1.0, false);
+    let room = Room::start_at("r".into(), "me", rec.clone(), StartAt { at: 50, speed: 1.0, paused: false });
     behind_live_plays_to_the_end_and_stays(&room, &rec);
     room.stop();
 }
