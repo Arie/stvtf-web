@@ -48,6 +48,8 @@ class Timeline {
     this.fetched = 0;
     this.fetching = false;
     this.map = 0;
+    // A fetch belongs to one visit of a map: this counts every change of map, A to B to A too.
+    this.visit = 0;
     this.start = 0;
     this.origin = 0;
     this.upTo = Infinity;
@@ -72,15 +74,15 @@ class Timeline {
   async more(all) {
     if (this.fetching || all <= this.fetched) return;
     this.fetching = true;
-    const map = this.map;
+    const visit = this.visit;
     try {
       const r = await (await fetch(new URL(`marks?from=${this.fetched}`, this.t.home))).json();
-      if (map === this.map) {
+      if (visit === this.visit) {
         this.marks.push(...r.marks);
         [this.fetched, this.shown] = [r.all, until(this.marks, this.upTo)];
       }
     } catch {}
-    if (map === this.map) this.fetching = false;
+    if (visit === this.visit) this.fetching = false;
     this.draw();
   }
 
@@ -180,6 +182,7 @@ class Timeline {
   /** @param {number} map */
   nextMap(map) {
     [this.map, this.marks, this.fetched, this.shown, this.fetching] = [map, [], 0, 0, false];
+    this.visit++;
   }
 
   /** Whether a viewer may jump: an admin. @param {((ms: number) => void) | null} jump */
