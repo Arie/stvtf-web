@@ -10,29 +10,30 @@ use serde::Deserialize;
 /// The map an admin takes the room to, by number.
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct MapPost {
-    pub(crate) map: usize,
+pub(crate) struct MapChoice {
+    #[serde(alias = "map")]
+    pub(crate) load: usize,
 }
 
 impl Room {
-    /// An admin moves the room to map `m.map`: at live on the latest, at its first snapshot on an
+    /// An admin moves the room to load `m.load`: at live on the latest, at its first snapshot on an
     /// earlier one; its own map, to its end or live, following again (the page's Live).
-    pub(crate) fn go(&self, m: &MapPost) -> Result<()> {
+    pub(crate) fn move_to_map(&self, m: &MapChoice) -> Result<()> {
         let mut st = lock(&self.state);
-        let own = m.map == self.part(&st).n;
-        let Some(part) = self.recording.part(m.map).filter(|p| p.ready || own) else { bail!("Map gone") };
-        let latest = part.n == self.recording.latest().n;
+        let own = m.load == self.part(&st).load;
+        let Some(part) = self.recording.part(m.load).filter(|p| p.ready || own) else { bail!("Map gone") };
+        let latest = part.load == self.recording.latest().load;
         if own || latest {
             let over = self.end_of(&part).is_some();
             (st.paused, st.speed, st.seek) = (false, 1.0, Some(self.end_of(&part).unwrap_or_else(|| self.recording.length())));
             // Its own map over: it goes on when the next plays. The latest: decided when it ends.
             st.follows_live = own && over;
-            st.over = (own && over).then_some(part.n);
+            st.over = (own && over).then_some(part.load);
         } else {
             // Where its map shows: its first snapshot, nothing of the map before. It waits there.
-            (st.seek, st.follows_live, st.over) = (Some(part.origin.max(part.start)), false, Some(part.n));
+            (st.seek, st.follows_live, st.over) = (Some(part.origin.max(part.start)), false, Some(part.load));
         }
-        st.part = part.n;
+        st.load = part.load;
         // Following again with a later map playing: straight there, not to this one's end first.
         self.move_on(&mut st);
         self.wake.notify_all();
@@ -50,9 +51,9 @@ impl Room {
         if !st.follows_live {
             return false;
         }
-        let Some(next) = self.recording.parts().into_iter().rfind(|p| p.n > st.part && p.ready) else { return false };
+        let Some(next) = self.recording.parts().into_iter().rfind(|p| p.load > st.load && p.ready) else { return false };
         let at = self.end_of(&next).unwrap_or_else(|| self.recording.length());
-        (st.part, st.paused, st.speed, st.seek, st.follows_live, st.over) = (next.n, false, 1.0, Some(at), false, None);
+        (st.load, st.paused, st.speed, st.seek, st.follows_live, st.over) = (next.load, false, 1.0, Some(at), false, None);
         true
     }
 
@@ -87,13 +88,13 @@ impl Room {
     pub(super) fn rehome(&self, st: &mut State) {
         let (part, dropped) = self.placed(st);
         if dropped {
-            (st.part, st.paused, st.seek, st.follows_live, st.over) = (part.n, true, Some(part.start), false, Some(part.n));
+            (st.load, st.paused, st.seek, st.follows_live, st.over) = (part.load, true, Some(part.start), false, Some(part.load));
         }
     }
 
     /// The part the room is on, or the earliest kept (true) if that was dropped.
     fn placed(&self, st: &State) -> (Part, bool) {
-        if let Some(part) = self.recording.part(st.part) {
+        if let Some(part) = self.recording.part(st.load) {
             return (part, false);
         }
         self.recording.parts().into_iter().next().map_or_else(|| (self.recording.latest(), false), |p| (p, true))

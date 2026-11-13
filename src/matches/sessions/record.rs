@@ -28,7 +28,7 @@ pub(super) fn record(s: &Arc<Session>, store: Option<&Store>, resume: bool) {
     }));
     // The demos' loads go on from the recording's; a fresh one's from theirs.
     if let (Some(demos), false) = (s.demos.get(), fresh) {
-        let first = recording.parts().first().map_or(0, |p| p.n);
+        let first = recording.parts().first().map_or(0, |p| p.load);
         demos.go_on_from(recording.loads());
         demos.keep_from(first);
     }
@@ -65,7 +65,7 @@ fn pump(s: &Session, lines: &std::sync::mpsc::Receiver<Arc<str>>, recording: &Re
             && recording.chunks() != chunks
         {
             chunks = recording.chunks();
-            demos.keep_from(recording.parts().first().map_or(0, |p| p.n));
+            demos.keep_from(recording.parts().first().map_or(0, |p| p.load));
         }
     }
     recording.end();

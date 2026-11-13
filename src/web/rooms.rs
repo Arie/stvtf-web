@@ -9,7 +9,7 @@ use super::{
 };
 use crate::App;
 use crate::matches::sessions::{Session, Sessions, logged};
-use crate::rooms::room::{ArcDraw, CircleDraw, Control, Draw, LightDraw, MapPost, NoteDraw, Room, ViewPost};
+use crate::rooms::room::{ArcDraw, CircleDraw, Control, Draw, LightDraw, MapChoice, NoteDraw, Room, ViewPost};
 use anyhow::Result;
 use std::io::{BufReader, Take};
 use std::net::{IpAddr, TcpStream};
@@ -201,7 +201,7 @@ fn change(
             respond(s, "204 No Content", TEXT, b"")
         }
         "control" => done(s, json_body::<Control>(reader, request).and_then(|c| room.control(&c))),
-        "map" => done(s, json_body::<MapPost>(reader, request).and_then(|m| room.go(&m))),
+        "map" => done(s, json_body::<MapChoice>(reader, request).and_then(|m| room.move_to_map(&m))),
         "admin" => done(s, json_body::<Admin>(reader, request).and_then(|a| room.set_admin(guest, a.person, a.admin))),
         _ => not_found(s),
     }

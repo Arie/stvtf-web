@@ -105,16 +105,16 @@ export function onMarker(m) {
 // its own strokes too, but not what a marker line since the last playback line just gave: that is
 // the new map's, if the room sent it first.
 /** @type {number | null} */
-let map = null;
+let load = null;
 let fresh = false;
 /** @type {Set<() => void>} Told when the room goes to another map. */
 export const mapMovedListeners = new Set();
 
-/** @param {{ map?: number }} m a playback line */
+/** @param {{ load?: number }} m a playback line */
 export function onPlaybackMap(m) {
-  const moved = map != null && (m.map ?? 0) !== map;
+  const moved = load != null && (m.load ?? 0) !== load;
   const marked = fresh;
-  [map, fresh] = [m.map ?? 0, false];
+  [load, fresh] = [m.load ?? 0, false];
   if (!moved) return;
   setPending(null);
   for (const f of mapMovedListeners) f();

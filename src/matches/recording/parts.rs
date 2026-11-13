@@ -20,7 +20,7 @@ const WENT_ON_S: f64 = 5.0;
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct Part {
     /// Its load's number in the match, dropped ones too.
-    pub(crate) n: usize,
+    pub(crate) load: usize,
     /// Empty until a line says which map it is (a recording with no server line).
     pub(crate) map: String,
     /// Play time of its first snapshot (the recording's first line for its first part), and of the
@@ -53,7 +53,8 @@ impl Part {
 /// What a recording keeps of a part as it goes.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub(super) struct Kept {
-    n: usize,
+    #[serde(rename = "n")]
+    load: usize,
     map: String,
     origin: u64,
     last: u64,
@@ -134,7 +135,7 @@ impl Inner {
     pub(super) fn note_line(&mut self, at: u64, line: &Line) {
         if self.parts.is_empty() {
             let map = lock(&self.scratch).map.clone().unwrap_or_default();
-            self.parts.push(Kept { n: self.loads.latest(), map, origin: at, last: at, ..Kept::default() });
+            self.parts.push(Kept { load: self.loads.latest(), map, origin: at, last: at, ..Kept::default() });
         }
         match line {
             Line::Server(server) => self.on_server(at, &server.map),
@@ -182,14 +183,14 @@ impl Inner {
         if starts && snapped {
             let map = map.unwrap_or_default();
             let (first_tick, first_at, run) = (Some(tick), Some(at), Some((at, tick)));
-            self.parts.push(Kept { n, map, origin: at, last: at, first_tick, first_at, run, snap: run, ..Kept::default() });
+            self.parts.push(Kept { load: n, map, origin: at, last: at, first_tick, first_at, run, snap: run, ..Kept::default() });
             self.scores = None;
             return;
         }
         let later = self.parts.len() > 1;
         let latest = self.parts.last_mut().expect("a part");
         if starts {
-            (latest.n, latest.first_tick, latest.first_at) = (n, Some(tick), Some(at));
+            (latest.load, latest.first_tick, latest.first_at) = (n, Some(tick), Some(at));
             (latest.run, latest.snap) = (Some((at, tick)), Some((at, tick)));
             latest.map = map.unwrap_or_else(|| latest.map.clone());
             return;
@@ -241,16 +242,16 @@ impl Inner {
         let ends = kept.iter().skip(1).map(|p| Some(p.origin)).chain([None]);
         let list = kept.iter().zip(ends).map(|(p, end)| {
             let last = if end.is_none() && p.changing.is_none() { self.clock.play } else { p.last };
-            let (n, map, origin, start) = (p.n, p.map.clone(), p.origin, p.origin.max(first));
+            let (n, map, origin, start) = (p.load, p.map.clone(), p.origin, p.origin.max(first));
             let (changing, tail, ready, first_tick) = (p.changing, p.tail, p.ready, p.first_tick);
-            Part { n, map, origin, start, last, end, changing, tail, ready, first_tick }
+            Part { load: n, map, origin, start, last, end, changing, tail, ready, first_tick }
         });
         list.collect()
     }
 
     fn latest_part(&self) -> Part {
         self.part_list().pop().unwrap_or(Part {
-            n: self.loads.latest(),
+            load: self.loads.latest(),
             map: String::new(),
             origin: 0,
             start: 0,
@@ -268,7 +269,7 @@ impl Inner {
     /// part's till that exists.
     fn span(&self, n: usize) -> Option<(u64, Option<u64>)> {
         let parts = self.part_list();
-        let i = parts.iter().position(|p| p.n == n)?;
+        let i = parts.iter().position(|p| p.load == n)?;
         let from = i.checked_sub(1).and_then(|before| parts[before].tail).unwrap_or(parts[i].origin);
         Some((from, parts[i].tail.or(parts[i].end)))
     }
@@ -307,7 +308,7 @@ impl Inner {
     /// and the parts as they were at the first chunk, which the file's lines go on from.
     pub(super) fn parts_header(&self) -> anyhow::Result<String> {
         let first = self.part_list().into_iter().next();
-        let (origin, n) = first.map_or((self.start, self.loads.latest()), |p| (p.origin, p.n));
+        let (origin, n) = first.map_or((self.start, self.loads.latest()), |p| (p.origin, p.load));
         let seed = self.chunks.first().map(|c| &c.seed);
         Ok(format!("origin\t{origin}\nparts\t{n}\nseed\t{}\n", serde_json::to_string(&seed)?))
     }
@@ -327,7 +328,7 @@ impl Inner {
         let n = header.parts;
         let origin = header.origin.unwrap_or(at);
         let part = Kept {
-            n,
+            load: n,
             map: map.clone().unwrap_or_default(),
             origin,
             last: origin,
@@ -365,7 +366,7 @@ impl Recording {
 
     /// Part `n`; none once dropped.
     pub(crate) fn part(&self, n: usize) -> Option<Part> {
-        self.parts().into_iter().find(|p| p.n == n)
+        self.parts().into_iter().find(|p| p.load == n)
     }
 
     /// Play times of the rounds' starts in part `n` (see `span`).

@@ -50,7 +50,7 @@ fn a_recording_made_after_two_loads_starts_at_part_2() {
     connect(&s, "cp_c", 10);
     let rec = s.ready().unwrap();
     until("its first snapshot", || rec.latest().first_tick.is_some());
-    assert_eq!(rec.parts().iter().map(|p| (p.n, p.map.as_str())).collect::<Vec<_>>(), [(2, "cp_c")]);
+    assert_eq!(rec.parts().iter().map(|p| (p.load, p.map.as_str())).collect::<Vec<_>>(), [(2, "cp_c")]);
     assert_eq!(demos.at(2, 10), Some(dir.join(format!("live-{}-2-10.dem", s.id))));
     s.stop.store(true, Ordering::Relaxed);
 }
@@ -78,7 +78,7 @@ fn before_a_restart(store: &Store, id: &str) {
     }
     // Closes `cp_b`'s chunk: what the file has.
     take(&snapshot(5000, None, Vec::new()), 75_000);
-    assert_eq!(rec.parts().iter().map(|p| p.n).collect::<Vec<_>>(), [0, 1]);
+    assert_eq!(rec.parts().iter().map(|p| p.load).collect::<Vec<_>>(), [0, 1]);
 }
 
 #[test]
@@ -94,7 +94,7 @@ fn after_a_restart_the_next_load_has_the_next_number_on_both_sides() {
     connect(&s, "cp_b", 1000);
     publish(&s.hub, &snapshot(1100, None, Vec::new()));
     until("cp_b again", || rec.latest().first_tick == Some(1000));
-    assert_eq!(rec.parts().iter().map(|p| (p.n, p.map.as_str())).collect::<Vec<_>>(), [(0, "cp_a"), (1, "cp_b"), (2, "cp_b")]);
+    assert_eq!(rec.parts().iter().map(|p| (p.load, p.map.as_str())).collect::<Vec<_>>(), [(0, "cp_a"), (1, "cp_b"), (2, "cp_b")]);
     assert_eq!(s.demos.get().unwrap().at(2, 1000), Some(dir.join(format!("live-{id}-2-1000.dem"))));
     s.stop.store(true, Ordering::Relaxed);
 }

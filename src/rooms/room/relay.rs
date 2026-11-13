@@ -97,7 +97,7 @@ impl Room {
         let tick = st.tick.or(any.then_some(0))?;
         let part = self.part(st);
         Some(stvtf::relay::Want {
-            demo: (offer.demo_of)(part.n, tick)?,
+            demo: (offer.demo_of)(part.load, tick)?,
             tick,
             at: Instant::now(),
             paused: st.paused,

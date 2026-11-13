@@ -31,12 +31,12 @@ impl Room {
     pub(super) fn at_map_end(&self, st: &mut State) -> bool {
         let part = self.part(st);
         let over = self.end_of(&part).is_some();
-        if over && st.over != Some(part.n) {
+        if over && st.over != Some(part.load) {
             let near = part.last.saturating_sub(st.at) <= FOLLOW_WITHIN;
             st.follows_live = !st.paused && (st.speed - 1.0).abs() < f64::EPSILON && near;
-            st.over = Some(part.n);
+            st.over = Some(part.load);
         } else if !over && st.over.is_some() {
-            let went_on = st.over == Some(part.n);
+            let went_on = st.over == Some(part.load);
             (st.follows_live, st.over) = (false, None);
             if went_on {
                 st.seek = Some(st.at);
@@ -48,7 +48,7 @@ impl Room {
 
     /// Whether a map after part `n` has play: the gap after `n` is over.
     fn played_on(&self, n: usize) -> bool {
-        self.recording.parts().iter().any(|p| p.n > n && p.ready)
+        self.recording.parts().iter().any(|p| p.load > n && p.ready)
     }
 
     /// The room waits at the end of its map: its tail is read as it comes and dropped, but for
@@ -62,7 +62,7 @@ impl Room {
         // Looked at after the lines: a late frame of the map's own moves its end, and plays.
         let part = self.part(st);
         let Some(end) = self.end_of(&part) else { return Duration::ZERO };
-        let played_on = self.played_on(part.n);
+        let played_on = self.played_on(part.load);
         let stop = part.end.filter(|_| played_on);
         let first = !cur.waiting;
         while let Some(&(t, _)) = cur.lines.front() {

@@ -95,13 +95,13 @@ function roomButton() {
 // The room's playback bar and maps control, both heard from the stream.
 /** @param {(c: import("./playbar.js").Control) => unknown} send */
 function roomPlayback(send) {
-  const go = async (/** @type {number} */ map) => {
-    const r = await post("map", { map });
+  const moveToMap = async (/** @type {number} */ load) => {
+    const r = await post("map", { load });
     if (!r.ok) note(await r.text());
   };
-  const maps = mapsMenu(go);
+  const maps = mapsMenu(moveToMap);
   const live = (/** @type {number} */ end) => send({ seek: end, paused: false });
-  const bar = playbar({ home: HOME, send, live, room: true, map: go });
+  const bar = playbar({ home: HOME, send, live, room: true, moveToMap });
   playbackListeners.add(m => {
     bar.heard(m);
     maps(m, me.admin);

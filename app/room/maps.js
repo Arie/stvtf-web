@@ -11,7 +11,7 @@ import { env } from "../core/env.js";
  */
 export function mapState(p) {
   if (!p.over) return { status: "", next: null };
-  const next = (p.maps ?? []).findLast(m => m.n > (p.map ?? 0) && m.ready)?.n ?? null;
+  const next = (p.maps ?? []).findLast(m => m.load > (p.load ?? 0) && m.ready)?.load ?? null;
   return { status: next == null ? "Map over" : "Next map ready", next };
 }
 
@@ -21,8 +21,8 @@ export function mapNames(names) {
   return names.map(n => ((seen[n] = (seen[n] ?? 0) + 1) > 1 ? `${n} ${seen[n]}` : n));
 }
 
-/** The maps control. @param {(n: number) => void} go @returns {(p: PlaybackLine, admin: boolean) => void} heard */
-export function mapsMenu(go) {
+/** The maps control. @param {(load: number) => void} moveToMap @returns {(p: PlaybackLine, admin: boolean) => void} heard */
+export function mapsMenu(moveToMap) {
   const box = $("rb-mapbox"),
     button = /** @type {HTMLButtonElement} */ ($("rb-maps")),
     menu = $("rb-mapsmenu"),
@@ -35,14 +35,14 @@ export function mapsMenu(go) {
   /** @type {number | null} */
   let target = null;
   button.onclick = () => open(menu.hidden !== false);
-  next.onclick = () => target != null && go(target);
+  next.onclick = () => target != null && moveToMap(target);
   menu.addEventListener("click", e => {
     const picked = /** @type {HTMLButtonElement | null} */ (
-      /** @type {Element} */ (e.target).closest("button[data-map]")
+      /** @type {Element} */ (e.target).closest("button[data-load]")
     );
     if (!picked || button.disabled) return;
     open(false);
-    go(Number(picked.dataset.map));
+    moveToMap(Number(picked.dataset.load));
   });
   env.root.addEventListener("pointerdown", e => {
     const at = /** @type {Element} */ (e.composedPath()[0]);
@@ -52,7 +52,7 @@ export function mapsMenu(go) {
   let listed = "";
   return (p, admin) => {
     const maps = p.maps ?? [],
-      here = p.map ?? 0;
+      here = p.load ?? 0;
     const shown = maps.length > 1;
     box.hidden = button.hidden = !shown;
     button.disabled = !admin;
@@ -61,19 +61,19 @@ export function mapsMenu(go) {
     const key = JSON.stringify([here, maps]);
     if (shown && key !== listed) {
       listed = key;
-      button.textContent = `▤ ${names[maps.findIndex(m => m.n === here)] ?? ""}`;
-      menu.replaceChildren(...maps.map((m, i) => item(m, names[i], m.n === here)));
+      button.textContent = `▤ ${names[maps.findIndex(m => m.load === here)] ?? ""}`;
+      menu.replaceChildren(...maps.map((m, i) => item(m, names[i], m.load === here)));
     }
     target = mapState(p).next;
     next.hidden = !admin || target == null;
-    if (target != null) next.title = names[maps.findIndex(m => m.n === target)] ?? "";
+    if (target != null) next.title = names[maps.findIndex(m => m.load === target)] ?? "";
   };
 }
 
-/** @param {{ n: number; map: string; ready: boolean }} m @param {string} name @param {boolean} here */
+/** @param {{ load: number; map: string; ready: boolean }} m @param {string} name @param {boolean} here */
 function item(m, name, here) {
   const b = document.createElement("button");
-  b.dataset.map = String(m.n);
+  b.dataset.load = String(m.load);
   b.textContent = name;
   b.disabled = !m.ready && !here;
   b.classList.toggle("on", here);

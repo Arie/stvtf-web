@@ -77,11 +77,11 @@ fn the_real_map_change_is_two_parts() {
     let mut s = Stream { r: &r, s: 0.0 };
     let last = viaduct(&mut s);
     let mut change = s.change_to_frozen("koth_nucleus");
-    assert!(!r.latest().ready && r.latest().n == 1);
+    assert!(!r.latest().ready && r.latest().load == 1);
     s.after_frozen(&mut change, "koth_nucleus", 3, 244, 0);
     assert!(r.latest().ready, "at its first snapshot of play");
     let parts = r.parts();
-    assert_eq!(parts.iter().map(|p| (p.n, p.map.as_str())).collect::<Vec<_>>(), [(0, "koth_viaduct"), (1, "koth_nucleus")]);
+    assert_eq!(parts.iter().map(|p| (p.load, p.map.as_str())).collect::<Vec<_>>(), [(0, "koth_viaduct"), (1, "koth_nucleus")]);
     let (old, new) = (&parts[0], &parts[1]);
     assert_eq!((old.changing, old.tail, old.last, old.end), (Some(change.changelevel), Some(change.server), last, Some(new.origin)));
     // It begins at its play: the frozen frame and the break are the map before's.
@@ -103,7 +103,7 @@ fn the_same_map_again_is_two_parts() {
     let last = s.play(9716 - 59 * 67, 60);
     let change = s.change("koth_nucleus", 272, 3);
     let parts = r.parts();
-    assert_eq!(parts.iter().map(|p| (p.n, p.map.as_str())).collect::<Vec<_>>(), [(0, "koth_nucleus"), (1, "koth_nucleus")]);
+    assert_eq!(parts.iter().map(|p| (p.load, p.map.as_str())).collect::<Vec<_>>(), [(0, "koth_nucleus"), (1, "koth_nucleus")]);
     assert_eq!((parts[0].last, parts[0].tail, parts[0].end), (last, Some(change.server), Some(change.play)));
     assert!(parts[1].ready && !parts[1].over());
     assert_eq!(r.rounds_in(1), [change.play], "the round starting before its play is its own");
@@ -154,7 +154,7 @@ fn a_reconnect_is_no_new_part() {
     s.signon(2.0, "koth_viaduct");
     s.play(1000 + 70 * 67, 5);
     let part = r.latest();
-    assert_eq!((r.parts().len(), part.n, part.changing, part.tail, part.over()), (1, 0, None, None, false));
+    assert_eq!((r.parts().len(), part.load, part.changing, part.tail, part.over()), (1, 0, None, None, false));
 }
 
 #[test]
@@ -164,10 +164,10 @@ fn a_frozen_frame_is_not_play() {
     viaduct(&mut s);
     let mut change = s.change_to_frozen("koth_nucleus");
     let latest = r.latest();
-    assert_eq!((latest.n, latest.ready, latest.first_tick), (1, false, Some(68)));
-    assert_eq!(r.watchable().n, 0);
+    assert_eq!((latest.load, latest.ready, latest.first_tick), (1, false, Some(68)));
+    assert_eq!(r.watchable().load, 0);
     s.after_frozen(&mut change, "koth_nucleus", 0, 244, 1);
-    assert_eq!(r.watchable().n, 1);
+    assert_eq!(r.watchable().load, 1);
 }
 
 #[test]
@@ -181,10 +181,10 @@ fn a_new_load_that_never_plays() {
     s.snapshot(1.0, 300);
     s.play(367, 3);
     let parts = r.parts();
-    let seen: Vec<_> = parts.iter().map(|p| (p.n, p.map.as_str(), p.ready)).collect();
+    let seen: Vec<_> = parts.iter().map(|p| (p.load, p.map.as_str(), p.ready)).collect();
     assert_eq!(seen, [(0, "cp_a", true), (1, "cp_b", false), (2, "cp_c", true)]);
     assert!(parts[1].over() && parts[1].changing.is_none(), "over by its successor: one with no play is not changing");
-    assert_eq!(r.watchable().n, 2);
+    assert_eq!(r.watchable().load, 2);
 }
 
 #[test]
@@ -195,7 +195,7 @@ fn a_map_change_with_one_signon_is_two_parts() {
         let last = viaduct(&mut s);
         let change = s.fixed_change(map, 250, 0);
         let parts = r.parts();
-        assert_eq!(parts.iter().map(|p| (p.n, p.map.as_str())).collect::<Vec<_>>(), [(0, "koth_viaduct"), (1, map)]);
+        assert_eq!(parts.iter().map(|p| (p.load, p.map.as_str())).collect::<Vec<_>>(), [(0, "koth_viaduct"), (1, map)]);
         let (old, new) = (&parts[0], &parts[1]);
         assert_eq!((old.changing, old.tail, old.last, old.end), (Some(change.changelevel), Some(change.server), last, Some(change.play)));
         assert_eq!((new.origin, new.first_tick, new.ready, new.over()), (change.play, Some(68), true, false));
@@ -213,9 +213,9 @@ fn the_frozen_frame_alone_is_not_play_with_one_signon_either() {
     s.status(5.0, "map_change");
     s.signon(7.0, "koth_nucleus");
     s.snapshot(15.0, 68);
-    assert_eq!((r.latest().n, r.latest().ready, r.watchable().n), (1, false, 0));
+    assert_eq!((r.latest().load, r.latest().ready, r.watchable().load), (1, false, 0));
     s.snapshot(80.0, 250);
-    assert_eq!((r.latest().ready, r.watchable().n), (true, 1));
+    assert_eq!((r.latest().ready, r.watchable().load), (true, 1));
 }
 
 #[test]
@@ -264,7 +264,7 @@ fn a_later_map_begins_at_its_first_frame_of_play_not_its_frozen_one() {
     s.play(317, 3);
     assert!(play - frozen > 60_000, "the talk kept the break's time");
     let p = r.part(1).unwrap();
-    assert_eq!((p.n, p.map.as_str(), p.ready), (1, "koth_nucleus", true));
+    assert_eq!((p.load, p.map.as_str(), p.ready), (1, "koth_nucleus", true));
     assert_eq!((p.origin, p.start), (play, play), "its clock starts at play");
     assert_eq!(r.rounds_in(1).len(), 1, "its round");
     let (hub, _, _) = r.seek(p.origin, None);

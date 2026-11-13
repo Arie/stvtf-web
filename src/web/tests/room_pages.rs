@@ -96,8 +96,8 @@ fn only_admins_take_a_room_to_another_map() {
     let (page, cookie) = open_room(&app);
     let map = format!("{page}map");
     assert!(post(&app, &map, "", r#"{"map":0}"#).starts_with("HTTP/1.1 403"));
-    assert!(post(&app, &map, &cookie, r#"{"map":0}"#).starts_with("HTTP/1.1 204"));
-    let gone = post(&app, &map, &cookie, r#"{"map":7}"#);
+    assert!(post(&app, &map, &cookie, r#"{"load":0}"#).starts_with("HTTP/1.1 204"));
+    let gone = post(&app, &map, &cookie, r#"{"load":7}"#);
     assert!(gone.starts_with("HTTP/1.1 400") && gone.ends_with("Map gone"), "{gone}");
 }
 

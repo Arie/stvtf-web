@@ -44,7 +44,7 @@ fn through_a_change(open: impl FnOnce(&Arc<Recording>, u64) -> Arc<Room>) -> (bo
         on_map(&room, 1);
     }
     a_pass(&room);
-    let part = lock(&room.state).part;
+    let part = lock(&room.state).load;
     room.stop();
     (follows, part)
 }
@@ -125,7 +125,7 @@ fn a_room_plays_nothing_of_its_maps_tail_and_moves_after_the_frozen_frame_once_t
     assert!(decided(&room, 0));
     // It read the tail up to the frozen frame, and stays.
     a_pass(&room);
-    assert_eq!(lock(&room.state).part, 0, "a frozen frame is not play");
+    assert_eq!(lock(&room.state).load, 0, "a frozen frame is not play");
     assert_eq!(playback(&room)["maps"].as_array().unwrap().len(), 1, "nor a map to go to");
     let h = lock(&room.hub);
     assert!(h.map.as_deref() == Some("koth_viaduct") && h.has_snapshot() && h.tick() == Some(35084), "the last moment");
@@ -155,7 +155,7 @@ fn with_one_signon_a_room_waits_out_the_frozen_frame_and_goes_on_once_there_is_p
     s.push(15.0, &snapshot(68, None, Vec::new()));
     assert!(decided(&room, 0));
     a_pass(&room);
-    assert_eq!(lock(&room.state).part, 0, "a frozen frame is not play");
+    assert_eq!(lock(&room.state).load, 0, "a frozen frame is not play");
     s.snapshot(80.0, 250);
     s.play(317, 2);
     on_map(&room, 1);
@@ -176,7 +176,7 @@ fn a_room_restarted_following_goes_to_the_newest_map_with_play() {
     // A load that never plays, then one that does.
     s.change_to_frozen("koth_viaduct");
     s.change("cp_process_final", 250, 5);
-    let ns: Vec<_> = rec.parts().iter().map(|p| (p.n, p.ready)).collect();
+    let ns: Vec<_> = rec.parts().iter().map(|p| (p.load, p.ready)).collect();
     assert_eq!(ns, [(0, true), (1, true), (2, false), (3, true)]);
     let mut saved: Value = serde_json::from_str(OLD_SAVED_ROOM).unwrap();
     (saved["part"], saved["at"], saved["paused"]) = (0.into(), last.into(), false.into());

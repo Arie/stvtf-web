@@ -133,7 +133,7 @@ seeking and at speed with it.
 | `POST /r/<id>/ink` | admin: `{"ink": "#rrggbb"}` |
 | `POST /r/<id>/admin` | admin: `{"person": <number>, "admin": true\|false}` |
 | `POST /r/<id>/view` | admin: `{"mode": "free"\|"auto"}`, `{"mode": "follow", "player": <id>, "w", "h"}` (area round them) or `{"mode": "admin", "cx", "cy", "w", "h", "rot"}` (area they see), with `"page"` (the tab's name). `"take": true` chooses the view; without it, a camera move, counted only while the view is of its kind. That page leads from then on |
-| `POST /r/<id>/map` | admin: `{"map": <n>}` moves the room: the latest map at live, another at its start; the room's own, over, follows again; 400 `Map gone` for one dropped or without play |
+| `POST /r/<id>/map` | admin: `{"load": <n>}` moves the room: the latest map at live, another at its start; the room's own, over, follows again; 400 `Map gone` for one dropped or without play |
 | `GET /r/<id>/marks` | the marks of the room's map |
 | `GET /w/<id>/timeline` | the match page's timeline, and its `marks`, of the newest map that has play |
 | `POST /r/<id>/control` | admin: `{"paused", "speed", "seek"}` (any; `seek` in ms) |
@@ -159,5 +159,5 @@ The room's event stream adds:
 | `view` | as posted, with `by` |
 | `people` | `id`, `name`, `admin`, `owner`, `signed`, and `ink`, `steamid` when set |
 | `draw` | as posted, with `by` |
-| `playback` | of the room's map: `paused`, `speed`, `at`, `length` (ms), `start` (first moment kept), `origin` (map start), `rounds`; `live` (the newest map, not over); `map` (its number); `over`; `maps` (`n`, `map`, `ready` of each map with play, and the room's own); on change and every second while playing |
+| `playback` | of the room's map: `paused`, `speed`, `at`, `length` (ms), `start` (first moment kept), `origin` (map start), `rounds`; `live` (the newest map, not over); `load` (its map's number); `over`; `maps` (`load`, `map`, `ready` of each map with play, and the room's own); on change and every second while playing |
 | `seek` | before the state at the new position |

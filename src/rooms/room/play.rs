@@ -59,7 +59,7 @@ pub(super) struct State {
     /// The server tick of the last snapshot played, since the last seek.
     pub(super) tick: Option<u32>,
     /// The map of the match it plays, by number.
-    pub(super) part: usize,
+    pub(super) load: usize,
     /// It goes on to the next map by itself: it was at live when its map ended, and nobody did
     /// anything in it since.
     pub(super) follows_live: bool,
@@ -133,9 +133,9 @@ impl Room {
     pub(super) fn announce(&self, st: &State) {
         let (part, (_, end)) = (self.part(st), self.reach(st));
         let over = end.is_some();
-        let maps = self.recording.parts().into_iter().filter(|p| p.ready || p.n == part.n);
-        let maps: Vec<_> = maps.map(|p| serde_json::json!({ "n": p.n, "map": p.map, "ready": p.ready })).collect();
-        let latest = part.n == self.recording.latest().n;
+        let maps = self.recording.parts().into_iter().filter(|p| p.ready || p.load == part.load);
+        let maps: Vec<_> = maps.map(|p| serde_json::json!({ "load": p.load, "map": p.map, "ready": p.ready })).collect();
+        let latest = part.load == self.recording.latest().load;
         let line = serde_json::json!({
             "type": "playback",
             "paused": st.paused,
@@ -145,10 +145,10 @@ impl Room {
             // Where its map shows from (what is kept of it), and where the map began.
             "start": part.start,
             "origin": part.origin,
-            "rounds": self.recording.rounds_in(part.n),
+            "rounds": self.recording.rounds_in(part.load),
             "live": latest && self.recording.is_live() && !over,
             // Its map's number, whether the match went on to another, and the maps kept.
-            "map": part.n,
+            "load": part.load,
             "over": over,
             "maps": maps,
             // Marks so far: a page fetches the ones it lacks.
@@ -242,8 +242,8 @@ impl Room {
         *cur = Cursor { chunk, done, ..Cursor::default() };
         st.at = target;
         // Every move between maps ends here: a follow of a player ends, the marker goes with it.
-        let n = self.part(st).n;
-        if self.marker_part.load(Ordering::Relaxed) != n {
+        let n = self.part(st).load;
+        if self.marker_load.load(Ordering::Relaxed) != n {
             self.end_follow();
         }
         self.announce(st);

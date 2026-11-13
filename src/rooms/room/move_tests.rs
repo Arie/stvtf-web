@@ -1,7 +1,7 @@
 //! A room going on to another map: by an admin, or by itself when it follows live.
 
 use super::markers::{Markers, read_marker};
-use super::part::MapPost;
+use super::part::MapChoice;
 use super::part_tests::{live_room_then_new_map, playback, push, room_on_a_part_then_trimmed, settle, stalemate};
 use super::stream_tests::a_pass;
 use super::tests::until;
@@ -75,15 +75,15 @@ fn looked(room: &Room) -> usize {
     until("a look at the room", || {
         let p = playback(room);
         let maps = p["maps"].as_array().unwrap();
-        p["map"].as_u64() != Some(0) || (maps.len() > 1 && maps.iter().all(|m| m["ready"] == true))
+        p["load"].as_u64() != Some(0) || (maps.len() > 1 && maps.iter().all(|m| m["ready"] == true))
     });
-    lock(&room.state).part
+    lock(&room.state).load
 }
 
 pub(super) fn on_map(room: &Room, n: usize) {
     until("the room on its map", || {
         let st = lock(&room.state);
-        st.part == n && st.seek.is_none()
+        st.load == n && st.seek.is_none()
     });
 }
 
@@ -133,12 +133,12 @@ fn a_room_following_live_moves_to_the_next_map_once_it_has_play() {
     let (room, rec) = live_room_at_live_on("cp_a");
     push_server(&rec, "cp_b");
     settle(&room);
-    assert_eq!(playback(&room)["map"].as_u64(), Some(0), "announced, no play yet: it waits");
+    assert_eq!(playback(&room)["load"].as_u64(), Some(0), "announced, no play yet: it waits");
     push_snapshot(&rec, 50);
     on_map(&room, 1);
     settle(&room);
     let p = playback(&room);
-    assert_eq!((p["map"].as_u64(), p["live"].as_bool(), p["paused"].as_bool()), (Some(1), Some(true), Some(false)));
+    assert_eq!((p["load"].as_u64(), p["live"].as_bool(), p["paused"].as_bool()), (Some(1), Some(true), Some(false)));
     assert_eq!(lock(&room.hub).map.as_deref(), Some("cp_b"));
     room.stop();
 }
@@ -161,7 +161,7 @@ fn behind_live_plays_to_the_end_and_stays(room: &Room, rec: &Recording) {
     until("the end", || playback(room)["at"].as_u64() == Some(last));
     a_pass(room);
     let p = playback(room);
-    assert_eq!((p["map"].as_u64(), p["over"].as_bool()), (Some(0), Some(true)), "it played to the end, and waits");
+    assert_eq!((p["load"].as_u64(), p["over"].as_bool()), (Some(0), Some(true)), "it played to the end, and waits");
 }
 
 #[test]
@@ -212,21 +212,21 @@ fn an_admin_moves_the_room_to_the_latest_map_at_live_and_to_an_earlier_one_at_it
     push_snapshot(&rec, 50);
     assert_eq!(looked(&room), 0);
     let at = rec.part(0).unwrap().last;
-    room.go(&MapPost { map: 1 }).unwrap();
+    room.move_to_map(&MapChoice { load: 1 }).unwrap();
     on_map(&room, 1);
     settle(&room);
     let p = playback(&room);
-    assert_eq!((p["map"].as_u64(), p["live"].as_bool(), p["paused"].as_bool()), (Some(1), Some(true), Some(false)));
+    assert_eq!((p["load"].as_u64(), p["live"].as_bool(), p["paused"].as_bool()), (Some(1), Some(true), Some(false)));
     let page = subscribe(&room.hub, false);
-    room.go(&MapPost { map: 0 }).unwrap();
+    room.move_to_map(&MapChoice { load: 0 }).unwrap();
     on_map(&room, 0);
     settle(&room);
     let lines: Vec<Value> = page.try_iter().map(|l| serde_json::from_str(&l).unwrap()).collect();
-    let p = lines.iter().find(|l| l["type"] == "playback" && l["map"] == 0).unwrap();
-    assert_eq!((p["map"].as_u64(), p["at"].as_u64(), p["length"].as_u64()), (Some(0), Some(0), Some(at)));
+    let p = lines.iter().find(|l| l["type"] == "playback" && l["load"] == 0).unwrap();
+    assert_eq!((p["load"].as_u64(), p["at"].as_u64(), p["length"].as_u64()), (Some(0), Some(0), Some(at)));
     settle_past(&room, at + 100);
-    assert_eq!(playback(&room)["map"].as_u64(), Some(0), "at its end it waits: it was moved here");
-    assert_eq!(room.go(&MapPost { map: 7 }).unwrap_err().to_string(), "Map gone");
+    assert_eq!(playback(&room)["load"].as_u64(), Some(0), "at its end it waits: it was moved here");
+    assert_eq!(room.move_to_map(&MapChoice { load: 7 }).unwrap_err().to_string(), "Map gone");
     room.stop();
 }
 
@@ -267,10 +267,10 @@ fn marker_line(room: &Room) -> Value {
 fn drawings_stay_with_the_map_they_were_made_on() {
     let (room, _, _) = live_room_then_new_map();
     room.note(&NoteDraw { text: "here".into(), at: None, player: Some(3) }, "me").unwrap();
-    room.go(&MapPost { map: 1 }).unwrap();
+    room.move_to_map(&MapChoice { load: 1 }).unwrap();
     settle(&room);
     assert_eq!(marker_line(&room)["strokes"].as_array().unwrap().len(), 0, "none on the next map");
-    room.go(&MapPost { map: 0 }).unwrap();
+    room.move_to_map(&MapChoice { load: 0 }).unwrap();
     settle(&room);
     assert_eq!(marker_line(&room)["strokes"][0]["note"]["text"], "here");
     room.stop();
@@ -302,6 +302,6 @@ fn an_inline_marker_from_before_maps_is_the_latest_maps() {
     push_server(&rec, "cp_b");
     push_snapshot(&rec, 50);
     let room = Room::restore("r".into(), serde_json::from_value(saved).unwrap(), rec.clone());
-    assert_eq!(room.saved().markers.keys().collect::<Vec<_>>(), [&rec.latest().n]);
+    assert_eq!(room.saved().markers.keys().collect::<Vec<_>>(), [&rec.latest().load]);
     room.stop();
 }

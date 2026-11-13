@@ -1,7 +1,7 @@
 //! An admin's moves, and following again: the page's Live on a map that is over.
 
 use super::move_tests::{decided, live_room_at_live_on, on_map, push_server, push_snapshot};
-use super::part::MapPost;
+use super::part::MapChoice;
 use super::part_tests::{OLD_SAVED_ROOM, playback, push, settle};
 use super::stream_tests::a_pass;
 use super::tests::until;
@@ -17,14 +17,14 @@ fn live_on_a_map_over_follows_again_and_the_room_goes_on_when_the_next_plays() {
     assert!(decided(&room, 0));
     room.control(&Control { paused: Some(true), speed: Some(2.0), seek: Some(100) }).unwrap();
     assert!(!lock(&room.state).follows_live, "touched");
-    room.go(&MapPost { map: 0 }).unwrap();
+    room.move_to_map(&MapChoice { load: 0 }).unwrap();
     let last = rec.part(0).unwrap().last;
     until("at the end", || {
         let st = lock(&room.state);
         st.seek.is_none() && st.at == last
     });
     let st = lock(&room.state);
-    assert_eq!((st.paused, st.speed, st.follows_live, st.part), (false, 1.0, true, 0));
+    assert_eq!((st.paused, st.speed, st.follows_live, st.load), (false, 1.0, true, 0));
     drop(st);
     push_snapshot(&rec, 50);
     on_map(&room, 1);
@@ -35,13 +35,13 @@ fn live_on_a_map_over_follows_again_and_the_room_goes_on_when_the_next_plays() {
 fn live_on_a_map_going_on_is_live() {
     let (room, rec) = live_room_at_live_on("cp_a");
     room.control(&Control { paused: Some(true), speed: Some(2.0), seek: Some(50) }).unwrap();
-    room.go(&MapPost { map: 0 }).unwrap();
+    room.move_to_map(&MapChoice { load: 0 }).unwrap();
     until("at live", || {
         let st = lock(&room.state);
         st.seek.is_none() && st.at == rec.length()
     });
     let st = lock(&room.state);
-    assert_eq!((st.paused, st.speed, st.follows_live, st.part), (false, 1.0, false, 0));
+    assert_eq!((st.paused, st.speed, st.follows_live, st.load), (false, 1.0, false, 0));
     drop(st);
     room.stop();
 }
@@ -52,8 +52,8 @@ fn a_map_with_no_play_is_no_map_to_go_to() {
     push_server(&rec, "cp_b");
     push(&rec, &snapshot(68, None, Vec::new()), rec.length() + 50);
     assert!(!rec.part(1).unwrap().ready);
-    assert_eq!(room.go(&MapPost { map: 1 }).unwrap_err().to_string(), "Map gone");
-    assert_eq!(lock(&room.state).part, 0);
+    assert_eq!(room.move_to_map(&MapChoice { load: 1 }).unwrap_err().to_string(), "Map gone");
+    assert_eq!(lock(&room.state).load, 0);
     room.stop();
 }
 
@@ -81,7 +81,7 @@ fn a_room_that_moves_stops_following_a_player_and_goes_back_to_the_view_before()
     room.set_view(&ViewPost { view: View::Follow { player: 4, w: None, h: None }, take: true, page: "b".into() }, "me").unwrap();
     room.set_view(&ViewPost { view: View::Free, take: true, page: "b".into() }, "me").unwrap();
     room.set_view(&ViewPost { view: View::Follow { player: 5, w: None, h: None }, take: true, page: "b".into() }, "me").unwrap();
-    room.go(&MapPost { map: 0 }).unwrap();
+    room.move_to_map(&MapChoice { load: 0 }).unwrap();
     on_map(&room, 0);
     settle(&room);
     assert_eq!((view_line(&room)["mode"].as_str(), *lock(&room.camera)), (Some("free"), None));
@@ -101,7 +101,7 @@ fn a_room_saved_in_the_gap_with_nothing_decided_opens_and_decides_where_it_is() 
     let again = Room::restore("r".into(), serde_json::from_value(saved).unwrap(), rec.clone());
     assert!(decided(&again, 0), "at the end, playing: it follows");
     a_pass(&again);
-    assert_eq!(playback(&again)["map"].as_u64(), Some(0));
+    assert_eq!(playback(&again)["load"].as_u64(), Some(0));
     push_snapshot(&rec, 50);
     on_map(&again, 1);
     again.stop();
@@ -115,10 +115,10 @@ fn live_on_a_map_over_with_the_next_playing_goes_there_at_once() {
     room.clear("me");
     push_snapshot(&rec, 50);
     a_pass(&room);
-    assert_eq!(lock(&room.state).part, 0, "touched: it waits");
+    assert_eq!(lock(&room.state).load, 0, "touched: it waits");
     let page = subscribe(&room.hub, false);
     let _joined: Vec<_> = page.try_iter().collect();
-    room.go(&MapPost { map: 0 }).unwrap();
+    room.move_to_map(&MapChoice { load: 0 }).unwrap();
     on_map(&room, 1);
     settle(&room);
     let seeks = page.try_iter().filter(|l| l.contains(r#""type":"seek""#)).count();

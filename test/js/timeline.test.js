@@ -15,7 +15,7 @@ test("a marks fetch belongs to one visit of a map: A, B, A again drops the first
     length: () => 9,
     jump: null,
   });
-  const heard = map => tl.heard({ rounds: [], marks: 1, map });
+  const heard = load => tl.heard({ rounds: [], marks: 1, load });
   const answer = (i, at) => waiting[i]({ marks: [{ at, kind: "win", team: "red" }], all: 1 });
   heard(0);
   heard(1);

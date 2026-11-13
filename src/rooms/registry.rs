@@ -318,7 +318,7 @@ impl Rooms {
             })?,
         };
         if let Ok(marker) = store.take(&marker_file(id)) {
-            saved.room.markers = read_marker(&marker, recording.watchable().n);
+            saved.room.markers = read_marker(&marker, recording.watchable().load);
         }
         let mut map = lock(&self.map);
         // Another page of it may have picked it up meanwhile.
@@ -603,7 +603,7 @@ mod tests {
         let next = Rooms::new(Some(store(&dir)), None);
         let again = next.get(&r.id, &sessions).expect("picked up");
         let markers = again.saved().markers;
-        assert_eq!(markers.keys().collect::<Vec<_>>(), [&recording.latest().n]);
+        assert_eq!(markers.keys().collect::<Vec<_>>(), [&recording.latest().load]);
         assert_eq!(markers.values().next().map(Vec::len), Some(1));
         again.stop();
     }

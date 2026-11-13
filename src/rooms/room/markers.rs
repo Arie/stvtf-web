@@ -25,13 +25,13 @@ impl Room {
     /// The strokes of the map pages and the relay were last told.
     pub(super) fn current_marker(&self) -> Vec<Kept> {
         let all = lock(&self.marker);
-        all.get(&self.marker_part.load(Ordering::Relaxed)).cloned().unwrap_or_default()
+        all.get(&self.marker_load.load(Ordering::Relaxed)).cloned().unwrap_or_default()
     }
 
     /// The room is on map `n`: its pages are told that map's marker, its relay is handed it.
     pub(super) fn show_marker(&self, n: usize) {
         let all = lock(&self.marker);
-        if self.marker_part.swap(n, Ordering::Relaxed) == n {
+        if self.marker_load.swap(n, Ordering::Relaxed) == n {
             return;
         }
         announce(&self.hub, "marker", &kept_line(all.get(&n).map_or(&[], Vec::as_slice)));
@@ -41,7 +41,7 @@ impl Room {
 
     /// Drops the markers of the maps the trim dropped (the oldest first), whenever they came.
     pub(super) fn trim_markers(&self) {
-        let Some(first) = self.recording.parts().first().map(|p| p.n) else { return };
+        let Some(first) = self.recording.parts().first().map(|p| p.load) else { return };
         let mut all = lock(&self.marker);
         if all.keys().next().is_some_and(|n| *n < first) {
             all.retain(|n, _| *n >= first);

@@ -47,7 +47,7 @@ class Timeline {
     // spoilers.
     this.fetched = 0;
     this.fetching = false;
-    this.map = 0;
+    this.load = 0;
     // A fetch belongs to one visit of a map: this counts every change of map, A to B to A too.
     this.visit = 0;
     this.start = 0;
@@ -165,10 +165,10 @@ class Timeline {
 
   /**
    * A playback line: the rounds so far, how many marks there are, and what is kept of which map.
-   * @param {{ rounds: number[]; marks?: number; start?: number; origin?: number; map?: number }} m
+   * @param {{ rounds: number[]; marks?: number; start?: number; origin?: number; load?: number }} m
    */
   heard(m) {
-    if ((m.map ?? 0) !== this.map) this.nextMap(m.map ?? 0);
+    if ((m.load ?? 0) !== this.load) this.nextMap(m.load ?? 0);
     this.starts = m.rounds;
     this.origin = m.origin ?? 0;
     const moved = (m.start ?? 0) !== this.start;
@@ -178,9 +178,9 @@ class Timeline {
   }
 
   // Another map: its marks are fetched from the first.
-  /** @param {number} map */
-  nextMap(map) {
-    [this.map, this.marks, this.fetched, this.shown, this.fetching] = [map, [], 0, 0, false];
+  /** @param {number} load */
+  nextMap(load) {
+    [this.load, this.marks, this.fetched, this.shown, this.fetching] = [load, [], 0, 0, false];
     this.visit++;
   }
 

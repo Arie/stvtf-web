@@ -102,12 +102,12 @@ fn a_recording_of_plain_lines_is_one_part() {
     let r = Recording::read(script(1650).as_bytes(), "test").unwrap();
     let part = r.latest();
     assert_eq!(r.parts(), std::slice::from_ref(&part));
-    assert_eq!((part.n, part.origin, part.start, part.last), (0, 0, 0, r.length()));
+    assert_eq!((part.load, part.origin, part.start, part.last), (0, 0, 0, r.length()));
     assert!(!part.over() && part.map.is_empty());
     assert_eq!(
         Recording::default().latest(),
         Part {
-            n: 0,
+            load: 0,
             map: String::new(),
             origin: 0,
             start: 0,
@@ -128,7 +128,7 @@ fn a_new_map_starts_a_part_at_its_first_snapshot() {
     assert_eq!(r.latest().map, "cp_a");
     push_at(&r, &snapshot(50, None, Vec::new()), T0 + at + 500);
     let parts = r.parts();
-    assert_eq!(parts.iter().map(|p| (p.n, p.map.as_str())).collect::<Vec<_>>(), [(0, "cp_a"), (1, "cp_b")]);
+    assert_eq!(parts.iter().map(|p| (p.load, p.map.as_str())).collect::<Vec<_>>(), [(0, "cp_a"), (1, "cp_b")]);
     assert_eq!((parts[0].end, parts[1].origin, parts[1].first_tick), (Some(at + 500), at + 500, Some(50)));
     assert_eq!(parts[0].last, at - 500, "its last line that is play: the server line is the next map's");
     assert_eq!(r.start(), 0, "nothing is dropped");
@@ -206,7 +206,7 @@ fn a_recording_begun_mid_stream_takes_the_map_of_its_first_server_line() {
     s.signon(1.0, "cp_a");
     s.play(1000 + 5 * 67, 5);
     let parts = r.parts();
-    assert_eq!(parts.iter().map(|p| (p.n, p.map.as_str())).collect::<Vec<_>>(), [(0, "cp_a")], "a reconnect: no new load");
+    assert_eq!(parts.iter().map(|p| (p.load, p.map.as_str())).collect::<Vec<_>>(), [(0, "cp_a")], "a reconnect: no new load");
 }
 
 #[test]
@@ -216,7 +216,7 @@ fn ticks_starting_over_on_the_same_map_start_a_part_and_a_chunk() {
     let time = snapshots(&r, 50, 1650, T0 + 500);
     snapshots(&r, 50, 500, time);
     let part = r.latest();
-    assert_eq!((r.parts().len(), part.n, part.map.as_str(), part.first_tick), (2, 1, "cp_a", Some(50)));
+    assert_eq!((r.parts().len(), part.load, part.map.as_str(), part.first_tick), (2, 1, "cp_a", Some(50)));
     assert_eq!(r.part(0).unwrap().tail, None, "no server line: no tail");
     let (hub, i, played) = r.seek(part.origin, None);
     assert_eq!((played, r.chunk(i).unwrap()[0].0), (1, part.origin), "its origin is the start of a chunk");
@@ -237,12 +237,12 @@ fn a_part_trimmed_away_is_dropped_and_its_number_stays_used() {
     for s in 62..=(KEEP_MS + TRIM_MS) / 1000 + 100 {
         push_at(&r, &stalemate, T0 + s * 1000);
     }
-    assert_eq!(r.parts().iter().map(|p| p.n).collect::<Vec<_>>(), [1]);
+    assert_eq!(r.parts().iter().map(|p| p.load).collect::<Vec<_>>(), [1]);
     assert!(r.part(0).is_none() && r.part(1).is_some());
     assert_eq!(r.part(1).map(|p| (p.origin, p.start)), Some((61_500, r.start())), "its first line kept is the recording's");
     push_at(&r, &server("cp_c"), T0 + 99_999_000);
     push_at(&r, &snapshot(50, None, Vec::new()), T0 + 99_999_500);
-    assert_eq!(r.latest().n, 2);
+    assert_eq!(r.latest().load, 2);
 }
 
 #[test]

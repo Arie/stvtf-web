@@ -73,7 +73,7 @@ pub(crate) struct Room {
     /// The permanent marker strokes, by the map they are on.
     marker: Mutex<Markers>,
     /// The map whose marker the pages and the relay were last told (the one drawings land on).
-    marker_part: AtomicUsize,
+    marker_load: AtomicUsize,
     /// The marker changed since the relay was last handed it.
     marker_dirty: AtomicBool,
     /// The voice handed to its relay, whether it has one or not.
@@ -101,8 +101,8 @@ pub(crate) struct Saved {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     relay: Option<Was>,
     /// The map of the match it is on, by number; none in files from before: the latest.
-    #[serde(default)]
-    part: Option<usize>,
+    #[serde(default, rename = "part")]
+    load: Option<usize>,
     /// It goes on to the next map by itself (see `State::follows_live`).
     #[serde(default, rename = "follows")]
     follows_live: bool,
@@ -131,9 +131,9 @@ impl Room {
     /// map just played, while the next has none: at its end, so it goes on with the match).
     pub(crate) fn start(id: String, owner: &str, recording: Arc<Recording>) -> Arc<Room> {
         let at = if recording.is_live() { recording.length() } else { 0 };
-        let part = recording.watchable().n;
+        let load = recording.watchable().load;
         let seek = (at > 0).then_some(at);
-        let state = State { paused: false, speed: 1.0, at, seek, stop: false, tick: None, part, follows_live: false, over: None };
+        let state = State { paused: false, speed: 1.0, at, seek, stop: false, tick: None, load, follows_live: false, over: None };
         Room::run(id, People::new(owner), None, None, state, recording)
     }
 
@@ -142,20 +142,20 @@ impl Room {
     pub(crate) fn start_at(id: String, owner: &str, recording: Arc<Recording>, at: u64, speed: f64, paused: bool) -> Arc<Room> {
         let at = at.clamp(recording.start(), recording.length());
         let speed = if SPEEDS.contains(&speed) { speed } else { 1.0 };
-        let part = recording.watchable().n;
-        let state = State { paused, speed, at, seek: Some(at), stop: false, tick: None, part, follows_live: false, over: None };
+        let load = recording.watchable().load;
+        let state = State { paused, speed, at, seek: Some(at), stop: false, tick: None, load, follows_live: false, over: None };
         Room::run(id, People::new(owner), None, None, state, recording)
     }
 
     /// The room `saved` was, back where it was.
     pub(crate) fn restore(id: String, saved: Saved, recording: Arc<Recording>) -> Arc<Room> {
         let at = saved.at.clamp(recording.start(), recording.length());
-        let watchable = recording.watchable().n;
-        let part = saved.part.filter(|n| *n <= recording.latest().n).unwrap_or(watchable);
+        let watchable = recording.watchable().load;
+        let load = saved.load.filter(|n| *n <= recording.latest().load).unwrap_or(watchable);
         // Whether it follows live was decided on its map before: it is not again.
-        let over = saved.decided.then_some(part);
+        let over = saved.decided.then_some(load);
         let (paused, speed, follows_live) = (saved.paused, saved.speed, saved.follows_live);
-        let state = State { paused, speed, at, seek: Some(at), stop: false, tick: None, part, follows_live, over };
+        let state = State { paused, speed, at, seek: Some(at), stop: false, tick: None, load, follows_live, over };
         let room = Room::run(id, saved.people, saved.leader, saved.view.map(Into::into), state, recording);
         if let Some(view) = lock(&room.view).clone() {
             announce(&room.hub, "view", &view);
@@ -179,7 +179,7 @@ impl Room {
         state: State,
         recording: Arc<Recording>,
     ) -> Arc<Room> {
-        let part = state.part;
+        let load = state.load;
         let room = Arc::new(Room {
             id,
             hub: SharedHub::default(),
@@ -201,7 +201,7 @@ impl Room {
             relay_failed: Mutex::new(None),
             camera: Mutex::new(None),
             marker: Mutex::new(Markers::new()),
-            marker_part: AtomicUsize::new(part),
+            marker_load: AtomicUsize::new(load),
             marker_dirty: AtomicBool::new(true),
             #[cfg(test)]
             relayed: Mutex::new(Vec::new()),
@@ -225,9 +225,9 @@ impl Room {
             marker: Vec::new(),
             markers: lock(&self.marker).clone(),
             relay: lock(&self.relay_was).clone(),
-            part: Some(st.part),
+            load: Some(st.load),
             follows_live: st.follows_live,
-            decided: st.over == Some(st.part),
+            decided: st.over == Some(st.load),
         }
     }
 
@@ -295,7 +295,7 @@ impl Room {
     /// the match has.
     pub(crate) fn marks(&self, from: usize) -> (Vec<crate::matches::recording::Mark>, usize) {
         let part = self.part(&lock(&self.state));
-        self.recording.marks_in(part.n, from)
+        self.recording.marks_in(part.load, from)
     }
 
     pub(crate) fn owned_by(&self, guest: &str) -> bool {
@@ -331,6 +331,6 @@ pub(crate) use drawing::{Draw, Kept};
 pub(crate) use light::LightDraw;
 pub(crate) use markers::read_marker;
 pub(crate) use note::NoteDraw;
-pub(crate) use part::MapPost;
+pub(crate) use part::MapChoice;
 pub(crate) use play::Control;
 pub(crate) use view::ViewPost;

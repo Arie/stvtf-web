@@ -1,7 +1,7 @@
 //! A room while the server changes map: the map just played stays showing.
 
 use super::move_tests::{decided, live_on, live_room_at_live_on, new_map_with_play, on_map, push_server};
-use super::part::MapPost;
+use super::part::MapChoice;
 use super::part_tests::{OLD_SAVED_ROOM, playback, push, settle};
 use super::stream_tests::a_pass;
 use super::tests::until;
@@ -44,7 +44,7 @@ fn a_room_keeps_the_last_moment_showing_through_the_gap() {
     push_changing(&rec);
     until("the room to say its map is over", || playback(&room)["over"] == true);
     let p = playback(&room);
-    assert_eq!((p["map"].as_u64(), p["live"].as_bool()), (Some(0), Some(false)));
+    assert_eq!((p["load"].as_u64(), p["live"].as_bool()), (Some(0), Some(false)));
     assert_eq!(p["maps"].as_array().unwrap().len(), 1, "a map with nothing shown yet is not one");
     shows_the_last_moment(&room);
     new_map_with_play(&rec, "cp_b");
@@ -77,8 +77,8 @@ fn a_map_that_showed_nothing_yet_is_no_map_to_go_to() {
     push_server(&rec, "cp_b");
     let room = Room::start("r".into(), "me", rec.clone());
     assert_eq!(rec.parts().len(), 1);
-    assert_eq!(room.go(&MapPost { map: 1 }).unwrap_err().to_string(), "Map gone");
-    assert_eq!(lock(&room.state).part, 0);
+    assert_eq!(room.move_to_map(&MapChoice { load: 1 }).unwrap_err().to_string(), "Map gone");
+    assert_eq!(lock(&room.state).load, 0);
     room.stop();
 }
 
@@ -100,8 +100,8 @@ fn a_room_following_live_stays_on_its_map_through_a_snapshot_late_behind_the_cha
     assert!(!before.iter().any(|l| l["type"] == "status"), "the word of the change does not");
     for p in lines.iter().filter(|l| l["type"] == "playback") {
         let maps = p["maps"].as_array().unwrap();
-        assert!(maps.iter().all(|m| m["map"] != "cp_a" || m["n"] == 0), "{p}");
-        assert!(p["map"] == 0 || maps.iter().any(|m| m["n"] == p["map"] && m["map"] == "cp_b" && m["ready"] == true), "{p}");
+        assert!(maps.iter().all(|m| m["map"] != "cp_a" || m["load"] == 0), "{p}");
+        assert!(p["load"] == 0 || maps.iter().any(|m| m["load"] == p["load"] && m["map"] == "cp_b" && m["ready"] == true), "{p}");
     }
     assert_eq!(lock(&room.hub).map.as_deref(), Some("cp_b"));
     assert!(lock(&room.marker).contains_key(&0), "its marker is still its map's");
@@ -116,7 +116,7 @@ fn a_room_opened_in_the_gap_is_on_the_map_just_played() {
     room.viewers.fetch_add(1, Ordering::Relaxed);
     settle(&room);
     let p = playback(&room);
-    assert_eq!((p["map"].as_u64(), p["over"].as_bool()), (Some(0), Some(true)));
+    assert_eq!((p["load"].as_u64(), p["over"].as_bool()), (Some(0), Some(true)));
     shows_the_last_moment(&room);
     // Opened at live: it goes on with the match.
     new_map_with_play(&rec, "cp_b");
@@ -144,7 +144,7 @@ fn a_room_restored_in_the_gap_is_on_the_map_just_played() {
     push_changing(&rec);
     let room = Room::restore("r".into(), serde_json::from_str(OLD_SAVED_ROOM).unwrap(), rec.clone());
     settle(&room);
-    assert_eq!(playback(&room)["map"].as_u64(), Some(0));
+    assert_eq!(playback(&room)["load"].as_u64(), Some(0));
     room.stop();
 }
 
@@ -159,7 +159,7 @@ fn an_admin_moves_the_room_to_where_a_map_after_a_change_shows() {
     assert_eq!(part.start, part.origin, "its first snapshot");
     // Paused: it stays where it lands.
     let room = Room::start_at("r".into(), "me", rec.clone(), rec.length(), 1.0, true);
-    room.go(&MapPost { map: 1 }).unwrap();
+    room.move_to_map(&MapChoice { load: 1 }).unwrap();
     on_map(&room, 1);
     settle(&room);
     assert_eq!(playback(&room)["at"].as_u64(), Some(part.start));
@@ -182,7 +182,7 @@ fn stvtf_output_saved_as_the_server_changed_map_ends_as_one_without_it() {
     room.viewers.fetch_add(1, Ordering::Relaxed);
     until("the room to pause at the end", || playback(&room)["paused"] == true);
     let p = playback(&room);
-    assert_eq!((p["map"].as_u64(), p["over"].as_bool(), p["live"].as_bool()), (Some(0), Some(false), Some(false)));
+    assert_eq!((p["load"].as_u64(), p["over"].as_bool(), p["live"].as_bool()), (Some(0), Some(false), Some(false)));
     assert_eq!((p["maps"].as_array().unwrap().len(), p["at"].as_u64()), (1, Some(rec.length())));
     room.stop();
 }

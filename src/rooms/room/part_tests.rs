@@ -1,6 +1,6 @@
 //! A room on one map of its match.
 
-use super::part::MapPost;
+use super::part::MapChoice;
 use super::tests::until;
 use super::*;
 use crate::matches::hub::{subscribe, tests::snapshot};
@@ -111,7 +111,7 @@ type Asked = Arc<Mutex<Vec<(usize, u32)>>>;
 fn room_on_part_with_demo_of(n: usize) -> (Arc<Room>, Asked) {
     let rec = two_maps_recording();
     let saved: Saved = serde_json::from_str(OLD_SAVED_ROOM).unwrap();
-    let room = Room::restore("r".into(), Saved { part: Some(n), ..saved }, rec);
+    let room = Room::restore("r".into(), Saved { load: Some(n), ..saved }, rec);
     let asked = Arc::new(Mutex::new(Vec::new()));
     let log = asked.clone();
     let demo_of: DemoOf = Arc::new(move |n, tick| {
@@ -129,7 +129,7 @@ fn a_room_stays_on_its_map_when_the_next_starts() {
     settle(&room);
     until("the next map listed", || playback(&room)["maps"].as_array().unwrap().len() == 2);
     let p = playback(&room);
-    assert_eq!((p["map"].as_u64(), p["over"].as_bool(), p["live"].as_bool()), (Some(0), Some(true), Some(false)));
+    assert_eq!((p["load"].as_u64(), p["over"].as_bool(), p["live"].as_bool()), (Some(0), Some(true), Some(false)));
     assert_eq!((p["origin"].as_u64(), p["length"].as_u64()), (Some(0), Some(at)));
     assert_eq!(p["maps"].as_array().unwrap().len(), 2);
     assert_eq!(lock(&room.hub).map.as_deref(), Some("cp_a"), "no line of the next map is played");
@@ -153,7 +153,7 @@ fn a_room_whose_map_was_trimmed_goes_to_the_earliest_kept_and_waits() {
     move_tests::on_map(&room, 1);
     settle(&room);
     let p = playback(&room);
-    assert_eq!((p["map"].as_u64(), p["at"].as_u64()), (Some(1), p["start"].as_u64()));
+    assert_eq!((p["load"].as_u64(), p["at"].as_u64()), (Some(1), p["start"].as_u64()));
     assert_eq!((p["over"].as_bool(), p["live"].as_bool(), p["paused"].as_bool()), (Some(true), Some(false), Some(true)));
     assert!(!lock(&room.state).follows_live, "put on another map: it does not go on by itself");
     let inside = p["start"].as_u64().unwrap() + 5000;
@@ -168,7 +168,7 @@ fn a_room_saved_before_parts_opens_on_the_latest_map() {
     let saved: Saved = serde_json::from_str(OLD_SAVED_ROOM).unwrap();
     let room = Room::restore("r".into(), saved, two_maps_recording());
     settle(&room);
-    assert_eq!(playback(&room)["map"].as_u64(), Some(2));
+    assert_eq!(playback(&room)["load"].as_u64(), Some(2));
     room.stop();
 }
 
@@ -213,10 +213,10 @@ fn a_seek_to_the_start_of_a_later_map_lands_where_it_shows() {
 fn a_room_moved_while_paused_has_the_other_maps_first_moment_in_tf2_too() {
     let (room, asked) = room_on_part_with_demo_of(2);
     settle(&room);
-    room.go(&MapPost { map: 1 }).unwrap();
+    room.move_to_map(&MapChoice { load: 1 }).unwrap();
     until("the room on map 1", || {
         let st = lock(&room.state);
-        st.part == 1 && st.seek.is_none()
+        st.load == 1 && st.seek.is_none()
     });
     settle(&room);
     assert_eq!(playback(&room)["paused"].as_bool(), Some(true));

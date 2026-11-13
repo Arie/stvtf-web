@@ -26,7 +26,7 @@ fn same_parts(r: &Recording, again: &Recording) {
         latest.last = again.length();
     }
     assert_eq!(again.parts(), want);
-    assert_eq!((again.start(), again.latest().n), (r.start(), r.latest().n));
+    assert_eq!((again.start(), again.latest().load), (r.start(), r.latest().load));
 }
 
 /// `cp_a` for `before` seconds of play; the server changing map, `tail` seconds of signon lines
@@ -60,10 +60,10 @@ fn trimmed(before: u32, tail: u32, named: u32) -> Recording {
 
 /// After `again` resumed: the next map is the next number.
 fn numbers_go_on(again: &Recording) {
-    let n = again.latest().n;
+    let n = again.latest().load;
     push_at_end(again, &server("cp_c"));
     push_at_end(again, &crate::matches::hub::tests::snapshot(50, None, Vec::new()));
-    assert_eq!(again.latest().n, n + 1);
+    assert_eq!(again.latest().load, n + 1);
 }
 
 fn push_at_end(r: &Recording, line: &Line) {
@@ -97,7 +97,7 @@ fn a_change_with_one_signon_resumes_with_the_same_parts() {
 fn a_trim_inside_a_maps_play_keeps_it_from_there() {
     let r = trimmed(700, 40, 2);
     let parts = r.parts();
-    assert_eq!(parts.iter().map(|p| p.n).collect::<Vec<_>>(), [0, 1]);
+    assert_eq!(parts.iter().map(|p| p.load).collect::<Vec<_>>(), [0, 1]);
     assert!(r.start() > 0 && r.start() < parts[0].last);
     assert_eq!((parts[0].origin, parts[0].start), (0, r.start()));
     same_parts(&r, &resumed(&file_of(&r)));
@@ -108,7 +108,7 @@ fn a_trim_inside_a_maps_tail_drops_it() {
     for named in [2, 38] {
         let r = trimmed(590, 40, named);
         let parts = r.parts();
-        assert_eq!(parts.iter().map(|p| p.n).collect::<Vec<_>>(), [1], "named {named}");
+        assert_eq!(parts.iter().map(|p| p.load).collect::<Vec<_>>(), [1], "named {named}");
         assert!(r.start() < parts[0].origin, "the file begins in the tail before it");
         assert_eq!(parts[0].start, parts[0].origin);
         let again = resumed(&file_of(&r));
@@ -121,7 +121,7 @@ fn a_trim_inside_a_maps_tail_drops_it() {
 fn a_trim_inside_the_next_map_keeps_it_from_there() {
     let r = trimmed(300, 40, 2);
     let parts = r.parts();
-    assert_eq!(parts.iter().map(|p| p.n).collect::<Vec<_>>(), [1]);
+    assert_eq!(parts.iter().map(|p| p.load).collect::<Vec<_>>(), [1]);
     assert!(parts[0].origin < r.start());
     assert_eq!(parts[0].start, r.start());
     let again = resumed(&file_of(&r));
@@ -161,12 +161,12 @@ fn a_file_with_no_seed_has_parts_by_the_rule() {
     let r = reloaded();
     let again = resumed(&old_file(&r, 0, ""));
     let parts = again.parts();
-    assert_eq!(parts.iter().map(|p| (p.n, p.map.as_str(), p.ready)).collect::<Vec<_>>(), [(0, "cp_a", true), (1, "cp_a", true)]);
+    assert_eq!(parts.iter().map(|p| (p.load, p.map.as_str(), p.ready)).collect::<Vec<_>>(), [(0, "cp_a", true), (1, "cp_a", true)]);
     assert_eq!(parts[1].origin, r.parts()[1].origin);
     // Trimmed inside the map: the hub there says which, and that it played.
     let again = resumed(&old_file(&r, 1, ""));
     let parts = again.parts();
-    assert_eq!(parts.iter().map(|p| (p.n, p.map.as_str(), p.ready)).collect::<Vec<_>>(), [(0, "cp_a", true), (1, "cp_a", true)]);
+    assert_eq!(parts.iter().map(|p| (p.load, p.map.as_str(), p.ready)).collect::<Vec<_>>(), [(0, "cp_a", true), (1, "cp_a", true)]);
     assert_eq!((parts[0].origin, parts[0].start), (0, again.start()));
 }
 
@@ -195,8 +195,8 @@ fn a_recording_begun_after_loads_of_its_match_resumes_with_their_numbers() {
     s.signon(0.0, "cp_a");
     r.first_load_is(2);
     s.play(50, 25);
-    assert_eq!(r.latest().n, 2);
+    assert_eq!(r.latest().load, 2);
     let again = resumed(&lock(&saved));
-    assert_eq!(again.parts().iter().map(|p| p.n).collect::<Vec<_>>(), [2]);
+    assert_eq!(again.parts().iter().map(|p| p.load).collect::<Vec<_>>(), [2]);
     numbers_go_on(&again);
 }

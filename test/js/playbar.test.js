@@ -32,23 +32,23 @@ const line = extra => ({
   ...extra,
 });
 const maps = [
-  { n: 0, map: "cp_a", ready: true },
-  { n: 1, map: "cp_b", ready: true },
+  { load: 0, map: "cp_a", ready: true },
+  { load: 1, map: "cp_b", ready: true },
 ];
 const room = (go = () => {}, live = () => {}) =>
-  playbar({ home: new URL("http://stv.test/r/"), send() {}, live, map: go, room: true });
+  playbar({ home: new URL("http://stv.test/r/"), send() {}, live, moveToMap: go, room: true });
 const status = () => document.getElementById("status").textContent;
 const say = text => (document.getElementById("status").textContent = text);
 
 test("Live shows on a map that is over, and waits for the next map's play", () => {
   const bar = room();
   bar.allow(true);
-  bar.heard(line({ map: 0, over: true, maps: [maps[0]] }));
+  bar.heard(line({ load: 0, over: true, maps: [maps[0]] }));
   assert.equal(bar.live.hidden, false);
   assert.equal(bar.live.disabled, false, "no next map: it follows again");
-  bar.heard(line({ map: 0, over: true, maps }));
+  bar.heard(line({ load: 0, over: true, maps }));
   assert.equal(bar.live.disabled, false);
-  bar.heard(line({ map: 1, over: false, live: false, maps }));
+  bar.heard(line({ load: 1, over: false, live: false, maps }));
   assert.equal(bar.live.hidden, true);
   const plain = room();
   plain.heard(line({}));
@@ -57,12 +57,12 @@ test("Live shows on a map that is over, and waits for the next map's play", () =
 
 test("another map empties the timeline's marks", () => {
   const bar = room();
-  bar.heard(line({ map: 0, maps }));
+  bar.heard(line({ load: 0, maps }));
   bar.marks.marks = [{ at: 1, kind: "win", team: "red" }];
   bar.marks.fetched = 1;
-  bar.heard(line({ map: 0, maps }));
+  bar.heard(line({ load: 0, maps }));
   assert.equal(bar.marks.marks.length, 1, "the same map keeps them");
-  bar.heard(line({ map: 1, maps }));
+  bar.heard(line({ load: 1, maps }));
   assert.equal(bar.marks.marks.length, 0);
   assert.equal(bar.marks.fetched, 0);
 });
@@ -72,7 +72,7 @@ test("without a map to go to, Live on a map that is over takes the viewer back",
   const back = [];
   const bar = playbar({ home: new URL("http://stv.test/m/"), send() {}, live: n => back.push(n) });
   bar.allow(true);
-  bar.heard(line({ map: 0, over: true, maps: [maps[0]] }));
+  bar.heard(line({ load: 0, over: true, maps: [maps[0]] }));
   assert.equal(bar.live.hidden, false);
   assert.equal(bar.live.disabled, false, "no next map, and still back");
   /** @type {any} */ (bar.live).onclick();
@@ -84,42 +84,42 @@ test("Live on a map that is over goes to the next map, or follows again with non
   const gone = [];
   const bar = room(n => gone.push(n));
   bar.allow(true);
-  bar.heard(line({ map: 4, over: true, maps: [{ n: 4, map: "cp_a", ready: true }] }));
+  bar.heard(line({ load: 4, over: true, maps: [{ load: 4, map: "cp_a", ready: true }] }));
   assert.equal(bar.live.disabled, false);
   assert.equal(bar.live.title, "Follow live");
   bar.live.onclick();
   assert.deepEqual(gone, [4], "the room's own number");
   const both = [
-    { n: 4, map: "cp_a", ready: true },
-    { n: 7, map: "cp_b", ready: true },
+    { load: 4, map: "cp_a", ready: true },
+    { load: 7, map: "cp_b", ready: true },
   ];
-  bar.heard(line({ map: 4, over: true, maps: both }));
+  bar.heard(line({ load: 4, over: true, maps: both }));
   assert.equal(bar.live.title, "Next map");
   bar.live.onclick();
   assert.deepEqual(gone, [4, 7]);
   bar.allow(false);
-  bar.heard(line({ map: 4, over: true, maps: both }));
+  bar.heard(line({ load: 4, over: true, maps: both }));
   assert.equal(bar.live.disabled, true, "not an admin");
 });
 
 test("the map's status shows while paused, and gives way when it is not over", () => {
   const bar = room();
-  const one = [{ n: 0, map: "cp_a", ready: true }];
+  const one = [{ load: 0, map: "cp_a", ready: true }];
   say("live");
-  bar.heard(line({ map: 0, over: true, paused: true, maps: one }));
+  bar.heard(line({ load: 0, over: true, paused: true, maps: one }));
   assert.equal(status(), "Map over");
-  bar.heard(line({ map: 0, over: true, paused: true, maps }));
+  bar.heard(line({ load: 0, over: true, paused: true, maps }));
   assert.equal(status(), "Next map ready");
-  bar.heard(line({ map: 1, over: false, paused: true, maps }));
+  bar.heard(line({ load: 1, over: false, paused: true, maps }));
   assert.equal(status(), "paused");
   say("Map over");
-  bar.heard(line({ map: 1, over: false, paused: false, live: true, maps }));
+  bar.heard(line({ load: 1, over: false, paused: false, live: true, maps }));
   assert.equal(status(), "live");
 });
 
 test("the clock reads 0:00 at a later map's origin", () => {
   const bar = room();
-  bar.heard(line({ map: 1, paused: true, at: 5000, start: 5000, origin: 5000, length: 9000, maps }));
+  bar.heard(line({ load: 1, paused: true, at: 5000, start: 5000, origin: 5000, length: 9000, maps }));
   assert.equal(bar.clockAt(5000), "0:00");
   assert.equal(bar.since(), 0);
   assert.equal(bar.shown.textContent, "0:00 / 0:04");
