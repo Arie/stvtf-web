@@ -75,6 +75,9 @@ struct Inner {
     /// The match's map loads, and its parts kept, oldest first.
     loads: Loads,
     parts: Vec<parts::Kept>,
+    /// The file is written whole at the next chunk closed: its header says what chunks alone do
+    /// not (the first part's number).
+    rewrite: bool,
 }
 
 /// A score and a round won this close (ms) belong together, either first.
@@ -190,7 +193,11 @@ impl Inner {
         let new_part = self.starts_part(&stamped.line);
         if self.fresh || new_part || self.chunks.last().is_none_or(|c| at >= c.start + CHUNK_MS) {
             if self.close()? {
-                save = self.chunks.last().map(|c| Save::Add(c.lines.clone()));
+                save = if std::mem::take(&mut self.rewrite) {
+                    Some(Save::All(self.file()?))
+                } else {
+                    self.chunks.last().map(|c| Save::Add(c.lines.clone()))
+                };
             }
             let hub = lock(&self.scratch).checkpoint();
             self.chunks.push(Chunk { start: at, hub, seed: self.seed(), lines: Vec::new() });
@@ -308,7 +315,13 @@ impl Recording {
     /// Its first part is the match's `n`th load, if it has shown nothing yet: the loads before it
     /// were counted by the demos' recorder.
     pub(crate) fn first_load_is(&self, n: usize) {
-        lock(&self.inner).loads.first_is(n);
+        let mut inner = lock(&self.inner);
+        inner.loads.first_is(n);
+        // A file must say so: read alone, its lines would number it 0.
+        for c in &mut inner.chunks {
+            c.seed.first_load_is(n);
+        }
+        inner.rewrite |= n != 0;
     }
 
     /// No more lines come: the match ended, or the room did.

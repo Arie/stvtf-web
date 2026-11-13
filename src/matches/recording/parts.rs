@@ -101,6 +101,13 @@ pub(super) struct Seed {
     part: Option<Kept>,
 }
 
+impl Seed {
+    /// The first load is `n`, if none began (see [`Loads::first_is`]).
+    pub(super) fn first_load_is(&mut self, n: usize) {
+        self.loads.first_is(n);
+    }
+}
+
 /// Seconds `s` in ticks of `interval` seconds.
 fn ticks(s: f64, interval: f64) -> u32 {
     (s / interval).round() as u32

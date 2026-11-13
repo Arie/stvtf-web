@@ -1,6 +1,6 @@
 //! A recording's parts through its file: written, trimmed, resumed; and files of the versions before.
 
-use super::super::tests::push_at;
+use super::super::tests::{push_at, to};
 use super::super::*;
 use super::real_tests::viaduct;
 use super::tests::{Stream, T0, line, snapshots};
@@ -183,4 +183,19 @@ fn a_seed_saved_before_runs_of_play_reads() {
     assert!(part.remove("run").is_some() && part.remove("snap").is_some());
     let read: Seed = serde_json::from_value(seed).unwrap();
     assert!(read.part.is_some_and(|p| p.run.is_none() && p.snap.is_none()));
+}
+
+#[test]
+fn a_recording_begun_after_loads_of_its_match_resumes_with_their_numbers() {
+    // A file as the sink writes it: chunk by chunk, short of any trim.
+    let saved = Arc::new(Mutex::new(Vec::new()));
+    let r = Recording::live_to(to(&saved));
+    let mut s = Stream { r: &r, s: 0.0 };
+    s.signon(0.0, "cp_a");
+    r.first_load_is(2);
+    s.play(50, 25);
+    assert_eq!(r.latest().n, 2);
+    let again = resumed(&lock(&saved));
+    assert_eq!(again.parts().iter().map(|p| p.n).collect::<Vec<_>>(), [2]);
+    numbers_go_on(&again);
 }
