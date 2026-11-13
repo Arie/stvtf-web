@@ -3,8 +3,8 @@
 //! `live-<match>-<load>-<tick>.dem`: the server tick of its first frame, and the load it is of,
 //! its part's number in the recording (one rule, [`Loads`], fed the lines the recording gets).
 //! Those of earlier loads stay, so rooms on them can be relayed, till the recording drops their
-//! part or the match ends. The names of the version before, `live-<match>-<tick>.dem`, are given
-//! loads by their order in time.
+//! part or the match ends. Names without a load, `live-<match>-<tick>.dem`, are given loads by
+//! their order in time.
 //!
 //! Voice from outside the match that its players said (a team's Discord) is kept beside the demo
 //! it was heard in (`<demo>.voice`, a line each). A demo with any is not dropped but kept
@@ -46,8 +46,8 @@ pub(crate) struct Spoken {
 /// A demo to download with its comms in it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub(crate) struct Download {
-    /// What names it in the match: `<load>-<tick>` of its first frame (`<tick>` alone, in the
-    /// names of the version before).
+    /// What names it in the match: `<load>-<tick>` of its first frame (`<tick>` alone, for a
+    /// name without a load).
     pub(crate) file: String,
     pub(crate) map: String,
     pub(crate) bytes: u64,
@@ -170,19 +170,18 @@ struct Demo {
     /// The load it is of: its part's number.
     load: usize,
     first_tick: u32,
-    /// Named by the version in production, without its load: how many loads before the newest of
-    /// those it is.
+    /// Named without its load: how many loads before the newest of those it is.
     back: Option<usize>,
 }
 
-/// Where the version in production put a demo of an earlier map: never relayed, gone with the match.
+/// The name of a demo of an earlier map set aside: never relayed, gone with the match.
 const PAST: &str = "past-";
 
 #[derive(Default)]
 struct Inner {
     /// By load, then first tick.
     demos: Vec<Demo>,
-    /// The version in production's demos of earlier maps, and its own not of the load it says.
+    /// Demos set aside as `past-`, and those not of the load their name says.
     past: Vec<PathBuf>,
     /// The match's loads, as the lines its recording gets say.
     loads: Loads,
@@ -250,8 +249,8 @@ fn found(dir: &Path, id: &str) -> Inner {
 }
 
 impl Inner {
-    /// The load the match was at when the version in production left off, and its map if known:
-    /// that of the first demo named with its load (the reconnect after the deploy), else `latest`.
+    /// The load the match was at when its demos were last named without one, and its map if known:
+    /// that of the first demo named with its load, else `latest`.
     fn deployed_at(&self, latest: usize, map: Option<&str>) -> (usize, Option<String>) {
         let numbered = self.demos.iter().filter(|d| d.back.is_none()).min_by_key(|d| d.load);
         numbered.map_or((latest, map.map(str::to_string)), |d| (d.load, Some(d.map.clone())))

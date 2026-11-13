@@ -1,4 +1,5 @@
-//! A recording's parts through its file: written, trimmed, resumed; and files of the versions before.
+//! A recording's parts through its file: written, trimmed, resumed; and files of the versions
+//! before.
 
 use super::super::tests::{push_at, to};
 use super::super::*;
@@ -128,8 +129,8 @@ fn a_trim_inside_the_next_map_keeps_it_from_there() {
     numbers_go_on(&again);
 }
 
-/// A file as the version in production writes it: `origin`, `marks` and `hub` in the header, from
-/// chunk `from` on; and round 1's, with `extra` header lines.
+/// A file with no seed: `origin`, `marks` and `hub` in the header, from chunk `from` on, and
+/// `extra` header lines.
 fn old_file(r: &Recording, from: usize, extra: &str) -> Vec<u8> {
     let mut gz = GzEncoder::new(Vec::new(), Compression::default());
     let inner = lock(&r.inner);
@@ -144,8 +145,8 @@ fn old_file(r: &Recording, from: usize, extra: &str) -> Vec<u8> {
     file
 }
 
-/// `cp_a` played, then loaded again (its ticks start over, no server line: production's file
-/// went on through that), played on.
+/// `cp_a` played, then loaded again (its ticks start over, no server line: a file with no
+/// seed goes on through that), played on.
 fn reloaded() -> Recording {
     let r = Recording::live();
     push_at(&r, &server("cp_a"), T0);
@@ -156,7 +157,7 @@ fn reloaded() -> Recording {
 }
 
 #[test]
-fn a_file_from_production_has_parts_by_the_rule() {
+fn a_file_with_no_seed_has_parts_by_the_rule() {
     let r = reloaded();
     let again = resumed(&old_file(&r, 0, ""));
     let parts = again.parts();
@@ -170,7 +171,7 @@ fn a_file_from_production_has_parts_by_the_rule() {
 }
 
 #[test]
-fn a_file_from_round_1_opens() {
+fn a_file_with_parts_and_loads_but_no_seed_opens() {
     let r = reloaded();
     let again = resumed(&old_file(&r, 1, "parts\t1\nloads\tcp_a\t1\n"));
     assert_eq!(again.parts().iter().map(|p| p.map.as_str()).collect::<Vec<_>>(), ["cp_a", "cp_a"]);

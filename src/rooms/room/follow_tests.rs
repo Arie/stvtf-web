@@ -88,10 +88,10 @@ fn a_room_that_moves_stops_following_a_player_and_goes_back_to_the_view_before()
     room.stop();
 }
 
-/// A room saved at the end of a map over by the version before (following, and nothing of
-/// whether that was decided), picked up in the gap.
+/// A room saved at the end of a map over, following, with nothing of whether that was decided,
+/// picked up in the gap.
 #[test]
-fn a_room_saved_in_the_gap_by_the_version_before_opens_and_decides_where_it_is() {
+fn a_room_saved_in_the_gap_with_nothing_decided_opens_and_decides_where_it_is() {
     let (room, rec) = live_room_at_live_on("cp_a");
     push_server(&rec, "cp_b");
     room.stop();

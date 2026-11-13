@@ -100,7 +100,7 @@ fn two_maps_recording() -> Arc<Recording> {
     rec
 }
 
-/// A room as the version before parts saved it.
+/// A room saved without a map.
 pub(super) const OLD_SAVED_ROOM: &str =
     r#"{"paused":true,"speed":1.0,"at":600,"people":{"owner":"me","by_guest":{},"admins":[],"next":1},"leader":null,"view":null}"#;
 

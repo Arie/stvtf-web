@@ -70,8 +70,8 @@ level change at a map change, which can crash the client.
 
 A match running at a deploy goes on: the recording and its demos are picked up, and demos named
 without a load (`live-<match>-<tick>.dem`) are given loads by their order in time, a lower first
-tick than the file before starting the next. Live recordings and their markers are saved in a
-format the version before does not read, so a rollback starts them afresh and loses the markers.
+tick than the file before starting the next. A version without maps does not read live
+recordings and markers saved with them: a rollback to one starts them afresh, without markers.
 
 The app never waits on a relay: it tells it where its room is only on a change (seek, pause,
 speed, camera) or a drift of 250 ms, and leaves one that does not answer alone for 2 s. A relay

@@ -313,7 +313,7 @@ impl Inner {
     }
 
     /// The parts as a file's `header` says they were at its first line, at play time `at`. A file
-    /// with no seed (from before parts, or round 1's) goes on from the map its hub holds.
+    /// with no seed goes on from the map its hub holds.
     pub(super) fn seed_from(&mut self, header: Header, at: u64) {
         if let Some(Seed { loads, part }) = header.seed {
             self.loads = loads;
