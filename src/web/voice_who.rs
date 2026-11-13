@@ -94,17 +94,21 @@ pub(super) fn status(
             }
         }
         "mumble" => {
-            let mut jobs = lock(&m.mumble);
-            // Which of the match's channels: by its number, or the only one there is.
-            let only = jobs.len() == 1;
-            let job = jobs.iter_mut().find(|j| said.job.map_or(only, |id| id == j.id));
-            // Of a channel it was since asked out of: nothing of it stands.
-            let Some(job) = job.filter(|j| said.asked.is_none_or(|a| a == j.asked)) else {
-                return respond(s, "204 No Content", TEXT, b"");
+            let taken = 'taken: {
+                let mut jobs = lock(&m.mumble);
+                // Which of the match's channels: by its number, or the only one there is.
+                let only = jobs.len() == 1;
+                let job = jobs.iter_mut().find(|j| said.job.map_or(only, |id| id == j.id));
+                // Of a channel it was since asked out of: nothing of it stands.
+                let Some(job) = job.filter(|j| said.asked.is_none_or(|a| a == j.asked)) else { break 'taken false };
+                job.status = text;
+                if said.people.is_some() {
+                    job.roster = Some(channel.clone());
+                }
+                true
             };
-            job.status = text;
-            if said.people.is_some() {
-                job.roster = Some(channel.clone());
+            if !taken {
+                return respond(s, "204 No Content", TEXT, b"");
             }
         }
         _ => return respond(s, "400 Bad Request", TEXT, b"Discord or Mumble"),

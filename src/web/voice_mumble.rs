@@ -56,26 +56,41 @@ pub(super) fn ask(
         return respond(s, "403 Forbidden", TEXT, b"Not allowed");
     }
     let Ok(ask) = json_body::<Ask>(reader, request) else { return respond(s, "400 Bad Request", TEXT, b"Invalid") };
-    // Those the bot said are in a channel go with it.
-    let gone = |job: &MumbleJob| {
-        if let Some(roster) = &job.roster {
-            m.voice.set_roster(&m.hub, roster, []);
-        }
-    };
     if ask.leave {
-        let mut wanted = lock(&m.mumble);
-        let (left, stay): (Vec<_>, Vec<_>) = wanted.drain(..).partition(|j| ask.id.is_none_or(|id| id == j.id));
-        *wanted = stay;
-        drop(wanted);
-        left.iter().for_each(gone);
+        let left: Vec<MumbleJob> = {
+            let mut wanted = lock(&m.mumble);
+            let (left, stay) = wanted.drain(..).partition(|j| ask.id.is_none_or(|id| id == j.id));
+            *wanted = stay;
+            left
+        };
+        for j in &left {
+            drop_roster(m, j);
+        }
         app.mumble_changes.changed();
         return respond(s, "204 No Content", TEXT, b"");
     }
+    // Decided with the match held, answered once it is not.
+    if let Err(why) = want(app, m, ask) {
+        return respond(s, "400 Bad Request", TEXT, why.as_bytes());
+    }
+    app.mumble_changes.changed();
+    respond(s, "204 No Content", TEXT, b"")
+}
+
+/// Those the bot said are in `job`'s channel go with it.
+fn drop_roster(m: &Session, job: &MumbleJob) {
+    if let Some(roster) = &job.roster {
+        m.voice.set_roster(&m.hub, roster, []);
+    }
+}
+
+/// The channel `ask` names wanted for match `m`: the one named, else the one in that channel
+/// already, else one more. Why not, when it will not do.
+fn want(app: &App, m: &Session, ask: Ask) -> Result<(), &'static str> {
     let (port, delay) = (ask.port.unwrap_or(DEFAULT_PORT), ask.delay.unwrap_or(DEFAULT_DELAY));
     let channel = ask.channel.trim();
     let fits = |t: &str| t.chars().count() <= MAX_TEXT && !t.chars().any(char::is_control);
     let mut wanted = lock(&m.mumble);
-    // The one named, else the one in that channel already, else one more.
     let at = wanted.iter().position(|j| match ask.id {
         Some(id) => id == j.id,
         None => (j.host.as_str(), j.port, j.channel.as_str()) == (ask.host.as_str(), port, channel),
@@ -85,7 +100,7 @@ pub(super) fn ask(
     let password = ask.password.or(before).unwrap_or_default();
     let bad = !is_host(&ask.host, app.mumble_anywhere) || port == 0 || channel.is_empty() || !fits(channel) || !fits(&password);
     if bad || !(0.0..=MAX_DELAY).contains(&delay) || (ask.id.is_some() && at.is_none()) {
-        return respond(s, "400 Bad Request", TEXT, b"Invalid server, channel or delay");
+        return Err("Invalid server, channel or delay");
     }
     let job = MumbleJob {
         host: ask.host,
@@ -98,12 +113,10 @@ pub(super) fn ask(
         id: wanted.iter().map(|j| j.id).max().unwrap_or(0) + 1,
         roster: None,
     };
-    if !place(&mut wanted, at, job, &gone) {
-        return respond(s, "400 Bad Request", TEXT, b"Too many channels");
+    if !place(&mut wanted, at, job, &|j| drop_roster(m, j)) {
+        return Err("Too many channels");
     }
-    drop(wanted);
-    app.mumble_changes.changed();
-    respond(s, "204 No Content", TEXT, b"")
+    Ok(())
 }
 
 /// `GET /voice/mumble`, the bot's: every channel wanted, with what it takes to sit in it and to

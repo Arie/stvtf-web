@@ -251,3 +251,37 @@ fn behind_a_site_only_who_has_a_say_brings_mumble_in() {
     assert!(get(&app, &format!("{page}voice-comms"), &other).starts_with("HTTP/1.1 204"), "nor sees where it is");
     assert!(get(&app, &format!("{page}voice-comms"), &starter).contains("mumble.example"));
 }
+
+/// Runs `serve` on `send` from a client that reads nothing until the answer is stuck on its way:
+/// whether `free` held then.
+fn free_while_answering(app: &App, send: &[u8], free: impl Fn() -> bool) -> bool {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let mut client = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+    let (mut server, _) = listener.accept().unwrap();
+    client.write_all(send).unwrap();
+    // Nothing more fits on the way to the client.
+    server.set_nonblocking(true).unwrap();
+    let block = vec![0; 1 << 16];
+    while server.write(&block).is_ok() {}
+    server.set_nonblocking(false).unwrap();
+    std::thread::scope(|scope| {
+        scope.spawn(|| serve(server, app));
+        std::thread::sleep(Duration::from_millis(300));
+        let was = free();
+        let _ = std::io::copy(&mut client, &mut std::io::sink());
+        was
+    })
+}
+
+#[test]
+fn a_refusal_is_answered_with_the_match_not_held() {
+    let (app, id) = voice_app();
+    let m = sessions_of(&app).get(&id).unwrap();
+    let free = || m.mumble.try_lock().is_ok();
+    let bad = r#"{"host":"","channel":"a"}"#;
+    let send = format!("POST /w/{id}/voice-mumble HTTP/1.1\r\nContent-Length: {}\r\n\r\n{bad}", bad.len());
+    assert!(free_while_answering(&app, send.as_bytes(), free), "a channel refused");
+    let said = invited(&app, &id, r#"{"kind":"mumble","job":9,"status":"x"}"#);
+    let send = format!("POST /w/{id}/voice-status HTTP/1.1\r\nAuthorization: Bearer k\r\nContent-Length: {}\r\n\r\n{said}", said.len());
+    assert!(free_while_answering(&app, send.as_bytes(), free), "a channel's status not taken");
+}
