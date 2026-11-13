@@ -69,10 +69,15 @@ impl Sessions {
         self.pick_up(&mut map, store, id)
     }
 
-    /// Every match, the oldest first.
     /// The matches watched live now.
     pub(crate) fn live(&self) -> Vec<Arc<Session>> {
         lock(&self.map).values().filter(|s| s.is_live()).cloned().collect()
+    }
+
+    /// The ids of the matches that have demos rooms can be relayed from: live, or given up but
+    /// not ended.
+    pub(crate) fn with_demos(&self) -> std::collections::HashSet<String> {
+        lock(&self.map).values().filter(|s| s.demos.get().is_some()).map(|s| s.id.clone()).collect()
     }
 
     pub fn list(&self) -> Vec<Listed> {

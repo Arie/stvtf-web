@@ -292,10 +292,10 @@ fn matches(options: &Options, keys: Option<&Arc<web::token::Keys>>, stop: &'stat
     Ok(Matches::One(hub))
 }
 
-/// The ids of the matches watched live now: the sweep leaves their demos.
+/// The ids of the matches whose demos rooms can be relayed from: the sweep leaves them.
 fn live_ids(matches: &Matches) -> std::collections::HashSet<String> {
     let Matches::Many(sessions) = matches else { return std::collections::HashSet::new() };
-    sessions.live().iter().map(|s| s.id.clone()).collect()
+    sessions.with_demos()
 }
 
 /// Stops idle matches and saves the running ones, and on Ctrl-C disconnects them all cleanly

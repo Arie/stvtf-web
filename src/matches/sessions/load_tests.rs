@@ -98,3 +98,16 @@ fn after_a_restart_the_next_load_has_the_next_number_on_both_sides() {
     assert_eq!(s.demos.get().unwrap().at(2, 1000), Some(dir.join(format!("live-{id}-2-1000.dem"))));
     s.stop.store(true, Ordering::Relaxed);
 }
+
+#[test]
+fn a_match_given_up_keeps_its_demos_from_the_sweep_till_it_ends() {
+    let dir = TempDir::new("loads");
+    let mut sessions = Sessions::new(false, 4, 20.0);
+    (sessions.store, sessions.demos) = (Some(Store { dir: dir.to_path_buf(), keys: None }), true);
+    let m = sessions.open("192.0.2.1:27020 tv", None, None).unwrap();
+    m.done.store(true, Ordering::Relaxed);
+    assert!(!m.is_live() && sessions.with_demos().contains(&m.id), "rooms may still be on it");
+    sessions.reap(Duration::ZERO);
+    assert!(sessions.with_demos().is_empty());
+    sessions.stop_all();
+}

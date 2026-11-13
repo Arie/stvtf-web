@@ -206,9 +206,10 @@ fn drop_or_keep(path: &Path) {
     if !has_voice(path) {
         let _ = std::fs::remove_file(voice_of(path));
         let _ = std::fs::remove_file(path);
-    } else if let Some(kept) = kept_name(path) {
+    } else if let Some(kept) = kept_name(path)
+        && std::fs::rename(path, &kept).is_ok()
+    {
         let _ = std::fs::rename(voice_of(path), voice_of(&kept));
-        let _ = std::fs::rename(path, kept);
     }
 }
 
