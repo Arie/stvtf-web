@@ -49,50 +49,41 @@ is not listed.
 
 ## Maps
 
-A live match is a list of maps, one per map load that has shown something, each its own part of
-the recording. A load starts at its first snapshot: after a `server` line naming another map, or with
-the server's ticks starting over (the same map loaded again is another map). A `server` line of
-the same map with the ticks going on is no new load. A part's number is its load's, counting from
-0; it names the part's demos and its marker. A part is `ready` once it has a second of play: a
-frozen first frame is not play, and a load that never gets there is not listed. A map after
-another begins at its first frame of play: a frozen frame before it, and the break up to play,
-belong to the map before.
+A live match keeps every map it played, within its last 3 hours. A room is on one of them.
 
-- A map ends where the server says it is changing (`changing`). What follows its last frame, the
-  statuses and the next map's own announcements, is its tail: a room on the map applies none of
-  it. A map that plays on after that was not over, and is not: a room waiting at its end plays on
-  from there.
-- The room stays when the server changes map: playback runs to the map's last moment (`last`) and
-  waits there, that moment still showing, with no word of the change. Seeks stay inside the map.
-  Voice from outside the match that arrives while it waits, until a later map has play, is played
-  as it comes: to its pages, and to its relay while it plays at 1x.
-- When the map ends, a room follows if it is not paused, at 1x and within 3 s of the map's last
-  moment; a room opened in the gap starts at the end, so it follows. It moves to the newest map that
-  has play, at live, once there is one. Any other room waits for an admin. A seek, a pause, a speed,
-  a drawing, a note, a clear, a view chosen, or an admin's or followed view moved by hand after
-  the map ended ends the following (a camera of one's own, in a free view, does not); before it,
-  they do not count.
-- Admins move the room to any map listed: the latest at live, another at its start: for a map after
-  another, its first frame of play, paused or not, in TF2 too (nothing of the map before). A seek
-  to before it lands there. A map no longer kept, or without play, is refused: `Map gone`.
-- A move ends a view that follows a player: the view goes back to the one before.
-- The marker is kept per map: it does not show on another map, and is there again when the room
-  comes back.
-- The clock of every map starts at 0:00 where it begins. The bar says `Map over`, then
-  `Next map ready`, paused or not. Admins get a `Next map` button and, with more than one map,
-  a maps menu (`▤`); a map that comes again reads `<name> 2`, `<name> 3`. Live on a map that is
-  over follows again: straight to the newest map with play when there is one, else it waits at the
-  end, at 1x, and moves when the next map plays.
-- The match's own page follows live as before; a viewer's own rewind there stays on its map, and
-  Live takes it back.
+- **A map is a map load.** A load starts at a snapshot after a `server` line naming another map, or
+  when the server's ticks start over (the same map again is another map). A reconnect, whose ticks
+  go on, is not one. Maps are numbered from 0 by load; the number names the map's demos and marker.
+- **Play.** A map has play (`ready`) after a second of ticks: the frozen frame a load starts with is
+  not play. A map without play is not listed. A map after another begins at its first frame of
+  play.
+- **The end.** A map is over once the server says it is changing. A room on it plays to its last
+  frame and waits there; nothing of the next map is applied. A map whose ticks go on for 5 s after
+  all was not over, and its rooms play on.
+- **Following.** When its map ends, a room follows if it is playing at 1x within 3 s of the end. A
+  room opened in the gap follows. A following room moves to the newest map with play, at live.
+- **Touches.** After the map ended, a seek, a pause, a speed, a drawing, a note, a clear, or a view
+  chosen or moved by an admin ends the following. One's own camera in a free view does not. Touches
+  before the map ended do not count.
+- **Moving.** An admin moves the room to any map listed: the latest at live, another at its start.
+  A map dropped or without play is refused: `Map gone`. A move ends a view that follows a player.
+- **Live on a map that is over** follows again: to the newest map with play, or else the room
+  waits at the end, playing at 1x, and moves when the next map plays.
+- **Voice in the gap.** Voice from outside the match that arrives while a room waits at its map's
+  end is played to its pages, and to its relay while it plays at 1x, until a later map has play.
+- **The marker** is per map: gone on another map, back when the room returns.
+- **The bar.** Each map's clock starts at 0:00. The status reads `Map over`, then
+  `Next map ready`, paused too. Admins get `Next map` and, with more than one map, a maps menu
+  (`▤`); a map played again reads `<name> 2`, `<name> 3`.
+- **The match's own page** follows live. A viewer's own rewind stays on its map; Live takes it
+  back.
 
 ## Recording
 
 The match is kept in memory in 10-second chunks, each starting from a joinable state, so a seek
 replays at most one. Rooms on a match share it. A live match records from first watched: a room
 starts at live, can go back to the start, and waits at live rather than passing it (it counts as a
-viewer). Parts are kept within the last 3 hours of play, the oldest dropped first; one with nothing
-left is dropped. A room counts towards `--max-matches` and ends a minute after its last viewer.
+viewer). Only the last 3 hours of play are kept; a map with nothing left is dropped. A room counts towards `--max-matches` and ends a minute after its last viewer.
 
 ## Across restarts
 
@@ -118,13 +109,13 @@ seeking and at speed with it.
 - A relay that cannot start (ports full, demo not there yet) is retried; one that stops is replaced.
 - It plays the match's `.dem` (stvtf's README, "Playing a demo"): a demos.tf demo's as
   `demo-<number>.dem`, a live match's as `live-<match>-<load>-<tick>.dem`, one per server
-  connection, `<load>` the number of the map load it is of (a part's number: 0 the first) and
-  `<tick>` the tick of its first frame. Written only with `--relay-ports`. A live match's are kept
-  while it runs; those of a map whose part is dropped, and all when it ends, go, but a demo with
-  comms (voice from outside the match, written into it on download) is kept as
-  `kept-<match>-<load>-<tick>.dem` for 14 days, within 10 GB. A demos.tf demo's go an hour after a room
-  last played it; those of a live match no longer running, 3 hours after last written (swept
-  every 5 minutes).
+  connection: the map's number and the tick of its first frame. Written only with `--relay-ports`.
+  - A demos.tf demo's go an hour after a room last played it.
+  - A live match's are kept while it runs. A map's go when the map is dropped, all when the match
+    ends; those of a match no longer running, 3 hours after last written.
+  - One with comms (voice from outside the match, written into it on download) is then kept as
+    `kept-<match>-<load>-<tick>.dem` for 14 days, within 10 GB.
+  - Swept every 5 minutes.
 - Demos of an older TF2 build (other class tables) cannot be played to a client; the sidebar
   says so, as it says any reason the relay cannot play.
 - `--demo`/`--demos` rooms are relayed if the `.dem` is beside them under the same name
@@ -142,7 +133,7 @@ seeking and at speed with it.
 | `POST /r/<id>/ink` | admin: `{"ink": "#rrggbb"}` |
 | `POST /r/<id>/admin` | admin: `{"person": <number>, "admin": true\|false}` |
 | `POST /r/<id>/view` | admin: `{"mode": "free"\|"auto"}`, `{"mode": "follow", "player": <id>, "w", "h"}` (area round them) or `{"mode": "admin", "cx", "cy", "w", "h", "rot"}` (area they see), with `"page"` (the tab's name). `"take": true` chooses the view; without it, a camera move, counted only while the view is of its kind. That page leads from then on |
-| `POST /r/<id>/map` | admin: `{"map": <n>}`, the room to that map: the latest at live, another at its start, the room's own at its end (or live) following again, or on to the newest map with play; 400 `Map gone` when it is no longer kept or has no play |
+| `POST /r/<id>/map` | admin: `{"map": <n>}` moves the room: the latest map at live, another at its start; the room's own, over, follows again; 400 `Map gone` for one dropped or without play |
 | `GET /r/<id>/marks` | the marks of the room's map |
 | `GET /w/<id>/timeline` | the match page's timeline, and its `marks`, of the newest map that has play |
 | `POST /r/<id>/control` | admin: `{"paused", "speed", "seek"}` (any; `seek` in ms) |
@@ -168,5 +159,5 @@ The room's event stream adds:
 | `view` | as posted, with `by` |
 | `people` | `id`, `name`, `admin`, `owner`, `signed`, and `ink`, `steamid` when set |
 | `draw` | as posted, with `by` |
-| `playback` | `paused`, `speed`, `at`, `length` (ms; an over map's, to its last moment), `start` (first moment kept; of a map after another, from its first frame of play), `origin` (map start), `rounds`, all the room's map's; `live` (the newest map of a match still going, not over); `map` (its number); `over` (the map is changing or has a successor); `maps` (`n`, `map`, `ready` of each map with play, and the room's own); on change and every second while playing |
+| `playback` | of the room's map: `paused`, `speed`, `at`, `length` (ms), `start` (first moment kept), `origin` (map start), `rounds`; `live` (the newest map, not over); `map` (its number); `over`; `maps` (`n`, `map`, `ready` of each map with play, and the room's own); on change and every second while playing |
 | `seek` | before the state at the new position |
