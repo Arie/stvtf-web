@@ -236,7 +236,7 @@ fn a_map_that_goes_on_through_announcements_is_not_over() {
     let part = r.latest();
     assert_eq!((r.parts().len(), part.changing, part.tail, part.over(), part.last), (1, None, None, false, r.length()));
     let length = r.length();
-    assert_eq!(lock(&r.inner).parts[0].last, length, "it ends at its latest play again");
+    assert_eq!(lock(&r.inner).parts.list[0].last, length, "it ends at its latest play again");
 }
 
 /// Voice from outside the match (no-delay commentary): recorded at its real time.

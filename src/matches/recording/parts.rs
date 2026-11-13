@@ -6,6 +6,7 @@
 
 use super::{Inner, Mark, Recording};
 use crate::lock;
+use crate::matches::hub::SharedHub;
 use crate::matches::loads::Loads;
 use serde::{Deserialize, Serialize};
 use stvtf::Line;
@@ -161,36 +162,52 @@ fn is_play(line: &Line) -> bool {
     }
 }
 
-impl Inner {
+/// A recording's parts, and the rule its loads follow.
+#[derive(Debug, Default)]
+pub(super) struct Parts {
+    pub(super) loads: Loads,
+    /// Oldest first; the first from the recording's first line on.
+    list: Vec<PartState>,
+}
+
+impl Parts {
     /// Whether `line` would start a part: a snapshot of a new load, once the latest part showed
     /// something (the first part of all begins at the first line).
     pub(super) fn starts_part(&self, line: &Line) -> bool {
-        let snapped = self.parts.last().is_some_and(|p| p.first_tick.is_some());
+        let snapped = self.list.last().is_some_and(|p| p.first_tick.is_some());
         matches!(line, Line::Snapshot(s) if snapped && self.loads.starts(s.tick))
     }
 
-    /// Notes `line`, at play time `at`, in the parts.
-    pub(super) fn note_line(&mut self, at: u64, line: &Line) {
-        if self.parts.is_empty() {
-            let map = lock(&self.scratch).map.clone().unwrap_or_default();
-            self.parts.push(PartState { load: self.loads.latest(), map, origin: at, last: at, ..PartState::default() });
+    /// Notes `line`, at play time `at`, with the match as `scratch` holds it. Whether a part
+    /// began.
+    pub(super) fn note_line(&mut self, at: u64, line: &Line, scratch: &SharedHub) -> bool {
+        if self.list.is_empty() {
+            let map = lock(scratch).map.clone().unwrap_or_default();
+            self.list.push(PartState { load: self.loads.latest(), map, origin: at, last: at, ..PartState::default() });
         }
-        match line {
-            Line::Server(server) => self.on_server(at, &server.map),
-            Line::Status(Status::Changelevel | Status::MapChange) => self.on_changelevel(at),
-            Line::Snapshot(snapshot) => self.on_snapshot(at, snapshot.tick),
-            _ => {}
-        }
-        let latest = latest(&mut self.parts);
+        let began = match line {
+            Line::Server(server) => {
+                self.on_server(at, &server.map);
+                false
+            }
+            Line::Status(Status::Changelevel | Status::MapChange) => {
+                self.on_changelevel(at);
+                false
+            }
+            Line::Snapshot(snapshot) => self.on_snapshot(at, snapshot.tick, lock(scratch).tick_interval()),
+            _ => false,
+        };
+        let latest = latest(&mut self.list);
         if is_play(line) && latest.tail.is_none() {
             latest.last = at;
         }
+        began
     }
 
     /// A server line naming `map`: the tail of a part the server is changing from begins. A part
     /// with no map yet (a recording begun mid-stream) is of `map`: no new load.
     fn on_server(&mut self, at: u64, map: &str) {
-        let latest = latest(&mut self.parts);
+        let latest = latest(&mut self.list);
         if latest.changing.is_some() {
             latest.tail.get_or_insert(at);
         }
@@ -206,72 +223,68 @@ impl Inner {
     /// The server says it is changing map: a part with play is over, unless it goes on.
     fn on_changelevel(&mut self, at: u64) {
         let tick = self.loads.last_tick();
-        let latest = latest(&mut self.parts);
+        let latest = latest(&mut self.list);
         if latest.ready && latest.changing.is_none() {
             (latest.changing, latest.changing_tick) = (Some(at), tick);
         }
     }
 
-    /// A snapshot at `tick`: a new part if its load starts here, else play of the latest.
-    fn on_snapshot(&mut self, at: u64, tick: u32) {
-        let interval = lock(&self.scratch).tick_interval();
-        let snapped = self.parts.last().is_some_and(|p| p.first_tick.is_some());
+    /// A snapshot at `tick`, of a server ticking every `interval` seconds: a new part if its load
+    /// starts here (true), else play of the latest.
+    fn on_snapshot(&mut self, at: u64, tick: u32, interval: f64) -> bool {
+        let snapped = self.list.last().is_some_and(|p| p.first_tick.is_some());
         let (n, starts) = self.loads.snapshot(tick);
         let map = self.loads.map().map(str::to_string);
         if starts && snapped {
-            self.parts.push(PartState::begun(n, map.unwrap_or_default(), at, tick));
-            self.scores = None;
-        } else if starts {
-            latest(&mut self.parts).begin_load(n, at, tick, map);
-        } else {
-            let later = self.parts.len() > 1;
-            latest(&mut self.parts).play(at, tick, interval, later);
+            self.list.push(PartState::begun(n, map.unwrap_or_default(), at, tick));
+            return true;
         }
+        if starts {
+            latest(&mut self.list).begin_load(n, at, tick, map);
+        } else {
+            let later = self.list.len() > 1;
+            latest(&mut self.list).play(at, tick, interval, later);
+        }
+        false
     }
 
     /// What a chunk starting now notes of the parts.
     pub(super) fn seed(&self) -> Seed {
-        Seed { loads: self.loads.clone(), part: self.parts.last().cloned() }
+        Seed { loads: self.loads.clone(), part: self.list.last().cloned() }
     }
 
     /// Whether play time `at` is a part's first snapshot: a seek there has it.
     pub(super) fn first_snapshot_at(&self, at: u64) -> bool {
-        self.parts.iter().any(|p| p.first_at == Some(at))
+        self.list.iter().any(|p| p.first_at == Some(at))
     }
 
-    /// Play time of the first chunk kept.
-    fn first_kept(&self) -> u64 {
-        self.chunks.first().map_or(self.start, |c| c.start)
+    /// How many parts at the front have nothing left: their last line is before `first_kept`, the
+    /// play time of the first chunk kept. The latest never.
+    fn gone(&self, first_kept: u64) -> usize {
+        self.list.iter().take(self.list.len().saturating_sub(1)).take_while(|p| p.last < first_kept).count()
     }
 
-    /// How many parts at the front have nothing left: their last line is before the first chunk
-    /// kept. The latest never.
-    fn gone(&self) -> usize {
-        let first = self.first_kept();
-        self.parts.iter().take(self.parts.len().saturating_sub(1)).take_while(|p| p.last < first).count()
+    /// Drops the parts with nothing left from `first_kept` on.
+    pub(super) fn drop_before(&mut self, first_kept: u64) {
+        self.list.drain(..self.gone(first_kept));
     }
 
-    /// Drops the parts with nothing left.
-    pub(super) fn drop_parts(&mut self) {
-        self.parts.drain(..self.gone());
-    }
-
-    /// The parts kept, oldest first.
-    fn part_list(&self) -> Vec<Part> {
-        let first = self.first_kept();
-        let kept = &self.parts[self.gone()..];
+    /// The parts kept from `first_kept` on, oldest first, the latest going as far as `play`.
+    fn kept(&self, first_kept: u64, play: u64) -> Vec<Part> {
+        let kept = &self.list[self.gone(first_kept)..];
         let ends = kept.iter().skip(1).map(|p| Some(p.origin)).chain([None]);
         let list = kept.iter().zip(ends).map(|(p, end)| {
-            let last = if end.is_none() && p.changing.is_none() { self.clock.play } else { p.last };
-            let (n, map, origin, start) = (p.load, p.map.clone(), p.origin, p.origin.max(first));
+            let last = if end.is_none() && p.changing.is_none() { play } else { p.last };
+            let (load, map, origin, start) = (p.load, p.map.clone(), p.origin, p.origin.max(first_kept));
             let (changing, tail, ready, first_tick) = (p.changing, p.tail, p.ready, p.first_tick);
-            Part { load: n, map, origin, start, last, end, changing, tail, ready, first_tick }
+            Part { load, map, origin, start, last, end, changing, tail, ready, first_tick }
         });
         list.collect()
     }
 
-    fn latest_part(&self) -> Part {
-        self.part_list().pop().unwrap_or(Part {
+    /// A part of the latest load, with nothing of it known yet.
+    fn none_yet(&self) -> Part {
+        Part {
             load: self.loads.latest(),
             map: String::new(),
             origin: 0,
@@ -282,7 +295,68 @@ impl Inner {
             tail: None,
             ready: false,
             first_tick: None,
-        })
+        }
+    }
+
+    /// The parts as a file's `header` says they were at its first line, at play time `at`. A file
+    /// with no seed goes on from the map `scratch` holds.
+    pub(super) fn seed_from(&mut self, header: Header, at: u64, scratch: &SharedHub) {
+        if let Some(Seed { loads, part }) = header.seed {
+            self.loads = loads;
+            self.list.extend(part);
+            return;
+        }
+        let (map, tick) = {
+            let h = lock(scratch);
+            (h.map.clone(), h.tick())
+        };
+        let n = header.parts;
+        let origin = header.origin.unwrap_or(at);
+        let part = PartState {
+            load: n,
+            map: map.clone().unwrap_or_default(),
+            origin,
+            last: origin,
+            ready: tick.is_some(),
+            first_tick: tick,
+            ..PartState::default()
+        };
+        if tick.is_some() {
+            self.loads = Loads::resumed(n, map, tick);
+        } else if let Some(map) = map {
+            // No snapshot yet: its first starts the load.
+            self.loads.server(&map);
+        }
+        self.list.push(part);
+    }
+}
+
+impl Inner {
+    /// Play time of the first chunk kept.
+    fn first_kept(&self) -> u64 {
+        self.chunks.first().map_or(self.start, |c| c.start)
+    }
+
+    /// Notes `line`, at play time `at`, in the parts: a new one has no score yet.
+    pub(super) fn note_part_line(&mut self, at: u64, line: &Line) {
+        if self.parts.note_line(at, line, &self.scratch) {
+            self.scores = None;
+        }
+    }
+
+    /// Drops the parts with nothing left.
+    pub(super) fn drop_parts(&mut self) {
+        let first = self.first_kept();
+        self.parts.drop_before(first);
+    }
+
+    /// The parts kept, oldest first.
+    fn part_list(&self) -> Vec<Part> {
+        self.parts.kept(self.first_kept(), self.clock.play)
+    }
+
+    fn latest_part(&self) -> Part {
+        self.part_list().pop().unwrap_or_else(|| self.parts.none_yet())
     }
 
     /// Play times part `n` holds, from where it begins to where it ends, if kept: a part's tail is
@@ -329,41 +403,9 @@ impl Inner {
     /// and the parts as they were at the first chunk, which the file's lines go on from.
     pub(super) fn parts_header(&self) -> anyhow::Result<String> {
         let first = self.part_list().into_iter().next();
-        let (origin, n) = first.map_or((self.start, self.loads.latest()), |p| (p.origin, p.load));
+        let (origin, n) = first.map_or((self.start, self.parts.loads.latest()), |p| (p.origin, p.load));
         let seed = self.chunks.first().map(|c| &c.seed);
         Ok(format!("origin\t{origin}\nparts\t{n}\nseed\t{}\n", serde_json::to_string(&seed)?))
-    }
-
-    /// The parts as a file's `header` says they were at its first line, at play time `at`. A file
-    /// with no seed goes on from the map its hub holds.
-    pub(super) fn seed_from(&mut self, header: Header, at: u64) {
-        if let Some(Seed { loads, part }) = header.seed {
-            self.loads = loads;
-            self.parts.extend(part);
-            return;
-        }
-        let (map, tick) = {
-            let h = lock(&self.scratch);
-            (h.map.clone(), h.tick())
-        };
-        let n = header.parts;
-        let origin = header.origin.unwrap_or(at);
-        let part = PartState {
-            load: n,
-            map: map.clone().unwrap_or_default(),
-            origin,
-            last: origin,
-            ready: tick.is_some(),
-            first_tick: tick,
-            ..PartState::default()
-        };
-        if tick.is_some() {
-            self.loads = Loads::resumed(n, map, tick);
-        } else if let Some(map) = map {
-            // No snapshot yet: its first starts the load.
-            self.loads.server(&map);
-        }
-        self.parts.push(part);
     }
 }
 

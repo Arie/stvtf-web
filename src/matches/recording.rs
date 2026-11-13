@@ -72,9 +72,8 @@ struct Inner {
     marks: Vec<Mark>,
     /// The latest score and when, for the next round won.
     scores: Option<(u64, [u16; 2])>,
-    /// The match's map loads, and its parts kept, oldest first.
-    loads: Loads,
-    parts: Vec<parts::PartState>,
+    /// The match's map loads, and its parts kept.
+    parts: parts::Parts,
     /// The file is written whole at the next chunk closed: its header says what chunks alone do
     /// not (the first part's number).
     rewrite: bool,
@@ -190,7 +189,7 @@ impl Inner {
     fn add(&mut self, at: u64, stamped: &Stamped, text: &str) -> Result<Option<Save>> {
         let mut save = None;
         // A part's chunk starts at its first snapshot: its checkpoint holds its map as announced.
-        let new_part = self.starts_part(&stamped.line);
+        let new_part = self.parts.starts_part(&stamped.line);
         if self.fresh || new_part || self.chunks.last().is_none_or(|c| at >= c.start + CHUNK_MS) {
             if self.close()? {
                 save = if std::mem::take(&mut self.rewrite) {
@@ -200,14 +199,14 @@ impl Inner {
                 };
             }
             let hub = lock(&self.scratch).checkpoint();
-            self.chunks.push(Chunk { start: at, hub, seed: self.seed(), lines: Vec::new() });
+            self.chunks.push(Chunk { start: at, hub, seed: self.parts.seed(), lines: Vec::new() });
             self.fresh = false;
             if at.saturating_sub(self.start) > KEEP_MS + TRIM_MS {
                 self.trim(at - KEEP_MS);
                 save = Some(Save::All(self.file()?));
             }
         }
-        self.note_line(at, &stamped.line);
+        self.note_part_line(at, &stamped.line);
         if matches!(stamped.line, Line::RoundStart(_)) {
             self.rounds.push(at);
         }
@@ -270,7 +269,8 @@ impl Recording {
                         at = key.parse()?;
                         if let Some(header) = header.take() {
                             inner.start = at;
-                            inner.seed_from(header, at);
+                            let scratch = inner.scratch.clone();
+                            inner.parts.seed_from(header, at, &scratch);
                         }
                         cut |= matches!(inner.add(at, &serde_json::from_str(value)?, value)?, Some(Save::All(_)));
                     }
@@ -309,14 +309,14 @@ impl Recording {
 
     /// The match's map loads, as its lines told them.
     pub(crate) fn loads(&self) -> Loads {
-        lock(&self.inner).loads.clone()
+        lock(&self.inner).parts.loads.clone()
     }
 
     /// Its first part is the match's `n`th load, if it has shown nothing yet: the loads before it
     /// were counted by the demos' recorder.
     pub(crate) fn first_load_is(&self, n: usize) {
         let mut inner = lock(&self.inner);
-        inner.loads.first_is(n);
+        inner.parts.loads.first_is(n);
         // A file must say so: read alone, its lines would number it 0.
         for c in &mut inner.chunks {
             c.seed.first_load_is(n);
@@ -395,7 +395,7 @@ impl Recording {
             let at = at.max(inner.start);
             let (at, with_at) = match last {
                 Some(last) if at >= last => (last, true),
-                _ => (at, inner.first_snapshot_at(at)),
+                _ => (at, inner.parts.first_snapshot_at(at)),
             };
             let i = inner.chunks.partition_point(|c| c.start <= at).saturating_sub(1);
             let Some(chunk) = inner.chunks.get(i) else { return (Hub::default(), inner.dropped, 0) };
