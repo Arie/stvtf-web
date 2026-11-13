@@ -381,3 +381,10 @@ fn the_play_clock_counts_all_the_time_that_passes_not_only_the_waits() {
     let fast = Clock::new(t0, 0, 2.0);
     assert_eq!((fast.at(t0 + ms(500)), fast.due(1000)), (1000, t0 + ms(500)));
 }
+
+#[test]
+fn who_leads_the_view_is_saved_as_by_page_and_kind() {
+    let leader: Leader = serde_json::from_str(r#"[3,"main","follow"]"#).unwrap();
+    assert_eq!(leader, Leader { by: 3, page: "main".into(), kind: "follow".into() });
+    assert_eq!(serde_json::to_string(&leader).unwrap(), r#"[3,"main","follow"]"#);
+}

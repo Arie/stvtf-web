@@ -81,7 +81,27 @@ pub(crate) struct Room {
     relayed: Mutex<Vec<stvtf::relay::VoiceIn>>,
 }
 
-type Leader = (u32, String, String);
+/// Who leads the view: the admin's number, their page, and the kind of view it chose. Saved as
+/// `[by, page, kind]`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(from = "(u32, String, String)", into = "(u32, String, String)")]
+struct Leader {
+    by: u32,
+    page: String,
+    kind: String,
+}
+
+impl From<(u32, String, String)> for Leader {
+    fn from((by, page, kind): (u32, String, String)) -> Self {
+        Leader { by, page, kind }
+    }
+}
+
+impl From<Leader> for (u32, String, String) {
+    fn from(l: Leader) -> Self {
+        (l.by, l.page, l.kind)
+    }
+}
 
 /// What a room is, saved for the next process: where playback is, who is in it, and the view.
 #[derive(Debug, Serialize, Deserialize)]

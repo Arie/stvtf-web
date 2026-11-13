@@ -283,27 +283,40 @@ pub(super) fn comms_demos(app: &App, sessions: &Sessions, id: &str) -> Vec<serde
 /// How long a demo built stays at hand for the next to ask for it.
 const BUILT_FOR: Duration = Duration::from_secs(60);
 
-/// The demo last built, and when: whoever asks for it again meanwhile gets the same.
-type Built = Option<(String, Instant, Arc<(String, Vec<u8>)>)>;
-static BUILT: Mutex<Built> = Mutex::new(None);
+/// A demo with its comms written in: what to call it, and the demo.
+pub(super) struct CommsDemo {
+    pub(super) name: String,
+    pub(super) bytes: Vec<u8>,
+}
+
+/// The demo last built (by match and file), and when: whoever asks for it again meanwhile gets
+/// the same.
+struct Built {
+    key: String,
+    at: Instant,
+    demo: Arc<CommsDemo>,
+}
+
+static BUILT: Mutex<Option<Built>> = Mutex::new(None);
 
 /// The demo `file` of match `id` with its comms written in: built once for all who ask at a
 /// time or soon after. One at a time: a demo is built in memory.
-pub(super) fn build_comms_demo(dir: &Path, id: &str, file: &str) -> Option<Arc<(String, Vec<u8>)>> {
+pub(super) fn build_comms_demo(dir: &Path, id: &str, file: &str) -> Option<Arc<CommsDemo>> {
     let key = format!("{id}/{file}");
     let mut last = lock(&BUILT);
-    if let Some((_, _, demo)) = last.as_ref().filter(|(k, at, _)| *k == key && at.elapsed() < BUILT_FOR) {
-        return Some(demo.clone());
+    if let Some(built) = last.as_ref().filter(|b| b.key == key && b.at.elapsed() < BUILT_FOR) {
+        return Some(built.demo.clone());
     }
     *last = None;
-    let demo = Arc::new(crate::matches::live_demos::build(dir, id, file).ok()?);
+    let (name, bytes) = crate::matches::live_demos::build(dir, id, file).ok()?;
+    let demo = Arc::new(CommsDemo { name, bytes });
     let at = Instant::now();
-    *last = Some((key, at, demo.clone()));
+    *last = Some(Built { key, at, demo: demo.clone() });
     // Not kept in memory once nobody asks any more.
     std::thread::spawn(move || {
         std::thread::sleep(BUILT_FOR);
         let mut last = lock(&BUILT);
-        if last.as_ref().is_some_and(|(_, built, _)| *built == at) {
+        if last.as_ref().is_some_and(|b| b.at == at) {
             *last = None;
         }
     });
@@ -321,13 +334,12 @@ fn comms_demo(s: &mut TcpStream, sessions: &Sessions, request: &Request, id: &st
         .zip(file.strip_suffix(".dem"))
         .and_then(|(store, file)| build_comms_demo(&store.dir, id, file));
     let Some(built) = built else { return respond(s, "404 Not Found", TEXT, b"No such demo.") };
-    let (name, demo) = &*built;
-    let attachment = format!(r#"attachment; filename="{name}""#);
+    let attachment = format!(r#"attachment; filename="{}""#, built.name);
     let mut headers = vec![("Content-Type", "application/octet-stream"), ("Content-Disposition", attachment.as_str())];
     let mark = param(&request.query, "built").filter(|m| m.len() <= 16 && m.bytes().all(|b| b.is_ascii_alphanumeric()));
     let cookie = mark.map(|m| format!("built={m}; Path=/; Max-Age=60; SameSite=Lax"));
     if let Some(cookie) = &cookie {
         headers.push(("Set-Cookie", cookie));
     }
-    respond_with(s, "200 OK", &headers, demo)
+    respond_with(s, "200 OK", &headers, &built.bytes)
 }

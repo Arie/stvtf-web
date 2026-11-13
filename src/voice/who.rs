@@ -63,14 +63,31 @@ pub(crate) struct Known {
 
 pub(crate) const CASTER: &str = "caster";
 
-impl Known {
-    /// How sure: a match's starter's word, a link of someone's own, a caster's word.
-    fn sure(&self) -> u8 {
-        match (self.src.is_empty(), self.by == CASTER) {
-            (false, _) => 2,
-            (true, true) => 3,
-            (true, false) => 1,
+/// How sure what is known of someone is, the least first.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum Certainty {
+    /// A match's starter's word: a suggestion outside their match.
+    Starter,
+    /// A link of someone's own, at a site.
+    Site,
+    /// A caster's word.
+    Caster,
+}
+
+impl Certainty {
+    /// How sure something from `src` (a site, or none for a page), said `by`, is.
+    fn of(src: &str, by: &str) -> Certainty {
+        match (src.is_empty(), by == CASTER) {
+            (false, _) => Certainty::Site,
+            (true, true) => Certainty::Caster,
+            (true, false) => Certainty::Starter,
         }
+    }
+}
+
+impl Known {
+    fn certainty(&self) -> Certainty {
+        Certainty::of(&self.src, &self.by)
     }
 }
 
@@ -101,8 +118,8 @@ struct WhoList {
 impl WhoList {
     /// Whether what is known of `who` gives way to something as sure as `sure`: nothing, nobody,
     /// and what is no surer do.
-    fn yields(&self, who: &str, sure: u8) -> bool {
-        self.known.get(who).is_none_or(|k| k.steamid.is_none() || k.sure() <= sure)
+    fn yields(&self, who: &str, sure: Certainty) -> bool {
+        self.known.get(who).is_none_or(|k| k.steamid.is_none() || k.certainty() <= sure)
     }
 }
 
@@ -219,7 +236,7 @@ impl WhoIsWho {
         let kept = lock(&self.0.kept);
         let known = kept.known.get(who)?;
         Some(match &known.steamid {
-            Some(steamid) => Recalled::Player { steamid: steamid.clone(), sure: known.sure() >= 2 },
+            Some(steamid) => Recalled::Player { steamid: steamid.clone(), sure: known.certainty() >= Certainty::Site },
             None => Recalled::Nobody,
         })
     }
@@ -238,7 +255,8 @@ impl WhoIsWho {
     pub(crate) fn remember(&self, who: &str, steamid: Option<&str>, name: &str, caster: bool) {
         let mut kept = lock(&self.0.kept);
         let by = if caster { CASTER } else { "" };
-        if kept.yields(who, if caster { 3 } else { 1 }) && self.put(&mut kept, who, steamid, name, "", by) {
+        if kept.yields(who, if caster { Certainty::Caster } else { Certainty::Starter }) && self.put(&mut kept, who, steamid, name, "", by)
+        {
             self.save(&kept);
         }
         drop(kept);
@@ -327,7 +345,8 @@ impl WhoIsWho {
         let before = kept.known.get(who);
         let changed = match link {
             Some((src, steamid)) => {
-                let stands = before.is_some_and(|k| k.steamid.as_deref().is_some_and(|s| s == steamid || k.sure() == 3));
+                let stands =
+                    before.is_some_and(|k| k.steamid.as_deref().is_some_and(|s| s == steamid || k.certainty() == Certainty::Caster));
                 !stands && self.put(&mut kept, who, Some(steamid), "", src, "")
             }
             None => match before.filter(|k| k.steamid.is_some() && !k.src.is_empty()).map(|k| k.src.clone()) {
@@ -348,8 +367,7 @@ impl WhoIsWho {
     /// What another stv.tf says was said there, or taken in from its site (`src`).
     pub(crate) fn take_from_region(&self, who: &str, steamid: Option<&str>, name: &str, src: &str, by: &str) {
         let mut kept = lock(&self.0.kept);
-        let sure = Known { steamid: None, name: String::new(), src: src.to_string(), by: by.to_string(), v: 0 }.sure();
-        if kept.yields(who, sure) && self.put(&mut kept, who, steamid, name, src, by) {
+        if kept.yields(who, Certainty::of(src, by)) && self.put(&mut kept, who, steamid, name, src, by) {
             self.save(&kept);
         }
     }

@@ -78,12 +78,12 @@ impl Room {
         let by = lock(&self.people).id(guest);
         let mut leader = lock(&self.leader);
         let kind = view.kind();
-        if !post.take && leader.as_ref().is_none_or(|(_, _, now)| now != kind) {
+        if !post.take && leader.as_ref().is_none_or(|l| l.kind != kind) {
             return Ok(());
         }
-        let was = leader.replace((by, post.page.clone(), kind.to_string()));
+        let was = leader.replace(Leader { by, page: post.page.clone(), kind: kind.to_string() });
         if kind == "follow"
-            && let Some(was) = was.filter(|(_, _, k)| k != "follow")
+            && let Some(was) = was.filter(|l| l.kind != "follow")
         {
             let line = lock(&self.view).clone();
             *lock(&self.before_follow) = line.map(|line| (was, line));
@@ -114,10 +114,10 @@ impl Room {
     /// camera with it. Nobody touched the room.
     pub(super) fn end_follow(&self) {
         let mut leader = lock(&self.leader);
-        let Some((by, page, _)) = leader.clone().filter(|(_, _, kind)| kind == "follow") else { return };
+        let Some(Leader { by, page, .. }) = leader.clone().filter(|l| l.kind == "follow") else { return };
         let free = || {
             let line = serde_json::json!({ "type": "view", "mode": "free", "by": by, "page": page });
-            ((by, page.clone(), "free".to_string()), line.to_string().into())
+            (Leader { by, page: page.clone(), kind: "free".to_string() }, line.to_string().into())
         };
         let (was, line): (Leader, Arc<str>) = lock(&self.before_follow).take().unwrap_or_else(free);
         *leader = Some(was);

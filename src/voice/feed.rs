@@ -3,7 +3,7 @@
 //! recording). The hold goes by the hub's stream: its tick, its pauses, its new starts.
 
 use crate::lock;
-use crate::matches::hub::{SharedHub, publish};
+use crate::matches::hub::{NamedPlayer, SharedHub, VoiceClock, publish};
 use crate::matches::live_demos::Spoken;
 use crate::voice::hold::{Said, Took, VoiceHold};
 use std::collections::BTreeMap;
@@ -146,7 +146,7 @@ impl VoiceFeed {
         self.guess(hub);
         let delay = delay.unwrap_or(DEFAULT_DELAY);
         if delay < NO_DELAY {
-            let Some(tick) = lock(hub).voice_clock().0 else { return Took::NoStream };
+            let Some(tick) = lock(hub).voice_clock().tick else { return Took::NoStream };
             let line = self.line(hub, Said { who: key, frames }, tick, false);
             publish(hub, &line);
             return Took::Live;
@@ -180,7 +180,7 @@ impl VoiceFeed {
     fn guess(&self, hub: &SharedHub) {
         let mut st = lock(&self.0);
         let players = lock(hub).players();
-        let playing = |steamid: &str| players.iter().any(|(s, _)| s == steamid);
+        let playing = |steamid: &str| players.iter().any(|p| p.steamid == steamid);
         for (id, before) in st.known_before.clone() {
             let placed = matches!(st.matched.get(&id), Some(Put::Nobody | Put::Player { confirmed: true, .. }));
             // Said to be nobody before: not for someone with a link of their own.
@@ -208,8 +208,8 @@ impl VoiceFeed {
             if st.matched.contains_key(&id) || own.is_some_and(|s| playing(&s)) {
                 continue;
             }
-            let mut like = players.iter().filter(|(s, n)| alike(n, &name) && !taken.contains(s));
-            if let (Some((steamid, _)), None) = (like.next(), like.next()) {
+            let mut like = players.iter().filter(|p| alike(&p.name, &name) && !taken.contains(&p.steamid));
+            if let (Some(NamedPlayer { steamid, .. }), None) = (like.next(), like.next()) {
                 taken.push(steamid.clone());
                 st.matched.insert(id, Put::Player { steamid: steamid.clone(), confirmed: false });
             }
@@ -356,7 +356,7 @@ impl VoiceFeed {
         let (out, pause_talk, at, tick) = {
             // The feed first, then the stream's clock: two looking at once see it in turn.
             let mut st = lock(&self.0);
-            let ((tick, paused, epoch), interval) = {
+            let (VoiceClock { tick, paused, epoch }, interval) = {
                 let hub = lock(hub);
                 (hub.voice_clock(), hub.tick_interval())
             };

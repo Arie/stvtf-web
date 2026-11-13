@@ -82,6 +82,22 @@ pub(crate) struct Rostered {
     pub(crate) class: Class,
 }
 
+/// What held voice goes by: the stream's tick, whether the game is paused, and how many times the
+/// stream started over.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct VoiceClock {
+    pub(crate) tick: Option<u32>,
+    pub(crate) paused: bool,
+    pub(crate) epoch: u64,
+}
+
+/// A player in the latest snapshot.
+#[derive(Debug, Clone)]
+pub(crate) struct NamedPlayer {
+    pub(crate) steamid: String,
+    pub(crate) name: String,
+}
+
 impl Hub {
     /// Player `id`'s name and team, as last seen on this map.
     pub(crate) fn seen(&self, id: PlayerId) -> Option<(&str, Team)> {
@@ -93,10 +109,9 @@ impl Hub {
         self.tick_interval.unwrap_or_else(default_tick_interval)
     }
 
-    /// What held voice goes by: the stream's tick, whether the game is paused, and how many
-    /// times the stream started over.
-    pub(crate) fn voice_clock(&self) -> (Option<u32>, bool, u64) {
-        (self.tick, self.paused, self.epoch)
+    /// What held voice goes by.
+    pub(crate) fn voice_clock(&self) -> VoiceClock {
+        VoiceClock { tick: self.tick, paused: self.paused, epoch: self.epoch }
     }
 
     /// The player with `steamid` in the latest snapshot, and their team.
@@ -109,10 +124,10 @@ impl Hub {
         self.steamids.iter().find(|(_, p, ..)| *p == id).map(|(s, ..)| s.as_str())
     }
 
-    /// The players in the latest snapshot: their `SteamID` and name.
-    pub(crate) fn players(&self) -> Vec<(String, String)> {
+    /// The players in the latest snapshot.
+    pub(crate) fn players(&self) -> Vec<NamedPlayer> {
         let name = |id: &PlayerId| self.names.get(id).map_or_default(|n| n.name.clone());
-        self.steamids.iter().filter(|(s, ..)| s != "BOT").map(|(s, id, ..)| (s.clone(), name(id))).collect()
+        self.steamids.iter().filter(|(s, ..)| s != "BOT").map(|(s, id, ..)| NamedPlayer { steamid: s.clone(), name: name(id) }).collect()
     }
 
     /// The slot of the player with `steamid` in the latest snapshot: their entity less one.
