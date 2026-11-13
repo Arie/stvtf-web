@@ -60,7 +60,7 @@ until the server names it. The same map loaded again is another map.
   the next map by itself once that map has play to show, and lands at live. Any other room waits.
 - Admins move the room to any map kept: the latest at live, another at its start: for a map after
   another, its first snapshot, paused or not, in TF2 too (nothing of the map before). A seek to
-  before it lands there. A map no longer kept is refused with `That map is gone.`
+  before it lands there. A map no longer kept, or not named yet, is refused: `Map gone`.
 - The marker is kept per map: it does not show on another map, and is there again when the room
   comes back.
 - The bar says `Map over`, then `Next map ready`. Admins get a `Next map` button and, with more
@@ -120,7 +120,7 @@ seeking and at speed with it.
 | `POST /r/<id>/ink` | admin: `{"ink": "#rrggbb"}` |
 | `POST /r/<id>/admin` | admin: `{"person": <number>, "admin": true\|false}` |
 | `POST /r/<id>/view` | admin: `{"mode": "free"\|"auto"}`, `{"mode": "follow", "player": <id>, "w", "h"}` (area round them) or `{"mode": "admin", "cx", "cy", "w", "h", "rot"}` (area they see), with `"page"` (the tab's name). `"take": true` chooses the view; without it, a camera move, counted only while the view is of its kind. That page leads from then on |
-| `POST /r/<id>/map` | admin: `{"map": <n>}`, the room to that map: the latest at live, another at its start; 400 `That map is gone.` when it is no longer kept |
+| `POST /r/<id>/map` | admin: `{"map": <n>}`, the room to that map: the latest at live, another at its start; 400 `Map gone` when it is no longer kept or not named yet |
 | `GET /r/<id>/marks` | the marks of the room's map |
 | `GET /w/<id>/timeline` | the match page's timeline, and its `marks`, of the newest map that has play |
 | `POST /r/<id>/control` | admin: `{"paused", "speed", "seek"}` (any; `seek` in ms) |

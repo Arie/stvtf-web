@@ -68,6 +68,17 @@ fn a_room_following_live_goes_past_a_map_that_never_had_play() {
 }
 
 #[test]
+fn a_map_with_no_name_yet_is_no_map_to_go_to() {
+    let rec = live_on("cp_a");
+    push_changing(&rec);
+    let room = Room::start("r".into(), "me", rec.clone());
+    assert_eq!(rec.latest().map, "");
+    assert_eq!(room.go(&MapPost { map: 1 }).unwrap_err().to_string(), "Map gone");
+    assert_eq!(lock(&room.state).part, 0);
+    room.stop();
+}
+
+#[test]
 fn a_room_opened_in_the_gap_is_on_the_map_just_played() {
     let rec = live_on("cp_a");
     push_changing(&rec);

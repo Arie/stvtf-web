@@ -17,7 +17,8 @@ pub(crate) struct MapPost {
 impl Room {
     /// An admin moves the room to map `m.map`: at live on the latest, where it shows on another.
     pub(crate) fn go(&self, m: &MapPost) -> Result<()> {
-        let Some(part) = self.recording.part(m.map) else { bail!("That map is gone.") };
+        // Not kept, or one the server is changing to, not named yet: nothing to show.
+        let Some(part) = self.recording.part(m.map).filter(|p| p.n == 0 || !p.map.is_empty()) else { bail!("Map gone") };
         let mut st = lock(&self.state);
         // At live it follows again (`at_end`); anywhere else it waits at its map's end.
         (st.part, st.follows) = (part.n, false);

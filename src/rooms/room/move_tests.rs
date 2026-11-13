@@ -194,7 +194,7 @@ fn an_admin_moves_the_room_to_the_latest_map_at_live_and_to_an_earlier_one_at_it
     assert_eq!((p["map"].as_u64(), p["at"].as_u64(), p["length"].as_u64()), (Some(0), Some(0), Some(at)));
     settle_past(&room, at + 100);
     assert_eq!(playback(&room)["map"].as_u64(), Some(0), "at its end it waits: it was moved here");
-    assert_eq!(room.go(&MapPost { map: 7 }).unwrap_err().to_string(), "That map is gone.");
+    assert_eq!(room.go(&MapPost { map: 7 }).unwrap_err().to_string(), "Map gone");
     room.stop();
 }
 
