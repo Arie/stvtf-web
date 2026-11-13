@@ -111,11 +111,10 @@ impl Sessions {
         }
         self.check_person(&mut map, by)?;
         self.check_room(&mut map)?;
-        let s = self.start(&mut map, random_id(), server, password, owner.map(str::to_string), SharedHub::default());
+        let s = self.start(&mut map, random_id(), server, password, owner.map(str::to_string), SharedHub::default(), false);
         if let Some(by) = by {
             let _ = s.by.set(by.to_string());
         }
-        record(&s, self.store.as_ref(), false);
         s.link(reservation);
         log!("match {} started on {server}, owner {}", s.label(), owner.unwrap_or("-"));
         if let Some(store) = &self.store
@@ -193,7 +192,9 @@ impl Sessions {
         Ok(())
     }
 
-    /// Watches `server` as session `id`.
+    /// Watches `server` as session `id`, recording it (`resume`: going on from its saved recording,
+    /// before the watcher makes any demo, so the demos go on from its loads).
+    #[expect(clippy::too_many_arguments, reason = "a session's parts")]
     fn start(
         &self,
         map: &mut HashMap<String, Arc<Session>>,
@@ -202,12 +203,14 @@ impl Sessions {
         password: String,
         owner: Option<String>,
         hub: SharedHub,
+        resume: bool,
     ) -> Arc<Session> {
         let s = Arc::new(Session::new(id, hub, server, password, owner, false));
         let demos = self.store.as_ref().filter(|_| self.demos).map(|store| LiveDemos::new(&store.dir, &s.id));
         if let Some(d) = &demos {
             let _ = s.demos.set(d.clone());
         }
+        record(&s, self.store.as_ref(), resume);
         let (watcher, hz) = (s.clone(), self.hz);
         let thread = std::thread::spawn(move || {
             let demos = demos.map(|d| d as Arc<dyn stvtf::demo::Files>);
@@ -253,7 +256,7 @@ impl Sessions {
             h.map = saved.map;
             h.history = saved.history.into_iter().map(Into::into).collect();
         }
-        let s = self.start(map, id.to_string(), saved.server, saved.password, saved.owner, hub);
+        let s = self.start(map, id.to_string(), saved.server, saved.password, saved.owner, hub, true);
         if let Some(by) = saved.by {
             let _ = s.by.set(by);
         }
@@ -261,7 +264,6 @@ impl Sessions {
             let _ = s.voice_invite.set(invite);
         }
         *lock(&s.mumble) = saved.mumble;
-        record(&s, Some(store), true);
         s.link(saved.reservation);
         Some(s)
     }

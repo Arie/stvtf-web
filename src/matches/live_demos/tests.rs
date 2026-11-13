@@ -118,24 +118,98 @@ fn a_demo_named_by_the_version_before_is_the_first_load() {
     assert_eq!(LiveDemos::new(&dir, "m").at(0, 150), Some(dir.join("live-m-100.dem")));
 }
 
+/// Demos the version in production left, in this order in time: (name, map).
+fn left_by_production(dir: &Path, demos: &[(&str, &str)]) {
+    let now = SystemTime::now();
+    for (i, (name, map)) in demos.iter().enumerate() {
+        let path = dir.join(name);
+        std::fs::write(&path, header(map)).unwrap();
+        File::options().write(true).open(&path).unwrap().set_modified(now - Duration::from_secs(300 - i as u64 * 10)).unwrap();
+    }
+}
+
+/// The match's recording, resumed, is at load `n` of `map`.
+fn resumed_at(n: usize, map: &str) -> Loads {
+    Loads::from(n, Some(map.into()), Some(5000))
+}
+
 #[test]
 fn demos_named_by_the_version_before_are_given_loads_by_their_order_in_time() {
     let dir = TempDir::new("live-demos");
-    let now = SystemTime::now();
-    for (i, tick) in [193, 210, 69].into_iter().enumerate() {
-        let path = dir.join(format!("live-m-{tick}.dem"));
-        std::fs::write(&path, header("cp_a")).unwrap();
-        File::options().write(true).open(&path).unwrap().set_modified(now - Duration::from_secs(300 - i as u64 * 100)).unwrap();
-    }
+    left_by_production(&dir, &[("live-m-193.dem", "cp_a"), ("live-m-210.dem", "cp_a"), ("live-m-69.dem", "cp_a")]);
     let demos = LiveDemos::new(&dir, "m");
     assert_eq!(demos.at(0, 205), Some(dir.join("live-m-193.dem")));
     assert_eq!(demos.at(0, 9000), Some(dir.join("live-m-210.dem")), "a reconnect: the same load");
     assert_eq!(demos.at(1, 9000), Some(dir.join("live-m-69.dem")), "a lower first tick: the next");
     assert_eq!(demos.loads().would_be("cp_a", 100), 1);
-    // The recording resumed keeps from load 3: they are numbered from there.
-    demos.go_on_from(Loads::from(4, Some("cp_a".into()), Some(69)), 3);
+    // The recording resumed is at load 4: the newest are of it, those before of the one before.
+    demos.go_on_from(resumed_at(4, "cp_a"));
     assert_eq!((demos.at(3, 9000), demos.at(4, 9000)), (Some(dir.join("live-m-210.dem")), Some(dir.join("live-m-69.dem"))));
     assert_eq!(demos.loads().latest(), 4);
+}
+
+#[test]
+fn a_match_on_its_second_map_at_the_deploy_has_that_maps_demo_only() {
+    let dir = TempDir::new("live-demos");
+    left_by_production(&dir, &[("live-m-250.dem", "cp_b")]);
+    let demos = LiveDemos::new(&dir, "m");
+    demos.go_on_from(resumed_at(1, "cp_b"));
+    assert_eq!((demos.at(1, 300), demos.at(0, 300)), (Some(dir.join("live-m-250.dem")), None));
+}
+
+#[test]
+fn demos_of_earlier_maps_from_the_version_before_are_not_relayed() {
+    let dir = TempDir::new("live-demos");
+    left_by_production(&dir, &[("live-m-past-cp_a-68.dem", "cp_a"), ("kept-m-193.dem", "cp_a"), ("live-m-250.dem", "cp_b")]);
+    std::fs::write(dir.join("kept-m-193.dem.voice"), "said\n").unwrap();
+    let demos = LiveDemos::new(&dir, "m");
+    demos.go_on_from(resumed_at(1, "cp_b"));
+    assert_eq!((demos.at(1, 300), demos.at(0, 300)), (Some(dir.join("live-m-250.dem")), None));
+    demos.forget();
+    let mut left: Vec<String> = std::fs::read_dir(&*dir).unwrap().map(|e| e.unwrap().file_name().to_string_lossy().into_owned()).collect();
+    left.sort();
+    assert_eq!(left, ["kept-m-193.dem", "kept-m-193.dem.voice"], "the comms stay for downloading");
+}
+
+#[test]
+fn a_reconnect_from_the_version_before_is_one_load() {
+    let dir = TempDir::new("live-demos");
+    left_by_production(&dir, &[("live-m-68.dem", "cp_b"), ("live-m-250.dem", "cp_b")]);
+    let demos = LiveDemos::new(&dir, "m");
+    demos.go_on_from(resumed_at(1, "cp_b"));
+    assert_eq!((demos.at(1, 100), demos.at(1, 300)), (Some(dir.join("live-m-68.dem")), Some(dir.join("live-m-250.dem"))));
+    assert_eq!(demos.at(0, 300), None);
+}
+
+#[test]
+fn ticks_starting_over_before_the_deploy_are_the_load_before() {
+    let dir = TempDir::new("live-demos");
+    left_by_production(&dir, &[("live-m-250.dem", "cp_b"), ("live-m-68.dem", "cp_b")]);
+    let demos = LiveDemos::new(&dir, "m");
+    demos.go_on_from(resumed_at(2, "cp_b"));
+    assert_eq!((demos.at(1, 300), demos.at(2, 300)), (Some(dir.join("live-m-250.dem")), Some(dir.join("live-m-68.dem"))));
+}
+
+#[test]
+fn the_version_befores_demos_are_numbered_from_the_reconnect_after_the_deploy() {
+    let dir = TempDir::new("live-demos");
+    left_by_production(&dir, &[("live-m-250.dem", "cp_b"), ("live-m-1-9000.dem", "cp_b"), ("live-m-2-50.dem", "cp_c")]);
+    let demos = LiveDemos::new(&dir, "m");
+    assert_eq!(demos.at(1, 300), Some(dir.join("live-m-250.dem")), "a second restart");
+    demos.go_on_from(resumed_at(2, "cp_c"));
+    assert_eq!(demos.at(1, 300), Some(dir.join("live-m-250.dem")));
+    assert_eq!(demos.at(2, 300), Some(dir.join("live-m-2-50.dem")));
+}
+
+#[test]
+fn the_version_befores_demos_of_another_map_than_the_recordings_are_not_relayed() {
+    let dir = TempDir::new("live-demos");
+    left_by_production(&dir, &[("live-m-250.dem", "cp_a")]);
+    let demos = LiveDemos::new(&dir, "m");
+    demos.go_on_from(resumed_at(1, "cp_b"));
+    assert_eq!((demos.at(0, 300), demos.at(1, 300)), (None, None));
+    demos.forget();
+    assert!(!dir.join("live-m-250.dem").exists());
 }
 
 /// A demo of `map` with frames at these server ticks.

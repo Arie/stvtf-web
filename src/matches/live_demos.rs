@@ -170,14 +170,20 @@ struct Demo {
     /// The load it is of: its part's number.
     load: usize,
     first_tick: u32,
-    /// Named by the version in production, without its load.
-    unnumbered: bool,
+    /// Named by the version in production, without its load: how many loads before the newest of
+    /// those it is.
+    back: Option<usize>,
 }
+
+/// Where the version in production put a demo of an earlier map: never relayed, gone with the match.
+const PAST: &str = "past-";
 
 #[derive(Default)]
 struct Inner {
     /// By load, then first tick.
     demos: Vec<Demo>,
+    /// The version in production's demos of earlier maps, and its own not of the load it says.
+    past: Vec<PathBuf>,
     /// The match's loads, as the lines its recording gets say.
     loads: Loads,
 }
@@ -194,83 +200,98 @@ fn kept_name(path: &Path) -> Option<PathBuf> {
     Some(path.with_file_name(format!("{KEPT_PREFIX}{name}")))
 }
 
-impl Demo {
-    /// Kept for downloading under a `kept-` name, if anything was said in it: whether it was.
-    fn keep(&mut self) -> bool {
-        if !has_voice(&self.path) {
-            return false;
-        }
-        if let Some(kept) = kept_name(&self.path) {
-            let _ = std::fs::rename(voice_of(&self.path), voice_of(&kept));
-            if std::fs::rename(&self.path, &kept).is_ok() {
-                self.path = kept;
-            }
-        }
-        true
-    }
-
-    /// Not relayed any more: kept if anything was said in it, else gone.
-    fn drop_or_keep(mut self) {
-        if !self.keep() {
-            let _ = std::fs::remove_file(voice_of(&self.path));
-            let _ = std::fs::remove_file(self.path);
-        }
+/// A demo no room can be on any more: kept for downloading under a `kept-` name if anything was
+/// said in it, else gone.
+fn drop_or_keep(path: &Path) {
+    if !has_voice(path) {
+        let _ = std::fs::remove_file(voice_of(path));
+        let _ = std::fs::remove_file(path);
+    } else if let Some(kept) = kept_name(path) {
+        let _ = std::fs::rename(voice_of(path), voice_of(&kept));
+        let _ = std::fs::rename(path, kept);
     }
 }
 
-/// Match `id`'s demos in `dir`, `live-` and `kept-`. Those named without their load are given
-/// loads by their order in time: one of another map, or with a lower first tick than the one
-/// before, starts the next.
-fn found(dir: &Path, id: &str) -> Vec<Demo> {
-    let mut demos = Vec::new();
+/// Match `id`'s demos in `dir`, as a restart finds them. Of those named without their load, the
+/// `live-` ones are of the load the match was at, and those before it where its ticks started
+/// over: in time order, one of another map or with a lower first tick than the one before starts
+/// the next. The `kept-` ones are for downloading only.
+fn found(dir: &Path, id: &str) -> Inner {
+    let mut inner = Inner::default();
     let mut unnumbered = Vec::new();
     for e in std::fs::read_dir(dir).into_iter().flatten().flatten() {
         let name = e.file_name().to_string_lossy().into_owned();
+        let live = name.starts_with(LIVE_PREFIX);
         let Some(rest) = [LIVE_PREFIX, KEPT_PREFIX].iter().find_map(|p| name.strip_prefix(p)) else { continue };
         let Some(file) = rest.strip_prefix(id).and_then(|r| r.strip_prefix('-')).and_then(|r| r.strip_suffix(".dem")) else { continue };
+        if live && file.starts_with(PAST) {
+            inner.past.push(e.path());
+            continue;
+        }
         let (Some((load, first_tick)), Some(map)) = (load_tick(file), map_of(&e.path())) else { continue };
-        let demo = Demo { path: e.path(), map, load, first_tick, unnumbered: !file.contains('-') };
-        if demo.unnumbered {
+        let demo = Demo { path: e.path(), map, load, first_tick, back: None };
+        if file.contains('-') {
+            inner.demos.push(demo);
+        } else if live {
             let written = e.metadata().and_then(|m| m.modified()).unwrap_or(SystemTime::UNIX_EPOCH);
             unnumbered.push((written, demo));
-        } else {
-            demos.push(demo);
         }
     }
     unnumbered.sort_by_key(|(written, d)| (*written, d.first_tick));
-    let mut before: Option<(String, u32, usize)> = None;
-    for (_, mut d) in unnumbered {
-        d.load = match before {
-            Some((map, tick, load)) if map != d.map || d.first_tick < tick => load + 1,
-            Some((.., load)) => load,
-            None => 0,
-        };
-        before = Some((d.map.clone(), d.first_tick, d.load));
-        demos.push(d);
+    let mut group = 0;
+    for i in 0..unnumbered.len() {
+        let (before, d) = (i.checked_sub(1).map(|b| &unnumbered[b].1), &unnumbered[i].1);
+        group += usize::from(before.is_some_and(|b| b.map != d.map || d.first_tick < b.first_tick));
+        unnumbered[i].1.load = group;
     }
-    demos.sort_by_key(|d| (d.load, d.first_tick));
-    demos
+    inner.demos.extend(unnumbered.into_iter().map(|(_, d)| Demo { back: Some(group - d.load), ..d }));
+    inner
+}
+
+impl Inner {
+    /// The load the match was at when the version in production left off, and its map if known:
+    /// that of the first demo named with its load (the reconnect after the deploy), else `latest`.
+    fn deployed_at(&self, latest: usize, map: Option<&str>) -> (usize, Option<String>) {
+        let numbered = self.demos.iter().filter(|d| d.back.is_none()).min_by_key(|d| d.load);
+        numbered.map_or((latest, map.map(str::to_string)), |d| (d.load, Some(d.map.clone())))
+    }
+
+    /// Numbers the demos named without their load back from load `at` of `map`; none of them is
+    /// relayed if the newest is of another map.
+    fn number_back(&mut self, (at, map): (usize, Option<String>)) {
+        let newest = self.demos.iter().find(|d| d.back == Some(0)).map(|d| d.map.clone());
+        let wrong = map.is_some() && newest.is_some() && map != newest;
+        let (gone, demos): (Vec<Demo>, Vec<Demo>) =
+            std::mem::take(&mut self.demos).into_iter().partition(|d| d.back.is_some_and(|back| wrong || back > at));
+        self.past.extend(gone.into_iter().map(|d| d.path));
+        self.demos = demos;
+        for d in &mut self.demos {
+            if let Some(back) = d.back {
+                d.load = at - back;
+            }
+        }
+        self.demos.sort_by_key(|d| (d.load, d.first_tick));
+    }
 }
 
 impl LiveDemos {
     /// Match `id`'s demos in `dir`, with those a process before this one left there; its loads go
     /// on from the latest of them, till [`LiveDemos::go_on_from`] says better.
     pub(crate) fn new(dir: &Path, id: &str) -> Arc<LiveDemos> {
-        let demos = found(dir, id);
-        let loads = demos.last().map_or_else(Loads::default, |d| Loads::from(d.load, Some(d.map.clone()), Some(d.first_tick)));
-        let inner = Inner { demos, loads };
+        let mut inner = found(dir, id);
+        let newest = inner.demos.iter().filter_map(|d| d.back).max().unwrap_or(0);
+        inner.number_back(inner.deployed_at(newest, None));
+        inner.loads = inner.demos.last().map_or_else(Loads::default, |d| Loads::from(d.load, Some(d.map.clone()), Some(d.first_tick)));
         Arc::new(LiveDemos { dir: dir.to_owned(), id: id.to_string(), inner: Mutex::new(inner) })
     }
 
-    /// The match's loads go on from `loads` (its recording's, resumed), whose first part kept is
-    /// load `first`: the demos named without their load are numbered from there.
-    pub(crate) fn go_on_from(&self, loads: Loads, first: usize) {
+    /// The match's loads go on from `loads`, its recording's, resumed: the demos named without
+    /// their load are of its latest load, and those before it.
+    pub(crate) fn go_on_from(&self, loads: Loads) {
         let mut inner = lock(&self.inner);
+        let at = inner.deployed_at(loads.latest(), loads.map());
+        inner.number_back(at);
         inner.loads = loads;
-        for d in inner.demos.iter_mut().filter(|d| d.unnumbered) {
-            d.load += first;
-        }
-        inner.demos.sort_by_key(|d| (d.load, d.first_tick));
     }
 
     /// A line of the match, as its recording gets it: the load a snapshot is of.
@@ -308,15 +329,19 @@ impl LiveDemos {
         }
         let at = inner.demos.partition_point(|d| d.load < n);
         for d in inner.demos.drain(..at) {
-            d.drop_or_keep();
+            drop_or_keep(&d.path);
         }
     }
 
     /// The match ended: its demos go, those of loads before too, but for those with comms, which
     /// are kept.
     pub(crate) fn forget(&self) {
-        for d in lock(&self.inner).demos.drain(..) {
-            d.drop_or_keep();
+        let mut inner = lock(&self.inner);
+        for d in inner.demos.drain(..) {
+            drop_or_keep(&d.path);
+        }
+        for path in inner.past.drain(..) {
+            drop_or_keep(&path);
         }
     }
 
@@ -342,7 +367,7 @@ impl stvtf::demo::Files for LiveDemos {
         let path = self.dir.join(format!("{LIVE_PREFIX}{}-{load}-{first_tick}.dem", self.id));
         let file = File::create(&path)?;
         inner.demos.retain(|d| d.path != path);
-        inner.demos.push(Demo { path, map: map.to_string(), load, first_tick, unnumbered: false });
+        inner.demos.push(Demo { path, map: map.to_string(), load, first_tick, back: None });
         inner.demos.sort_by_key(|d| (d.load, d.first_tick));
         Ok(file)
     }
