@@ -25,6 +25,13 @@ impl Loads {
         Loads { n, named: map.clone(), map, last_tick, begun: true }
     }
 
+    /// The first load is the match's `n`th, if none began yet (counted elsewhere before).
+    pub(crate) fn first_is(&mut self, n: usize) {
+        if !self.begun {
+            self.n = n;
+        }
+    }
+
     /// A server line, naming `map`.
     pub(crate) fn server(&mut self, map: &str) {
         self.named = Some(map.to_string());
@@ -47,7 +54,6 @@ impl Loads {
     }
 
     /// The load a demo whose first frame is at `first_tick` of `map` will be of (nothing changes).
-    #[cfg_attr(not(test), expect(dead_code, reason = "for the demos' recorder"))]
     pub(crate) fn would_be(&self, map: &str, first_tick: u32) -> usize {
         let new = self.map.as_deref() != Some(map) || self.last_tick.is_some_and(|last| first_tick < last);
         self.n + usize::from(self.begun && new)
@@ -142,5 +148,14 @@ mod tests {
         assert_eq!(unticked.snapshot(50), (2, false), "its ticks not known: whatever comes goes on");
         unticked.server("cp_b");
         assert_eq!(unticked.snapshot(60), (3, true));
+    }
+
+    #[test]
+    fn the_first_load_can_be_numbered_till_it_begins() {
+        let mut loads = on("cp_a");
+        loads.first_is(2);
+        assert_eq!((loads.would_be("cp_a", 50), loads.snapshot(50)), (2, (2, true)));
+        loads.first_is(5);
+        assert_eq!(loads.latest(), 2, "begun");
     }
 }

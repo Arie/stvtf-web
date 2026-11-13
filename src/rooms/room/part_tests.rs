@@ -101,8 +101,8 @@ fn two_maps_recording() -> Arc<Recording> {
 pub(super) const OLD_SAVED_ROOM: &str =
     r#"{"paused":true,"speed":1.0,"at":600,"people":{"owner":"me","by_guest":{},"admins":[],"next":1},"leader":null,"view":null}"#;
 
-/// What a `demo_of` was asked: the map, which load of it, the tick.
-type Asked = Arc<Mutex<Vec<(String, usize, u32)>>>;
+/// What a `demo_of` was asked: the load, the tick.
+type Asked = Arc<Mutex<Vec<(usize, u32)>>>;
 
 /// A room on part `n` of `two_maps_recording`, and what its relay's `demo_of` is asked.
 fn room_on_part_with_demo_of(n: usize) -> (Arc<Room>, Asked) {
@@ -111,8 +111,8 @@ fn room_on_part_with_demo_of(n: usize) -> (Arc<Room>, Asked) {
     let room = Room::restore("r".into(), Saved { part: Some(n), ..saved }, rec);
     let asked = Arc::new(Mutex::new(Vec::new()));
     let log = asked.clone();
-    let demo_of: DemoOf = Arc::new(move |map, again, tick| {
-        lock(&log).push((map.to_string(), again, tick));
+    let demo_of: DemoOf = Arc::new(move |n, tick| {
+        lock(&log).push((n, tick));
         Some("a.dem".into())
     });
     let relays = Arc::new(Pool::Local(Relays::new("127.0.0.1", [])));
@@ -171,25 +171,24 @@ fn the_relay_is_pointed_at_the_demo_of_the_rooms_load_of_the_map() {
     let (room, asked) = room_on_part_with_demo_of(0);
     let st = lock(&room.state);
     room.want(&st, room.offer.get().unwrap(), true);
-    assert_eq!(lock(&asked).last().map(|(map, again, _)| (map.as_str(), *again)), Some(("cp_a", 0)));
+    assert_eq!(lock(&asked).last().map(|(n, _)| *n), Some(0));
     drop(st);
     room.stop();
     let (room, asked) = room_on_part_with_demo_of(2);
     let st = lock(&room.state);
     room.want(&st, room.offer.get().unwrap(), true);
-    // The load within its name is not asked yet: the next step asks for the load's number.
-    assert_eq!(lock(&asked).last().map(|(map, again, _)| (map.as_str(), *again)), Some(("cp_a", 0)));
+    assert_eq!(lock(&asked).last().map(|(n, _)| *n), Some(2), "cp_a again: the part's number");
     drop(st);
     room.stop();
 }
 
-/// The room shows `map`'s first snapshot, and the relay would be pointed at that load's demo
+/// The room shows `map`'s first snapshot, and the relay would be pointed at the demo of load `n`
 /// at its tick, paused or not.
-fn shows_the_first_of(room: &Room, asked: &Asked, map: &str, again: usize) {
+fn shows_the_first_of(room: &Room, asked: &Asked, map: &str, n: usize) {
     assert!(lock(&room.hub).has_snapshot() && lock(&room.hub).map.as_deref() == Some(map));
     let st = lock(&room.state);
     assert!(room.want(&st, room.offer.get().unwrap(), false).is_some(), "it has a tick to give");
-    assert_eq!(lock(asked).last().cloned(), Some((map.to_string(), again, 50)));
+    assert_eq!(lock(asked).last().copied(), Some((n, 50)));
 }
 
 #[test]
@@ -200,7 +199,7 @@ fn a_seek_to_the_start_of_a_later_map_lands_where_it_shows() {
     let shown = room.recording.part(2).unwrap().start;
     let p = playback(&room);
     assert_eq!((p["at"].as_u64(), p["start"].as_u64(), p["paused"].as_bool()), (Some(shown), Some(shown), Some(true)));
-    shows_the_first_of(&room, &asked, "cp_a", 0);
+    shows_the_first_of(&room, &asked, "cp_a", 2);
     room.stop();
 }
 
@@ -215,7 +214,7 @@ fn a_room_moved_while_paused_has_the_other_maps_first_moment_in_tf2_too() {
     });
     settle(&room);
     assert_eq!(playback(&room)["paused"].as_bool(), Some(true));
-    shows_the_first_of(&room, &asked, "cp_b", 0);
+    shows_the_first_of(&room, &asked, "cp_b", 1);
     room.stop();
 }
 

@@ -292,8 +292,8 @@ impl RoomRelay {
     }
 }
 
-/// Which demo file holds a server tick of a map load: the map, which load of it (0 the first), the tick.
-pub(crate) type DemoOf = Arc<dyn Fn(&str, usize, u32) -> Option<PathBuf> + Send + Sync>;
+/// Which demo file holds a server tick of a map load: the load's number (its part's), the tick.
+pub(crate) type DemoOf = Arc<dyn Fn(usize, u32) -> Option<PathBuf> + Send + Sync>;
 
 /// A room's relays, and where its demos are.
 #[derive(Clone)]

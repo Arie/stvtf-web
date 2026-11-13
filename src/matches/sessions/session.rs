@@ -1,8 +1,8 @@
 //! One match: what it watches or plays, who watches it, and its recording for rooms.
 
-use super::store::{Store, dem_beside, demo_dem, live_file, to_file};
+use super::store::{Store, dem_beside, demo_dem};
 use crate::lock;
-use crate::matches::hub::{SharedHub, Summary, subscribe_all};
+use crate::matches::hub::{SharedHub, Summary};
 use crate::matches::live_demos::LiveDemos;
 use crate::matches::recording::Recording;
 use crate::matches::replay;
@@ -56,7 +56,7 @@ pub struct Session {
     pub(super) source: Mutex<Option<Source>>,
     pub(super) recording: OnceLock<Arc<Recording>>,
     /// A live match's recording, from when it started being watched.
-    live: OnceLock<Arc<Recording>>,
+    pub(super) live: OnceLock<Arc<Recording>>,
     /// Whether `prepare` started.
     preparing: AtomicBool,
     /// A live match's demos, when there is a store to keep them in.
@@ -153,13 +153,13 @@ impl Session {
     pub(crate) fn demo_of(&self, store: Option<&Store>) -> Option<DemoOf> {
         if let Some(d) = self.demos.get() {
             let d = d.clone();
-            return Some(Arc::new(move |map, again, tick| d.at(map, again, tick)));
+            return Some(Arc::new(move |n, tick| d.at(n, tick)));
         }
         let path = match &*lock(&self.source) {
             Some(Source::File(file)) => dem_beside(file),
             _ => store?.dir.join(demo_dem(self.demo?)),
         };
-        Some(Arc::new(move |_, _, _| path.exists().then(|| path.clone())))
+        Some(Arc::new(move |_, _| path.exists().then(|| path.clone())))
     }
 
     /// Rooms play `file`, the recording this session loops.
@@ -339,48 +339,6 @@ impl Drop for Viewer {
             *lock(&self.0.idle_since) = Some(Instant::now());
         }
     }
-}
-
-/// How long the recorder waits for a line before it looks whether to stop.
-pub(super) const RECORD_POLL: Duration = Duration::from_millis(250);
-
-/// Records live match `s` from now on, to its file when there is a store (`resume`: going on from
-/// what the process before saved), until the match ends. The feed from before is not recorded
-/// again as new.
-pub(super) fn record(s: &Arc<Session>, store: Option<&Store>, resume: bool) {
-    let name = live_file(&s.id);
-    let recording = Arc::new(match store {
-        None => Recording::live(),
-        Some(store) => {
-            let saved = resume.then(|| store.read(&name).ok()).flatten();
-            saved.and_then(|gz| Recording::resume(gz.as_slice(), to_file(store, &name)).ok()).unwrap_or_else(|| {
-                store.forget(&name);
-                Recording::live_to(to_file(store, &name))
-            })
-        }
-    });
-    let _ = s.live.set(recording.clone());
-    // Everything: detail, voice, and what is only kept.
-    let (lines, s) = (subscribe_all(&s.hub), s.clone());
-    std::thread::spawn(move || {
-        while s.is_live() && !s.stop.load(Ordering::Relaxed) {
-            let json = match lines.recv_timeout(RECORD_POLL) {
-                Ok(json) => json,
-                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => continue,
-                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
-            };
-            if json.contains(r#""history":true"#) {
-                continue;
-            }
-            let Ok(mut stamped) = serde_json::from_str::<stvtf::output::Stamped>(&json) else { continue };
-            stamped.time = Some(std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_millis() as u64));
-            if let (stvtf::Line::Snapshot(snap), Some(demos)) = (&stamped.line, s.demos.get()) {
-                demos.reached(snap.tick);
-            }
-            let _ = recording.push(&stamped, &json);
-        }
-        recording.end();
-    });
 }
 
 /// Joins `s`, a match already running, for `owner`; logged, so the log shows everyone who asked

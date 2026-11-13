@@ -298,6 +298,17 @@ impl Recording {
         self.live.load(Ordering::Relaxed)
     }
 
+    /// The match's map loads, as its lines told them.
+    pub(crate) fn loads(&self) -> Loads {
+        lock(&self.inner).loads.clone()
+    }
+
+    /// Its first part is the match's `n`th load, if it has shown nothing yet: the loads before it
+    /// were counted by the demos' recorder.
+    pub(crate) fn first_load_is(&self, n: usize) {
+        lock(&self.inner).loads.first_is(n);
+    }
+
     /// No more lines come: the match ended, or the room did.
     pub(crate) fn end(&self) {
         self.live.store(false, Ordering::Relaxed);

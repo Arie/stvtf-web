@@ -8,7 +8,8 @@ use crate::matches::demostf;
 use crate::matches::hub::{SharedHub, watch_into};
 use crate::matches::live_demos::LiveDemos;
 use anyhow::{Result, anyhow, bail};
-use session::{Source, join, record};
+use record::record;
+use session::{Source, join};
 use std::collections::HashMap;
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
 use std::sync::atomic::Ordering;
@@ -26,6 +27,7 @@ const NOWHERE: SocketAddr = SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::UNSPECIFI
 
 mod address;
 mod ids;
+mod record;
 mod session;
 mod store;
 mod voice;
@@ -354,6 +356,8 @@ fn longest_unwatched<'a>(sessions: impl IntoIterator<Item = &'a Arc<Session>>) -
         .map(|(_, id)| id)
 }
 
+#[cfg(test)]
+mod load_tests;
 #[cfg(test)]
 mod tests;
 pub(crate) use address::is_public;

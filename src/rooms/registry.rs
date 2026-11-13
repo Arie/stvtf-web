@@ -153,7 +153,7 @@ impl Rooms {
             Source::Pinned(id) | Source::Live(id) => sessions.get(id)?.demo_of(self.store.as_ref()),
             Source::Demo(demo) => {
                 let path = self.store.as_ref()?.dir.join(demo_dem(*demo));
-                Some(Arc::new(move |_, _, _| path.exists().then(|| path.clone())))
+                Some(Arc::new(move |_, _| path.exists().then(|| path.clone())))
             }
         }
     }
