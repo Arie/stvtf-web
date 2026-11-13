@@ -113,7 +113,8 @@ fn while_the_server_changes_map_the_timeline_is_of_the_map_just_played() {
     }
     let end = rec.parts()[0].end.unwrap();
     let timeline = get(&app, &format!("/w/{}/timeline", m.id), "");
-    for want in [format!(r#""at":{end}"#), format!(r#""length":{end}"#), r#""origin":0"#.into(), r#""live":false"#.into()] {
+    // Still live: the page follows the match as before.
+    for want in [format!(r#""at":{end}"#), format!(r#""length":{end}"#), r#""origin":0"#.into(), r#""live":true"#.into()] {
         assert!(timeline.contains(&want), "{want} in {timeline}");
     }
     sessions.stop_all();
