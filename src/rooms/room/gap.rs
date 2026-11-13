@@ -68,7 +68,10 @@ impl Room {
             cur.done += 1;
             if !first && heard_in_the_gap(&line) {
                 publish(&self.hub, &line);
-                self.relay_line(&line);
+                // As pages: heard while it plays at 1x, else gone.
+                if !st.paused && (st.speed - 1.0).abs() < f64::EPSILON {
+                    self.relay_line(&line);
+                }
             }
         }
         if !cur.caught_up(rec) {

@@ -156,3 +156,20 @@ fn a_room_at_live_past_its_maps_last_frame_is_held_at_its_end_when_it_ends() {
     assert_eq!((p["at"].as_u64(), p["length"].as_u64()), (Some(last), Some(last)));
     room.stop();
 }
+
+#[test]
+fn a_room_paused_or_fast_in_the_gap_gives_its_relay_none_of_it() {
+    let (room, rec) = waiting_in_the_gap();
+    room.control(&Control { paused: Some(true), ..Control::default() }).unwrap();
+    say(&rec, 1, false);
+    a_pass(&room);
+    room.control(&Control { paused: Some(false), speed: Some(2.0), ..Control::default() }).unwrap();
+    say(&rec, 2, false);
+    a_pass(&room);
+    room.control(&Control { speed: Some(1.0), ..Control::default() }).unwrap();
+    say(&rec, 3, false);
+    until("said at 1x", || !relayed(&room).is_empty());
+    a_pass(&room);
+    assert_eq!(relayed(&room), [3], "the earlier lines are read, not kept for later");
+    room.stop();
+}
