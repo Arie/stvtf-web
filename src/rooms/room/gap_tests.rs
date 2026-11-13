@@ -1,6 +1,6 @@
 //! A room while the server changes map: the map just played stays showing.
 
-use super::move_tests::{live_on, live_room_at_live_on, new_map_with_play, on_map};
+use super::move_tests::{live_on, live_room_at_live_on, new_map_with_play, on_map, push_server};
 use super::part::MapPost;
 use super::part_tests::{OLD_SAVED_ROOM, playback, push, settle};
 use super::tests::until;
@@ -50,6 +50,20 @@ fn a_room_keeps_the_last_moment_showing_through_the_gap() {
     on_map(&room, 1);
     settle(&room);
     assert_eq!(playback(&room)["live"].as_bool(), Some(true));
+    room.stop();
+}
+
+#[test]
+fn a_room_following_live_goes_past_a_map_that_never_had_play() {
+    let (room, rec) = live_room_at_live_on("cp_a");
+    push_changing(&rec);
+    push_server(&rec, "cp_b");
+    push_changing(&rec);
+    new_map_with_play(&rec, "cp_c");
+    assert!(!rec.part(1).unwrap().ready && rec.part(2).unwrap().ready);
+    on_map(&room, 2);
+    settle(&room);
+    assert_eq!(lock(&room.hub).map.as_deref(), Some("cp_c"));
     room.stop();
 }
 

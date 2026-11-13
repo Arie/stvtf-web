@@ -36,10 +36,13 @@ impl Room {
         lock(&self.state).follows = false;
     }
 
-    /// A room following live goes on to the next map once that has play, at live, at 1x: true
-    /// when it did (the seek there is due).
+    /// A room following live goes on to the next map with play (past any that never had), at live,
+    /// at 1x: true when it did (the seek there is due).
     pub(super) fn move_on(&self, st: &mut State) -> bool {
-        let Some(next) = self.recording.part(st.part + 1).filter(|p| st.follows && p.ready) else { return false };
+        if !st.follows {
+            return false;
+        }
+        let Some(next) = self.recording.parts().into_iter().find(|p| p.n > st.part && p.ready) else { return false };
         let at = next.end.unwrap_or_else(|| self.recording.length());
         (st.part, st.paused, st.speed, st.seek) = (next.n, false, 1.0, Some(at));
         true
