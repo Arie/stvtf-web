@@ -24,7 +24,7 @@ use std::io::{BufRead, BufReader, Read, Write};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use stvtf::Line;
-use stvtf::output::{Stamped, Team};
+use stvtf::output::{Stamped, Status, Team};
 
 /// Play time per chunk, in milliseconds.
 const CHUNK_MS: u64 = 10_000;
@@ -375,6 +375,7 @@ impl Recording {
     /// The hub just before play time `at` (the start, if before), the chunk it is in, and how
     /// many of its lines are before it; in a map over whose last line not tail is at `last`, at
     /// or past it, the map's last moment, with that line. At a part's first snapshot, with it.
+    /// Never the server's word that it changes map: a room shows the map it is on to its end.
     pub(crate) fn seek(&self, at: u64, last: Option<u64>) -> (Hub, usize, usize) {
         let (i, hub, at, with_at) = {
             let inner = lock(&self.inner);
@@ -390,7 +391,8 @@ impl Recording {
         let scratch = Arc::new(Mutex::new(hub));
         let lines = self.chunk(i).unwrap_or_default();
         let played = lines.partition_point(|(t, _)| *t < at || (with_at && *t == at));
-        for (_, line) in &lines[..played] {
+        let changes_map = |line: &Line| matches!(line, Line::Status(Status::Changelevel | Status::MapChange));
+        for (_, line) in lines[..played].iter().filter(|(_, line)| !changes_map(line)) {
             publish(&scratch, line);
         }
         let hub = lock(&scratch).checkpoint();

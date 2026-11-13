@@ -212,3 +212,16 @@ fn a_map_that_goes_on_after_all_plays_on_with_what_came_while_it_seemed_over() {
     assert!(!lock(&room.state).follows);
     room.stop();
 }
+
+#[test]
+fn a_room_sought_to_the_end_of_a_map_with_a_frame_late_behind_the_change_shows_no_word_of_it() {
+    let rec = live_on("cp_a");
+    push(&rec, &status("changelevel"), rec.length() + 100);
+    push(&rec, &snapshot(130, None, Vec::new()), rec.length() + 86);
+    push(&rec, &status("map_change"), rec.length() + 14);
+    let room = Room::start_at("r".into(), "me", rec.clone(), u64::MAX, 1.0, true);
+    settle(&room);
+    assert_eq!(lock(&room.hub).tick(), Some(130), "the late frame");
+    shows_the_last_moment(&room);
+    room.stop();
+}
