@@ -149,6 +149,8 @@ fn a_seek_is_held_inside_the_rooms_map() {
 #[test]
 fn a_room_whose_map_was_trimmed_goes_to_the_earliest_kept_and_waits() {
     let (room, _) = room_on_a_part_then_trimmed();
+    // Moved by the player, not only placed there by `reach`.
+    move_tests::on_map(&room, 1);
     settle(&room);
     let p = playback(&room);
     assert_eq!((p["map"].as_u64(), p["at"].as_u64()), (Some(1), p["start"].as_u64()));
