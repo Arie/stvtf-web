@@ -101,6 +101,14 @@ pub(super) fn serve_room(
     };
     // Without a cookie (none yet, or refused), a page is someone new each time.
     let who = who(app, request);
+    // Its match's voice from outside: as on the match's own page.
+    if rest.starts_with("voice")
+        && let Some(answered) =
+            super::voice_routes::voice_route(&mut s, reader, app, live(app, sessions, &room).as_ref(), request, rest, &who)
+    {
+        answered?;
+        return Ok(());
+    }
     match (rest, request.method.as_str()) {
         ("", _) if !path.ends_with('/') => app.redirect(&mut s, "308 Permanent Redirect", &format!("{}/", request.path))?,
         (rest, "GET") if is_page(rest) => {
@@ -129,26 +137,7 @@ pub(super) fn serve_room(
             let demos = app.rooms.live_match(&room.id, sessions).map_or_default(|m| super::matches::comms_demos(app, sessions, &m.id));
             respond(&mut s, "200 OK", JSON, serde_json::json!(demos).to_string().as_bytes())?;
         }
-        // Its match's voice from outside: as on the match's own page.
-        ("voice-mumble", "POST") => {
-            super::voice_mumble::post_mumble(&mut s, reader, app, live(app, sessions, &room).as_deref(), request, &who)?;
-        }
-        ("voice-status", "POST") => {
-            super::voice_who::post_voice_status(&mut s, reader, app, live(app, sessions, &room).as_deref(), request)?;
-        }
-        ("voice-comms", "GET") => super::voice_who::get_voice_comms(&mut s, app, live(app, sessions, &room).as_deref(), &who)?,
-        ("voices", "GET") => super::voice_who::get_voices(&mut s, app, live(app, sessions, &room).as_deref(), &who)?,
-        ("voice-match", "POST") => {
-            super::voice_who::post_voice_match(&mut s, reader, app, live(app, sessions, &room).as_deref(), request, &who)?;
-        }
-        ("voice-invite", "GET") => {
-            super::voice_in::get_voice_invite(&mut s, app, app.rooms.live_match(&room.id, sessions).as_deref(), &who)?;
-        }
         ("marks", "GET") => respond_marks(&mut s, &request.query, |from| room.marks(from))?,
-        ("voice", "POST") => match app.rooms.live_match(&room.id, sessions) {
-            Some(m) => super::voice_in::post_voice(&mut s, reader, app, &m, request)?,
-            None => respond(&mut s, "404 Not Found", TEXT, b"not a live match")?,
-        },
         (part, "POST") => change(&mut s, reader, request, &room, &who, part)?,
         _ => not_found(&mut s)?,
     }

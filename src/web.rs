@@ -20,6 +20,7 @@ mod visitor;
 mod voice_in;
 pub(crate) mod voice_link;
 pub(crate) mod voice_mumble;
+pub(crate) mod voice_routes;
 pub(crate) mod voice_who;
 pub(crate) mod voice_who_sync;
 

@@ -285,3 +285,12 @@ fn a_refusal_is_answered_with_the_match_not_held() {
     let send = format!("POST /w/{id}/voice-status HTTP/1.1\r\nAuthorization: Bearer k\r\nContent-Length: {}\r\n\r\n{said}", said.len());
     assert!(free_while_answering(&app, send.as_bytes(), free), "a channel's status not taken");
 }
+
+#[test]
+fn a_match_page_s_voice_routes_take_the_methods_a_room_s_do() {
+    let (app, id) = voice_app();
+    for (path, body) in [("voice-comms", ""), ("voices", ""), ("voice-invite", "")] {
+        assert!(post(&app, &format!("/w/{id}/{path}"), "", body).starts_with("HTTP/1.1 404"), "{path}");
+        assert!(!get(&app, &format!("/w/{id}/{path}"), "").starts_with("HTTP/1.1 404"), "{path}");
+    }
+}
