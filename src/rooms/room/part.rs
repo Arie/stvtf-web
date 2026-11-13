@@ -24,7 +24,7 @@ impl Room {
         if self.recording.is_live() && part.end.is_none() {
             (st.paused, st.seek) = (false, Some(self.recording.length()));
         } else {
-            // Where its map shows: past the server's word that it changes to it.
+            // Where its map shows: its first snapshot, nothing of the map before.
             st.seek = Some(part.shown);
         }
         self.wake.notify_all();
@@ -58,11 +58,12 @@ impl Room {
         self.recording.went_on_from(&self.part(st))
     }
 
-    /// Where the room may be, from the start of its part to its end: none while it is the latest
-    /// (it goes as far as the recording does).
+    /// Where the room may be, from where its part shows (its first snapshot, for one after
+    /// another: not the map before) to its end: none while it is the latest (it goes as far as the
+    /// recording does).
     pub(super) fn reach(&self, st: &State) -> (u64, Option<u64>) {
         let part = self.part(st);
-        (part.start, part.end)
+        (part.shown, part.end)
     }
 
     /// A room whose part was dropped (the trim) goes to the earliest kept, where it shows, paused:

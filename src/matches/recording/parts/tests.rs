@@ -262,6 +262,7 @@ fn ticks_starting_over_on_the_same_map_start_a_chunk_of_their_own() {
     snapshots(&r, 50, 500, time);
     let part = r.latest();
     assert_eq!((r.parts().len(), part.n), (2, 1));
-    let (_, i, played) = r.seek(part.origin, None);
-    assert_eq!((played, r.chunk(i).unwrap()[0].0), (0, part.origin), "its origin is the start of a chunk");
+    let (hub, i, played) = r.seek(part.origin, None);
+    assert_eq!((played, r.chunk(i).unwrap()[0].0), (1, part.origin), "its origin is the start of a chunk");
+    assert_eq!(hub.tick(), Some(50), "and a seek there has its first snapshot, not the one before");
 }

@@ -1,5 +1,6 @@
 //! A room on one map of its match.
 
+use super::part::MapPost;
 use super::tests::until;
 use super::*;
 use crate::matches::hub::{subscribe, tests::snapshot};
@@ -168,6 +169,42 @@ fn the_relay_is_pointed_at_the_demo_of_the_rooms_load_of_the_map() {
     room.want(&st, room.offer.get().unwrap(), true);
     assert_eq!(lock(&asked).last().map(|(map, again, _)| (map.as_str(), *again)), Some(("cp_a", 1)));
     drop(st);
+    room.stop();
+}
+
+/// The room shows `map`'s first snapshot, and the relay would be pointed at that load's demo
+/// at its tick, paused or not.
+fn shows_the_first_of(room: &Room, asked: &Asked, map: &str, again: usize) {
+    assert!(lock(&room.hub).has_snapshot() && lock(&room.hub).map.as_deref() == Some(map));
+    let st = lock(&room.state);
+    assert!(room.want(&st, room.offer.get().unwrap(), false).is_some(), "it has a tick to give");
+    assert_eq!(lock(asked).last().cloned(), Some((map.to_string(), again, 50)));
+}
+
+#[test]
+fn a_seek_to_the_start_of_a_later_map_lands_where_it_shows() {
+    let (room, asked) = room_on_part_with_demo_of(2);
+    room.control(&Control { seek: Some(0), ..Control::default() }).unwrap();
+    settle(&room);
+    let shown = room.recording.part(2).unwrap().shown;
+    let p = playback(&room);
+    assert_eq!((p["at"].as_u64(), p["start"].as_u64(), p["paused"].as_bool()), (Some(shown), Some(shown), Some(true)));
+    shows_the_first_of(&room, &asked, "cp_a", 1);
+    room.stop();
+}
+
+#[test]
+fn a_room_moved_while_paused_has_the_other_maps_first_moment_in_tf2_too() {
+    let (room, asked) = room_on_part_with_demo_of(2);
+    settle(&room);
+    room.go(&MapPost { map: 1 }).unwrap();
+    until("the room on map 1", || {
+        let st = lock(&room.state);
+        st.part == 1 && st.seek.is_none()
+    });
+    settle(&room);
+    assert_eq!(playback(&room)["paused"].as_bool(), Some(true));
+    shows_the_first_of(&room, &asked, "cp_b", 0);
     room.stop();
 }
 

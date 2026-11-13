@@ -58,8 +58,9 @@ until the server names it. The same map loaded again is another map.
 - A room that was following live when its map ended, and that nobody has touched since (a seek, a
   pause, a speed, a drawing, a note, a clear, a view chosen, or the camera moved by hand), moves to
   the next map by itself once that map has play to show, and lands at live. Any other room waits.
-- Admins move the room to any map kept: the latest at live, another at its start. A map no longer
-  kept is refused with `That map is gone.`
+- Admins move the room to any map kept: the latest at live, another at its start: for a map after
+  another, its first snapshot, paused or not, in TF2 too (nothing of the map before). A seek to
+  before it lands there. A map no longer kept is refused with `That map is gone.`
 - The marker is kept per map: it does not show on another map, and is there again when the room
   comes back.
 - The bar says `Map over`, then `Next map ready`. Admins get a `Next map` button and, with more
@@ -145,5 +146,5 @@ The room's event stream adds:
 | `view` | as posted, with `by` |
 | `people` | `id`, `name`, `admin`, `owner`, `signed`, and `ink`, `steamid` when set |
 | `draw` | as posted, with `by` |
-| `playback` | `paused`, `speed`, `at`, `length` (ms), `start` (first moment kept), `origin` (map start), `rounds`, all the room's map's; `live` (the newest map of a match still going); `map` (its number); `over` (the map has ended); `maps` (`n`, `map`, `ready` of each map kept that has a name); on change and every second while playing |
+| `playback` | `paused`, `speed`, `at`, `length` (ms), `start` (first moment kept; of a map after another, from its first snapshot), `origin` (map start), `rounds`, all the room's map's; `live` (the newest map of a match still going); `map` (its number); `over` (the map has ended); `maps` (`n`, `map`, `ready` of each map kept that has a name); on change and every second while playing |
 | `seek` | before the state at the new position |

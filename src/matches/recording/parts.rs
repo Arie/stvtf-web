@@ -19,7 +19,7 @@ pub(crate) struct Part {
     /// Play time of its first line, and of the first line kept of it.
     pub(crate) origin: u64,
     pub(crate) start: u64,
-    /// Play time it shows its map from (see `PartStart::shown`), its first line kept if later.
+    /// Play time it shows its map from (see `PartStart`), its first line kept if later.
     pub(crate) shown: u64,
     /// Play time of the next part's first line; None for the latest.
     pub(crate) end: Option<u64>,
@@ -49,6 +49,10 @@ pub(super) struct PartStart {
     /// Play time it shows from: its first line, or for one the server said it is changing to, its
     /// first snapshot.
     shown: Option<u64>,
+    /// It began after another part: till its first snapshot (`played`), the hub may hold the map
+    /// before (its world, its snapshot, its tick).
+    after: bool,
+    played: Option<u64>,
     /// Named after the map before it, with that load's last tick: its first snapshot says whether
     /// its ticks go on from there (the same load) or started over (another).
     goes_on: Option<u32>,
@@ -69,8 +73,8 @@ impl Inner {
             let changing = matches!(line, Line::Status(status) if changes_map(status));
             let map = named.map(str::to_string).or(known.filter(|_| !changing)).unwrap_or_default();
             let again = self.load(&map);
-            let shown = (!changing).then_some(at);
-            self.parts.push(PartStart { map, again, origin: at, ready: false, shown, goes_on: None });
+            let (shown, after) = ((!changing).then_some(at), !self.parts.is_empty());
+            self.parts.push(PartStart { map, again, origin: at, ready: false, shown, after, played: None, goes_on: None });
             self.scores = None;
             self.last_tick = None;
         } else if let Some(map) = named.map(str::to_string).or(known.clone().filter(|_| matches!(line, Line::Snapshot(_))))
@@ -105,6 +109,7 @@ impl Inner {
         let Some(part) = self.parts.last_mut() else { return };
         part.ready = true;
         part.shown.get_or_insert(at);
+        part.played.get_or_insert(at);
         if part.goes_on.take().is_some_and(|before| tick < before) {
             let map = part.map.clone();
             let again = self.load(&map);
@@ -136,6 +141,11 @@ impl Inner {
             Some(part) if part.shown.is_none_or(|shown| shown > at) => self.chunks.partition_point(|c| c.start < part.origin),
             _ => n,
         }
+    }
+
+    /// Whether play time `at` is the first snapshot of a part after another: a seek there has it.
+    pub(super) fn first_snapshot_at(&self, at: u64) -> bool {
+        self.parts.iter().any(|p| p.after && p.played == Some(at))
     }
 
     /// Counts a load of `map`; how many there were before.
@@ -199,7 +209,8 @@ impl Inner {
         let list = self.parts.iter().zip(ends).enumerate().filter_map(|(i, (p, end))| {
             let first = self.chunks.partition_point(|c| c.start < p.origin);
             let start = self.chunks.get(first)?.start;
-            let shown = p.shown.unwrap_or(p.origin).max(start);
+            // One after another shows from its first snapshot: not the map before.
+            let shown = p.played.filter(|_| p.after).or(p.shown).unwrap_or(p.origin).max(start);
             let (n, map, again, origin, ready) = (self.parts_dropped + i, p.map.clone(), p.again, p.origin, p.ready);
             let part = Part { n, map, again, origin, start, shown, end, ready };
             end.is_none_or(|end| start < end).then_some(part)

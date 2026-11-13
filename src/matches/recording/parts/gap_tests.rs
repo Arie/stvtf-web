@@ -125,6 +125,34 @@ fn a_seek_to_a_maps_end_is_its_last_moment() {
     assert_ne!(r.seek(t, None).1, i, "the next map's starts there");
 }
 
+/// The hub at where part `n` shows from: its map, and the tick of its first snapshot.
+fn at_shown(r: &Recording, n: usize) -> (Option<String>, Option<u32>) {
+    let part = r.part(n).unwrap();
+    let (hub, ..) = r.seek(part.shown, part.end);
+    (hub.map.clone(), hub.tick())
+}
+
+#[test]
+fn a_later_map_shows_from_its_first_snapshot_whatever_began_it() {
+    // A server's word that it changes map, then the map.
+    let r = Recording::live();
+    let t = cp_a_then_changing(&r);
+    then_on(&r, "cp_b", 50, t);
+    assert_eq!(at_shown(&r, 1), (Some("cp_b".into()), Some(50)));
+    // A server line; then ticks starting over.
+    let r = Recording::live();
+    push_at(&r, &server("cp_a"), T0);
+    let time = snapshots(&r, 50, 1650, T0 + 500);
+    push_at(&r, &server("cp_b"), time);
+    let time = snapshots(&r, 1700, 2200, time + 500);
+    snapshots(&r, 100, 500, time);
+    assert!(r.part(1).unwrap().shown > r.part(1).unwrap().origin);
+    assert_eq!(at_shown(&r, 1), (Some("cp_b".into()), Some(1700)));
+    assert_eq!(at_shown(&r, 2), (Some("cp_b".into()), Some(100)));
+    // The first map of all shows from its first line, as ever.
+    assert_eq!(r.part(0).map(|p| (p.origin, p.shown)), Some((0, 0)));
+}
+
 #[test]
 fn a_resumed_recording_has_the_parts_of_a_map_change() {
     let saved = Arc::default();

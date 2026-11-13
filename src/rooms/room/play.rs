@@ -132,8 +132,8 @@ impl Room {
             "speed": st.speed,
             "at": st.at,
             "length": part.end.unwrap_or_else(|| self.recording.length()),
-            // What is kept of its map (from `start`), and where the map began.
-            "start": part.start,
+            // Where its map shows from (what is kept of it), and where the map began.
+            "start": part.shown,
             "origin": part.origin,
             "rounds": self.recording.rounds_in(part.n),
             "live": self.recording.is_live() && !over,

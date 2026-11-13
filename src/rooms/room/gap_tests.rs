@@ -116,13 +116,14 @@ fn an_admin_moves_the_room_to_where_a_map_after_a_change_shows() {
     new_map_with_play(&rec, "cp_c");
     let part = rec.part(1).unwrap();
     assert!(part.shown > part.origin, "{part:?}");
-    let room = Room::start("r".into(), "me", rec.clone());
+    // Paused: it stays where it lands.
+    let room = Room::start_at("r".into(), "me", rec.clone(), rec.length(), 1.0, true);
     room.go(&MapPost { map: 1 }).unwrap();
     on_map(&room, 1);
     settle(&room);
     assert_eq!(playback(&room)["at"].as_u64(), Some(part.shown));
-    assert_eq!(lock(&room.hub).map.as_deref(), Some("cp_b"), "its own map's, not the one before");
-    assert_eq!(lock(&room.state).tick, None, "nor that map's tick");
+    assert!(lock(&room.hub).has_snapshot() && lock(&room.hub).map.as_deref() == Some("cp_b"), "its own map's first moment");
+    assert_eq!(lock(&room.state).tick, Some(50), "and that map's tick");
     room.stop();
 }
 

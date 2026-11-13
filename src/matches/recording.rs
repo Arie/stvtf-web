@@ -372,18 +372,18 @@ impl Recording {
 
     /// The hub just before play time `at` (the start, if before), the chunk it is in, and how
     /// many of its lines are before it; in a map that ends at `end`, at or past it, the map's last
-    /// moment.
+    /// moment. Where a map shows from its first snapshot, with that snapshot: not the map before.
     pub(crate) fn seek(&self, at: u64, end: Option<u64>) -> (Hub, usize, usize) {
-        let (i, hub, at) = {
+        let (i, hub, at, with_at) = {
             let inner = lock(&self.inner);
             let at = at.max(inner.start).min(end.unwrap_or(u64::MAX));
             let i = inner.chunks.partition_point(|c| c.start <= at && end.is_none_or(|end| c.start < end)).saturating_sub(1);
             let Some(chunk) = inner.chunks.get(i) else { return (Hub::default(), inner.dropped, 0) };
-            (inner.dropped + i, chunk.hub.checkpoint(), at)
+            (inner.dropped + i, chunk.hub.checkpoint(), at, inner.first_snapshot_at(at))
         };
         let scratch = Arc::new(Mutex::new(hub));
         let lines = self.chunk(i).unwrap_or_default();
-        let played = lines.partition_point(|(t, _)| *t < at);
+        let played = lines.partition_point(|(t, _)| *t < at || (with_at && *t == at));
         for (_, line) in &lines[..played] {
             publish(&scratch, line);
         }
