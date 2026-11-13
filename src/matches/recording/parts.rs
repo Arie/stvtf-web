@@ -86,6 +86,39 @@ impl PartState {
         self.snap = Some((at, tick));
     }
 
+    /// A part beginning at the snapshot at play time `at`, `tick`, of load `load` of `map`.
+    fn begun(load: usize, map: String, at: u64, tick: u32) -> PartState {
+        let run = Some((at, tick));
+        PartState { load, map, origin: at, last: at, first_tick: Some(tick), first_at: Some(at), run, snap: run, ..PartState::default() }
+    }
+
+    /// The first part of a recording begins load `load` at the snapshot at `at`, `tick` (it
+    /// began at the recording's first line); of `map`, if known.
+    fn begin_load(&mut self, load: usize, at: u64, tick: u32, map: Option<String>) {
+        (self.load, self.first_tick, self.first_at) = (load, Some(tick), Some(at));
+        (self.run, self.snap) = (Some((at, tick)), Some((at, tick)));
+        if let Some(map) = map {
+            self.map = map;
+        }
+    }
+
+    /// A snapshot of its play at `at`, `tick`: it turns ready a second of ticks past its first (a
+    /// `later` part then begins at its run of play), and one the server said was changing map
+    /// that goes on was not over.
+    fn play(&mut self, at: u64, tick: u32, interval: f64, later: bool) {
+        self.run(at, tick, interval);
+        let ready = self.first_tick.is_some_and(|first| tick >= first.saturating_add(ticks(READY_S, interval)));
+        if ready && !self.ready && later {
+            self.begin_at_play();
+        }
+        self.ready |= ready;
+        let went_on = self.changing_tick.is_some_and(|before| tick > before.saturating_add(ticks(WENT_ON_S, interval)));
+        // Its ticks went on, whatever was announced meanwhile (a reconnect): it was not over.
+        if went_on {
+            (self.changing, self.changing_tick, self.tail) = (None, None, None);
+        }
+    }
+
     /// A later map turns ready: it begins at its run of play; its frozen first frame and the break
     /// after it go to the map before (its clock starts at play).
     fn begin_at_play(&mut self) {
@@ -112,6 +145,11 @@ impl Seed {
 /// Seconds `s` in ticks of `interval` seconds.
 fn ticks(s: f64, interval: f64) -> u32 {
     (s / interval).round() as u32
+}
+
+/// The latest part: there is one once a recording noted a line.
+fn latest(parts: &mut [PartState]) -> &mut PartState {
+    parts.last_mut().expect("a part from the first line on")
 }
 
 /// Whether `line` is play of the part it is in, not tail: a snapshot or an event.
@@ -143,7 +181,7 @@ impl Inner {
             Line::Snapshot(snapshot) => self.on_snapshot(at, snapshot.tick),
             _ => {}
         }
-        let latest = self.parts.last_mut().expect("a part");
+        let latest = latest(&mut self.parts);
         if is_play(line) && latest.tail.is_none() {
             latest.last = at;
         }
@@ -152,7 +190,7 @@ impl Inner {
     /// A server line naming `map`: the tail of a part the server is changing from begins. A part
     /// with no map yet (a recording begun mid-stream) is of `map`: no new load.
     fn on_server(&mut self, at: u64, map: &str) {
-        let latest = self.parts.last_mut().expect("a part");
+        let latest = latest(&mut self.parts);
         if latest.changing.is_some() {
             latest.tail.get_or_insert(at);
         }
@@ -168,7 +206,7 @@ impl Inner {
     /// The server says it is changing map: a part with play is over, unless it goes on.
     fn on_changelevel(&mut self, at: u64) {
         let tick = self.loads.last_tick();
-        let latest = self.parts.last_mut().expect("a part");
+        let latest = latest(&mut self.parts);
         if latest.ready && latest.changing.is_none() {
             (latest.changing, latest.changing_tick) = (Some(at), tick);
         }
@@ -181,30 +219,13 @@ impl Inner {
         let (n, starts) = self.loads.snapshot(tick);
         let map = self.loads.map().map(str::to_string);
         if starts && snapped {
-            let map = map.unwrap_or_default();
-            let (first_tick, first_at, run) = (Some(tick), Some(at), Some((at, tick)));
-            self.parts.push(PartState { load: n, map, origin: at, last: at, first_tick, first_at, run, snap: run, ..PartState::default() });
+            self.parts.push(PartState::begun(n, map.unwrap_or_default(), at, tick));
             self.scores = None;
-            return;
-        }
-        let later = self.parts.len() > 1;
-        let latest = self.parts.last_mut().expect("a part");
-        if starts {
-            (latest.load, latest.first_tick, latest.first_at) = (n, Some(tick), Some(at));
-            (latest.run, latest.snap) = (Some((at, tick)), Some((at, tick)));
-            latest.map = map.unwrap_or_else(|| latest.map.clone());
-            return;
-        }
-        latest.run(at, tick, interval);
-        let ready = latest.first_tick.is_some_and(|first| tick >= first.saturating_add(ticks(READY_S, interval)));
-        if ready && !latest.ready && later {
-            latest.begin_at_play();
-        }
-        latest.ready |= ready;
-        let went_on = latest.changing_tick.is_some_and(|before| tick > before.saturating_add(ticks(WENT_ON_S, interval)));
-        // Its ticks went on, whatever was announced meanwhile (a reconnect): it was not over.
-        if went_on {
-            (latest.changing, latest.changing_tick, latest.tail) = (None, None, None);
+        } else if starts {
+            latest(&mut self.parts).begin_load(n, at, tick, map);
+        } else {
+            let later = self.parts.len() > 1;
+            latest(&mut self.parts).play(at, tick, interval, later);
         }
     }
 
