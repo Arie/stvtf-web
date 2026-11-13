@@ -64,6 +64,15 @@ A room watched only in TF2 survives a deploy too.
 
 Restarting the relays drops their TF2 clients; `retry` gets them back (same port and password).
 
+A change to how rooms move between maps needs both, and the relays go first (`bin/relays`, then
+`bin/deploy`): a new relay works with the old app, but a new app with an old relay shows TF2 the
+level change at a map change, which can crash the client.
+
+A match running at a deploy goes on: the recording and its demos are picked up, and demos named
+without a load (`live-<match>-<tick>.dem`) are given loads by their order in time, a lower first
+tick than the file before starting the next. Live recordings and their markers are saved in a
+format the version before does not read, so a rollback starts them afresh and loses the markers.
+
 The app never waits on a relay: it tells it where its room is only on a change (seek, pause,
 speed, camera) or a drift of 250 ms, and leaves one that does not answer alone for 2 s. A relay
 nobody asks about stops after 2 minutes.
