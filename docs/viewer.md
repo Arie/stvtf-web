@@ -199,7 +199,8 @@ On a match page (not the overlay, not in an iframe): the match so far with round
 and fights; a live match from when first watched. It follows the shared playback by default.
 Seeking, pausing or changing speed gives the viewer a private playback (a room: unlisted, unsaved,
 at most 200, outside `--max-matches`); ● Live returns. A live match shows marks only as far as the
-viewer watched, so nothing is spoiled; a demo shows all.
+viewer watched, so nothing is spoiled; a demo shows all. Of a live match it is the newest map
+with play; a viewer's own rewind stays on its map ([maps](rooms.md#maps)).
 
 `?t=12:34` (from map start) opens a private playback there; the link button copies one.
 
