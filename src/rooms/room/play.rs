@@ -67,6 +67,35 @@ pub(super) struct State {
     pub(super) over: Option<usize>,
 }
 
+impl State {
+    /// Whether it plays at 1×.
+    pub(super) fn at_normal_speed(&self) -> bool {
+        (self.speed - 1.0).abs() < f64::EPSILON
+    }
+
+    /// Whether it plays on, at 1×: as at live.
+    pub(super) fn playing_at_normal_speed(&self) -> bool {
+        !self.paused && self.at_normal_speed()
+    }
+
+    /// It plays from `at` on, at 1×.
+    pub(super) fn play_from(&mut self, at: u64) {
+        (self.paused, self.speed, self.seek) = (false, 1.0, Some(at));
+    }
+
+    /// It goes to load `load` at live (`at`), and goes on from there with the match.
+    pub(super) fn go_live_on(&mut self, load: usize, at: u64) {
+        self.play_from(at);
+        (self.load, self.follows_live, self.over) = (load, false, None);
+    }
+
+    /// It goes to load `load` at `at` and waits there: it does not go on to another map by
+    /// itself, decided.
+    pub(super) fn wait_on(&mut self, load: usize, at: u64) {
+        (self.load, self.seek, self.follows_live, self.over) = (load, Some(at), false, Some(load));
+    }
+}
+
 /// What an owner changes; unset fields stay.
 #[derive(Debug, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -268,7 +297,7 @@ impl Room {
             if !st.paused {
                 st.at = st.at.max(rec.length());
             }
-            if (st.speed - 1.0).abs() > f64::EPSILON {
+            if !st.at_normal_speed() {
                 st.speed = 1.0;
                 self.announce(&st);
             }

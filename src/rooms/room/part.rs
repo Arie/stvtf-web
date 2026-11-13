@@ -24,16 +24,16 @@ impl Room {
         let Some(part) = self.recording.part(m.load).filter(|p| p.ready || own) else { bail!("Map gone") };
         let latest = part.load == self.recording.latest().load;
         if own || latest {
-            let over = self.end_of(&part).is_some();
-            (st.paused, st.speed, st.seek) = (false, 1.0, Some(self.end_of(&part).unwrap_or_else(|| self.recording.length())));
+            let end = self.end_of(&part);
+            st.play_from(end.unwrap_or_else(|| self.recording.length()));
             // Its own map over: it goes on when the next plays. The latest: decided when it ends.
-            st.follows_live = own && over;
-            st.over = (own && over).then_some(part.load);
+            st.load = part.load;
+            st.follows_live = own && end.is_some();
+            st.over = st.follows_live.then_some(part.load);
         } else {
-            // Where its map shows: its first snapshot, nothing of the map before. It waits there.
-            (st.seek, st.follows_live, st.over) = (Some(part.origin.max(part.start)), false, Some(part.load));
+            // Where its map shows: its first snapshot, nothing of the map before.
+            st.wait_on(part.load, part.origin.max(part.start));
         }
-        st.load = part.load;
         // Following again with a later map playing: straight there, not to this one's end first.
         self.move_on(&mut st);
         self.wake.notify_all();
@@ -53,7 +53,7 @@ impl Room {
         }
         let Some(next) = self.recording.parts().into_iter().rfind(|p| p.load > st.load && p.ready) else { return false };
         let at = self.end_of(&next).unwrap_or_else(|| self.recording.length());
-        (st.load, st.paused, st.speed, st.seek, st.follows_live, st.over) = (next.load, false, 1.0, Some(at), false, None);
+        st.go_live_on(next.load, at);
         true
     }
 
@@ -88,7 +88,8 @@ impl Room {
     pub(super) fn rehome(&self, st: &mut State) {
         let (part, dropped) = self.placed(st);
         if dropped {
-            (st.load, st.paused, st.seek, st.follows_live, st.over) = (part.load, true, Some(part.start), false, Some(part.load));
+            st.wait_on(part.load, part.start);
+            st.paused = true;
         }
     }
 

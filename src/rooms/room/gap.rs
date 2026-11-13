@@ -33,7 +33,7 @@ impl Room {
         let over = self.end_of(&part).is_some();
         if over && st.over != Some(part.load) {
             let near = part.last.saturating_sub(st.at) <= FOLLOW_WITHIN;
-            st.follows_live = !st.paused && (st.speed - 1.0).abs() < f64::EPSILON && near;
+            st.follows_live = st.playing_at_normal_speed() && near;
             st.over = Some(part.load);
         } else if !over && st.over.is_some() {
             let went_on = st.over == Some(part.load);
@@ -75,7 +75,7 @@ impl Room {
             if !first && heard_in_the_gap(&line) {
                 publish(&self.hub, &line);
                 // As pages: heard while it plays at 1x, else gone.
-                if !st.paused && (st.speed - 1.0).abs() < f64::EPSILON {
+                if st.playing_at_normal_speed() {
                     self.relay_line(&line);
                 }
             }
