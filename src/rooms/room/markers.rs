@@ -39,11 +39,12 @@ impl Room {
         self.keep_marker();
     }
 
-    /// Drops the markers of the maps the trim dropped (the oldest first): `seen` is the earliest
-    /// kept as of the last look.
-    pub(super) fn trim_markers(&self, seen: &mut usize) {
-        let Some(first) = self.recording.parts().first().map(|p| p.n).filter(|n| n > seen) else { return };
-        *seen = first;
-        lock(&self.marker).retain(|n, _| *n >= first);
+    /// Drops the markers of the maps the trim dropped (the oldest first), whenever they came.
+    pub(super) fn trim_markers(&self) {
+        let Some(first) = self.recording.parts().first().map(|p| p.n) else { return };
+        let mut all = lock(&self.marker);
+        if all.keys().next().is_some_and(|n| *n < first) {
+            all.retain(|n, _| *n >= first);
+        }
     }
 }

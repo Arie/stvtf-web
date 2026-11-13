@@ -20,7 +20,7 @@ pub(super) fn a_pass(room: &Room) {
 }
 
 /// Until the room rests at live.
-fn at_live(room: &Room) {
+pub(super) fn at_live(room: &Room) {
     until("the room at live", || {
         let st = lock(&room.state);
         st.seek.is_none() && st.at >= room.recording.length()

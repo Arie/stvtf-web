@@ -31,6 +31,11 @@ pub(super) struct Cursor {
 }
 
 impl Cursor {
+    /// Whether it has every line the recording has.
+    pub(super) fn caught_up(&self, rec: &Recording) -> bool {
+        self.lines.is_empty() && self.looked == Some(rec.count()) && self.chunk + 1 >= rec.chunks()
+    }
+
     /// More of this chunk, if a live one grew; else on to the next.
     pub(super) fn refill(&mut self, rec: &Recording) {
         if self.lines.is_empty() && self.looked != Some(rec.count()) {
@@ -161,7 +166,6 @@ impl Room {
         let mut st = lock(&self.state);
         self.announce(&st);
         let mut announced = Instant::now();
-        let mut kept_from = 0;
         // The clock playing goes by, while it plays on undisturbed: a seek, a pause, the end of
         // what is recorded or another speed sets it down anew.
         let mut clock: Option<Clock> = None;
@@ -174,7 +178,7 @@ impl Room {
                 self.announce_now(&st, &mut announced);
             }
             self.rehome(&mut st);
-            self.trim_markers(&mut kept_from);
+            self.trim_markers();
             let (start, _) = self.reach(&st);
             if st.seek.is_none() && st.at < start {
                 st.seek = Some(start);

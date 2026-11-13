@@ -40,20 +40,29 @@ impl Room {
         over && self.move_on(st)
     }
 
+    /// Whether a map after part `n` has play: the gap after `n` is over.
+    fn played_on(&self, n: usize) -> bool {
+        self.recording.parts().iter().any(|p| p.n > n && p.ready)
+    }
+
     /// The room waits at the end of its map: its tail is read as it comes and dropped, but for
     /// voice from outside the match, played at once to its pages and relay. What the tail had when
-    /// the room got there is not: that was said before. How long to wait for more.
+    /// the room got there is not: that was said before. Past the next map's first frame too, till
+    /// a map after it has play (a frozen frame is still the gap). A chunk at a time, so the player
+    /// looks after the room in between. How long to wait for more.
     pub(super) fn hear_the_gap(&self, st: &mut State, cur: &mut Cursor) -> Duration {
         let rec = &self.recording;
+        cur.refill(rec);
+        // Looked at after the lines: a late frame of the map's own moves its end, and plays.
+        let part = self.part(st);
+        let Some(end) = self.end_of(&part) else { return Duration::ZERO };
+        let played_on = self.played_on(part.n);
+        let stop = part.end.filter(|_| played_on);
         let first = !cur.waiting;
-        loop {
-            cur.refill(rec);
-            // Looked at after the lines: a late frame of the map's own moves its end, and plays.
-            let part = self.part(st);
-            let Some(end) = self.end_of(&part) else { break };
-            let Some(t) = cur.lines.front().map(|l| l.0) else { break };
-            if t <= end || part.end.is_some_and(|next| t >= next) {
-                break;
+        while let Some(&(t, _)) = cur.lines.front() {
+            if t <= end || stop.is_some_and(|next| t >= next) {
+                cur.waiting = true;
+                return IDLE_POLL;
             }
             let (_, line) = cur.lines.pop_front().expect("a front line");
             cur.done += 1;
@@ -62,9 +71,11 @@ impl Room {
                 self.relay_line(&line);
             }
         }
+        if !cur.caught_up(rec) {
+            return Duration::ZERO;
+        }
         cur.waiting = true;
-        let part = self.part(st);
-        if part.end.is_some() || !rec.is_live() {
+        if played_on || !rec.is_live() {
             if !rec.is_live() && part.end.is_none() && !st.paused {
                 // A recording that ended in the gap: nothing more comes.
                 st.paused = true;

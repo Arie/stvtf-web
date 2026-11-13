@@ -1,11 +1,14 @@
 //! A room waiting at the end of its map hears the voice said in the gap, as it is said.
 
+use super::move_tests::on_map;
 use super::move_tests::{decided, live_room_at_live_on, push_server};
 use super::part_tests::push;
-use super::stream_tests::a_pass;
+use super::stream_tests::{a_pass, at_live};
 use super::tests::until;
 use super::*;
-use crate::matches::hub::subscribe_to;
+use crate::matches::hub::{subscribe_to, tests::snapshot};
+use crate::matches::recording::part_tests::Stream;
+use crate::matches::recording::real_part_tests::viaduct;
 use base64::Engine;
 use serde_json::Value;
 use std::sync::mpsc::Receiver;
@@ -109,5 +112,32 @@ fn a_room_on_a_map_going_on_hears_voice_once_as_it_plays() {
     until("said", || !relayed(&room).is_empty());
     a_pass(&room);
     assert_eq!((relayed(&room), heard(&page)), (vec![1], vec![1]));
+    room.stop();
+}
+
+#[test]
+fn a_room_waiting_hears_the_gap_past_the_next_maps_frozen_frame_until_it_plays() {
+    let rec = Arc::new(Recording::live());
+    let mut s = Stream { r: &rec, s: 0.0 };
+    viaduct(&mut s);
+    let room = Room::start("r".into(), "me", rec.clone());
+    room.viewers.fetch_add(1, Ordering::Relaxed);
+    at_live(&room);
+    // `fixed_change`, the frozen frame apart from the play.
+    s.status(1.0, "changelevel");
+    s.status(5.0, "map_change");
+    s.signon(7.0, "koth_nucleus");
+    s.push(15.0, &snapshot(68, None, Vec::new()));
+    assert!(decided(&room, 0));
+    a_pass(&room);
+    let page = listener(&room);
+    s.push(20.0, &said(1, false));
+    s.push(20.0, &said(2, false));
+    until("said past the frozen frame", || relayed(&room).len() == 2);
+    s.snapshot(40.0, 250);
+    s.play(317, 2);
+    on_map(&room, 1);
+    a_pass(&room);
+    assert_eq!((relayed(&room), heard(&page)), (vec![1, 2], vec![1, 2]), "once each");
     room.stop();
 }
