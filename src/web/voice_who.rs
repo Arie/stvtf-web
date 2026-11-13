@@ -64,7 +64,7 @@ struct Report {
 const MAX_CHANNELS: usize = 8;
 
 /// `POST <page>voice-status`, the bot's.
-pub(super) fn status(
+pub(super) fn post_voice_status(
     s: &mut TcpStream,
     reader: &mut BufReader<Take<TcpStream>>,
     app: &App,
@@ -148,7 +148,7 @@ fn theirs<'a>(app: &App, m: Option<&'a Session>, who: &Who) -> Option<&'a Sessio
 
 /// `GET <page>voice-comms`: where the bot is, in Discord or Mumble, and how it goes. No content
 /// for someone with no say.
-pub(super) fn comms(s: &mut TcpStream, app: &App, m: Option<&Session>, who: &Who) -> std::io::Result<()> {
+pub(super) fn get_voice_comms(s: &mut TcpStream, app: &App, m: Option<&Session>, who: &Who) -> std::io::Result<()> {
     let Some(m) = theirs(app, m, who) else { return respond(s, "204 No Content", TEXT, b"") };
     // Each Discord channel's going, one after the other.
     let going: Vec<String> =
@@ -162,7 +162,7 @@ pub(super) fn comms(s: &mut TcpStream, app: &App, m: Option<&Session>, who: &Who
 }
 
 /// `GET <page>voices`: those in the channel and those heard, and whom each is put on.
-pub(super) fn voices(s: &mut TcpStream, app: &App, m: Option<&Session>, who: &Who) -> std::io::Result<()> {
+pub(super) fn get_voices(s: &mut TcpStream, app: &App, m: Option<&Session>, who: &Who) -> std::io::Result<()> {
     let Some(m) = theirs(app, m, who) else { return respond(s, "204 No Content", TEXT, b"") };
     // What the sites said since of those in the channel shows at once.
     recall(app, m);
@@ -182,7 +182,7 @@ struct Match {
 
 /// `POST <page>voice-match`: `discord` is the match's `player`, or `steamid` (as people write
 /// them), or with neither nobody.
-pub(super) fn voice_match(
+pub(super) fn post_voice_match(
     s: &mut TcpStream,
     reader: &mut BufReader<Take<TcpStream>>,
     app: &App,

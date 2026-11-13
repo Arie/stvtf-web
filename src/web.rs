@@ -243,9 +243,9 @@ fn serve_many(
         ("/voice/link", "GET") => voice_link::link(&mut s, app)?,
         ("/voice/linked", "GET") => voice_link::linked(&mut s, app, request)?,
         ("/voice/who", "GET") => voice_link::who(&mut s, app, request)?,
-        ("/voice/mumble", "GET") => voice_mumble::wanted(&mut s, app, sessions, request)?,
-        ("/voice/known", "GET") => voice_who_sync::known(&mut s, app, request)?,
-        ("/voice/known", "POST") => voice_who_sync::learn(&mut s, reader, app, request)?,
+        ("/voice/mumble", "GET") => voice_mumble::get_mumble_jobs(&mut s, app, sessions, request)?,
+        ("/voice/known", "GET") => voice_who_sync::get_known(&mut s, app, request)?,
+        ("/voice/known", "POST") => voice_who_sync::post_known(&mut s, reader, app, request)?,
         ("/start", _) => match start(app, sessions, request, client) {
             // <stv-map> asks where the match is instead of following the redirect.
             Ok(m) if param(&request.query, "format") == Some("json") => {

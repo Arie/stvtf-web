@@ -68,16 +68,18 @@ pub(super) fn serve_match(
         (Some(m), part @ ("timeline" | "marks")) => match_timeline(&mut s, &m, request, part)?,
         (Some(m), "rewind") if request.method == "POST" => rewind(&mut s, reader, app, &m, request, client)?,
         (Some(m), "voice-mumble") if request.method == "POST" => {
-            super::voice_mumble::ask(&mut s, reader, app, Some(&m), request, &who(app, request))?;
+            super::voice_mumble::post_mumble(&mut s, reader, app, Some(&m), request, &who(app, request))?;
         }
-        (Some(m), "voice-status") if request.method == "POST" => super::voice_who::status(&mut s, reader, app, Some(&m), request)?,
-        (Some(m), "voice-comms") => super::voice_who::comms(&mut s, app, Some(&m), &who(app, request))?,
-        (Some(m), "voices") => super::voice_who::voices(&mut s, app, Some(&m), &who(app, request))?,
+        (Some(m), "voice-status") if request.method == "POST" => {
+            super::voice_who::post_voice_status(&mut s, reader, app, Some(&m), request)?;
+        }
+        (Some(m), "voice-comms") => super::voice_who::get_voice_comms(&mut s, app, Some(&m), &who(app, request))?,
+        (Some(m), "voices") => super::voice_who::get_voices(&mut s, app, Some(&m), &who(app, request))?,
         (Some(m), "voice-match") if request.method == "POST" => {
-            super::voice_who::voice_match(&mut s, reader, app, Some(&m), request, &who(app, request))?;
+            super::voice_who::post_voice_match(&mut s, reader, app, Some(&m), request, &who(app, request))?;
         }
-        (Some(m), "voice-invite") => super::voice_in::invite(&mut s, app, Some(&m), &who(app, request))?,
-        (Some(m), "voice") if request.method == "POST" => super::voice_in::voice_in(&mut s, reader, app, &m, request)?,
+        (Some(m), "voice-invite") => super::voice_in::get_voice_invite(&mut s, app, Some(&m), &who(app, request))?,
+        (Some(m), "voice") if request.method == "POST" => super::voice_in::post_voice(&mut s, reader, app, &m, request)?,
         (Some(m), "events") => match app.stream_slot(client) {
             Some(_slot) => {
                 let _viewer = Viewer::new(m.clone());

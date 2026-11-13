@@ -31,7 +31,7 @@ pub(crate) fn site(home: &str, keys: Arc<Keys>) -> Site {
 }
 
 /// `GET /voice/known?since=<version>`, another stv.tf's: what changed since.
-pub(super) fn known(s: &mut TcpStream, app: &App, request: &Request) -> std::io::Result<()> {
+pub(super) fn get_known(s: &mut TcpStream, app: &App, request: &Request) -> std::io::Result<()> {
     let Some(key) = &app.voice_key else { return respond(s, "404 Not Found", TEXT, b"") };
     if !is_key(key, request.bearer.as_deref()) {
         return respond(s, "401 Unauthorized", TEXT, b"");
@@ -42,7 +42,7 @@ pub(super) fn known(s: &mut TcpStream, app: &App, request: &Request) -> std::io:
 }
 
 /// `POST /voice/known`, another stv.tf's: what was said on a page there.
-pub(super) fn learn(s: &mut TcpStream, reader: &mut BufReader<Take<TcpStream>>, app: &App, request: &Request) -> std::io::Result<()> {
+pub(super) fn post_known(s: &mut TcpStream, reader: &mut BufReader<Take<TcpStream>>, app: &App, request: &Request) -> std::io::Result<()> {
     let Some(key) = &app.voice_key else { return respond(s, "404 Not Found", TEXT, b"") };
     if !is_key(key, request.bearer.as_deref()) {
         return respond(s, "401 Unauthorized", TEXT, b"");

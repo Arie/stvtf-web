@@ -54,7 +54,7 @@ fn is_steamid(s: &str) -> bool {
 /// The most characters of a speaker's name kept.
 const MAX_NAME: usize = 40;
 
-pub(super) fn voice_in(
+pub(super) fn post_voice(
     s: &mut TcpStream,
     reader: &mut BufReader<Take<TcpStream>>,
     app: &App,
@@ -108,7 +108,7 @@ pub(super) fn has_say(app: &App, m: &Session, who: &super::visitor::Who) -> bool
 /// `GET /w/<id>/voice-invite` (and a room's): the invite, and where to add the bot to a Discord
 /// server (`STVTF_VOICE_BOT`), to those with a say. Every page asks: no content for the rest, and
 /// where no voice comes in, rather than an error in everyone's console.
-pub(super) fn invite(s: &mut TcpStream, app: &App, m: Option<&Session>, who: &super::visitor::Who) -> std::io::Result<()> {
+pub(super) fn get_voice_invite(s: &mut TcpStream, app: &App, m: Option<&Session>, who: &super::visitor::Who) -> std::io::Result<()> {
     let Some(m) = m.filter(|m| m.is_live() && app.voice_key.is_some() && has_say(app, m, who)) else {
         return respond(s, "204 No Content", TEXT, b"");
     };

@@ -41,7 +41,7 @@ struct Ask {
 }
 
 /// `POST /w/<id>/voice-mumble`.
-pub(super) fn ask(
+pub(super) fn post_mumble(
     s: &mut TcpStream,
     reader: &mut BufReader<Take<TcpStream>>,
     app: &App,
@@ -122,7 +122,7 @@ fn want(app: &App, m: &Session, ask: Ask) -> Result<(), &'static str> {
 /// `GET /voice/mumble`, the bot's: every channel wanted, with what it takes to sit in it and to
 /// post its voice, and the `version` of that. Asked with `?since=<version>` it waits (a while)
 /// until something changed since.
-pub(super) fn wanted(s: &mut TcpStream, app: &App, sessions: &Sessions, request: &Request) -> std::io::Result<()> {
+pub(super) fn get_mumble_jobs(s: &mut TcpStream, app: &App, sessions: &Sessions, request: &Request) -> std::io::Result<()> {
     let Some(key) = &app.voice_key else { return respond(s, "404 Not Found", TEXT, b"") };
     if !is_key(key, request.bearer.as_deref()) {
         return respond(s, "401 Unauthorized", TEXT, b"");
