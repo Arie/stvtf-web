@@ -3,6 +3,7 @@
 use super::markers::{Markers, read_marker};
 use super::part::MapPost;
 use super::part_tests::{live_room_then_new_map, playback, push, room_on_a_part_then_trimmed, settle, stalemate};
+use super::stream_tests::a_pass;
 use super::tests::until;
 use super::view::View;
 use super::*;
@@ -20,13 +21,22 @@ pub(super) fn live_on(map: &str) -> Arc<Recording> {
     rec
 }
 
-/// A watched room on a live match on `map`, resting at live: it follows.
+/// A watched room on a live match on `map`, resting at live.
 pub(super) fn live_room_at_live_on(map: &str) -> (Arc<Room>, Arc<Recording>) {
     let rec = live_on(map);
     let room = Room::start("r".into(), "me", rec.clone());
     room.viewers.fetch_add(1, Ordering::Relaxed);
-    until("the room to follow live", || lock(&room.state).follows);
+    until("the room at live", || {
+        let st = lock(&room.state);
+        st.seek.is_none() && st.at >= rec.length()
+    });
     (room, rec)
+}
+
+/// Until the room saw its map `n` over, and decided whether it follows.
+pub(super) fn decided(room: &Room, n: usize) -> bool {
+    until("the room to see its map over", || lock(&room.state).over == Some(n));
+    lock(&room.state).follows
 }
 
 /// The server changes map to `map`: no play of it yet.
@@ -95,11 +105,11 @@ fn admin_view(take: bool) -> ViewPost {
 }
 
 impl Touch {
-    /// Before the map ends: a camera is moved by hand only in a view chosen first.
+    /// Before the map ends (which does not count): a camera is moved by hand only in a view
+    /// chosen first.
     fn ready(self, room: &Room) {
         if let Touch::HandView = self {
             room.set_view(&admin_view(true), "me").unwrap();
-            until("the room to follow live again", || lock(&room.state).follows);
         }
     }
 
@@ -133,30 +143,44 @@ fn a_room_following_live_moves_to_the_next_map_once_it_has_play() {
     room.stop();
 }
 
+/// `ms` more of the match, a line each half second.
+fn play_on(rec: &Recording, ms: u64) {
+    for _ in 0..ms / 500 {
+        push(rec, &stalemate(), rec.length() + 500);
+    }
+}
+
+/// A room 10 s behind live when its map ends (unwatched: it plays nothing till then) plays on to
+/// the end, at 4× to be quick, and stays there.
+fn behind_live_plays_to_the_end_and_stays(room: &Room, rec: &Recording) {
+    new_map_with_play(rec, "cp_b");
+    assert!(!decided(room, 0), "10 s behind is not at live");
+    room.control(&Control { speed: Some(4.0), ..Control::default() }).unwrap();
+    room.viewers.fetch_add(1, Ordering::Relaxed);
+    let last = rec.part(0).unwrap().last;
+    until("the end", || playback(room)["at"].as_u64() == Some(last));
+    a_pass(room);
+    let p = playback(room);
+    assert_eq!((p["map"].as_u64(), p["over"].as_bool()), (Some(0), Some(true)), "it played to the end, and waits");
+}
+
 #[test]
 fn a_room_behind_live_when_its_map_ended_stays() {
     let (room, rec) = live_room_at_live_on("cp_a");
-    // Unwatched, it plays nothing: it is still behind live when the map ends.
     room.viewers.fetch_sub(1, Ordering::Relaxed);
-    room.control(&Control { seek: Some(rec.length() - 150), ..Control::default() }).unwrap();
-    new_map_with_play(&rec, "cp_b");
-    room.viewers.fetch_add(1, Ordering::Relaxed);
-    settle_past(&room, rec.length());
-    let p = playback(&room);
-    assert_eq!((p["map"].as_u64(), p["over"].as_bool()), (Some(0), Some(true)), "the replay ran to the end, and waits");
+    play_on(&rec, 10_000);
+    room.control(&Control { seek: Some(200), ..Control::default() }).unwrap();
+    settle(&room);
+    behind_live_plays_to_the_end_and_stays(&room, &rec);
     room.stop();
 }
 
 #[test]
 fn a_room_that_never_followed_plays_to_its_maps_end_and_stays() {
     let rec = live_on("cp_a");
-    // Unwatched, it plays nothing: behind live until the next map has started.
+    play_on(&rec, 10_000);
     let room = Room::start_at("r".into(), "me", rec.clone(), 50, 1.0, false);
-    new_map_with_play(&rec, "cp_b");
-    room.viewers.fetch_add(1, Ordering::Relaxed);
-    settle_past(&room, rec.length());
-    let p = playback(&room);
-    assert_eq!((p["map"].as_u64(), p["over"].as_bool()), (Some(0), Some(true)), "it played to the end, and waits");
+    behind_live_plays_to_the_end_and_stays(&room, &rec);
     room.stop();
 }
 
@@ -168,6 +192,7 @@ fn a_room_touched_after_its_map_ended_stays() {
                 let (room, rec) = live_room_at_live_on("cp_a");
                 touch.ready(&room);
                 push_server(&rec, "cp_b");
+                assert!(decided(&room, 0), "at live as its map ended: {touch:?}");
                 touch.on(&room);
                 push_snapshot(&rec, 50);
                 assert_eq!(looked(&room), 0, "{touch:?}");
@@ -181,8 +206,9 @@ fn a_room_touched_after_its_map_ended_stays() {
 fn an_admin_moves_the_room_to_the_latest_map_at_live_and_to_an_earlier_one_at_its_start() {
     let (room, rec) = live_room_at_live_on("cp_a");
     // Paused as its map ends: it waits there, paused.
-    push_server(&rec, "cp_b");
     room.control(&Control { paused: Some(true), ..Control::default() }).unwrap();
+    push_server(&rec, "cp_b");
+    assert!(!decided(&room, 0));
     push_snapshot(&rec, 50);
     assert_eq!(looked(&room), 0);
     let at = rec.part(0).unwrap().last;
@@ -210,6 +236,7 @@ fn restarted_in_the_break(touch: Option<Touch>) -> usize {
     let (room, rec) = live_room_at_live_on("cp_a");
     push_server(&rec, "cp_b");
     settle(&room);
+    assert!(decided(&room, 0));
     if let Some(touch) = touch {
         touch.on(&room);
     }

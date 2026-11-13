@@ -45,8 +45,9 @@ pub(super) fn playback(room: &Room) -> Value {
     last().unwrap()
 }
 
-/// A watched room on a live match, opened on `cp_a`; then `cp_b` comes. The play time `cp_a` ends
-/// at for the room (its last line not tail) is returned.
+/// A watched room on a live match, opened on `cp_a`; then `cp_b` comes, and someone does something
+/// in the room as it does (it stays). The play time `cp_a` ends at for the room (its last line not
+/// tail) is returned.
 pub(super) fn live_room_then_new_map() -> (Arc<Room>, Arc<Recording>, u64) {
     let rec = Arc::new(Recording::live());
     push(&rec, &server("cp_a"), 0);
@@ -58,6 +59,8 @@ pub(super) fn live_room_then_new_map() -> (Arc<Room>, Arc<Recording>, u64) {
     room.viewers.fetch_add(1, Ordering::Relaxed);
     push(&rec, &server("cp_b"), 2500);
     push(&rec, &snapshot(50, None, Vec::new()), 3000);
+    until("the room to see its map over", || lock(&room.state).over == Some(0));
+    room.touched();
     push(&rec, &snapshot(117, None, Vec::new()), 3500);
     let last = rec.part(0).unwrap().last;
     (room, rec, last)
@@ -124,6 +127,7 @@ fn room_on_part_with_demo_of(n: usize) -> (Arc<Room>, Asked) {
 fn a_room_stays_on_its_map_when_the_next_starts() {
     let (room, rec, at) = live_room_then_new_map();
     settle(&room);
+    until("the next map listed", || playback(&room)["maps"].as_array().unwrap().len() == 2);
     let p = playback(&room);
     assert_eq!((p["map"].as_u64(), p["over"].as_bool(), p["live"].as_bool()), (Some(0), Some(true), Some(false)));
     assert_eq!((p["origin"].as_u64(), p["length"].as_u64()), (Some(0), Some(at)));

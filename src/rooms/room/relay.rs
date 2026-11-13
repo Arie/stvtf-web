@@ -171,9 +171,10 @@ pub(super) fn relay_voice(line: &Line) -> Option<VoiceIn> {
 impl Room {
     /// Gives the relay what it must send of a line being played.
     pub(super) fn relay_line(&self, line: &Line) {
-        if let Some(v) = relay_voice(line)
-            && let Some(r) = &*lock(&self.relay)
-        {
+        let Some(v) = relay_voice(line) else { return };
+        #[cfg(test)]
+        lock(&self.relayed).push(v.clone());
+        if let Some(r) = &*lock(&self.relay) {
             r.voice(v);
         }
     }

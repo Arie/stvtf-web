@@ -15,18 +15,24 @@ pub(crate) struct MapPost {
 }
 
 impl Room {
-    /// An admin moves the room to map `m.map`: at live on the latest, where it shows on another.
+    /// An admin moves the room to map `m.map`: at live on the latest, at its first snapshot on an
+    /// earlier one; its own map, to its end or live, following again (the page's Live).
     pub(crate) fn go(&self, m: &MapPost) -> Result<()> {
-        let Some(part) = self.recording.part(m.map) else { bail!("Map gone") };
         let mut st = lock(&self.state);
-        // At live it follows again (`at_end`); anywhere else it waits at its map's end.
-        (st.part, st.follows) = (part.n, false);
-        if self.recording.is_live() && part.end.is_none() {
-            (st.paused, st.seek) = (false, Some(self.recording.length()));
+        let own = m.map == self.part(&st).n;
+        let Some(part) = self.recording.part(m.map).filter(|p| p.ready || own) else { bail!("Map gone") };
+        let latest = part.n == self.recording.latest().n;
+        if own || latest {
+            let over = self.end_of(&part).is_some();
+            (st.paused, st.speed, st.seek) = (false, 1.0, Some(self.end_of(&part).unwrap_or_else(|| self.recording.length())));
+            // Its own map over: it goes on when the next plays. The latest: decided when it ends.
+            st.follows = own && over;
+            st.over = (own && over).then_some(part.n);
         } else {
-            // Where its map shows: its first snapshot, nothing of the map before.
-            st.seek = Some(part.start);
+            // Where its map shows: its first snapshot, nothing of the map before. It waits there.
+            (st.seek, st.follows, st.over) = (Some(part.origin.max(part.start)), false, Some(part.n));
         }
+        st.part = part.n;
         self.wake.notify_all();
         Ok(())
     }
@@ -36,15 +42,15 @@ impl Room {
         lock(&self.state).follows = false;
     }
 
-    /// A room following live goes on to the next map with play (past any that never had), at live,
+    /// A room following goes on to the newest map with play (past any that never had), at live,
     /// at 1x: true when it did (the seek there is due).
     pub(super) fn move_on(&self, st: &mut State) -> bool {
         if !st.follows {
             return false;
         }
-        let Some(next) = self.recording.parts().into_iter().find(|p| p.n > st.part && p.ready) else { return false };
+        let Some(next) = self.recording.parts().into_iter().rfind(|p| p.n > st.part && p.ready) else { return false };
         let at = self.end_of(&next).unwrap_or_else(|| self.recording.length());
-        (st.part, st.paused, st.speed, st.seek) = (next.n, false, 1.0, Some(at));
+        (st.part, st.paused, st.speed, st.seek, st.follows, st.over) = (next.n, false, 1.0, Some(at), false, None);
         true
     }
 
@@ -54,14 +60,16 @@ impl Room {
     }
 
     /// Whether the room waits at the end of its part: one that has a successor, or the server is
-    /// changing from while the match goes on.
+    /// changing from while the match goes on (or did as it ended).
     pub(super) fn part_over(&self, st: &State) -> bool {
         self.end_of(&self.part(st)).is_some()
     }
 
-    /// Where `part` ends for a room on it: its last line not tail, once over.
-    fn end_of(&self, part: &Part) -> Option<u64> {
-        (part.over() && (part.end.is_some() || self.recording.is_live())).then_some(part.last)
+    /// Where `part` ends for a room on it: its last line not tail, once over. A recording that
+    /// ends as the server said it changes map, and no more, ends as one without it.
+    pub(super) fn end_of(&self, part: &Part) -> Option<u64> {
+        let ended = part.end.is_some() || part.tail.is_some() || self.recording.is_live();
+        (part.over() && ended).then_some(part.last)
     }
 
     /// Where the room may be, from where its part shows (its first snapshot, for one after
@@ -77,7 +85,7 @@ impl Room {
     pub(super) fn rehome(&self, st: &mut State) {
         let (part, dropped) = self.placed(st);
         if dropped {
-            (st.part, st.paused, st.seek, st.follows) = (part.n, true, Some(part.start), false);
+            (st.part, st.paused, st.seek, st.follows, st.over) = (part.n, true, Some(part.start), false, Some(part.n));
         }
     }
 

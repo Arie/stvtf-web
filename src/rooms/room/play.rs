@@ -1,6 +1,6 @@
 //! The player: a room's recording played in time, paused, sped up and sought.
 
-use super::{Room, SPEEDS};
+use super::{Room, SPEEDS, gap};
 use crate::lock;
 use crate::matches::hub::{announce, publish, restore};
 use crate::matches::recording::Recording;
@@ -20,17 +20,19 @@ pub(super) const LIVE_POLL: Duration = Duration::from_millis(20);
 
 /// Where playback is in the recording: the chunk, how many of its lines are played, and the lines
 /// after, as far as the recording had them when last looked at (`looked`: how many it had then).
+/// `waiting`: it reached the tail of its map, and read what of it there was then.
 #[derive(Default)]
-struct Cursor {
+pub(super) struct Cursor {
     chunk: usize,
-    done: usize,
+    pub(super) done: usize,
     looked: Option<usize>,
-    lines: VecDeque<(u64, Line)>,
+    pub(super) lines: VecDeque<(u64, Line)>,
+    pub(super) waiting: bool,
 }
 
 impl Cursor {
     /// More of this chunk, if a live one grew; else on to the next.
-    fn refill(&mut self, rec: &Recording) {
+    pub(super) fn refill(&mut self, rec: &Recording) {
         if self.lines.is_empty() && self.looked != Some(rec.count()) {
             self.looked = Some(rec.count());
             self.lines = rec.chunk(self.chunk).unwrap_or_default().into_iter().skip(self.done).collect();
@@ -56,6 +58,8 @@ pub(super) struct State {
     /// It goes on to the next map by itself: it was at live when its map ended, and nobody did
     /// anything in it since.
     pub(super) follows: bool,
+    /// The map it last saw over: whether it follows was decided there.
+    pub(super) over: Option<usize>,
 }
 
 /// What an owner changes; unset fields stay.
@@ -124,8 +128,9 @@ impl Room {
     pub(super) fn announce(&self, st: &State) {
         let (part, (_, end)) = (self.part(st), self.reach(st));
         let over = end.is_some();
-        let maps: Vec<_> =
-            self.recording.parts().into_iter().map(|p| serde_json::json!({ "n": p.n, "map": p.map, "ready": p.ready })).collect();
+        let maps = self.recording.parts().into_iter().filter(|p| p.ready || p.n == part.n);
+        let maps: Vec<_> = maps.map(|p| serde_json::json!({ "n": p.n, "map": p.map, "ready": p.ready })).collect();
+        let latest = part.n == self.recording.latest().n;
         let line = serde_json::json!({
             "type": "playback",
             "paused": st.paused,
@@ -136,7 +141,7 @@ impl Room {
             "start": part.start,
             "origin": part.origin,
             "rounds": self.recording.rounds_in(part.n),
-            "live": self.recording.is_live() && !over,
+            "live": latest && self.recording.is_live() && !over,
             // Its map's number, whether the match went on to another, and the maps kept.
             "map": part.n,
             "over": over,
@@ -179,12 +184,15 @@ impl Room {
                 clock = None;
                 continue;
             }
+            if self.at_map_end(&mut st) {
+                continue;
+            }
             cur.refill(rec);
             // No line is played past the end of its map; looked at after the lines, so a line seen
             // has its part.
             let (_, end) = self.reach(&st);
             let Some(t) = cur.lines.front().map(|l| l.0).filter(|t| end.is_none_or(|end| *t <= end)) else {
-                st = self.at_end(st, end);
+                st = self.at_end(st, end, &mut cur);
                 clock = None;
                 continue;
             };
@@ -198,7 +206,10 @@ impl Room {
                 continue;
             }
             let (_, line) = cur.lines.pop_front().expect("a front line");
-            cur.done += 1;
+            (cur.done, cur.waiting) = (cur.done + 1, false);
+            if gap::changes_map(&line) {
+                continue;
+            }
             publish(&self.hub, &line);
             self.relay_line(&line);
             if let Line::Snapshot(snap) = &line {
@@ -224,31 +235,33 @@ impl Room {
         // Where it went, paused or not: the relay follows at once.
         st.tick = hub.tick();
         restore(&self.hub, hub);
-        *cur = Cursor { chunk, done, looked: None, lines: VecDeque::new() };
+        *cur = Cursor { chunk, done, ..Cursor::default() };
         st.at = target;
+        // Every move between maps ends here: a follow of a player ends, the marker goes with it.
+        let n = self.part(st).n;
+        if self.marker_part.load(Ordering::Relaxed) != n {
+            self.end_follow();
+        }
         self.announce(st);
-        // Every move between maps ends here: the marker goes with the room.
-        self.show_marker(self.part(st).n);
+        self.show_marker(n);
     }
 
-    /// At the end of what is played (`end`, its map's, if it has one): of a map that the match went
-    /// on from, it waits there, unless it follows live and goes on; of what is recorded, a live
-    /// match's goes on (at 1×, as it comes in, following it unless paused), any other pauses there.
-    fn at_end<'a>(&self, mut st: MutexGuard<'a, State>, end: Option<u64>) -> MutexGuard<'a, State> {
+    /// At the end of what is played (`end`, its map's, if it has one): of a map that is over, it
+    /// waits there, hearing the gap; of what is recorded, a live match's goes on (at 1×, as it
+    /// comes in, unless paused), any other pauses there.
+    fn at_end<'a>(&self, mut st: MutexGuard<'a, State>, end: Option<u64>, cur: &mut Cursor) -> MutexGuard<'a, State> {
         let rec = &self.recording;
         if let Some(end) = end.filter(|_| self.part_over(&st)) {
-            if self.move_on(&mut st) {
-                return st;
-            }
             if !st.paused && st.at < end {
                 st.at = end;
                 self.announce(&st);
             }
-            return self.sleep(st, IDLE_POLL);
+            let poll = self.hear_the_gap(&mut st, cur);
+            return self.sleep(st, poll);
         }
         if rec.is_live() {
             if !st.paused {
-                (st.at, st.follows) = (st.at.max(rec.length()), true);
+                st.at = st.at.max(rec.length());
             }
             if (st.speed - 1.0).abs() > f64::EPSILON {
                 st.speed = 1.0;

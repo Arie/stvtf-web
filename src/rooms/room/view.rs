@@ -1,6 +1,6 @@
 //! How everyone in a room sees the map, as an admin sets it.
 
-use super::{Room, on_map};
+use super::{Leader, Room, on_map};
 use crate::lock;
 use crate::matches::hub::announce;
 use anyhow::{Result, bail};
@@ -79,7 +79,13 @@ impl Room {
         if !post.take && leader.as_ref().is_none_or(|(_, _, now)| now != kind) {
             return Ok(());
         }
-        *leader = Some((by, post.page.clone(), kind.to_string()));
+        let was = leader.replace((by, post.page.clone(), kind.to_string()));
+        if kind == "follow"
+            && let Some(was) = was.filter(|(_, _, k)| k != "follow")
+        {
+            let line = lock(&self.view).clone();
+            *lock(&self.before_follow) = line.map(|line| (was, line));
+        }
         let mut line = serde_json::to_value(view)?;
         line["type"] = "view".into();
         line["by"] = by.into();
@@ -99,5 +105,23 @@ impl Room {
         // dropped at a map change): someone is at the controls.
         self.touched();
         Ok(())
+    }
+
+    /// The room went to another map: a player followed is not on it. The view goes back to the
+    /// one before the follow (free if none), as the leader's page would on stopping; the relay's
+    /// camera with it. Nobody touched the room.
+    pub(super) fn end_follow(&self) {
+        let mut leader = lock(&self.leader);
+        let Some((by, page, _)) = leader.clone().filter(|(_, _, kind)| kind == "follow") else { return };
+        let free = || {
+            let line = serde_json::json!({ "type": "view", "mode": "free", "by": by, "page": page });
+            ((by, page.clone(), "free".to_string()), line.to_string().into())
+        };
+        let (was, line): (Leader, Arc<str>) = lock(&self.before_follow).take().unwrap_or_else(free);
+        *leader = Some(was);
+        *lock(&self.view) = Some(line.clone());
+        announce(&self.hub, "view", &line);
+        drop(leader);
+        *lock(&self.camera) = None;
     }
 }

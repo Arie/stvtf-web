@@ -8,6 +8,8 @@
 mod parts;
 
 pub(crate) use parts::Part;
+#[cfg(test)]
+pub(crate) use parts::{real_tests as real_part_tests, tests as part_tests};
 
 use crate::lock;
 use crate::matches::hub::{Hub, SharedHub, publish};
@@ -397,7 +399,7 @@ impl Recording {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use std::fmt::Write as _;
 
@@ -493,7 +495,7 @@ mod tests {
     }
 
     /// Line `line` at `time` into `r`.
-    pub(super) fn push_at(r: &Recording, line: &Line, time: u64) {
+    pub(crate) fn push_at(r: &Recording, line: &Line, time: u64) {
         let text = serde_json::to_string(line).unwrap();
         let mut stamped: Stamped = serde_json::from_str(&text).unwrap();
         stamped.time = Some(time);

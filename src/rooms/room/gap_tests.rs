@@ -94,6 +94,9 @@ fn a_room_following_live_stays_on_its_map_through_a_snapshot_late_behind_the_cha
     new_map_with_play(&rec, "cp_b");
     on_map(&room, 1);
     let lines: Vec<Value> = page.try_iter().map(|l| serde_json::from_str(&l).unwrap()).collect();
+    let before: Vec<_> = lines.iter().take_while(|l| l["type"] != "seek").collect();
+    assert!(before.iter().any(|l| l["type"] == "snapshot" && l["tick"] == 130), "the late frame plays");
+    assert!(!before.iter().any(|l| l["type"] == "status"), "the word of the change does not");
     for p in lines.iter().filter(|l| l["type"] == "playback") {
         let maps = p["maps"].as_array().unwrap();
         assert!(maps.iter().all(|m| m["map"] != "cp_a" || m["n"] == 0), "{p}");

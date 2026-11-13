@@ -346,6 +346,6 @@ impl Recording {
 #[cfg(test)]
 mod file_tests;
 #[cfg(test)]
-mod real_tests;
+pub(crate) mod real_tests;
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;

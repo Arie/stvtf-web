@@ -3,44 +3,44 @@ use super::super::*;
 use crate::matches::hub::tests::snapshot;
 use crate::testing::server;
 
-pub(super) const T0: u64 = 1_700_000_000_000;
+pub(crate) const T0: u64 = 1_700_000_000_000;
 
-pub(super) fn line(json: &str) -> Line {
+pub(crate) fn line(json: &str) -> Line {
     serde_json::from_str(json).unwrap()
 }
 
-pub(super) fn status(state: &str) -> Line {
+pub(crate) fn status(state: &str) -> Line {
     line(&format!(r#"{{"type":"status","state":"{state}"}}"#))
 }
 
 /// Lines pushed at wall-clock times, seconds from [`T0`]: what the stream sends, when.
-pub(super) struct Stream<'a> {
-    pub(super) r: &'a Recording,
-    pub(super) s: f64,
+pub(crate) struct Stream<'a> {
+    pub(crate) r: &'a Recording,
+    pub(crate) s: f64,
 }
 
 impl Stream<'_> {
     /// `line`, `after` seconds on; its play time.
-    pub(super) fn push(&mut self, after: f64, line: &Line) -> u64 {
+    pub(crate) fn push(&mut self, after: f64, line: &Line) -> u64 {
         self.s += after;
         push_at(self.r, line, T0 + (self.s * 1000.0).round() as u64);
         self.r.length()
     }
 
-    pub(super) fn status(&mut self, after: f64, state: &str) -> u64 {
+    pub(crate) fn status(&mut self, after: f64, state: &str) -> u64 {
         self.push(after, &status(state))
     }
 
-    pub(super) fn server(&mut self, after: f64, map: &str) -> u64 {
+    pub(crate) fn server(&mut self, after: f64, map: &str) -> u64 {
         self.push(after, &server(map))
     }
 
-    pub(super) fn snapshot(&mut self, after: f64, tick: u32) -> u64 {
+    pub(crate) fn snapshot(&mut self, after: f64, tick: u32) -> u64 {
         self.push(after, &snapshot(tick, None, Vec::new()))
     }
 
     /// Play: a snapshot a second, 67 ticks apart, from `from` for `seconds`; the last's play time.
-    pub(super) fn play(&mut self, from: u32, seconds: u32) -> u64 {
+    pub(crate) fn play(&mut self, from: u32, seconds: u32) -> u64 {
         let mut at = self.r.length();
         for s in 0..seconds {
             at = self.snapshot(1.0, from + s * 67);
@@ -50,7 +50,7 @@ impl Stream<'_> {
 
     /// Signon to `map`: `new`, its server line, `prespawn`, `spawn`, `full`; the server line's
     /// play time.
-    pub(super) fn signon(&mut self, after: f64, map: &str) -> u64 {
+    pub(crate) fn signon(&mut self, after: f64, map: &str) -> u64 {
         self.status(after, "new");
         let at = self.server(0.0, map);
         self.status(1.9, "prespawn");

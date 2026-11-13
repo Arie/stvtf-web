@@ -8,18 +8,18 @@ use crate::matches::hub::tests::{player, snapshot};
 use stvtf::output::Team;
 
 /// Play times of a change's lines.
-pub(super) struct Change {
-    pub(super) changelevel: u64,
+pub(crate) struct Change {
+    pub(crate) changelevel: u64,
     /// The first server line naming the next map.
-    pub(super) server: u64,
+    pub(crate) server: u64,
     /// The frozen frame (tick 68), and the first snapshot of play.
-    pub(super) frozen: u64,
-    pub(super) play: u64,
+    pub(crate) frozen: u64,
+    pub(crate) play: u64,
 }
 
 impl Stream<'_> {
     /// A change to `map` as the capture has it, up to the frozen frame; the play times so far.
-    pub(super) fn change_to_frozen(&mut self, map: &str) -> Change {
+    pub(crate) fn change_to_frozen(&mut self, map: &str) -> Change {
         let changelevel = self.status(1.0, "changelevel");
         self.status(5.4, "map_change");
         let server = self.signon(17.8, map);
@@ -29,7 +29,7 @@ impl Stream<'_> {
 
     /// From the frozen frame: the disconnect, the map announced `repeats` + 2 times, the round
     /// starting, play from `tick` for `seconds`.
-    pub(super) fn after_frozen(&mut self, change: &mut Change, map: &str, repeats: usize, tick: u32, seconds: u32) {
+    pub(crate) fn after_frozen(&mut self, change: &mut Change, map: &str, repeats: usize, tick: u32, seconds: u32) {
         let disconnected = r#"{"type":"status","state":"disconnected","reason":"disconnected by server: Connection error","decode_errors":0,"packets":1498,"lost":0}"#;
         self.push(4.2, &line(disconnected));
         self.push(1.9, &line(r#"{"type":"status","state":"connecting","server":"127.0.0.1:27020","build":"11191711"}"#));
@@ -45,7 +45,7 @@ impl Stream<'_> {
 
     /// A change to `map` as the stream is with the client's fault fixed: one signon, the frozen
     /// frame (one player), 80 s of nothing, play from `tick` for `seconds`.
-    pub(super) fn fixed_change(&mut self, map: &str, tick: u32, seconds: u32) -> Change {
+    pub(crate) fn fixed_change(&mut self, map: &str, tick: u32, seconds: u32) -> Change {
         let changelevel = self.status(1.0, "changelevel");
         self.status(5.0, "map_change");
         let server = self.signon(7.0, map);
@@ -57,7 +57,7 @@ impl Stream<'_> {
     }
 
     /// A whole change to `map`, its play from `tick` for `seconds`.
-    pub(super) fn change(&mut self, map: &str, tick: u32, seconds: u32) -> Change {
+    pub(crate) fn change(&mut self, map: &str, tick: u32, seconds: u32) -> Change {
         let mut change = self.change_to_frozen(map);
         self.after_frozen(&mut change, map, 3, tick, seconds);
         change
@@ -65,7 +65,7 @@ impl Stream<'_> {
 }
 
 /// `koth_viaduct` from its signon, its play up to tick 35084; the last snapshot's play time.
-pub(super) fn viaduct(s: &mut Stream) -> u64 {
+pub(crate) fn viaduct(s: &mut Stream) -> u64 {
     s.push(0.0, &line(r#"{"type":"status","state":"connecting","server":"127.0.0.1:27020","build":"11191711"}"#));
     s.signon(18.8, "koth_viaduct");
     s.play(35084 - 156 * 67, 157)
