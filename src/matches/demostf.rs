@@ -108,8 +108,9 @@ fn fetch_with(
     let mut in_memory = Vec::new();
     if let Some(file) = &file {
         if !file.exists() {
-            // Beside it until it is whole: a file by that name is one.
-            let part = file.with_extension("dem.part");
+            // Beside it until it is whole: a file by that name is one. Another fetch of the same
+            // demo has a part file of its own.
+            let part = file.with_extension(format!("dem.{}.part", crate::matches::sessions::random_id()));
             std::fs::create_dir_all(file.parent().unwrap_or(file))?;
             let whole = download(&mut BufWriter::new(std::fs::File::create(&part)?), &mut said);
             if !matches!(whole, Ok(true)) {
@@ -393,6 +394,37 @@ mod tests {
         assert!(fetch_with(&hub, 6, 20.0, &running, Some(&k), &junk).is_err());
         let left: Vec<_> = std::fs::read_dir(&k.store.dir).unwrap().flatten().map(|e| e.file_name()).collect();
         assert!(left.is_empty(), "{left:?}");
+    }
+
+    #[test]
+    fn a_demo_fetched_twice_at_once_comes_in_whole_though_the_first_fetch_stops() {
+        let dir = crate::testing::TempDir::new("demostf-twice");
+        let (k, running) = (kept(&dir, true), AtomicBool::new(false));
+        let (both, first_done) = (std::sync::Barrier::new(2), AtomicBool::new(false));
+        let stops = |out: &mut dyn Write, _: &mut dyn FnMut(Option<u8>)| {
+            out.write_all(&recorded()[..1000])?;
+            out.flush()?;
+            both.wait();
+            both.wait();
+            Ok(false)
+        };
+        let whole = |out: &mut dyn Write, _: &mut dyn FnMut(Option<u8>)| {
+            both.wait();
+            out.write_all(&recorded())?;
+            both.wait();
+            while !first_done.load(Ordering::Relaxed) {
+                std::thread::sleep(Duration::from_millis(1));
+            }
+            Ok(true)
+        };
+        std::thread::scope(|scope| {
+            scope.spawn(|| {
+                assert!(fetch_with(&SharedHub::default(), 4, 20.0, &running, Some(&k), &stops).unwrap().is_none());
+                first_done.store(true, Ordering::Relaxed);
+            });
+            assert!(fetch_with(&SharedHub::default(), 4, 20.0, &running, Some(&k), &whole).unwrap().is_some());
+        });
+        assert_eq!(std::fs::read(k.store.dir.join(demo_dem(4))).unwrap(), recorded());
     }
 
     fn told(hub: &SharedHub) -> Vec<serde_json::Value> {
