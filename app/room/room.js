@@ -148,6 +148,14 @@ function roomBar() {
     );
   const showPeople = people(allow, showLead);
   inTf2();
+  wireTools({ marker, arc, circle, light, text, clear });
+}
+
+/** @typedef {Record<"marker" | "arc" | "circle" | "light" | "text" | "clear", HTMLButtonElement>} Tools */
+
+// The drawing tools: each puts down the others when taken; and their keys.
+/** @param {Tools} t */
+function wireTools({ marker, arc, circle, light, text, clear }) {
   drawing(marker);
   arcTool(arc, [marker, circle, light, text]);
   circleTool(circle, [marker, arc, light, text]);
@@ -155,10 +163,13 @@ function roomBar() {
   noteTool(text, [marker, arc, circle, light]);
   noteKey(() => me.admin);
   clear.onclick = () => post("clear", {});
-  // d (or m) takes the marker, a a jump arc, t a circle, f the spotlight (n a note, see
-  // notes.js); c clears the drawings; r, b and y pick the ink.
-  /** @type {Record<string, HTMLButtonElement>} */
-  const tools = { d: marker, m: marker, a: arc, t: circle, f: light, c: clear };
+  toolKeys({ d: marker, m: marker, a: arc, t: circle, f: light, c: clear });
+}
+
+// d (or m) takes the marker, a a jump arc, t a circle, f the spotlight (n a note, see notes.js);
+// c clears the drawings; r, b and y pick the ink.
+/** @param {Record<string, HTMLButtonElement>} tools */
+function toolKeys(tools) {
   env.keys.addEventListener("keydown", e => {
     const target = /** @type {Element} */ (e.composedPath()[0]);
     const tool = tools[e.key];
@@ -181,67 +192,90 @@ function momentLink(since) {
 // pausing or a speed gives this viewer a playback of their own, which a live match's Live leaves.
 function watchBar() {
   env.el.classList.add("room", "watch");
+  const bar = playbar({
+    home: HOME,
+    send: c => own.send(c),
+    // Live for a live match; on a demo, back to the shared playback from one's own.
+    live: () => own.back(),
+    // One's own playback is a replay, unless at a live match's live.
+    replay: (behind, p) => own.active() && (behind || !p.live),
+  });
+  const own = ownPlayback(bar, () => shared());
+  bar.allow(true);
+  playbackListeners.add(m => own.active() && bar.heard(m));
+  copyLink("Copy a link to this moment", () => momentLink(bar.since()));
+  // A link to a moment (?t=12:34, from the map's start) watches from there.
+  const link = { wanted: moment(new URLSearchParams(location.search).get("t")) };
+  const shared = followShared(bar, own, link);
+  addressFollowsPlayback(bar, link);
+}
+
+/** @typedef {ReturnType<typeof playbar>} Playbar */
+/** @typedef {{ send: (c: import("./playbar.js").Control) => Promise<unknown>; back: () => void; active: () => boolean }} OwnPlayback */
+/** @typedef {{ wanted: number | null }} Link */
+
+// A viewer's own playback of the match, started by their first control and theirs until they go
+// back to the shared one.
+/** @param {Playbar} bar @param {() => void} toShared @returns {OwnPlayback} */
+function ownPlayback(bar, toShared) {
   /** @type {URL | null} */
-  let own = null;
+  let page = null;
   /** @type {Promise<unknown> | null} */
   let starting = null;
-  const back = () => {
-    own = null;
-    setClockRate(1);
-    openStream(EVENTS_URL);
-    shared();
-  };
   /** @param {import("./playbar.js").Control} c */
   const send = async c => {
     if (starting) await starting;
-    if (own) return post("control", c, own);
+    if (page) return post("control", c, page);
     const now = bar.state();
     const body = { at: c.seek ?? Math.round(bar.at()), speed: c.speed ?? now.speed, paused: c.paused ?? now.paused };
     starting = post("rewind", body)
       .then(r => (r.ok ? r.json() : null))
       .then(r => {
         if (!r) return;
-        own = new URL(r.page, location.origin);
-        openStream(new URL("events?overlay=1", own).href);
+        page = new URL(r.page, location.origin);
+        openStream(new URL("events?overlay=1", page).href);
       })
       .catch(() => {})
       .finally(() => (starting = null));
     return starting;
   };
-  const bar = playbar({
-    home: HOME,
-    send,
-    // Live for a live match; on a demo, back to the shared playback from one's own.
-    live: back,
-    // One's own playback is a replay, unless at a live match's live.
-    replay: (behind, p) => Boolean(own) && (behind || !p.live),
-  });
-  bar.allow(true);
-  playbackListeners.add(m => own && bar.heard(m));
-  // A link to a moment (?t=12:34, from the map's start) watches from there.
-  let wanted = moment(new URLSearchParams(location.search).get("t"));
-  copyLink("Copy a link to this moment", () => momentLink(bar.since()));
-  // Where the shared playback is, while this viewer watches along.
+  const back = () => {
+    page = null;
+    setClockRate(1);
+    openStream(EVENTS_URL);
+    toShared();
+  };
+  return { send, back, active: () => page != null };
+}
+
+// Where the shared playback is, while this viewer watches along: heard as at the moment `link`ed
+// to, if one was (a live match shows no more of itself), which then plays on their own.
+/** @param {Playbar} bar @param {OwnPlayback} own @param {Link} link */
+function followShared(bar, own, link) {
   const shared = () =>
-    !own &&
+    !own.active() &&
     fetch(new URL("timeline", HOME))
       .then(r => (r.status === 200 ? r.json() : null))
       .then(
         t => {
-          if (!t || own) return;
-          // Heard as at the moment linked to, if one was: a live match shows no more of itself.
-          const at = wanted == null ? t.at : (t.origin ?? 0) + wanted;
+          if (!t || own.active()) return;
+          const at = link.wanted == null ? t.at : (t.origin ?? 0) + link.wanted;
           bar.heard({ type: "playback", paused: false, speed: 1, ...t, at });
-          if (wanted != null) send({ seek: at });
-          wanted = null;
+          if (link.wanted != null) own.send({ seek: at });
+          link.wanted = null;
         },
         () => {},
       );
   shared();
   setInterval(shared, SHARED_MS);
-  // The address follows playback.
+  return shared;
+}
+
+// The address follows playback, once a moment linked to is taken.
+/** @param {Playbar} bar @param {Link} link */
+function addressFollowsPlayback(bar, link) {
   setInterval(() => {
-    if (wanted != null || !bar.last) return;
+    if (link.wanted != null || !bar.last) return;
     const url = momentLink(bar.atLive() ? null : bar.since());
     if (url.href !== location.href) history.replaceState(null, "", url);
   }, MOMENT_MS);
