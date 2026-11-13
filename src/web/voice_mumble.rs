@@ -57,15 +57,7 @@ pub(super) fn post_mumble(
     }
     let Ok(ask) = json_body::<Ask>(reader, request) else { return respond(s, "400 Bad Request", TEXT, b"Invalid") };
     if ask.leave {
-        let left: Vec<MumbleJob> = {
-            let mut wanted = lock(&m.mumble);
-            let (left, stay) = wanted.drain(..).partition(|j| ask.id.is_none_or(|id| id == j.id));
-            *wanted = stay;
-            left
-        };
-        for j in &left {
-            drop_roster(m, j);
-        }
+        leave_mumble(m, ask.id);
         app.mumble_changes.changed();
         return respond(s, "204 No Content", TEXT, b"");
     }
@@ -75,6 +67,19 @@ pub(super) fn post_mumble(
     }
     app.mumble_changes.changed();
     respond(s, "204 No Content", TEXT, b"")
+}
+
+/// The bot leaves match `m`'s Mumble channel `id`, or with none all of them.
+fn leave_mumble(m: &Session, id: Option<u32>) {
+    let left: Vec<MumbleJob> = {
+        let mut wanted = lock(&m.mumble);
+        let (left, stay) = wanted.drain(..).partition(|j| id.is_none_or(|id| id == j.id));
+        *wanted = stay;
+        left
+    };
+    for j in &left {
+        drop_roster(m, j);
+    }
 }
 
 /// Those the bot said are in `job`'s channel go with it.

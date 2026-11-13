@@ -82,50 +82,56 @@ pub(super) fn post_voice_status(
     }
     let text: String = said.status.chars().filter(|c| !c.is_control()).take(MAX_TEXT).collect();
     // Which channel: the bot's own name for it, else the one of its kind.
-    let channel = said.channel.filter(|c| is_voice_id(c)).unwrap_or_else(|| said.kind.clone());
+    let channel = said.channel.clone().filter(|c| is_voice_id(c)).unwrap_or_else(|| said.kind.clone());
     match said.kind.as_str() {
-        "discord" => {
-            let mut going = lock(&m.discord);
-            going.retain(|_, (_, at)| at.elapsed() < DISCORD_SAID_FOR);
-            if said.left {
-                going.remove(&channel);
-            } else if going.len() < MAX_CHANNELS || going.contains_key(&channel) {
-                going.insert(channel.clone(), (text, Instant::now()));
-            }
-        }
+        "discord" => discord_status(m, &said, &channel, text),
         "mumble" => {
-            let taken = 'taken: {
-                let mut jobs = lock(&m.mumble);
-                // Which of the match's channels: by its number, or the only one there is.
-                let only = jobs.len() == 1;
-                let job = jobs.iter_mut().find(|j| said.job.map_or(only, |id| id == j.id));
-                // Of a channel it was since asked out of: nothing of it stands.
-                let Some(job) = job.filter(|j| said.asked.is_none_or(|a| a == j.asked)) else { break 'taken false };
-                job.status = text;
-                if said.people.is_some() {
-                    job.roster = Some(channel.clone());
-                }
-                true
-            };
-            if !taken {
+            if !mumble_status(m, &said, &channel, text) {
                 return respond(s, "204 No Content", TEXT, b"");
             }
         }
         _ => return respond(s, "400 Bad Request", TEXT, b"Discord or Mumble"),
     }
     if said.left || said.people.is_some() {
-        let people: Vec<(String, String)> = said
-            .people
-            .unwrap_or_default()
-            .into_iter()
-            .filter(|p| is_voice_id(&p.id))
-            .take(MAX_PEOPLE)
-            .map(|p| (p.id, p.name.chars().filter(|c| !c.is_control()).take(MAX_TEXT).collect()))
-            .collect();
-        m.voice.set_roster(&m.hub, &channel, people);
-        recall(app, m);
+        take_roster(app, m, &channel, said.people.unwrap_or_default());
     }
     respond(s, "204 No Content", TEXT, b"")
+}
+
+/// How it goes in a Discord `channel` the bot is in for match `m`, or that it left.
+fn discord_status(m: &Session, said: &Report, channel: &str, text: String) {
+    let mut going = lock(&m.discord);
+    going.retain(|_, (_, at)| at.elapsed() < DISCORD_SAID_FOR);
+    if said.left {
+        going.remove(channel);
+    } else if going.len() < MAX_CHANNELS || going.contains_key(channel) {
+        going.insert(channel.to_string(), (text, Instant::now()));
+    }
+}
+
+/// How it goes in one of match `m`'s Mumble channels: by its number, or the only one there is.
+/// Whether it was taken: not of a channel the bot was since asked out of.
+fn mumble_status(m: &Session, said: &Report, channel: &str, text: String) -> bool {
+    let mut jobs = lock(&m.mumble);
+    let only = jobs.len() == 1;
+    let job = jobs.iter_mut().find(|j| said.job.map_or(only, |id| id == j.id));
+    let Some(job) = job.filter(|j| said.asked.is_none_or(|a| a == j.asked)) else { return false };
+    job.status = text;
+    if said.people.is_some() {
+        job.roster = Some(channel.to_string());
+    }
+    true
+}
+
+/// Those the bot says are in `channel` now (none: it left), and whom they were said to be before.
+fn take_roster(app: &App, m: &Session, channel: &str, people: Vec<Member>) {
+    let people = people
+        .into_iter()
+        .filter(|p| is_voice_id(&p.id))
+        .take(MAX_PEOPLE)
+        .map(|p| (p.id, p.name.chars().filter(|c| !c.is_control()).take(MAX_TEXT).collect::<String>()));
+    m.voice.set_roster(&m.hub, channel, people);
+    recall(app, m);
 }
 
 /// Whom those in the match's channels were said to be before holds here too, until someone says
