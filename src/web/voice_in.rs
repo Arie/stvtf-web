@@ -89,7 +89,7 @@ pub(super) fn voice_in(
         name: said.name.map(|n| n.chars().filter(|c| !c.is_control()).take(MAX_NAME).collect()),
         channel: said.channel.filter(|c| is_voice_id(c)),
     };
-    match m.voice_said(&who, said.frames, said.delay) {
+    match m.take_in_voice(&who, said.frames, said.delay) {
         None => respond(s, "404 Not Found", TEXT, b"not a live match"),
         Some(Took::Held { due }) => respond(s, "200 OK", TEXT, format!("held until tick {due}").as_bytes()),
         Some(Took::PauseTalk) => respond(s, "200 OK", TEXT, b"pause talk"),

@@ -131,15 +131,15 @@ impl Inner {
     }
 
     /// Notes `line`, at play time `at`, in the parts.
-    pub(super) fn take(&mut self, at: u64, line: &Line) {
+    pub(super) fn note_line(&mut self, at: u64, line: &Line) {
         if self.parts.is_empty() {
             let map = lock(&self.scratch).map.clone().unwrap_or_default();
             self.parts.push(Kept { n: self.loads.latest(), map, origin: at, last: at, ..Kept::default() });
         }
         match line {
-            Line::Server(server) => self.named(at, &server.map),
-            Line::Status(Status::Changelevel | Status::MapChange) => self.changing(at),
-            Line::Snapshot(snapshot) => self.snapshot(at, snapshot.tick),
+            Line::Server(server) => self.on_server(at, &server.map),
+            Line::Status(Status::Changelevel | Status::MapChange) => self.on_changelevel(at),
+            Line::Snapshot(snapshot) => self.on_snapshot(at, snapshot.tick),
             _ => {}
         }
         let latest = self.parts.last_mut().expect("a part");
@@ -150,7 +150,7 @@ impl Inner {
 
     /// A server line naming `map`: the tail of a part the server is changing from begins. A part
     /// with no map yet (a recording begun mid-stream) is of `map`: no new load.
-    fn named(&mut self, at: u64, map: &str) {
+    fn on_server(&mut self, at: u64, map: &str) {
         let latest = self.parts.last_mut().expect("a part");
         if latest.changing.is_some() {
             latest.tail.get_or_insert(at);
@@ -165,7 +165,7 @@ impl Inner {
     }
 
     /// The server says it is changing map: a part with play is over, unless it goes on.
-    fn changing(&mut self, at: u64) {
+    fn on_changelevel(&mut self, at: u64) {
         let tick = self.loads.last_tick();
         let latest = self.parts.last_mut().expect("a part");
         if latest.ready && latest.changing.is_none() {
@@ -174,7 +174,7 @@ impl Inner {
     }
 
     /// A snapshot at `tick`: a new part if its load starts here, else play of the latest.
-    fn snapshot(&mut self, at: u64, tick: u32) {
+    fn on_snapshot(&mut self, at: u64, tick: u32) {
         let interval = lock(&self.scratch).tick_interval();
         let snapped = self.parts.last().is_some_and(|p| p.first_tick.is_some());
         let (n, starts) = self.loads.snapshot(tick);

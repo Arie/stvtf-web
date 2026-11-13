@@ -216,7 +216,7 @@ fn drop_or_keep(path: &Path) {
 /// `live-` ones are of the load the match was at, and those before it where its ticks started
 /// over: in time order, one of another map or with a lower first tick than the one before starts
 /// the next. The `kept-` ones are for downloading only.
-fn found(dir: &Path, id: &str) -> Inner {
+fn demos_on_disk(dir: &Path, id: &str) -> Inner {
     let mut inner = Inner::default();
     let mut unnumbered = Vec::new();
     for e in std::fs::read_dir(dir).into_iter().flatten().flatten() {
@@ -278,7 +278,7 @@ impl LiveDemos {
     /// Match `id`'s demos in `dir`, with those a process before this one left there; its loads go
     /// on from the latest of them, till [`LiveDemos::go_on_from`] says better.
     pub(crate) fn new(dir: &Path, id: &str) -> Arc<LiveDemos> {
-        let mut inner = found(dir, id);
+        let mut inner = demos_on_disk(dir, id);
         let newest = inner.demos.iter().filter_map(|d| d.back).max().unwrap_or(0);
         inner.number_back(inner.deployed_at(newest, None));
         inner.loads = inner.demos.last().map_or_else(Loads::default, |d| Loads::from(d.load, Some(d.map.clone()), Some(d.first_tick)));
@@ -295,7 +295,7 @@ impl LiveDemos {
     }
 
     /// A line of the match, as its recording gets it: the load a snapshot is of.
-    pub(crate) fn line(&self, line: &stvtf::Line) -> Option<usize> {
+    pub(crate) fn note_line(&self, line: &stvtf::Line) -> Option<usize> {
         let loads = &mut lock(&self.inner).loads;
         match line {
             stvtf::Line::Server(s) => loads.server(&s.map),
@@ -346,7 +346,7 @@ impl LiveDemos {
     }
 
     /// A player said something from outside the match: kept beside the demo being recorded.
-    pub(crate) fn said(&self, said: &Spoken) {
+    pub(crate) fn append_voice(&self, said: &Spoken) {
         let inner = lock(&self.inner);
         let Some(demo) = inner.demos.last() else { return };
         let written = serde_json::to_string(said)

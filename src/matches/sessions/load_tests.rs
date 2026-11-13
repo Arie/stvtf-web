@@ -41,10 +41,10 @@ fn a_recording_made_after_two_loads_starts_at_part_2() {
     let demos = s.demos.get().unwrap().clone();
     // Its demos were recorded before: the recording was gone at a restart, say.
     for map in ["cp_a", "cp_b"] {
-        demos.line(&server(map));
+        demos.note_line(&server(map));
         demos.create(map, 50).unwrap();
-        demos.line(&snapshot(50, None, Vec::new()));
-        demos.line(&snapshot(9000, None, Vec::new()));
+        demos.note_line(&snapshot(50, None, Vec::new()));
+        demos.note_line(&snapshot(9000, None, Vec::new()));
     }
     record(&s, Some(&store), false);
     connect(&s, "cp_c", 10);
@@ -62,7 +62,7 @@ fn before_a_restart(store: &Store, id: &str) {
     let demos = LiveDemos::new(&store.dir, id);
     let rec = Recording::live_to(store::to_file(store, &live_file(id)));
     let take = |line: &Line, at: u64| {
-        demos.line(line);
+        demos.note_line(line);
         let text = serde_json::to_string(line).unwrap();
         let mut stamped: stvtf::output::Stamped = serde_json::from_str(&text).unwrap();
         stamped.time = Some(T0 + at);

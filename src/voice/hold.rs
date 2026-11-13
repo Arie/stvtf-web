@@ -94,7 +94,7 @@ impl VoiceHold {
 
     /// Takes what a speaker said just now, to come out when the stream is `delay` seconds of game
     /// further on: how far behind its game their source says the stream is.
-    pub(crate) fn said(&mut self, said: Said, delay: f64, now: Instant) -> Took {
+    pub(crate) fn take_in(&mut self, said: Said, delay: f64, now: Instant) -> Took {
         let Some(tick) = self.tick else { return Took::NoStream };
         if self.paused.is_some() {
             if self.pause_talk.iter().map(|s| s.frames.len()).sum::<usize>() + said.frames.len() <= MAX_PAUSE_TALK {
@@ -222,16 +222,16 @@ mod tests {
         let t0 = Instant::now();
         let ms = Duration::from_millis;
         let mut h = hold(t0);
-        h.said(said("a", 0..5), 90.0, t0);
+        h.take_in(said("a", 0..5), 90.0, t0);
         // The tick stood still from 100 ms on; these came after that, before anyone knew.
-        h.said(said("a", 5..10), 90.0, t0 + ms(300));
-        h.said(said("a", 10..15), 90.0, t0 + ms(600));
+        h.take_in(said("a", 5..10), 90.0, t0 + ms(300));
+        h.take_in(said("a", 10..15), 90.0, t0 + ms(600));
         h.on_pause(true, t0 + ms(800), t0 + ms(100));
         assert_eq!(h.held(), 5, "only what was said while the game ran");
         assert_eq!(h.pause_talk(), [said("a", 5..15)], "the rest is pause talk, in order");
         // What is said once the game goes on starts at its own tick: nothing is in its way.
         h.on_pause(false, t0 + 10 * SEC, t0 + 10 * SEC);
-        h.said(said("a", 20..21), 90.0, t0 + 10 * SEC);
+        h.take_in(said("a", 20..21), 90.0, t0 + 10 * SEC);
         // The first goes at its tick, the rest by the clock; the new one right behind, not late.
         let mut out = h.due(Some(7001), t0 + 100 * SEC);
         out.extend(h.due(Some(7001), t0 + 100 * SEC + ms(80)));
@@ -243,7 +243,7 @@ mod tests {
     fn an_utterance_starts_the_delay_in_ticks_after_it_came() {
         let t0 = Instant::now();
         let mut h = hold(t0);
-        assert_eq!(h.said(said("a", 0..1), 90.0, t0), Took::Held { due: 7000 });
+        assert_eq!(h.take_in(said("a", 0..1), 90.0, t0), Took::Held { due: 7000 });
         assert_eq!(h.due(Some(6999), t0 + 89 * SEC).len(), 0, "not yet");
         assert_eq!(h.due(Some(7000), t0 + 95 * SEC), [said("a", 0..1)], "by the tick, whatever the clock says");
     }
@@ -255,7 +255,7 @@ mod tests {
         // A second of speech, said while the server made only 30 ticks of it.
         for i in 0..50u32 {
             h.due(Some(1000 + i * 30 / 50), t0 + FRAME * i);
-            h.said(said("a", i..i + 1), 90.0, t0 + FRAME * i);
+            h.take_in(said("a", i..i + 1), 90.0, t0 + FRAME * i);
         }
         let start = t0 + 90 * SEC;
         assert_eq!(count(&h.due(Some(7000), start)), 1, "the first, at its tick");
@@ -271,7 +271,7 @@ mod tests {
         // Two seconds of speech over two seconds of ticks; then the stream nearly stands still.
         for i in 0..100u32 {
             h.due(Some(1000 + i * 4 / 3), t0 + FRAME * i);
-            h.said(said("a", i..i + 1), 90.0, t0 + FRAME * i);
+            h.take_in(said("a", i..i + 1), 90.0, t0 + FRAME * i);
         }
         let start = t0 + 90 * SEC;
         h.due(Some(7000), start);
@@ -284,9 +284,9 @@ mod tests {
     fn a_new_utterance_anchors_anew() {
         let t0 = Instant::now();
         let mut h = hold(t0);
-        h.said(said("a", 0..1), 90.0, t0);
+        h.take_in(said("a", 0..1), 90.0, t0);
         h.due(Some(1040), t0 + GAP + FRAME);
-        assert_eq!(h.said(said("a", 1..2), 90.0, t0 + GAP + FRAME), Took::Held { due: 7040 });
+        assert_eq!(h.take_in(said("a", 1..2), 90.0, t0 + GAP + FRAME), Took::Held { due: 7040 });
         assert_eq!(count(&h.due(Some(7000), t0 + 90 * SEC)), 1);
         assert_eq!(h.due(Some(7039), t0 + 100 * SEC).len(), 0, "the second waits for its own tick");
         assert_eq!(count(&h.due(Some(7040), t0 + 100 * SEC)), 1);
@@ -296,8 +296,8 @@ mod tests {
     fn speakers_are_held_apart() {
         let t0 = Instant::now();
         let mut h = hold(t0);
-        h.said(said("a", 0..1), 90.0, t0);
-        h.said(said("b", 5..6), 90.0, t0);
+        h.take_in(said("a", 0..1), 90.0, t0);
+        h.take_in(said("b", 5..6), 90.0, t0);
         let out = h.due(Some(7000), t0 + 90 * SEC);
         assert_eq!(count(&out), 2);
         assert!(out.contains(&said("a", 0..1)) && out.contains(&said("b", 5..6)), "{out:?}");
@@ -308,7 +308,7 @@ mod tests {
         let t0 = Instant::now();
         let mut h = hold(t0);
         for i in 0..50u32 {
-            h.said(said("a", i..i + 1), 90.0, t0 + FRAME * i);
+            h.take_in(said("a", i..i + 1), 90.0, t0 + FRAME * i);
         }
         let start = t0 + 90 * SEC;
         h.due(Some(7067), start);
@@ -324,7 +324,7 @@ mod tests {
         let t0 = Instant::now();
         let mut h = hold(t0);
         h.on_pause(true, t0, t0);
-        assert_eq!(h.said(said("a", 0..3), 90.0, t0), Took::PauseTalk);
+        assert_eq!(h.take_in(said("a", 0..3), 90.0, t0), Took::PauseTalk);
         h.on_pause(false, t0 + SEC, t0 + SEC);
         assert_eq!(h.due(Some(9000), t0 + 200 * SEC).len(), 0, "never played");
         assert_eq!(h.pause_talk(), [said("a", 0..3)]);
@@ -335,11 +335,11 @@ mod tests {
     fn before_any_tick_and_after_a_reset_it_is_refused() {
         let t0 = Instant::now();
         let mut h = VoiceHold::new(0.015);
-        assert_eq!(h.said(said("a", 0..1), 90.0, t0), Took::NoStream);
+        assert_eq!(h.take_in(said("a", 0..1), 90.0, t0), Took::NoStream);
         h.due(Some(1000), t0);
-        h.said(said("a", 0..1), 90.0, t0);
+        h.take_in(said("a", 0..1), 90.0, t0);
         h.reset();
-        assert_eq!(h.said(said("a", 1..2), 90.0, t0), Took::NoStream);
+        assert_eq!(h.take_in(said("a", 1..2), 90.0, t0), Took::NoStream);
         assert_eq!(h.due(Some(9000), t0 + 200 * SEC).len(), 0, "what was held went with the reset");
     }
 
@@ -347,7 +347,7 @@ mod tests {
     fn over_the_cap_the_oldest_go() {
         let t0 = Instant::now();
         let mut h = hold(t0);
-        h.said(said("a", 0..MAX_HELD as u32 + 10), 90.0, t0);
+        h.take_in(said("a", 0..MAX_HELD as u32 + 10), 90.0, t0);
         assert_eq!(h.held(), MAX_HELD);
         let out = h.due(Some(7000), t0 + 90 * SEC);
         assert_eq!(out[0].frames[0], "10", "the oldest ten went; what is left starts at its tick");
@@ -357,8 +357,8 @@ mod tests {
     fn each_source_has_its_own_delay() {
         let t0 = Instant::now();
         let mut h = hold(t0);
-        assert_eq!(h.said(said("team", 0..1), 90.0, t0), Took::Held { due: 7000 });
-        assert_eq!(h.said(said("other", 0..1), 30.0, t0), Took::Held { due: 3000 });
+        assert_eq!(h.take_in(said("team", 0..1), 90.0, t0), Took::Held { due: 7000 });
+        assert_eq!(h.take_in(said("other", 0..1), 30.0, t0), Took::Held { due: 3000 });
         assert_eq!(h.due(Some(3000), t0 + 30 * SEC), [said("other", 0..1)]);
     }
 }

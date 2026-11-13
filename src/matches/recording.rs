@@ -207,7 +207,7 @@ impl Inner {
                 save = Some(Save::All(self.file()?));
             }
         }
-        self.take(at, &stamped.line);
+        self.note_line(at, &stamped.line);
         if matches!(stamped.line, Line::RoundStart(_)) {
             self.rounds.push(at);
         }

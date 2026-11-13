@@ -54,7 +54,7 @@ fn pump(s: &Session, lines: &std::sync::mpsc::Receiver<Arc<str>>, recording: &Re
         stamped.time = Some(std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_millis() as u64));
         let demos = s.demos.get();
         // A fresh recording's first part is the load the match is at.
-        if let Some(n) = demos.and_then(|d| d.line(&stamped.line))
+        if let Some(n) = demos.and_then(|d| d.note_line(&stamped.line))
             && std::mem::take(&mut fresh)
         {
             recording.first_load_is(n);

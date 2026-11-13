@@ -59,6 +59,6 @@ pub(super) fn learn(s: &mut TcpStream, reader: &mut BufReader<Take<TcpStream>>, 
     if !matches!(said.by.as_str(), "" | CASTER) {
         return respond(s, "400 Bad Request", TEXT, b"Invalid");
     }
-    app.voice_who.learned(&said.id, steamid.flatten().as_deref(), &name, &said.src, &said.by);
+    app.voice_who.take_from_region(&said.id, steamid.flatten().as_deref(), &name, &said.src, &said.by);
     respond(s, "204 No Content", TEXT, b"")
 }

@@ -22,14 +22,14 @@ fn header(map: &str) -> Vec<u8> {
 /// A connection's first frame, of `map` at `tick`, as a match's are: the server line, the demo
 /// made, then the frame reaching the match's loads.
 fn connect(demos: &LiveDemos, map: &str, tick: u32) {
-    demos.line(&server(map));
+    demos.note_line(&server(map));
     Write::write_all(&mut demos.create(map, tick).unwrap(), &header(map)).unwrap();
-    demos.line(&snapshot(tick, None, Vec::new()));
+    demos.note_line(&snapshot(tick, None, Vec::new()));
 }
 
 /// Play up to `tick`.
 fn play(demos: &LiveDemos, tick: u32) {
-    demos.line(&snapshot(tick, None, Vec::new()));
+    demos.note_line(&snapshot(tick, None, Vec::new()));
 }
 
 #[test]
@@ -231,11 +231,11 @@ fn a_map_with_comms_is_kept_for_downloading_and_one_without_is_not() {
     let dir = TempDir::new("kept-demos");
     let demos = LiveDemos::new(&dir, "m");
     assert_eq!(downloads(&dir, "m"), []);
-    demos.line(&server("cp_a"));
+    demos.note_line(&server("cp_a"));
     write_demo(demos.create("cp_a", 100).unwrap(), "cp_a", &[100, 104, 110]);
     play(&demos, 100);
-    demos.said(&spoken(103));
-    demos.said(&spoken(108));
+    demos.append_voice(&spoken(103));
+    demos.append_voice(&spoken(108));
     let live = Download { file: "0-100".into(), map: "cp_a".into(), bytes: std::fs::metadata(dir.join("live-m-0-100.dem")).unwrap().len() };
     assert_eq!(downloads(&dir, "m"), std::slice::from_ref(&live), "while it is played, too");
     // The demo as TF2 plays it, the comms in it at their ticks.
@@ -252,7 +252,7 @@ fn a_map_with_comms_is_kept_for_downloading_and_one_without_is_not() {
     assert_eq!(ticks, [0, 3, 4, 8, 10]);
     // The next load: this one's stays as it is, so a relay on it is not moved to another file.
     play(&demos, 110);
-    demos.line(&server("cp_b"));
+    demos.note_line(&server("cp_b"));
     write_demo(demos.create("cp_b", 10).unwrap(), "cp_b", &[10, 14]);
     play(&demos, 10);
     assert_eq!(demos.at(0, 105), Some(dir.join("live-m-0-100.dem")));
@@ -272,7 +272,7 @@ fn the_loads_dropped_by_the_recording_lose_their_demos_but_for_comms() {
     let dir = TempDir::new("kept-demos");
     let demos = LiveDemos::new(&dir, "m");
     connect(&demos, "cp_a", 100);
-    demos.said(&spoken(103));
+    demos.append_voice(&spoken(103));
     play(&demos, 9000);
     connect(&demos, "cp_b", 10);
     play(&demos, 9000);

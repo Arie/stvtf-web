@@ -14,12 +14,12 @@ const TEND_EVERY: Duration = Duration::from_millis(60);
 
 impl Session {
     /// `who` said `frames` (base64 Opus) just now, in a source `delay` seconds behind
-    /// the game (see `VoiceFeed::said`). None for a match not watched live.
-    pub fn voice_said(self: &Arc<Self>, who: &Speaker, frames: Vec<String>, delay: Option<f64>) -> Option<Took> {
+    /// the game (see `VoiceFeed::take_in`). None for a match not watched live.
+    pub fn take_in_voice(self: &Arc<Self>, who: &Speaker, frames: Vec<String>, delay: Option<f64>) -> Option<Took> {
         if !self.is_live() {
             return None;
         }
-        let took = self.voice.said(&self.hub, who, frames, delay, Instant::now());
+        let took = self.voice.take_in(&self.hub, who, frames, delay, Instant::now());
         self.keep_spoken();
         if matches!(took, Took::Held { .. } | Took::PauseTalk) && !self.voice_tended.swap(true, Ordering::AcqRel) {
             let s = self.clone();
@@ -51,7 +51,7 @@ impl Session {
         let spoken = self.voice.take_spoken();
         if let Some(demos) = self.demos.get() {
             for s in &spoken {
-                demos.said(s);
+                demos.append_voice(s);
             }
         }
     }

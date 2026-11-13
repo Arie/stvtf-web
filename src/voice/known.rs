@@ -198,7 +198,7 @@ impl WhoHistory {
         loop {
             loop {
                 let Some(who) = lock(&self.0.wanted).pop_front() else { break };
-                self.find(&who);
+                self.ask_sites(&who);
             }
             if let Err(e) = self.sync() {
                 log!("who is who not kept up: {e:#}");
@@ -295,14 +295,14 @@ impl WhoHistory {
     /// Asks the sites, one after the other, who Discord user `who` is, and keeps what the first
     /// that knows them says. None knowing them, a link kept from before is gone; unless a site
     /// did not answer, which says nothing.
-    fn find(&self, who: &str) {
+    fn ask_sites(&self, who: &str) {
         let mut all_said = true;
         for site in &self.0.sites {
             match (site.ask)(who) {
                 Ok(Some(steam)) => {
                     if let Some(steamid) = steamid_of(&steam) {
                         lock(&self.0.looked).insert(who.to_string(), (Instant::now(), true));
-                        self.found(who, Some((&site.name, &steamid)));
+                        self.take_site_answer(who, Some((&site.name, &steamid)));
                         return;
                     }
                 }
@@ -314,7 +314,7 @@ impl WhoHistory {
             }
         }
         if all_said {
-            self.found(who, None);
+            self.take_site_answer(who, None);
         }
     }
 
@@ -322,7 +322,7 @@ impl WhoHistory {
     /// A link is kept over nothing, nobody, a match's starter's word and a link from before,
     /// not over a caster's word; with none, one kept from a site is nobody again. Whether that
     /// changed anything.
-    fn found(&self, who: &str, link: Option<(&str, &str)>) -> bool {
+    fn take_site_answer(&self, who: &str, link: Option<(&str, &str)>) -> bool {
         let mut kept = lock(&self.0.kept);
         let before = kept.known.get(who);
         let changed = match link {
@@ -346,7 +346,7 @@ impl WhoHistory {
     }
 
     /// What another stv.tf says was said there, or taken in from its site (`src`).
-    pub(crate) fn learned(&self, who: &str, steamid: Option<&str>, name: &str, src: &str, by: &str) {
+    pub(crate) fn take_from_region(&self, who: &str, steamid: Option<&str>, name: &str, src: &str, by: &str) {
         let mut kept = lock(&self.0.kept);
         let sure = Known { steamid: None, name: String::new(), src: src.to_string(), by: by.to_string(), v: 0 }.sure();
         if kept.yields(who, sure) && self.put(&mut kept, who, steamid, name, src, by) {
@@ -465,7 +465,7 @@ mod tests {
                 anyhow::ensure!(!*lock(&down), "down");
                 if method == "POST" {
                     let said: Said = serde_json::from_str(body.unwrap())?;
-                    home.learned(&said.id, said.steamid.as_deref(), &said.name, &said.src, &said.by);
+                    home.take_from_region(&said.id, said.steamid.as_deref(), &said.name, &said.src, &said.by);
                     return Ok(String::new());
                 }
                 let (version, known) = home.since(path.rsplit('=').next().unwrap().parse()?);
@@ -504,17 +504,19 @@ mod tests {
         let (na, au) = (away(&home, &down), away(&home, &down));
         // A caster says 78 plays on another account than the one they linked.
         na.remember("78", Some("[U:1:60]"), "aoki", true);
-        assert!(na.found("77", Some(("na.serveme.tf", "[U:1:5]"))) && !na.found("78", Some(("na.serveme.tf", "[U:1:6]"))));
+        assert!(
+            na.take_site_answer("77", Some(("na.serveme.tf", "[U:1:5]"))) && !na.take_site_answer("78", Some(("na.serveme.tf", "[U:1:6]")))
+        );
         assert_eq!((na.get("77").as_deref(), na.get("78").as_deref()), (Some("[U:1:5]"), Some("[U:1:60]")));
-        assert!(!na.found("77", Some(("na.serveme.tf", "[U:1:5]"))), "the same again changes nothing");
+        assert!(!na.take_site_answer("77", Some(("na.serveme.tf", "[U:1:5]"))), "the same again changes nothing");
         // Known in the next region, as from that site.
         na.sync().unwrap();
         au.sync().unwrap();
         assert_eq!(au.recall("77"), Some(Recalled::Player { steamid: "[U:1:5]".into(), sure: true }));
         // Linked anew, then no longer anywhere: taken over, then nobody. A caster's word stands.
-        assert!(na.found("77", Some(("serveme.tf", "[U:1:7]"))));
+        assert!(na.take_site_answer("77", Some(("serveme.tf", "[U:1:7]"))));
         assert_eq!(na.get("77").as_deref(), Some("[U:1:7]"));
-        assert!(na.found("77", None) && !na.found("78", None));
+        assert!(na.take_site_answer("77", None) && !na.take_site_answer("78", None));
         assert_eq!((na.get("77"), na.get("78").as_deref()), (None, Some("[U:1:60]")));
     }
 
@@ -546,7 +548,7 @@ mod tests {
         let wanted: Vec<String> = lock(&who.0.wanted).drain(..).collect();
         assert_eq!(wanted, ["77", "78"], "a Discord user, once");
         for id in &wanted {
-            who.find(id);
+            who.ask_sites(id);
         }
         assert_eq!(*lock(&asked), ["eu 77", "na 77", "eu 78", "na 78", "au 78"]);
         assert_eq!(who.recall("77"), Some(Recalled::Player { steamid: "[U:1:9]".into(), sure: true }));
@@ -567,8 +569,8 @@ mod tests {
     fn a_site_not_answering_takes_no_link_away() {
         let asked = Arc::new(Mutex::new(Vec::new()));
         let who = WhoHistory::asking(None, None, vec![knows("eu", &[], &asked, true), knows("na", &[], &asked, false)]);
-        who.found("77", Some(("eu", "[U:1:5]")));
-        who.find("77");
+        who.take_site_answer("77", Some(("eu", "[U:1:5]")));
+        who.ask_sites("77");
         assert_eq!(who.get("77").as_deref(), Some("[U:1:5]"));
     }
 
@@ -579,12 +581,12 @@ mod tests {
         who.remember("77", Some("[U:1:5]"), "gummy", false);
         assert_eq!(who.recall("77"), player("[U:1:5]", false));
         // Their own link takes its place, and a starter's word no longer does.
-        assert!(who.found("77", Some(("serveme.tf", "[U:1:6]"))));
+        assert!(who.take_site_answer("77", Some(("serveme.tf", "[U:1:6]"))));
         who.remember("77", Some("[U:1:7]"), "gummy", false);
         assert_eq!(who.recall("77"), player("[U:1:6]", true));
         // A caster's word does, and their link then leaves it be.
         who.remember("77", Some("[U:1:8]"), "gummy", true);
-        assert!(!who.found("77", Some(("serveme.tf", "[U:1:6]"))));
+        assert!(!who.take_site_answer("77", Some(("serveme.tf", "[U:1:6]"))));
         assert_eq!(who.recall("77"), player("[U:1:8]", true));
         // Nobody is remembered too, until something is said of them.
         who.remember("78", None, "coach", false);

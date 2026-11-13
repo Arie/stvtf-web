@@ -308,7 +308,7 @@ fn a_matchs_demos_with_comms_are_listed_and_downloaded_the_match_gone_too() {
     // Asked for again soon after, it is the one built already (unless another was built between).
     let Matches::Many(sessions) = &app.matches else { panic!() };
     let dir = &sessions.store.as_ref().unwrap().dir;
-    let again = || matches::built(dir, &id, "100").unwrap();
+    let again = || matches::build_comms_demo(dir, &id, "100").unwrap();
     assert!((0..5).any(|_| Arc::ptr_eq(&again(), &again())));
     // Nothing of another match, or by another name.
     let other = "cd".repeat(16);

@@ -111,7 +111,7 @@ struct State {
     /// Those in each channel now, as the bot says: who they are there, and their name.
     rosters: BTreeMap<String, BTreeMap<String, String>>,
     /// Whom each was said to be before, in other matches.
-    remembered: BTreeMap<String, Put>,
+    known_before: BTreeMap<String, Put>,
     /// The stream's count of new starts, and whether it was paused, when last looked at.
     epoch: u64,
     paused: bool,
@@ -135,7 +135,7 @@ impl VoiceFeed {
     /// `who` said `frames` just now, in a source whose stream is `delay` seconds behind its game
     /// (the usual, unless given). With no delay it is commentary on the stream itself: straight
     /// out, paused or not.
-    pub(crate) fn said(&self, hub: &SharedHub, who: &Speaker, frames: Vec<String>, delay: Option<f64>, now: Instant) -> Took {
+    pub(crate) fn take_in(&self, hub: &SharedHub, who: &Speaker, frames: Vec<String>, delay: Option<f64>, now: Instant) -> Took {
         let key = who.key();
         {
             let mut st = lock(&self.0);
@@ -156,7 +156,7 @@ impl VoiceFeed {
         let mut st = lock(&self.0);
         st.said = Some(now);
         let delay = delay.clamp(0.0, MAX_DELAY);
-        st.hold.get_or_insert_with(|| VoiceHold::new(interval)).said(Said { who: key, frames }, delay, now)
+        st.hold.get_or_insert_with(|| VoiceHold::new(interval)).take_in(Said { who: key, frames }, delay, now)
     }
 
     /// Those in the channel are these now (the bot says so, before anyone speaks): each by who
@@ -181,7 +181,7 @@ impl VoiceFeed {
         let mut st = lock(&self.0);
         let players = lock(hub).players();
         let playing = |steamid: &str| players.iter().any(|(s, _)| s == steamid);
-        for (id, before) in st.remembered.clone() {
+        for (id, before) in st.known_before.clone() {
             let placed = matches!(st.matched.get(&id), Some(Put::Nobody | Put::Player { confirmed: true, .. }));
             // Said to be nobody before: not for someone with a link of their own.
             let linked = || st.known.values().any(|k| k.discord.as_deref() == Some(&id) && k.steamid.is_some());
@@ -224,7 +224,7 @@ impl VoiceFeed {
             Some(Put::Player { steamid, confirmed }) => (Some(steamid.clone()), *confirmed),
             Some(Put::Nobody) => (None, true),
             // Known from before, and no player here: as known.
-            None => match st.remembered.get(id) {
+            None => match st.known_before.get(id) {
                 Some(Put::Player { steamid, confirmed }) => (Some(steamid.clone()), *confirmed),
                 _ => (None, false),
             },
@@ -272,10 +272,10 @@ impl VoiceFeed {
 
     /// Whom `discord` was said to be before: theirs here while that one plays here and nobody
     /// placed them; with that one not playing, their name is gone by first.
-    pub(crate) fn remembered(&self, discord: &str, before: Put) {
+    pub(crate) fn set_known_before(&self, discord: &str, before: Put) {
         let mut st = lock(&self.0);
-        if st.remembered.len() < MAX_KNOWN || st.remembered.contains_key(discord) {
-            st.remembered.insert(discord.to_string(), before);
+        if st.known_before.len() < MAX_KNOWN || st.known_before.contains_key(discord) {
+            st.known_before.insert(discord.to_string(), before);
         }
     }
 
@@ -293,7 +293,7 @@ impl VoiceFeed {
                 Some(Put::Player { steamid, .. }) => Some(steamid.clone()),
                 // Said to be no player: not even the one they linked.
                 Some(Put::Nobody) => None,
-                None => own.or_else(|| match st.remembered.get(discord?) {
+                None => own.or_else(|| match st.known_before.get(discord?) {
                     Some(Put::Player { steamid, .. }) => Some(steamid.clone()),
                     _ => None,
                 }),
@@ -424,10 +424,10 @@ mod tests {
     #[test]
     fn voice_said_to_a_live_match_comes_out_when_its_tick_does() {
         let (hub, feed, now) = (SharedHub::default(), VoiceFeed::default(), Instant::now());
-        assert_eq!(feed.said(&hub, &STEAMID.into(), frames(1), None, now), Took::NoStream, "no stream yet");
+        assert_eq!(feed.take_in(&hub, &STEAMID.into(), frames(1), None, now), Took::NoStream, "no stream yet");
         at(&hub, 1000);
         let page = subscribe_to(&hub, false, true);
-        assert_eq!(feed.said(&hub, &STEAMID.into(), frames(1), None, now), Took::Held { due: 7000 });
+        assert_eq!(feed.take_in(&hub, &STEAMID.into(), frames(1), None, now), Took::Held { due: 7000 });
         feed.step(&hub, now);
         at(&hub, 6999);
         feed.step(&hub, now);
@@ -446,7 +446,7 @@ mod tests {
         let (hub, feed, now) = (SharedHub::default(), VoiceFeed::default(), Instant::now());
         at(&hub, 1000);
         let page = subscribe_to(&hub, false, true);
-        feed.said(&hub, &"[U:1:99]".into(), frames(1), None, now);
+        feed.take_in(&hub, &"[U:1:99]".into(), frames(1), None, now);
         at(&hub, 7000);
         feed.step(&hub, now);
         let out = voices(&page);
@@ -461,7 +461,7 @@ mod tests {
         feed.step(&hub, now);
         publish(&hub, &Line::Pause(Pause { tick: 1000, paused: true }));
         feed.step(&hub, now);
-        assert_eq!(feed.said(&hub, &STEAMID.into(), frames(3), None, now), Took::PauseTalk);
+        assert_eq!(feed.take_in(&hub, &STEAMID.into(), frames(3), None, now), Took::PauseTalk);
         publish(&hub, &Line::Pause(Pause { tick: 1000, paused: false }));
         feed.step(&hub, now);
         assert_eq!(voices(&page).len(), 0, "no page hears it");
@@ -477,7 +477,7 @@ mod tests {
     fn a_new_map_drops_what_is_held() {
         let (hub, feed, now) = (SharedHub::default(), VoiceFeed::default(), Instant::now());
         at(&hub, 1000);
-        feed.said(&hub, &STEAMID.into(), frames(1), None, now);
+        feed.take_in(&hub, &STEAMID.into(), frames(1), None, now);
         feed.step(&hub, now);
         publish(&hub, &Line::Status(Status::MapChange));
         let page = subscribe_to(&hub, false, true);
@@ -497,8 +497,8 @@ mod tests {
         at(&hub, 1000);
         let page = subscribe_to(&hub, false, true);
         let mate = Speaker { channel: Some("9".into()), ..STEAMID.into() };
-        feed.said(&hub, &mate, frames(1), Some(0.0), now);
-        feed.said(&hub, &unlinked("77", "coach"), frames(1), Some(0.0), now);
+        feed.take_in(&hub, &mate, frames(1), Some(0.0), now);
+        feed.take_in(&hub, &unlinked("77", "coach"), frames(1), Some(0.0), now);
         let out = voices(&page);
         let v = &out[1];
         assert!(v["player"].is_null(), "{v}");
@@ -517,14 +517,14 @@ mod tests {
         let page = subscribe_to(&hub, false, true);
         let mate = Speaker { channel: Some("9".into()), ..STEAMID.into() };
         for _ in 0..5 {
-            feed.said(&hub, &mate, frames(1), Some(0.0), now);
+            feed.take_in(&hub, &mate, frames(1), Some(0.0), now);
         }
         let swapped = stvtf::output::Player { steamid: STEAMID.into(), ..player(7, "a", Team::Blue) };
         publish(&hub, &snapshot(2000, None, vec![swapped]));
-        feed.said(&hub, &unlinked("77", "coach"), frames(1), Some(0.0), now);
+        feed.take_in(&hub, &unlinked("77", "coach"), frames(1), Some(0.0), now);
         assert_eq!(voices(&page).last().unwrap()["team"], "blue");
         let alone = Speaker { channel: None, ..unlinked("78", "caster") };
-        feed.said(&hub, &alone, frames(1), Some(0.0), now);
+        feed.take_in(&hub, &alone, frames(1), Some(0.0), now);
         assert!(voices(&page)[0]["team"].is_null(), "in no channel, on no team");
     }
 
@@ -534,14 +534,14 @@ mod tests {
         at(&hub, 1000);
         let (page, recorder) = (subscribe_to(&hub, true, true), subscribe_all(&hub));
         feed.step(&hub, now);
-        assert_eq!(feed.said(&hub, &STEAMID.into(), frames(1), None, now + Duration::from_millis(500)), Took::Held { due: 7000 });
+        assert_eq!(feed.take_in(&hub, &STEAMID.into(), frames(1), None, now + Duration::from_millis(500)), Took::Held { due: 7000 });
         let later = now + Duration::from_secs(2);
-        assert_eq!(feed.said(&hub, &STEAMID.into(), frames(3), None, later), Took::PauseTalk);
+        assert_eq!(feed.take_in(&hub, &STEAMID.into(), frames(3), None, later), Took::PauseTalk);
         at(&hub, 1001);
         feed.step(&hub, later);
         assert_eq!(voices(&page).len(), 0, "no page hears it");
         assert_eq!(voices(&recorder)[0]["pause"], true);
-        assert_eq!(feed.said(&hub, &STEAMID.into(), frames(1), None, later), Took::Held { due: 7001 }, "and on it goes");
+        assert_eq!(feed.take_in(&hub, &STEAMID.into(), frames(1), None, later), Took::Held { due: 7001 }, "and on it goes");
     }
 
     #[test]
@@ -551,7 +551,7 @@ mod tests {
         at(&hub, 1000);
         let page = subscribe_to(&hub, false, true);
         let alt = Speaker { steamid: Some("[U:1:99]".into()), ..unlinked("77", "arie") };
-        feed.said(&hub, &alt, frames(1), Some(0.0), now);
+        feed.take_in(&hub, &alt, frames(1), Some(0.0), now);
         assert!(voices(&page)[0]["player"].is_null());
         let heard = Person {
             discord: "77".into(),
@@ -563,11 +563,11 @@ mod tests {
         };
         assert_eq!(feed.voices(&hub), [heard]);
         assert!(feed.set_match("77", Some(STEAMID.into())));
-        feed.said(&hub, &alt, frames(1), Some(0.0), now);
+        feed.take_in(&hub, &alt, frames(1), Some(0.0), now);
         let out = voices(&page);
         assert_eq!((out[0]["player"].as_u64(), out[0]["steamid"].as_str()), (Some(7), Some(STEAMID)));
         assert!(feed.set_match("77", None));
-        feed.said(&hub, &alt, frames(1), Some(0.0), now);
+        feed.take_in(&hub, &alt, frames(1), Some(0.0), now);
         assert_eq!(voices(&page)[0]["steamid"], "[U:1:99]", "their own again");
     }
 
@@ -576,14 +576,14 @@ mod tests {
         let (hub, feed, now) = (SharedHub::default(), VoiceFeed::default(), Instant::now());
         at(&hub, 1000);
         // A player (entity 7, so slot 6), someone who is no player, and pause talk.
-        feed.said(&hub, &STEAMID.into(), frames(2), Some(0.0), now);
-        feed.said(&hub, &unlinked("77", "coach"), frames(1), Some(0.0), now);
+        feed.take_in(&hub, &STEAMID.into(), frames(2), Some(0.0), now);
+        feed.take_in(&hub, &unlinked("77", "coach"), frames(1), Some(0.0), now);
         let kept = feed.take_spoken();
         assert_eq!(kept, [Spoken { tick: 1000, slot: 6, account: 5, frames: frames(2) }]);
         assert_eq!(feed.take_spoken(), [], "once");
         publish(&hub, &Line::Pause(Pause { tick: 1000, paused: true }));
         feed.step(&hub, now);
-        feed.said(&hub, &STEAMID.into(), frames(1), None, now);
+        feed.take_in(&hub, &STEAMID.into(), frames(1), None, now);
         publish(&hub, &Line::Pause(Pause { tick: 1000, paused: false }));
         feed.step(&hub, now);
         assert_eq!(feed.take_spoken(), [], "not what was said in a pause");
@@ -618,18 +618,18 @@ mod tests {
             "one name like theirs is a guess; two are none"
         );
         // A guess counts until someone says otherwise: what they say is that player's.
-        feed.said(&hub, &unlinked("77", "Gummy"), frames(1), Some(0.0), now);
+        feed.take_in(&hub, &unlinked("77", "Gummy"), frames(1), Some(0.0), now);
         assert_eq!(voices(&page)[0]["player"], 7);
         // Someone says who is who, a player or nobody: confirmed, and no guess comes in its place.
         assert!(feed.set_match("78", Some("[U:1:6]".into())) && feed.set_match("77", None));
         let who: Vec<_> = feed.voices(&hub).into_iter().map(|h| (h.name, h.steamid, h.confirmed)).collect();
         assert_eq!(who[0], ("Gummy".to_string(), None, true));
         assert_eq!(who[1], ("aoki".to_string(), Some("[U:1:6]".to_string()), true));
-        feed.said(&hub, &unlinked("77", "Gummy"), frames(1), Some(0.0), now);
+        feed.take_in(&hub, &unlinked("77", "Gummy"), frames(1), Some(0.0), now);
         assert!(voices(&page)[0]["player"].is_null(), "said to be no player");
         // Known from before, for someone not placed here: as said by someone.
-        feed.remembered("79", Put::Player { steamid: "[U:1:7]".into(), confirmed: true });
-        feed.remembered("78", Put::Player { steamid: "[U:1:99]".into(), confirmed: true });
+        feed.set_known_before("79", Put::Player { steamid: "[U:1:7]".into(), confirmed: true });
+        feed.set_known_before("78", Put::Player { steamid: "[U:1:99]".into(), confirmed: true });
         let who = feed.voices(&hub);
         assert_eq!((who[2].steamid.as_deref(), who[2].confirmed), (Some("[U:1:7]"), true));
         assert_eq!(who[1].steamid.as_deref(), Some("[U:1:6]"), "what was said here stands");
@@ -643,16 +643,16 @@ mod tests {
         let page = subscribe_to(&hub, false, true);
         feed.set_roster(&hub, "c", [("77".to_string(), "Gummy".to_string()), ("79".to_string(), "dave".to_string())]);
         // Both known as accounts that are not in this match.
-        feed.remembered("77", Put::Player { steamid: "[U:1:50]".into(), confirmed: true });
-        feed.remembered("79", Put::Player { steamid: "[U:1:51]".into(), confirmed: true });
+        feed.set_known_before("77", Put::Player { steamid: "[U:1:50]".into(), confirmed: true });
+        feed.set_known_before("79", Put::Player { steamid: "[U:1:51]".into(), confirmed: true });
         let who = |feed: &VoiceFeed| feed.voices(&hub).into_iter().map(|h| (h.steamid, h.confirmed)).collect::<Vec<_>>();
         assert_eq!(
             who(&feed),
             [(Some(STEAMID.to_string()), false), (Some("[U:1:51]".to_string()), true)],
             "the player whose name is like theirs, as a guess; else the account known"
         );
-        feed.said(&hub, &unlinked("77", "Gummy"), frames(1), Some(0.0), now);
-        feed.said(&hub, &unlinked("79", "dave"), frames(1), Some(0.0), now);
+        feed.take_in(&hub, &unlinked("77", "Gummy"), frames(1), Some(0.0), now);
+        feed.take_in(&hub, &unlinked("79", "dave"), frames(1), Some(0.0), now);
         let heard = voices(&page);
         assert_eq!((&heard[0]["player"], &heard[1]["steamid"]), (&serde_json::json!(7), &serde_json::json!("[U:1:51]")));
         // The account known joins: theirs from then on, over the guess.
@@ -666,8 +666,8 @@ mod tests {
         let playing = |id, name: &str, steamid: &str| stvtf::output::Player { steamid: steamid.into(), ..player(id, name, Team::Red) };
         publish(&hub, &snapshot(1000, None, vec![playing(7, "gummy", STEAMID), playing(8, "coach", "[U:1:6]")]));
         feed.set_roster(&hub, "c", [("77".to_string(), "someone".to_string()), ("78".to_string(), "coach".to_string())]);
-        feed.remembered("77", Put::Player { steamid: STEAMID.into(), confirmed: false });
-        feed.remembered("78", Put::Nobody);
+        feed.set_known_before("77", Put::Player { steamid: STEAMID.into(), confirmed: false });
+        feed.set_known_before("78", Put::Nobody);
         let who: Vec<_> = feed.voices(&hub).into_iter().map(|h| (h.steamid, h.confirmed)).collect();
         assert_eq!(who, [(Some(STEAMID.to_string()), false), (None, true)]);
     }
@@ -683,7 +683,7 @@ mod tests {
         let (hub, feed, now) = (SharedHub::default(), VoiceFeed::default(), Instant::now());
         at(&hub, 1000);
         assert!(!feed.set_match("77", Some(STEAMID.into())));
-        feed.said(&hub, &unlinked("77", "arie"), frames(1), None, now);
+        feed.take_in(&hub, &unlinked("77", "arie"), frames(1), None, now);
         assert!(feed.set_match("77", Some(STEAMID.into())));
     }
 
@@ -692,7 +692,7 @@ mod tests {
         let (hub, feed, now) = (SharedHub::default(), VoiceFeed::default(), Instant::now());
         at(&hub, 1000);
         let page = subscribe_to(&hub, false, true);
-        feed.said(&hub, &unlinked("77", "arie"), frames(1), None, now);
+        feed.take_in(&hub, &unlinked("77", "arie"), frames(1), None, now);
         feed.set_match("77", Some(STEAMID.into()));
         at(&hub, 7000);
         feed.step(&hub, now);
@@ -700,7 +700,7 @@ mod tests {
         assert_eq!((out[0]["player"].as_u64(), out[0]["steamid"].as_str()), (Some(7), Some(STEAMID)), "what was held too");
         assert_eq!(feed.voices(&hub)[0].steamid.as_deref(), Some(STEAMID));
         feed.set_match("77", None);
-        feed.said(&hub, &unlinked("77", "arie"), frames(1), Some(0.0), now);
+        feed.take_in(&hub, &unlinked("77", "arie"), frames(1), Some(0.0), now);
         assert!(voices(&page)[0]["player"].is_null(), "and no more once unmatched");
     }
 
@@ -708,8 +708,8 @@ mod tests {
     fn each_post_says_its_own_delay_else_it_is_the_usual() {
         let (hub, feed, now) = (SharedHub::default(), VoiceFeed::default(), Instant::now());
         at(&hub, 1000);
-        assert_eq!(feed.said(&hub, &STEAMID.into(), frames(1), Some(30.0), now), Took::Held { due: 3000 });
-        assert_eq!(feed.said(&hub, &"[U:1:6]".into(), frames(1), None, now), Took::Held { due: 7000 }, "a team's, 90 s");
+        assert_eq!(feed.take_in(&hub, &STEAMID.into(), frames(1), Some(30.0), now), Took::Held { due: 3000 });
+        assert_eq!(feed.take_in(&hub, &"[U:1:6]".into(), frames(1), None, now), Took::Held { due: 7000 }, "a team's, 90 s");
     }
 
     #[test]
@@ -717,12 +717,12 @@ mod tests {
         let (hub, feed, now) = (SharedHub::default(), VoiceFeed::default(), Instant::now());
         at(&hub, 1000);
         let page = subscribe_to(&hub, false, true);
-        assert_eq!(feed.said(&hub, &"[U:1:99]".into(), frames(2), Some(0.0), now), Took::Live);
+        assert_eq!(feed.take_in(&hub, &"[U:1:99]".into(), frames(2), Some(0.0), now), Took::Live);
         let out = voices(&page);
         assert_eq!(out.len(), 1, "at once");
         assert!(out[0]["player"].is_null() && out[0]["tick"] == 1000 && out[0]["injected"] == true, "{out:?}");
         publish(&hub, &Line::Pause(Pause { tick: 1000, paused: true }));
-        assert_eq!(feed.said(&hub, &"[U:1:99]".into(), frames(1), Some(0.0), now), Took::Live, "casters see the pause too");
+        assert_eq!(feed.take_in(&hub, &"[U:1:99]".into(), frames(1), Some(0.0), now), Took::Live, "casters see the pause too");
         assert_eq!(voices(&page).len(), 1);
     }
 }

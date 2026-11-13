@@ -133,8 +133,8 @@ pub(super) fn status(
 fn recall(app: &App, m: &Session) {
     for id in m.voice.roster_ids() {
         match app.voice_who.recall(&id) {
-            Some(Recalled::Player { steamid, sure }) => m.voice.remembered(&id, Put::Player { steamid, confirmed: sure }),
-            Some(Recalled::Nobody) => m.voice.remembered(&id, Put::Nobody),
+            Some(Recalled::Player { steamid, sure }) => m.voice.set_known_before(&id, Put::Player { steamid, confirmed: sure }),
+            Some(Recalled::Nobody) => m.voice.set_known_before(&id, Put::Nobody),
             None => {}
         }
         app.voice_who.look_up(&id);

@@ -287,7 +287,7 @@ static BUILT: Mutex<Built> = Mutex::new(None);
 
 /// The demo `file` of match `id` with its comms written in: built once for all who ask at a
 /// time or soon after. One at a time: a demo is built in memory.
-pub(super) fn built(dir: &Path, id: &str, file: &str) -> Option<Arc<(String, Vec<u8>)>> {
+pub(super) fn build_comms_demo(dir: &Path, id: &str, file: &str) -> Option<Arc<(String, Vec<u8>)>> {
     let key = format!("{id}/{file}");
     let mut last = lock(&BUILT);
     if let Some((_, _, demo)) = last.as_ref().filter(|(k, at, _)| *k == key && at.elapsed() < BUILT_FOR) {
@@ -317,7 +317,7 @@ fn comms_demo(s: &mut TcpStream, sessions: &Sessions, request: &Request, id: &st
         .as_ref()
         .filter(|_| sessions::is_id(id))
         .zip(file.strip_suffix(".dem"))
-        .and_then(|(store, file)| built(&store.dir, id, file));
+        .and_then(|(store, file)| build_comms_demo(&store.dir, id, file));
     let Some(built) = built else { return respond(s, "404 Not Found", TEXT, b"No such demo.") };
     let (name, demo) = &*built;
     let attachment = format!(r#"attachment; filename="{name}""#);
