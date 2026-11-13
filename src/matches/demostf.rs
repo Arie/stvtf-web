@@ -14,6 +14,7 @@ use flate2::read::GzDecoder;
 use flate2::write::GzEncoder;
 use serde::Deserialize;
 use std::io::{BufWriter, Read, Write};
+use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -102,34 +103,18 @@ fn fetch_with(
     kept: Option<&DemoFiles>,
     download: Download,
 ) -> Result<Option<Vec<u8>>> {
-    let file = kept.map(|k| k.store.dir.join(demo_dem(id)));
-    let has_file = || file.as_ref().is_some_and(|f| f.exists());
-    if let Some(k) = kept
-        && let Ok(output) = k.store.take(&demo_output(id))
-        && (!k.dem || has_file())
-    {
-        k.store.touch(&demo_output(id));
-        k.store.touch(&demo_dem(id));
-        log!("demo {id}: as kept, {} MiB", output.len() >> 20);
+    if let Some(output) = kept.and_then(|k| kept_output(k, id)) {
         return Ok(Some(output));
     }
     let started = Instant::now();
     let mut said = |percent| publish(hub, &Line::Status(Status::Fetching { percent }));
+    let file = kept.map(|k| k.store.dir.join(demo_dem(id)));
     let mut in_memory = Vec::new();
-    if let Some(file) = &file {
-        if !file.exists() {
-            // Beside it until it is whole: a file by that name is one. Another fetch of the same
-            // demo has a part file of its own.
-            let part = file.with_extension(format!("dem.{}.part", crate::matches::sessions::random_id()));
-            std::fs::create_dir_all(file.parent().unwrap_or(file))?;
-            let whole = download(&mut BufWriter::new(std::fs::File::create(&part)?), &mut said);
-            if !matches!(whole, Ok(true)) {
-                let _ = std::fs::remove_file(&part);
-                return whole.map(|_| None);
-            }
-            std::fs::rename(&part, file)?;
-        }
-    } else if !download(&mut in_memory, &mut said)? {
+    let whole = match &file {
+        Some(file) => file.exists() || download_to_file(file, download, &mut said)?,
+        None => download(&mut in_memory, &mut said)?,
+    };
+    if !whole {
         return Ok(None);
     }
     let fetched = started.elapsed();
@@ -143,9 +128,48 @@ fn fetch_with(
         Some(file) => std::fs::read(file)?,
         None => in_memory,
     };
-    let output = decode(id, &demo, snapshot_hz);
-    if let (Some(k), Some(file)) = (kept, &file) {
-        // A file that will not decode is not kept to fail again; one no relay plays is not kept.
+    let output = decode_and_keep(id, &demo, snapshot_hz, kept.zip(file.as_deref()))?;
+    log!(
+        "demo {id}: {} MiB fetched in {:.1} s, decoded to {} MiB in {:.1} s",
+        demo.len() >> 20,
+        fetched.as_secs_f64(),
+        output.len() >> 20,
+        started.elapsed().saturating_sub(waited).as_secs_f64()
+    );
+    Ok(Some(output))
+}
+
+/// What demo `id` decoded to, as kept: with its file too where relays play it.
+fn kept_output(k: &DemoFiles, id: u64) -> Option<Vec<u8>> {
+    let output = k.store.take(&demo_output(id)).ok()?;
+    if k.dem && !k.store.dir.join(demo_dem(id)).exists() {
+        return None;
+    }
+    k.store.touch(&demo_output(id));
+    k.store.touch(&demo_dem(id));
+    log!("demo {id}: as kept, {} MiB", output.len() >> 20);
+    Some(output)
+}
+
+/// Downloads to `file`, beside it until it is whole (a file by that name is one; another fetch
+/// of the same demo has a part file of its own). Whether all of it came.
+fn download_to_file(file: &Path, download: Download, said: &mut dyn FnMut(Option<u8>)) -> Result<bool> {
+    let part = file.with_extension(format!("dem.{}.part", crate::matches::sessions::random_id()));
+    std::fs::create_dir_all(file.parent().unwrap_or(file))?;
+    let whole = download(&mut BufWriter::new(std::fs::File::create(&part)?), said);
+    if !matches!(whole, Ok(true)) {
+        let _ = std::fs::remove_file(&part);
+        return whole;
+    }
+    std::fs::rename(&part, file)?;
+    Ok(true)
+}
+
+/// `demo` decoded, and kept in `kept`'s store, its `file` too where relays play it: a file that
+/// will not decode is not kept to fail again.
+fn decode_and_keep(id: u64, demo: &[u8], snapshot_hz: f32, kept: Option<(&DemoFiles, &Path)>) -> Result<Vec<u8>> {
+    let output = decode(id, demo, snapshot_hz);
+    if let Some((k, file)) = kept {
         if output.is_err() || !k.dem {
             let _ = std::fs::remove_file(file);
         }
@@ -155,15 +179,7 @@ fn fetch_with(
             log!("keeping demo {id}: {e:#}");
         }
     }
-    let output = output?;
-    log!(
-        "demo {id}: {} MiB fetched in {:.1} s, decoded to {} MiB in {:.1} s",
-        demo.len() >> 20,
-        fetched.as_secs_f64(),
-        output.len() >> 20,
-        started.elapsed().saturating_sub(waited).as_secs_f64()
-    );
-    Ok(Some(output))
+    output
 }
 
 /// What is at `url` (demo `id`, of `limit` bytes at most) written to `out`, telling `said` how
