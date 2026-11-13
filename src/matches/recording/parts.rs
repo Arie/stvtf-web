@@ -134,11 +134,14 @@ impl Inner {
     }
 
     /// Where a trim may cut, from chunk `n` on: not inside a part that shows nothing yet (the
-    /// server changing map), so a file resumes knowing what came before it.
+    /// server changing map), so a file resumes knowing what came before it; unless that would
+    /// cut nothing (a part that never shows anything is trimmed too).
     pub(super) fn cut_at(&self, n: usize) -> usize {
         let Some(at) = self.chunks.get(n).map(|c| c.start) else { return n };
         match self.parts.iter().rfind(|p| p.origin <= at) {
-            Some(part) if part.shown.is_none_or(|shown| shown > at) => self.chunks.partition_point(|c| c.start < part.origin),
+            Some(part) if part.shown.is_none_or(|shown| shown > at) => {
+                Some(self.chunks.partition_point(|c| c.start < part.origin)).filter(|back| *back > 0).unwrap_or(n)
+            }
             _ => n,
         }
     }

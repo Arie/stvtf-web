@@ -154,6 +154,21 @@ fn a_later_map_shows_from_its_first_snapshot_whatever_began_it() {
 }
 
 #[test]
+fn a_map_change_that_never_shows_anything_is_trimmed_all_the_same() {
+    let r = Recording::live();
+    let t = cp_a_then_changing(&r);
+    let stalemate = line(r#"{"type":"stalemate","tick":5}"#);
+    let hours = (KEEP_MS + 2 * TRIM_MS) / 1000;
+    for s in 1..=hours {
+        push_at(&r, &stalemate, T0 + t + s * 1000);
+    }
+    assert!(!r.latest().ready);
+    assert!(r.length() - r.start() <= KEEP_MS + TRIM_MS, "{} kept", r.length() - r.start());
+    let again = Recording::resume(file_of(&r).as_slice(), Box::new(|_: &Save| {})).unwrap();
+    assert_eq!((again.latest().n, again.latest().ready, again.start()), (1, false, r.start()), "and its file opens");
+}
+
+#[test]
 fn a_resumed_recording_has_the_parts_of_a_map_change() {
     let saved = Arc::default();
     let r = Recording::live_to(to(&saved));
