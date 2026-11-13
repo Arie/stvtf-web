@@ -1,4 +1,4 @@
-// A room (/r/<id>/): its playback bar, which its owner drives and everyone else watches; and
+// A room (/r/<id>/): its playback bar, which its admins drive and everyone else watches; and
 // on a match's own page, the button that opens a room on it.
 import { $, OVERLAY, canvas, setClockRate, state } from "../core/core.js";
 import { EMBEDDED } from "../embed/embed.js";
@@ -111,7 +111,6 @@ function roomPlayback(send) {
 
 function roomBar() {
   env.el.classList.add("room");
-  // A room's link, to send.
   // The room's link, to send, by its name.
   copyLink("Copy the room's link, to send", () => new URL(location.pathname, location.origin));
   const marker = /** @type {HTMLButtonElement} */ ($("rb-marker")),
@@ -212,8 +211,8 @@ function watchBar() {
   const bar = playbar({
     home: HOME,
     send,
-    live: back,
     // Live for a live match; on a demo, back to the shared playback from one's own.
+    live: back,
     // One's own playback is a replay, unless at a live match's live.
     replay: (behind, p) => Boolean(own) && (behind || !p.live),
   });

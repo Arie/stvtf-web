@@ -128,10 +128,6 @@ function fitTo(min, max) {
   state.fitted = true;
 }
 
-// Frame what matters (spawns and points) rather than the whole image, which is mostly empty.
-// Both views turn the map so blue's spawns are on the left and red's on the right, as on the HUD
-// (rotate=teams, the default; upright when a team has no spawns). rotate=auto stays upright, or
-// turns a quarter when that fills the panel clearly better; rotate=<degrees> turns it that far.
 // The part of the canvas the map has to itself: the main view keeps clear of the HUD columns
 // and the scoreboard; the overlay uses its whole panel. Framings are centred in it.
 export function viewArea() {
@@ -222,6 +218,10 @@ function bestFit(pts) {
   return fitTurned(pts, ((Number(want) || 0) * Math.PI) / 180);
 }
 
+// Frame what matters (spawns and points) rather than the whole image, which is mostly empty.
+// Both views turn the map so blue's spawns are on the left and red's on the right, as on the HUD
+// (rotate=teams, the default; upright when a team has no spawns). rotate=auto stays upright, or
+// turns a quarter when that fills the panel clearly better; rotate=<degrees> turns it that far.
 export function frameMap(keepView = false) {
   const pts = framedPoints();
   if (pts.length < 3) return false;
@@ -234,7 +234,7 @@ export function frameMap(keepView = false) {
   state.fitted = state.framed = true;
   return true;
 }
-// The view can be rotated (the overlay turns a map so its long axis fits the panel).
+// A world point on screen, in the view as rotate= turned it.
 /** @param {number} x @param {number} y @returns {[number, number]} */
 export function toScreen(x, y) {
   const r = canvasSize(),

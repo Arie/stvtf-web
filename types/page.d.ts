@@ -1,5 +1,5 @@
 // The page's own data: the map geometry the server builds (src/maps/bsp.rs) and the shared `state`
-// in app/core.js. Only `tsc` reads this file.
+// in app/core/core.js. Only `tsc` reads this file.
 import type { Player, Snapshot, GameEvent, Team, Vec3 } from "./stream";
 
 export type SpawnRoom = { name: string; team: Team; min: Vec3; max: Vec3; disabled: boolean };

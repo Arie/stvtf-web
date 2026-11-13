@@ -72,10 +72,8 @@ stream has a tick.
 The invite is what lets a Discord channel into a match: the key only says it is our bot, which
 anyone can have in their server. `GET /w/<id>/voice-invite` (a room's too) gives `{"invite",
 "bot"}` to whoever started the match and to the site's streamers (no content to others; where nobody
-signs in, to anyone): `bot` is where the bot is added to a server (`STVTF_VOICE_BOT`). The
-speakers list ends with "Discord voice" for them: the `/stv join` command with the page's link
-and the invite to copy, for their own Discord or to pass on to a team, with the delay when it is
-not 90 s. Everyone in a channel brought in so is heard.
+signs in, to anyone): `bot` is where the bot is added to a server (`STVTF_VOICE_BOT`).
+Everyone in a channel brought in so is heard.
 
 Instead of `steamid` a post may say who talks where they talk: `"discord": "<who>"` (a Discord
 user id; for Mumble `mumble:<server>:<who they are there>`), with a `"name"` and the `"channel"`
@@ -88,9 +86,9 @@ Comms are set up in the speakers list, by whoever started the match and by the s
 brought in yet it asks Discord or Mumble. Discord: the `/stv join` command with the page's link
 and the match's invite to copy, for their own Discord or to pass on to a team, with the delay
 when it is not 90 s. Mumble: a server (its name, with a port if not 64738), its password and a
-channel, and the bot joins at once. Once the bot is in a channel only that one shows: how it
-goes, for Mumble a way to move the bot (the same form, filled in; no password typed is the one
-given before) or take it out, and who is who: everyone in the channel, heard yet or not, each
+channel, and the bot joins at once. Once the bot is in a channel, those it is in show: how each
+goes, a way to add another (the other team's), for Mumble a way to move the bot (the same form,
+filled in; no password typed is the one given before) or take it out, and who is who: everyone in the channel, heard yet or not, each
 with the player they are. Someone is put on a player by whoever has a say (a player of the match,
 a Steam ID as people write them, or nobody), by what was said of them in an earlier match, or
 by their name, when just one player's looks like it: that last is a guess, shown as one until

@@ -104,7 +104,7 @@ setInterval(() => {
   if (age >= QUIET_S && !state.paused && $("status").textContent === "live") setStatus("no data", false);
 }, 1000);
 
-// Until the first snapshot shows, say what the page is actually waiting for. The first data only
+// Until the first snapshot shows, say what the page is waiting for. The first data only
 // comes tv_delay late when SourceTV has just started broadcasting (connected, nothing yet); a match
 // under way sends its latest snapshot straight away, so then it is only the stream delay, if any.
 // A delay counts down to when that snapshot shows; it is all the overlay says while it waits, so a

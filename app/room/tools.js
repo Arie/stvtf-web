@@ -1,6 +1,6 @@
-// The room's click tools, the jump arc, the circle and the spotlight: armed by their button or key, they take
-// clicks on the map and ask the room to draw, staying armed; Esc, the button again or another tool
-// lets them go.
+// The room's click tools, the jump arc, the circle and the spotlight (and the note, notes.js):
+// armed by their button or key, they take clicks on the map and ask the room to draw, staying
+// armed; Esc, the button again or another tool lets them go.
 import { $, canvas, state } from "../core/core.js";
 import { env } from "../core/env.js";
 import { screenOffset } from "../map/view.js";

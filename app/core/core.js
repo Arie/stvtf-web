@@ -78,7 +78,7 @@ export const DELAY_MS = (Number(DELAY) || 0) * 1000;
 export const PAGE = env.path.replace(DELAY_PART, "/");
 
 // /overlay: a fixed, transparent minimap for broadcasts. Options in the query string:
-// panel=0..1 (backdrop opacity, none by default), rotate=auto|<degrees>, dot=<px>.
+// panel=0..1 (backdrop opacity, none by default), rotate=teams|auto|<degrees>, dot=<px>.
 export const OVERLAY = /\/overlay\/?$/.test(PAGE);
 export const OPT = new URLSearchParams(env.search);
 // A display toggle in the query string, on either view: 1 on, 0 off, anything else the default.
@@ -107,7 +107,7 @@ export function overlayUnit() {
 }
 
 // 1080p is the design size; 4K gets the same layout at twice the size. The page's height is asked
-// of the layout once a resize (applyScale), not every frame: after the bar's changes, that reflows.
+// of the layout on a resize (applyScale), not every frame: after the bar's changes, that reflows.
 let height = 0;
 const DESIGN_HEIGHT = 1080,
   [MIN_UI_SCALE, MAX_UI_SCALE] = [0.75, 2.5];

@@ -8,7 +8,7 @@
 | `bin/build` | builds and pushes the one image all regions run |
 | `bin/deploy [REGION...]` | deploys it, in parallel (default: all four) |
 | `kamal deploy -d eu\|na\|au\|sea` | builds and deploys one region |
-| `bin/relays [REGION...]` | restarts the relays at the version `bin/build` pushed (boots them the first time), only when they changed |
+| `bin/relays [REGION...]` | restarts the relays at the version `bin/build` pushed (boots them the first time); for a change to them |
 
 The registry is ghcr.io, with the classic token in `~/.config/stvtf/ghcr.token`, scope
 `write:packages` only, because Kamal leaves the login on every host.

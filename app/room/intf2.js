@@ -1,10 +1,9 @@
-// How to watch a room in TF2: the console line to paste, and a link that has Steam connect.
+// How to watch a room in TF2, when it is relayed: the console line to paste, and a link that has
+// Steam connect.
 import { $ } from "../core/core.js";
 import { relayListeners } from "../core/stream.js";
 import { copied, copyText } from "./copy.js";
 
-// How to watch the room in TF2, when it is relayed: the console line to paste, and a link that
-// has Steam connect.
 export function inTf2() {
   const cmd = $("tf2cmd"),
     copy = $("tf2copy"),

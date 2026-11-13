@@ -324,7 +324,7 @@ function drawHealth(p, x, y, rad) {
 /** @param {Dot} d */
 function drawIcon({ p, x, y, rad, cloaked }) {
   ctx.globalAlpha = cloaked ? 0.35 : 1;
-  // The art's longer side, cropped of its padding: about 1.3x as big as before, still on the disc.
+  // The art's longer side, cropped of its padding, still on the disc.
   const s = rad * ICON_SIZE * uberIconScale(p),
     img = iconSprite(p.class, s);
   if (img && uberShown(p)) {

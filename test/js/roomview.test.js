@@ -119,7 +119,7 @@ test("a camera moved before the view was chosen does not take it", () => {
   // Another admin chooses their view: that old move does not take it over.
   b.hear(line("admin", camera()), { ...still(), handMoved: 15_000, now: 16_000 });
   assert.equal(b.tick({ ...still(), handMoved: 15_000, now: 16_050 }, camera), null);
-  // A move auto zoom: moves are not sent.
+  // In auto zoom: moves are not sent.
   b.hear(line("auto"), still());
   assert.equal(b.tick({ ...still(), handMoved: 17_000, now: 17_000 }, camera), null);
 });

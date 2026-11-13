@@ -409,7 +409,7 @@ function timersOf(snap, tick) {
 /** @param {Snapshot} snap @param {ReturnType<typeof timersOf>} t */
 function renderRoundLabel(snap, { main, mapLeft, left }) {
   const label = roundLabel(snap, main);
-  // A paused round timer is not a paused game (KotH, no match started): it just stands still.
+  // A paused round timer is not a paused game (KotH, no match started): it stands still.
   setText("round-label", label || (main && !main.paused && left(main) <= 0 ? "OVERTIME" : ""));
   const shown = watchedTimeLeft(main, mapLeft, left);
   $("timer-main").parentElement?.classList.toggle("low", shown != null && shown <= LOW_SECONDS);

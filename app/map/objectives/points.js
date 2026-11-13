@@ -71,7 +71,7 @@ function drawPointNumber(o, capping, x, y, half) {
   ctx.fillText(text, x, y + 1);
 }
 
-// Capture areas: just an outline in the owner's colour; progress is shown on the point square.
+// Capture areas: an outline in the owner's colour; progress is shown on the point square.
 // An area belongs to the point standing in it: point numbers in the map file don't always match
 // the game's (multi-round maps number per round).
 /** @param {Snapshot} snap */

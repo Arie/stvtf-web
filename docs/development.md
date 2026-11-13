@@ -80,7 +80,8 @@ npm run test:browser    # after cargo build and `npx playwright-core install --o
 - `src/relays/`: `pool` (rooms as SourceTV addresses) and `daemon` (relays in their own process).
 - `src/maps/`: `cache` (geometry and overviews in `--cache`) and `bsp` (top-down geometry, on
   `/map/NAME`): `format` (lumps, LZMA), `entities` (bounds, packs, capture areas, spawns),
-  `material` (floor kind from texture), `displacement`, `track` (payload), `reach` (flood fill).
+  `material` (floor kind from texture), `displacement`, `track` (payload), `reach` (flood fill),
+  `props` (tops of static props); `drape` (strokes laid on the floors, for TF2).
 - `app/`: the page, embedded in the binary (canvas, ES modules, no bundler). `build.rs` lists its
   modules and joins the stylesheet's parts.
   - `main.js` draws each frame; `stv-map.js` is `<stv-map>`; `style.css` lists `css/` in order;

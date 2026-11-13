@@ -131,7 +131,7 @@ function aim(f, tick) {
   if (state.mirror?.length) mirror(state.mirror);
   else if (state.framed && state.autoZoom && state.follow == null) followAction(f.players);
   state.lastPlayers = f.players;
-  // Dead players are reported where they died (no position if before we connected).
+  // Dead players are reported where they died (no position if before the connection).
   const target = state.follow != null && f.players.find(p => p.id === state.follow);
   if (target && target.pos) {
     state.view.cx += (target.pos[0] - state.view.cx) * FOLLOW_EASE;

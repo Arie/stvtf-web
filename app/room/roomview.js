@@ -2,7 +2,7 @@
 // a page does when a view comes in, when its admin chooses one, and when they move the camera or
 // click a player. room.js connects it to the page.
 //
-// The rules, as learned the hard way:
+// The rules:
 // - Choosing (the menu, or clicking a player) sets the kind of view: free (each their own
 //   camera), auto zoom, following a player, or an admin's view. Moving the camera never does:
 //   in an admin's view any admin moves it by hand, the latest to move it leading. The server

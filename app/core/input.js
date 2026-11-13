@@ -40,8 +40,7 @@ window.addEventListener("mousemove", e => {
   state.view.cy = drag.cy - dy;
   state.handMoved = performance.now();
 });
-// h: player HUD and scores, s: just the scores, e: events and chat, g: overview or geometry,
-// o: the overlay or back.
+// h: player HUD, s: scoreboard, e: events and chat, g: overview or geometry, o: the overlay or back.
 /** @param {string} cls */
 function toggle(cls) {
   const on = env.el.classList.toggle(cls);

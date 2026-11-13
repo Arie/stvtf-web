@@ -15,7 +15,7 @@ import { layerOn, setLayer } from "../core/layers.js";
 // (so after any delay), as postMessage or as the element's events, and the page can follow a
 // player or switch a layer. Every message carries `stvtf: 1`. See docs/embedding.md.
 export const EMBEDDED = Boolean(env.emit) || window.parent !== window;
-// What the page's own feed and chat show; not the effects drawn on the map.
+// Effects drawn on the map, not sent: the parent gets what the feed and chat show.
 const EFFECTS = new Set([
   "shot",
   "explosion",

@@ -1,8 +1,8 @@
 // <stv-map src="…"></stv-map>: the live map inside another site's page. `src` is a start link
 // from serveme.tf (…/start?t=…) or a match page (…/w/<id>/). Attributes: view="overlay",
-// delay="<seconds>", side="0", and the overlay's options (names, score, panel, rotate, dot, ui,
-// zoom). It fires the same messages as an iframe sends, as events named by their type, and
-// has follow() and setLayer(). The viewer runs once per page, so a page has one map.
+// delay="<seconds>", side="0", and the display and overlay options (OPTIONS). It fires the same
+// messages as an iframe sends, as events named by their type, and has follow() and setLayer().
+// The viewer runs once per page, so a page has one map.
 import { configure } from "./core/env.js";
 
 const BASE = new URL("../../", import.meta.url);

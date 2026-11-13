@@ -36,7 +36,6 @@ export function drawObjectives(snap, tick) {
       drawMoney(o);
       continue;
     }
-    // The flag and the pass time ball go on top of the players (drawFlags).
     if (o.kind === "control_point") drawPoint(o, snap, tick);
   }
 }

@@ -320,7 +320,7 @@
 #voicelist input[type="range"] {
   width: 70px;
 }
-/* The button that copies the command that brings the voice bot in, and its gear. */
+/* A row of the comms view's buttons, or a field. */
 #voicelist .vinvite {
   gap: 4px;
   color: var(--dim);

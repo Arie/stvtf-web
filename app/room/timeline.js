@@ -1,5 +1,5 @@
 // A room's timeline: rounds in their winner's colour with the score, ubers and drops, and fight
-// heat below. Hover says what a mark is; an admin's click jumps just before it.
+// heat below. Hover says what a mark is; a click (in a room, an admin's) jumps 3 s before it.
 import { TEAM } from "../core/core.js";
 /** @typedef {{ at: number; kind: "win" | "uber" | "drop" | "kill"; team: string; who?: string; score?: [number, number] }} Mark */
 
@@ -54,16 +54,15 @@ class Timeline {
     this.origin = 0;
     this.upTo = Infinity;
     this.shown = 0;
-    // Marks are moved, never laid out again, as a live match's timeline grows (place): a
-    // transform glides between pixels at the same width. The rounds and the fight strip are laid
-    // out for one stretch of time and scaled to the next.
+    // Marks are made once (so clicks land) and moved, never laid out again, as a live match's
+    // timeline grows (place): a transform glides between pixels at the same width. The rounds and
+    // the fight strip are laid out for one stretch of time and scaled to the next.
     /** @type {[HTMLElement, number][]} */
     this.placed = [];
     this.spanTo = 1;
     this.heatFrom = 0;
     this.heatTo = 1;
     this.at = { len: 0, width: 0 };
-    // Marks are made once (so clicks land) and only moved as a live match grows.
     this.drawn = 0;
     this.laid = "";
     this.heated = 0;
