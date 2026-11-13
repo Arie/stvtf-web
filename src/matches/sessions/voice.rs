@@ -23,27 +23,30 @@ impl Session {
         self.keep_spoken();
         if matches!(took, Took::Held { .. } | Took::PauseTalk) && !self.voice_tended.swap(true, Ordering::AcqRel) {
             let s = self.clone();
-            std::thread::spawn(move || {
-                loop {
-                    while s.is_live() && !s.stop.load(Ordering::Relaxed) {
-                        std::thread::sleep(TEND_EVERY);
-                        let now = Instant::now();
-                        s.voice.step(&s.hub, now);
-                        s.keep_spoken();
-                        if s.voice.idle(now) {
-                            break;
-                        }
-                    }
-                    s.voice_tended.store(false, Ordering::Release);
-                    // Voice that came just as this was done would wait for the next: tended on.
-                    let done = !s.is_live() || s.stop.load(Ordering::Relaxed) || s.voice.idle(Instant::now());
-                    if done || s.voice_tended.swap(true, Ordering::AcqRel) {
-                        break;
-                    }
-                }
-            });
+            std::thread::spawn(move || s.tend_voice());
         }
         Some(took)
+    }
+
+    /// Tends the feed while it holds anything, the match is live and not stopped: what is due goes
+    /// out. Voice that comes just as it is done is tended on, not left for the next.
+    fn tend_voice(&self) {
+        let going = || self.is_live() && !self.stop.load(Ordering::Relaxed);
+        loop {
+            while going() {
+                std::thread::sleep(TEND_EVERY);
+                let now = Instant::now();
+                self.voice.step(&self.hub, now);
+                self.keep_spoken();
+                if self.voice.idle(now) {
+                    break;
+                }
+            }
+            self.voice_tended.store(false, Ordering::Release);
+            if !going() || self.voice.idle(Instant::now()) || self.voice_tended.swap(true, Ordering::AcqRel) {
+                return;
+            }
+        }
     }
 
     /// What players said goes beside the demo being recorded, to download with the comms in it.
