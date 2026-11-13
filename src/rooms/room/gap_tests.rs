@@ -87,7 +87,7 @@ fn a_room_following_live_stays_on_its_map_through_a_snapshot_late_behind_the_cha
     let (room, rec) = live_room_at_live_on("cp_a");
     let page = subscribe(&room.hub, false);
     let stroke = || read_marker(br#"[{"stroke":1,"by":1,"points":[[0.0,0.0,0.0]]}]"#, 0).remove(&0).unwrap();
-    lock(&room.marker).insert(0, stroke());
+    lock(&room.marker.strokes).insert(0, stroke());
     push(&rec, &status("changelevel"), rec.length() + 100);
     push(&rec, &snapshot(130, None, Vec::new()), rec.length() + 86);
     push(&rec, &status("map_change"), rec.length() + 14);
@@ -104,7 +104,7 @@ fn a_room_following_live_stays_on_its_map_through_a_snapshot_late_behind_the_cha
         assert!(p["load"] == 0 || maps.iter().any(|m| m["load"] == p["load"] && m["map"] == "cp_b" && m["ready"] == true), "{p}");
     }
     assert_eq!(lock(&room.hub).map.as_deref(), Some("cp_b"));
-    assert!(lock(&room.marker).contains_key(&0), "its marker is still its map's");
+    assert!(lock(&room.marker.strokes).contains_key(&0), "its marker is still its map's");
     room.stop();
 }
 

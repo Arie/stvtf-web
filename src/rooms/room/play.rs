@@ -272,7 +272,7 @@ impl Room {
         st.at = target;
         // Every move between maps ends here: a follow of a player ends, the marker goes with it.
         let n = self.part(st).load;
-        if self.marker_load.load(Ordering::Relaxed) != n {
+        if self.marker.load.load(Ordering::Relaxed) != n {
             self.end_follow();
         }
         self.announce(st);

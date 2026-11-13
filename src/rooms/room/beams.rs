@@ -88,20 +88,20 @@ impl Room {
     /// Hands the relay the marker's `beams`, or (None, or no relay yet) leaves it to hand over
     /// once it can.
     pub(super) fn hand_marker(&self, beams: Option<Vec<Beam>>, notes: Vec<Note>, light: Option<Light>) {
-        self.marker_dirty.store(true, Ordering::Relaxed);
+        self.marker.dirty.store(true, Ordering::Relaxed);
         if let Some(beams) = beams
-            && let Some(r) = &*lock(&self.relay)
+            && let Some(r) = &*lock(&self.relay.current)
         {
             r.keep(beams);
             r.keep_notes(notes);
             r.keep_light(light);
-            self.marker_dirty.store(false, Ordering::Relaxed);
+            self.marker.dirty.store(false, Ordering::Relaxed);
         }
     }
 
     /// Hands the relay the marker if it has changed since it last could.
     pub(super) fn keep_marker_if_changed(&self) {
-        if self.marker_dirty.load(Ordering::Relaxed) {
+        if self.marker.dirty.load(Ordering::Relaxed) {
             self.keep_marker();
         }
     }

@@ -101,9 +101,9 @@ impl Room {
     /// marker as it was, when it then holds more points or notes than it may, or more than TF2
     /// shows.
     pub(super) fn change_marker(&self, change: impl FnOnce(&mut Vec<Kept>) -> Arc<str>) -> Result<()> {
-        let mut all = lock(&self.marker);
+        let mut all = lock(&self.marker.strokes);
         // The map the pages were told of, read under the marker's lock: a move changes it there.
-        let marker = all.entry(self.marker_load.load(Ordering::Relaxed)).or_default();
+        let marker = all.entry(self.marker.load.load(Ordering::Relaxed)).or_default();
         let before = marker.clone();
         let line = change(marker);
         if marker.iter().map(|k| k.points.len()).sum::<usize>() > MAX_KEPT_POINTS {
@@ -127,8 +127,8 @@ impl Room {
     pub(crate) fn clear(&self, guest: &str) {
         let by = lock(&self.people).id(guest);
         let line = serde_json::json!({ "type": "clear", "by": by }).to_string().into();
-        let mut all = lock(&self.marker);
-        all.remove(&self.marker_load.load(Ordering::Relaxed));
+        let mut all = lock(&self.marker.strokes);
+        all.remove(&self.marker.load.load(Ordering::Relaxed));
         send_keeping(&self.hub, &line, "marker", kept_line(&[]));
         drop(all);
         self.keep_marker();

@@ -57,28 +57,40 @@ pub(crate) struct Room {
     offer: OnceLock<Offer>,
     /// Where the maps' geometry is kept: the floors arcs and the relay's strokes are laid on.
     maps: OnceLock<std::path::PathBuf>,
-    /// Its relay, while the room is open and someone has been on a page of it.
-    relay: Mutex<Option<RoomRelay>>,
-    /// What its pages were last told of the relay.
-    relay_said: Mutex<Option<String>>,
-    /// What its relay was last told.
-    relay_sent: Mutex<Option<stvtf::relay::Want>>,
-    /// Its relay's port and password, for one started again.
-    relay_was: Mutex<Option<Was>>,
-    /// The last relay that could not start: when, and why, so it is tried again and logged at a
-    /// pace (the relay process may be away for a while).
-    relay_failed: Mutex<Option<(Instant, String)>>,
+    /// Its relay to TF2 clients, and what goes with it.
+    relay: RelayState,
     /// The user id the view follows; the relay's camera does too.
     camera: Mutex<Option<u16>>,
-    /// The permanent marker strokes, by the map they are on.
-    marker: Mutex<Markers>,
-    /// The map whose marker the pages and the relay were last told (the one drawings land on).
-    marker_load: AtomicUsize,
-    /// The marker changed since the relay was last handed it.
-    marker_dirty: AtomicBool,
+    /// The permanent marker, and which map's the pages and the relay were last told.
+    marker: MarkerState,
     /// The voice handed to its relay, whether it has one or not.
     #[cfg(test)]
     relayed: Mutex<Vec<stvtf::relay::VoiceIn>>,
+}
+
+/// A room's relay, while the room is open and someone has been on a page of it, and what was
+/// last said of it.
+#[derive(Default)]
+struct RelayState {
+    current: Mutex<Option<RoomRelay>>,
+    /// What its pages were last told of the relay.
+    said: Mutex<Option<String>>,
+    /// What its relay was last told.
+    sent: Mutex<Option<stvtf::relay::Want>>,
+    /// Its relay's port and password, for one started again.
+    was: Mutex<Option<Was>>,
+    /// The last relay that could not start: when, and why, so it is tried again and logged at a
+    /// pace (the relay process may be away for a while).
+    failed: Mutex<Option<(Instant, String)>>,
+}
+
+/// A room's permanent marker strokes, by the map they are on.
+struct MarkerState {
+    strokes: Mutex<Markers>,
+    /// The map whose marker the pages and the relay were last told (the one drawings land on).
+    load: AtomicUsize,
+    /// The marker changed since the relay was last handed it.
+    dirty: AtomicBool,
 }
 
 /// Who leads the view: the admin's number, their page, and the kind of view it chose. Saved as
@@ -189,12 +201,12 @@ impl Room {
         if let Some(view) = lock(&room.view).clone() {
             announce(&room.hub, "view", &view);
         }
-        *lock(&room.relay_was) = saved.relay;
+        *lock(&room.relay.was) = saved.relay;
         let mut markers = saved.markers;
         if !saved.marker.is_empty() {
             markers.entry(watchable).or_insert(saved.marker);
         }
-        *lock(&room.marker) = markers;
+        *lock(&room.marker.strokes) = markers;
         announce(&room.hub, "marker", &kept_line(&room.current_marker()));
         room.announce_people();
         room
@@ -223,15 +235,9 @@ impl Room {
             idle_since: Mutex::new(Some(Instant::now())),
             offer: OnceLock::new(),
             maps: OnceLock::new(),
-            relay: Mutex::new(None),
-            relay_said: Mutex::new(None),
-            relay_sent: Mutex::new(None),
-            relay_was: Mutex::new(None),
-            relay_failed: Mutex::new(None),
+            relay: RelayState::default(),
             camera: Mutex::new(None),
-            marker: Mutex::new(Markers::new()),
-            marker_load: AtomicUsize::new(load),
-            marker_dirty: AtomicBool::new(true),
+            marker: MarkerState { strokes: Mutex::new(Markers::new()), load: AtomicUsize::new(load), dirty: AtomicBool::new(true) },
             #[cfg(test)]
             relayed: Mutex::new(Vec::new()),
         });
@@ -252,8 +258,8 @@ impl Room {
             leader: lock(&self.leader).clone(),
             view: lock(&self.view).as_deref().map(str::to_string),
             marker: Vec::new(),
-            markers: lock(&self.marker).clone(),
-            relay: lock(&self.relay_was).clone(),
+            markers: lock(&self.marker.strokes).clone(),
+            relay: lock(&self.relay.was).clone(),
             load: Some(st.load),
             follows_live: st.follows_live,
             decided: st.over == Some(st.load),
@@ -334,7 +340,7 @@ impl Room {
     pub(crate) fn stop(&self) {
         lock(&self.state).stop = true;
         self.wake.notify_all();
-        if let Some(r) = lock(&self.relay).take() {
+        if let Some(r) = lock(&self.relay.current).take() {
             r.end();
         }
     }

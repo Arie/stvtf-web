@@ -287,9 +287,9 @@ fn a_map_the_trim_dropped_takes_its_marker_with_it_saved_or_not() {
     let (room, _) = room_on_a_part_then_trimmed();
     let stroke = || read_marker(br#"[{"stroke":1,"by":1,"points":[[0.0,0.0,0.0]]}]"#, 0).remove(&0).unwrap();
     // Part 0 is trimmed, part 1 is kept.
-    lock(&room.marker).extend([(0, stroke()), (1, stroke())]);
-    until("the trimmed map's marker to go", || !lock(&room.marker).contains_key(&0));
-    assert!(lock(&room.marker).contains_key(&1), "the map kept keeps its marker");
+    lock(&room.marker.strokes).extend([(0, stroke()), (1, stroke())]);
+    until("the trimmed map's marker to go", || !lock(&room.marker.strokes).contains_key(&0));
+    assert!(lock(&room.marker.strokes).contains_key(&1), "the map kept keeps its marker");
     room.stop();
 }
 

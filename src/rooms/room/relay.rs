@@ -43,7 +43,7 @@ impl Room {
 
     /// Someone is on a page, or it had a relay (TF2 clients may be in it).
     pub(super) fn wants_relay(&self) -> bool {
-        lock(&self.people).listed() > 0 || lock(&self.relay_was).is_some()
+        lock(&self.people).listed() > 0 || lock(&self.relay.was).is_some()
     }
 
     /// Whether `saved` had a relay.
@@ -55,33 +55,33 @@ impl Room {
     /// one at a time: the player holds the state's while it points the relay.
     pub(super) fn ensure_relay(&self) {
         let Some(offer) = self.offer.get() else { return };
-        if lock(&self.relay).is_some() {
+        if lock(&self.relay.current).is_some() {
             return;
         }
-        if lock(&self.relay_failed).as_ref().is_some_and(|(t, _)| t.elapsed() < RELAY_RETRY) {
+        if lock(&self.relay.failed).as_ref().is_some_and(|(t, _)| t.elapsed() < RELAY_RETRY) {
             return;
         }
         let Some(want) = self.want(&lock(&self.state), offer, true) else { return };
-        let was = lock(&self.relay_was).clone();
+        let was = lock(&self.relay.was).clone();
         match offer.relays.start(&self.id, want.clone(), was.as_ref()) {
             Ok(Some(r)) => {
-                *lock(&self.relay_failed) = None;
-                let mut relay = lock(&self.relay);
+                *lock(&self.relay.failed) = None;
+                let mut relay = lock(&self.relay.current);
                 // Another page started one meanwhile: this one goes.
                 if relay.is_none() {
                     if let Some(was) = r.was() {
-                        *lock(&self.relay_was) = Some(was);
+                        *lock(&self.relay.was) = Some(was);
                     }
-                    *lock(&self.relay_sent) = Some(want);
+                    *lock(&self.relay.sent) = Some(want);
                     *relay = Some(r);
                     // A new relay has no marker yet.
-                    self.marker_dirty.store(true, Ordering::Relaxed);
+                    self.marker.dirty.store(true, Ordering::Relaxed);
                 }
             }
             Ok(None) => {}
             Err(e) => {
                 let why = format!("{e:#}");
-                let mut failed = lock(&self.relay_failed);
+                let mut failed = lock(&self.relay.failed);
                 if failed.as_ref().is_none_or(|(_, before)| *before != why) {
                     log!("room {}: {why}", logged(&self.id));
                 }
@@ -111,10 +111,10 @@ impl Room {
     pub(super) fn steer_relay(&self, st: &State) {
         let Some(offer) = self.offer.get() else { return };
         let interval = lock(&self.hub).tick_interval();
-        let relay = lock(&self.relay);
+        let relay = lock(&self.relay.current);
         let Some(r) = &*relay else { return };
         let Some(want) = self.want(st, offer, false) else { return };
-        let mut sent = lock(&self.relay_sent);
+        let mut sent = lock(&self.relay.sent);
         if sent.as_ref().is_some_and(|s| on_course(s, &want, interval)) {
             return;
         }
@@ -123,14 +123,14 @@ impl Room {
     }
 
     pub(super) fn relay_clients(&self) -> usize {
-        lock(&self.relay).as_ref().map_or(0, RoomRelay::clients)
+        lock(&self.relay.current).as_ref().map_or(0, RoomRelay::clients)
     }
 
     /// Tells the pages how to connect in TF2, when that changed.
     pub(super) fn tell_relay(&self) {
-        let line = lock(&self.relay).as_ref().map_or_else(|| serde_json::json!({ "type": "relay" }), RoomRelay::line);
+        let line = lock(&self.relay.current).as_ref().map_or_else(|| serde_json::json!({ "type": "relay" }), RoomRelay::line);
         let line = line.to_string();
-        let mut said = lock(&self.relay_said);
+        let mut said = lock(&self.relay.said);
         if said.as_deref() != Some(line.as_str()) {
             announce(&self.hub, "relay", &line.clone().into());
             *said = Some(line);
@@ -141,12 +141,12 @@ impl Room {
     /// read, say) goes, one wanted and missing (the demo not written yet, every port taken) is
     /// tried again, and the pages hear why it cannot play as soon as that is known.
     pub(crate) fn tend_relay(&self) {
-        let stopped = lock(&self.relay).as_ref().is_some_and(RoomRelay::stopped);
-        if stopped && let Some(r) = lock(&self.relay).take() {
+        let stopped = lock(&self.relay.current).as_ref().is_some_and(RoomRelay::stopped);
+        if stopped && let Some(r) = lock(&self.relay.current).take() {
             r.end();
-            *lock(&self.relay_sent) = None;
+            *lock(&self.relay.sent) = None;
         }
-        let missing = lock(&self.relay).is_none();
+        let missing = lock(&self.relay.current).is_none();
         if missing && self.wants_relay() {
             self.ensure_relay();
         }
@@ -174,7 +174,7 @@ impl Room {
         let Some(v) = relay_voice(line) else { return };
         #[cfg(test)]
         lock(&self.relayed).push(v.clone());
-        if let Some(r) = &*lock(&self.relay) {
+        if let Some(r) = &*lock(&self.relay.current) {
             r.voice(v);
         }
     }
