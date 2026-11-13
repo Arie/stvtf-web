@@ -62,8 +62,8 @@ pub(super) struct State {
     pub(super) part: usize,
     /// It goes on to the next map by itself: it was at live when its map ended, and nobody did
     /// anything in it since.
-    pub(super) follows: bool,
-    /// The map it last saw over: whether it follows was decided there.
+    pub(super) follows_live: bool,
+    /// The map it last saw over: whether it follows live was decided there.
     pub(super) over: Option<usize>,
 }
 
@@ -115,7 +115,7 @@ impl Room {
             bail!("speed {speed} is not one of {SPEEDS:?}");
         }
         let mut st = lock(&self.state);
-        st.follows = false;
+        st.follows_live = false;
         if let Some(speed) = c.speed {
             st.speed = speed;
         }
@@ -155,7 +155,7 @@ impl Room {
             "marks": self.recording.marks(usize::MAX).1,
         });
         announce(&self.hub, "playback", &line.to_string().into());
-        self.follow(st);
+        self.steer_relay(st);
     }
 
     /// The player: until stopped, plays the lines in time, seeking and pausing when told. At the
@@ -218,7 +218,7 @@ impl Room {
             self.relay_line(&line);
             if let Line::Snapshot(snap) = &line {
                 st.tick = Some(snap.tick);
-                self.follow(&st);
+                self.steer_relay(&st);
             }
         }
     }

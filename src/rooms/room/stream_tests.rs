@@ -73,7 +73,7 @@ fn a_room_at_live_through_a_stream_that_never_stops_goes_on_with_the_match() {
             break;
         }
     }
-    assert!(!lock(&room.state).follows, "drawn in: nothing decided before the map ends");
+    assert!(!lock(&room.state).follows_live, "drawn in: nothing decided before the map ends");
     s.change("cp_b", 250, 5);
     on_map(&room, 1);
     let p = playback(&room);

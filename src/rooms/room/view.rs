@@ -101,11 +101,11 @@ impl Room {
             _ => None,
         };
         if std::mem::replace(&mut *lock(&self.camera), camera) != camera {
-            self.follow(&lock(&self.state));
+            self.steer_relay(&lock(&self.state));
         }
         // Chosen, or moved by hand (a page does not send what it does by itself, such as a follow
         // dropped at a map change): someone is at the controls.
-        self.touched();
+        self.stop_following_live();
         Ok(())
     }
 

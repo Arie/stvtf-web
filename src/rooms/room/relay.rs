@@ -108,7 +108,7 @@ impl Room {
     }
 
     /// Points the relay at where playback is, when it changed course: the relay plays on by itself.
-    pub(super) fn follow(&self, st: &State) {
+    pub(super) fn steer_relay(&self, st: &State) {
         let Some(offer) = self.offer.get() else { return };
         let interval = lock(&self.hub).tick_interval();
         let relay = lock(&self.relay);

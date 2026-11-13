@@ -36,7 +36,7 @@ pub(super) fn live_room_at_live_on(map: &str) -> (Arc<Room>, Arc<Recording>) {
 /// Until the room saw its map `n` over, and decided whether it follows.
 pub(super) fn decided(room: &Room, n: usize) -> bool {
     until("the room to see its map over", || lock(&room.state).over == Some(n));
-    lock(&room.state).follows
+    lock(&room.state).follows_live
 }
 
 /// The server changes map to `map`: no play of it yet.

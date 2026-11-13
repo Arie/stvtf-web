@@ -16,7 +16,7 @@ fn live_on_a_map_over_follows_again_and_the_room_goes_on_when_the_next_plays() {
     push_server(&rec, "cp_b");
     assert!(decided(&room, 0));
     room.control(&Control { paused: Some(true), speed: Some(2.0), seek: Some(100) }).unwrap();
-    assert!(!lock(&room.state).follows, "touched");
+    assert!(!lock(&room.state).follows_live, "touched");
     room.go(&MapPost { map: 0 }).unwrap();
     let last = rec.part(0).unwrap().last;
     until("at the end", || {
@@ -24,7 +24,7 @@ fn live_on_a_map_over_follows_again_and_the_room_goes_on_when_the_next_plays() {
         st.seek.is_none() && st.at == last
     });
     let st = lock(&room.state);
-    assert_eq!((st.paused, st.speed, st.follows, st.part), (false, 1.0, true, 0));
+    assert_eq!((st.paused, st.speed, st.follows_live, st.part), (false, 1.0, true, 0));
     drop(st);
     push_snapshot(&rec, 50);
     on_map(&room, 1);
@@ -41,7 +41,7 @@ fn live_on_a_map_going_on_is_live() {
         st.seek.is_none() && st.at == rec.length()
     });
     let st = lock(&room.state);
-    assert_eq!((st.paused, st.speed, st.follows, st.part), (false, 1.0, false, 0));
+    assert_eq!((st.paused, st.speed, st.follows_live, st.part), (false, 1.0, false, 0));
     drop(st);
     room.stop();
 }

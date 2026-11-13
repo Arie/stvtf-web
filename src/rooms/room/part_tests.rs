@@ -60,7 +60,7 @@ pub(super) fn live_room_then_new_map() -> (Arc<Room>, Arc<Recording>, u64) {
     push(&rec, &server("cp_b"), 2500);
     push(&rec, &snapshot(50, None, Vec::new()), 3000);
     until("the room to see its map over", || lock(&room.state).over == Some(0));
-    room.touched();
+    room.stop_following_live();
     push(&rec, &snapshot(117, None, Vec::new()), 3500);
     let last = rec.part(0).unwrap().last;
     (room, rec, last)
@@ -76,7 +76,7 @@ pub(super) fn room_on_a_part_then_trimmed() -> (Arc<Room>, Arc<Recording>) {
     push(&rec, &stalemate(), 60_000);
     let room = Room::start("r".into(), "me", rec.clone());
     // As a watched one at live would: unwatched, it plays nothing.
-    lock(&room.state).follows = true;
+    lock(&room.state).follows_live = true;
     push(&rec, &server("cp_b"), 61_000);
     // A frame of it, no play: a room following stays on `cp_a` till the trim drops that.
     push(&rec, &snapshot(50, None, Vec::new()), 61_500);
@@ -155,7 +155,7 @@ fn a_room_whose_map_was_trimmed_goes_to_the_earliest_kept_and_waits() {
     let p = playback(&room);
     assert_eq!((p["map"].as_u64(), p["at"].as_u64()), (Some(1), p["start"].as_u64()));
     assert_eq!((p["over"].as_bool(), p["live"].as_bool(), p["paused"].as_bool()), (Some(true), Some(false), Some(true)));
-    assert!(!lock(&room.state).follows, "put on another map: it does not go on by itself");
+    assert!(!lock(&room.state).follows_live, "put on another map: it does not go on by itself");
     let inside = p["start"].as_u64().unwrap() + 5000;
     room.control(&Control { seek: Some(inside), ..Control::default() }).unwrap();
     settle(&room);

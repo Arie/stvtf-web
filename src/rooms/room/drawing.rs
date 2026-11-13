@@ -119,7 +119,7 @@ impl Room {
         let (notes, light) = (super::note::tf2_notes(marker), super::light::tf2_light(marker));
         drop(all);
         self.hand_marker(beams, notes, light);
-        self.touched();
+        self.stop_following_live();
         Ok(())
     }
 
@@ -132,6 +132,6 @@ impl Room {
         send_keeping(&self.hub, &line, "marker", kept_line(&[]));
         drop(all);
         self.keep_marker();
-        self.touched();
+        self.stop_following_live();
     }
 }

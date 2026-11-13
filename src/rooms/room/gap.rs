@@ -33,11 +33,11 @@ impl Room {
         let over = self.end_of(&part).is_some();
         if over && st.over != Some(part.n) {
             let near = part.last.saturating_sub(st.at) <= FOLLOW_WITHIN;
-            st.follows = !st.paused && (st.speed - 1.0).abs() < f64::EPSILON && near;
+            st.follows_live = !st.paused && (st.speed - 1.0).abs() < f64::EPSILON && near;
             st.over = Some(part.n);
         } else if !over && st.over.is_some() {
             let went_on = st.over == Some(part.n);
-            (st.follows, st.over) = (false, None);
+            (st.follows_live, st.over) = (false, None);
             if went_on {
                 st.seek = Some(st.at);
                 return true;

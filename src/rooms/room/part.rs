@@ -26,11 +26,11 @@ impl Room {
             let over = self.end_of(&part).is_some();
             (st.paused, st.speed, st.seek) = (false, 1.0, Some(self.end_of(&part).unwrap_or_else(|| self.recording.length())));
             // Its own map over: it goes on when the next plays. The latest: decided when it ends.
-            st.follows = own && over;
+            st.follows_live = own && over;
             st.over = (own && over).then_some(part.n);
         } else {
             // Where its map shows: its first snapshot, nothing of the map before. It waits there.
-            (st.seek, st.follows, st.over) = (Some(part.origin.max(part.start)), false, Some(part.n));
+            (st.seek, st.follows_live, st.over) = (Some(part.origin.max(part.start)), false, Some(part.n));
         }
         st.part = part.n;
         // Following again with a later map playing: straight there, not to this one's end first.
@@ -40,19 +40,19 @@ impl Room {
     }
 
     /// Someone did something in the room: it no longer moves by itself.
-    pub(super) fn touched(&self) {
-        lock(&self.state).follows = false;
+    pub(super) fn stop_following_live(&self) {
+        lock(&self.state).follows_live = false;
     }
 
     /// A room following goes on to the newest map with play (past any that never had), at live,
     /// at 1x: true when it did (the seek there is due).
     pub(super) fn move_on(&self, st: &mut State) -> bool {
-        if !st.follows {
+        if !st.follows_live {
             return false;
         }
         let Some(next) = self.recording.parts().into_iter().rfind(|p| p.n > st.part && p.ready) else { return false };
         let at = self.end_of(&next).unwrap_or_else(|| self.recording.length());
-        (st.part, st.paused, st.speed, st.seek, st.follows, st.over) = (next.n, false, 1.0, Some(at), false, None);
+        (st.part, st.paused, st.speed, st.seek, st.follows_live, st.over) = (next.n, false, 1.0, Some(at), false, None);
         true
     }
 
@@ -87,7 +87,7 @@ impl Room {
     pub(super) fn rehome(&self, st: &mut State) {
         let (part, dropped) = self.placed(st);
         if dropped {
-            (st.part, st.paused, st.seek, st.follows, st.over) = (part.n, true, Some(part.start), false, Some(part.n));
+            (st.part, st.paused, st.seek, st.follows_live, st.over) = (part.n, true, Some(part.start), false, Some(part.n));
         }
     }
 

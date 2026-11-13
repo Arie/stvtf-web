@@ -209,7 +209,7 @@ fn a_map_that_goes_on_after_all_plays_on_with_what_came_while_it_seemed_over() {
         .map(|l| l["tick"].clone())
         .collect();
     assert!(ticks.contains(&150.into()) && ticks.contains(&200.into()), "{ticks:?}");
-    assert!(!lock(&room.state).follows);
+    assert!(!lock(&room.state).follows_live);
     room.stop();
 }
 

@@ -103,10 +103,10 @@ pub(crate) struct Saved {
     /// The map of the match it is on, by number; none in files from before: the latest.
     #[serde(default)]
     part: Option<usize>,
-    /// It goes on to the next map by itself (see `State::follows`).
-    #[serde(default)]
-    follows: bool,
-    /// Its map was over, and whether it follows decided (see `State::over`).
+    /// It goes on to the next map by itself (see `State::follows_live`).
+    #[serde(default, rename = "follows")]
+    follows_live: bool,
+    /// Its map was over, and whether it follows live decided (see `State::over`).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     decided: bool,
 }
@@ -133,7 +133,7 @@ impl Room {
         let at = if recording.is_live() { recording.length() } else { 0 };
         let part = recording.watchable().n;
         let seek = (at > 0).then_some(at);
-        let state = State { paused: false, speed: 1.0, at, seek, stop: false, tick: None, part, follows: false, over: None };
+        let state = State { paused: false, speed: 1.0, at, seek, stop: false, tick: None, part, follows_live: false, over: None };
         Room::run(id, People::new(owner), None, None, state, recording)
     }
 
@@ -143,7 +143,7 @@ impl Room {
         let at = at.clamp(recording.start(), recording.length());
         let speed = if SPEEDS.contains(&speed) { speed } else { 1.0 };
         let part = recording.watchable().n;
-        let state = State { paused, speed, at, seek: Some(at), stop: false, tick: None, part, follows: false, over: None };
+        let state = State { paused, speed, at, seek: Some(at), stop: false, tick: None, part, follows_live: false, over: None };
         Room::run(id, People::new(owner), None, None, state, recording)
     }
 
@@ -152,10 +152,10 @@ impl Room {
         let at = saved.at.clamp(recording.start(), recording.length());
         let watchable = recording.watchable().n;
         let part = saved.part.filter(|n| *n <= recording.latest().n).unwrap_or(watchable);
-        // Whether it follows was decided on its map before: it is not again.
+        // Whether it follows live was decided on its map before: it is not again.
         let over = saved.decided.then_some(part);
-        let (paused, speed, follows) = (saved.paused, saved.speed, saved.follows);
-        let state = State { paused, speed, at, seek: Some(at), stop: false, tick: None, part, follows, over };
+        let (paused, speed, follows_live) = (saved.paused, saved.speed, saved.follows_live);
+        let state = State { paused, speed, at, seek: Some(at), stop: false, tick: None, part, follows_live, over };
         let room = Room::run(id, saved.people, saved.leader, saved.view.map(Into::into), state, recording);
         if let Some(view) = lock(&room.view).clone() {
             announce(&room.hub, "view", &view);
@@ -226,7 +226,7 @@ impl Room {
             markers: lock(&self.marker).clone(),
             relay: lock(&self.relay_was).clone(),
             part: Some(st.part),
-            follows: st.follows,
+            follows_live: st.follows_live,
             decided: st.over == Some(st.part),
         }
     }
