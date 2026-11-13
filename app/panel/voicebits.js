@@ -25,3 +25,7 @@ export function act(what, does, title = "") {
   b.dataset.action = does;
   return b;
 }
+
+// A form's labels: one width, so what is typed lines up.
+/** @param {string} text */
+export const labelOf = text => el("span", { className: "vlabel" }, text);

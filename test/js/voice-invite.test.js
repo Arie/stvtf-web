@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { joinCommand, serverOf } from "../../app/panel/voiceinvite.js";
+import { joinCommand } from "../../app/panel/voiceinvite.js";
+import { serverOf } from "../../app/panel/mumbleform.js";
 
 test("the command to paste in Discord: the page's link with the invite, the delay only when it is not 90", () => {
   const page = new URL("https://stv.tf/w/abc/");

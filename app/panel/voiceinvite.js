@@ -9,7 +9,17 @@ import { $ } from "../core/core.js";
 import { HOME } from "../room/home.js";
 import { copyText } from "../room/copy.js";
 import { addListExtra, renderList, setListView } from "./voicelist.js";
-import { act, el } from "./voicebits.js";
+import { act, el, labelOf } from "./voicebits.js";
+import {
+  fillAfter,
+  fillFor,
+  keepTyped,
+  mumbleButtons,
+  mumbleFields,
+  mumbleRequest,
+  serverOf,
+  typed,
+} from "./mumbleform.js";
 import { pollWho, whoEvents, whoRows } from "./voicewho.js";
 
 // What most of competitive TF2 sets `tv_delay` to, in seconds: the bot's own when none is said.
@@ -19,8 +29,6 @@ const USUAL_DELAY = 90,
 const COPIED_MS = 4000;
 // How soon the bot is asked about again while it is on its way, in milliseconds.
 const SOON_MS = 200;
-// Mumble's own port.
-const MUMBLE_PORT = 64738;
 
 // The command for Discord: `page` (the match's, or a room's on it) with the invite, and the delay
 // only when it is not the usual.
@@ -33,34 +41,18 @@ export function joinCommand(page, invite, delay) {
   return `/stv join link:${link.href}${delay === USUAL_DELAY ? "" : ` delay:${delay}`}`;
 }
 
-// A Mumble server as someone writes it: its name or address, with a port or without, or a
-// mumble:// link. None for what is no server.
-/** @param {string} text @returns {{ host: string; port: number } | null} */
-export function serverOf(text) {
-  const m = /^(?:mumble:\/\/)?(?:[^@/\s]*@)?([A-Za-z0-9.-]+)(?::(\d{1,5}))?(?:\/\S*)?$/.exec(text.trim());
-  if (!m) return null;
-  const port = m[2] ? Number(m[2]) : MUMBLE_PORT;
-  return port >= 1 && port <= 65535 ? { host: m[1], port } : null;
-}
-
-/** @typedef {{ id: number; host: string; port: number; channel: string; delay: number; status: string }} InMumble */
+/** @typedef {import("./mumbleform.js").InMumble} InMumble */
 /** @type {{ invite: string; bot: string | null } | null} */
 let botInvite = null;
 // Where the bot is, as stv.tf last said.
 /** @type {{ discord: { status: string } | null; mumble: InMumble[] }} */
 let comms = { discord: null, mumble: [] };
-// The Mumble channel being moved or taken out, by its number; none while one is added.
-/** @type {number | null} */
-let editing = null;
-// Which part of the view shows: none (the speakers list), the choice or what is connected, one
-// of the two set-ups, or the bot being moved.
-/** @type {"" | "home" | "discord" | "mumble" | "reconnect"} */
-let screen = "";
-let delay = USUAL_DELAY;
-let copied = false;
-// What is typed for Mumble, kept while the view is drawn anew, and why it would not do.
-const typed = { server: "", password: "", channel: "" };
-let refused = "";
+// What the view shows: none (the speakers list), the choice or what is connected (home), one of
+// the two set-ups, or the bot being moved; the Mumble channel being moved or taken out (none
+// while one is added); the delay asked for; whether the command was just copied; and why what was
+// asked would not do.
+/** @type {{ screen: "" | "home" | "discord" | "mumble" | "reconnect"; editing: number | null; delay: number; copied: boolean; refused: string }} */
+const view = { screen: "", editing: null, delay: USUAL_DELAY, copied: false, refused: "" };
 
 /** @type {HTMLElement} */
 let list;
@@ -84,11 +76,8 @@ function statusLine(status, more = "", where = "", bad = failed(status)) {
   return line;
 }
 
-// A form's labels: one width, so what is typed lines up.
-const labelOf = (/** @type {string} */ text) => el("span", { className: "vlabel" }, text);
-
 function delayRow() {
-  const secs = el("input", { type: "number", min: "0", max: String(MAX_DELAY), value: String(delay) });
+  const secs = el("input", { type: "number", min: "0", max: String(MAX_DELAY), value: String(view.delay) });
   secs.dataset.action = "delay";
   const row = el(
     "label",
@@ -99,13 +88,6 @@ function delayRow() {
   );
   row.title = "0 for casters";
   return row;
-}
-
-/** @param {keyof typeof typed} name @param {string} label @param {string} hint @param {string} [type] */
-function field(name, label, hint, type = "text") {
-  const input = el("input", { type, value: typed[name], placeholder: hint, autocomplete: "off", spellcheck: false });
-  input.dataset.mumble = name;
-  return el("label", { className: "vrow vinvite vfield" }, labelOf(label), input);
 }
 
 /** @param {string} back Where the back button goes. @param {string} title */
@@ -128,7 +110,7 @@ function choice() {
 
 function discordSetup() {
   if (!botInvite) return [];
-  const copy = act(copied ? "✓ Copied" : "Copy command", "copy");
+  const copy = act(view.copied ? "✓ Copied" : "Copy command", "copy");
   copy.className = "vcopy";
   // The word Discord leads to where the bot is added to a server.
   const discord = botInvite.bot
@@ -148,26 +130,11 @@ function discordSetup() {
 function mumbleSetup(was) {
   /** @type {HTMLElement[]} */
   const parts = [top("home", "Mumble")];
-  if (refused) parts.push(statusLine(refused, "", "", true));
+  if (view.refused) parts.push(statusLine(view.refused, "", "", true));
   else if (was && failed(was.status)) parts.push(statusLine(was.status));
-  const join = act(was ? "Reconnect" : "Connect", "join");
-  join.className = "vcopy vmumble";
   // A server the bot is on already: its password is known.
-  const known = was || comms.mumble.some(m => serverOf(typed.server)?.host === m.host);
-  parts.push(
-    field("server", "Server", "host:port"),
-    field("password", "Password", known ? "unchanged" : "optional", "password"),
-    field("channel", "Channel", ""),
-    delayRow(),
-  );
-  const buttons = el("div", { className: "vrow vinvite" }, join);
-  if (was) {
-    const leave = act("Disconnect", "leave");
-    leave.className = "vcopy vleave";
-    buttons.append(leave);
-  }
-  parts.push(buttons);
-  return parts;
+  const known = Boolean(was) || comms.mumble.some(m => serverOf(typed.server)?.host === m.host);
+  return [...parts, ...mumbleFields(known), delayRow(), mumbleButtons(Boolean(was))];
 }
 
 // The bot is in a channel, or a few: how each goes, a way to add another, and who is who.
@@ -196,10 +163,10 @@ function connected() {
 // The view that takes the list's place.
 function commsView() {
   if (!botInvite) return [];
-  const moved = screen === "reconnect" && comms.mumble.find(m => m.id === editing);
+  const moved = view.screen === "reconnect" && comms.mumble.find(m => m.id === view.editing);
   if (moved) return mumbleSetup(moved);
-  if (screen === "discord") return discordSetup();
-  if (screen === "mumble") return mumbleSetup(null);
+  if (view.screen === "discord") return discordSetup();
+  if (view.screen === "mumble") return mumbleSetup(null);
   // The only one, and it would not do: its form again, with why.
   const [only] = comms.mumble;
   if (!comms.discord && comms.mumble.length === 1 && failed(only.status)) return mumbleSetup(only);
@@ -208,7 +175,7 @@ function commsView() {
 
 // In the speakers list: the way in.
 function commsButton() {
-  if (!botInvite || screen) return [];
+  if (!botInvite || view.screen) return [];
   const b = act("🎧 Comms", "go:home", "Discord or Mumble");
   b.className = "vcopy";
   return [el("div", { className: "vrow vinvite" }, b)];
@@ -224,7 +191,7 @@ const postMumble = (/** @type {object} */ body) =>
 // Where the bot is, asked while the view is open: the view anew when that changed.
 let soon = 0;
 function pollComms() {
-  if (!botInvite || !screen || list.hidden) return;
+  if (!botInvite || !view.screen || list.hidden) return;
   fetch(new URL("voice-comms", HOME))
     .then(r => (r.status === 200 ? r.json() : null))
     .then(
@@ -234,7 +201,7 @@ function pollComms() {
           `${c.discord?.status ?? ""}/${c.mumble.map(m => `${m.id}/${m.host}/${m.channel}/${m.delay}/${m.status}`).join("/")}`;
         const changed = shape(now) !== shape(comms);
         // The bot came into Discord while its set-up showed: on to where it is.
-        if (screen === "discord" && now.discord && !comms.discord) screen = "home";
+        if (view.screen === "discord" && now.discord && !comms.discord) view.screen = "home";
         comms = now;
         // On its way: asked again soon, so the dot turns as the bot gets there.
         clearTimeout(soon);
@@ -250,13 +217,13 @@ function pollComms() {
 let copiedTimer = 0;
 function copyCommand() {
   if (!botInvite) return;
-  copyText(joinCommand(HOME, botInvite.invite, delay)).then(ok => {
+  copyText(joinCommand(HOME, botInvite.invite, view.delay)).then(ok => {
     if (!ok) return;
-    copied = true;
+    view.copied = true;
     redraw();
     clearTimeout(copiedTimer);
     copiedTimer = window.setTimeout(() => {
-      copied = false;
+      view.copied = false;
       redraw();
     }, COPIED_MS);
   });
@@ -264,48 +231,39 @@ function copyCommand() {
 
 // The bot asked into the Mumble channel typed in (or moved there); why not, when it will not do.
 function joinMumble() {
-  const server = serverOf(typed.server);
-  refused = "";
-  if (!server) refused = "Invalid server";
-  else if (!typed.channel.trim()) refused = "Channel name required";
-  if (!server || refused) return void redraw();
   const refuse = (/** @type {string} */ why) => {
-    refused = why;
+    view.refused = why;
     redraw();
   };
-  // No password typed: the one given before for that server, if any.
-  const [id, channel] = [editing, typed.channel.trim()];
-  postMumble({ ...(id == null ? {} : { id }), ...server, password: typed.password || undefined, channel, delay }).then(
+  view.refused = "";
+  const asked = mumbleRequest(view.editing, view.delay);
+  if ("why" in asked) return refuse(asked.why);
+  postMumble(asked.body).then(
     r => {
       if (!r.ok) return void r.text().then(why => refuse(why || "Refused"));
-      screen = "home";
-      editing = null;
+      view.screen = "home";
+      view.editing = null;
       pollComms();
     },
     () => refuse("No answer"),
   );
 }
 
-// A server as it is typed: its port only when it is not Mumble's own.
-const serverText = (/** @type {InMumble} */ m) => (m.port === MUMBLE_PORT ? m.host : `${m.host}:${m.port}`);
-
 /** @param {"" | "home" | "discord" | "mumble" | "reconnect"} to @param {number | null} [id] The Mumble channel to move. */
 function showScreen(to, id = null) {
-  screen = to;
-  refused = "";
-  editing = null;
+  view.screen = to;
+  view.refused = "";
+  view.editing = null;
   const [only] = comms.mumble;
   // One to move: its own, or the only one when it would not do (its form shows by itself).
   const m =
     to === "reconnect" ? comms.mumble.find(j => j.id === id) : to === "home" && comms.mumble.length === 1 && only;
   if (m && (to === "reconnect" || failed(m.status))) {
-    editing = m.id;
-    Object.assign(typed, { server: serverText(m), password: "", channel: m.channel });
-    delay = m.delay;
+    view.editing = m.id;
+    fillFor(m);
+    view.delay = m.delay;
   } else if (to === "mumble") {
-    // Another channel: most likely on the server the bot is on already.
-    const last = comms.mumble.at(-1);
-    Object.assign(typed, { server: last ? serverText(last) : "", password: "", channel: "" });
+    fillAfter(comms.mumble.at(-1));
   }
   setListView(to ? commsView : null);
   list.classList.toggle("wide", Boolean(to));
@@ -322,7 +280,7 @@ function onAction(does) {
   if (does === "copy") return copyCommand();
   if (does === "join") return joinMumble();
   if (does === "leave") {
-    const id = editing;
+    const id = view.editing;
     comms = { ...comms, mumble: comms.mumble.filter(m => m.id !== id) };
     postMumble(id == null ? { leave: true } : { leave: true, id }).then(pollComms, () => {});
     showScreen("home");
@@ -347,15 +305,11 @@ export function voiceInvite() {
     const b = /** @type {HTMLElement | null} */ (/** @type {Element} */ (e.target).closest("[data-action]"));
     if (b?.dataset.action && botInvite) onAction(b.dataset.action);
   });
-  list.addEventListener("input", e => {
-    const input = /** @type {HTMLInputElement} */ (e.target);
-    const f = /** @type {keyof typeof typed | undefined} */ (input.dataset.mumble);
-    if (f) typed[f] = input.value;
-  });
+  list.addEventListener("input", e => keepTyped(/** @type {HTMLInputElement} */ (e.target)));
   list.addEventListener("change", e => {
     const input = /** @type {HTMLInputElement} */ (e.target);
     if (input.dataset.action !== "delay") return;
     const n = Math.round(Number(input.value));
-    delay = Number.isFinite(n) ? Math.max(0, Math.min(MAX_DELAY, n)) : USUAL_DELAY;
+    view.delay = Number.isFinite(n) ? Math.max(0, Math.min(MAX_DELAY, n)) : USUAL_DELAY;
   });
 }
