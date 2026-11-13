@@ -343,6 +343,12 @@ impl Rooms {
         lock(&self.map).len()
     }
 
+    /// Whether an open room is on `map`: its geometry may be built (to draw on, in TF2 too).
+    pub(crate) fn on_map(&self, map: &str) -> bool {
+        let rooms: Vec<Arc<Room>> = lock(&self.map).values().cloned().collect();
+        rooms.iter().any(|r| r.map() == map)
+    }
+
     fn save(&self, room: &Room) {
         let Some(store) = &self.store else { return };
         let Some(source) = lock(&self.sources).get(&room.id).cloned() else { return };
@@ -494,6 +500,20 @@ mod tests {
 
     fn store(dir: &TempDir) -> Store {
         Store { dir: dir.join("store"), keys: None }
+    }
+
+    #[test]
+    fn a_rooms_map_is_one_whose_geometry_may_be_built() {
+        use crate::matches::{hub::tests::snapshot, recording::tests::push_at};
+        let rec = Arc::new(Recording::live());
+        push_at(&rec, &crate::testing::server("cp_a"), 1);
+        push_at(&rec, &snapshot(50, None, Vec::new()), 2);
+        let rooms = Rooms::new(None, None);
+        assert!(!rooms.on_map("cp_a"));
+        let room = Room::start("r".into(), "me", rec);
+        lock(&rooms.map).insert("r".into(), room.clone());
+        assert!(rooms.on_map("cp_a") && !rooms.on_map("cp_b"));
+        room.stop();
     }
 
     #[test]

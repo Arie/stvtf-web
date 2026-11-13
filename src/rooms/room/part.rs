@@ -102,4 +102,9 @@ impl Room {
         let (start, end) = self.reach(st);
         at.clamp(start, end.unwrap_or_else(|| self.recording.length().max(start)))
     }
+
+    /// The map the room is on: its geometry may be built.
+    pub(crate) fn map(&self) -> String {
+        self.part(&lock(&self.state)).map
+    }
 }

@@ -119,12 +119,14 @@ impl App {
             .into_bytes()
     }
 
-    /// Whether a match being watched is on `map`: only those maps are fetched and built on request.
+    /// Whether a match being watched, or a room, is on `map`: only those maps are fetched and
+    /// built on request.
     fn on_map(&self, map: &str) -> bool {
-        match &self.matches {
+        let watched = match &self.matches {
             Matches::One(hub) => lock(hub).map.as_deref() == Some(map),
             Matches::Many(sessions) => sessions.on_map(map),
-        }
+        };
+        watched || self.rooms.on_map(map)
     }
 
     /// The lock around building map `name`.
