@@ -4,6 +4,7 @@ use super::super::tests::push_at;
 use super::super::*;
 use super::real_tests::viaduct;
 use super::tests::{Stream, T0, line, snapshots};
+use super::{Kept, Seed};
 use crate::testing::server;
 
 /// What the file holds now.
@@ -173,4 +174,13 @@ fn a_file_from_round_1_opens() {
     let r = reloaded();
     let again = resumed(&old_file(&r, 1, "parts\t1\nloads\tcp_a\t1\n"));
     assert_eq!(again.parts().iter().map(|p| p.map.as_str()).collect::<Vec<_>>(), ["cp_a", "cp_a"]);
+}
+
+#[test]
+fn a_seed_saved_before_runs_of_play_reads() {
+    let mut seed = serde_json::to_value(Seed { loads: Loads::default(), part: Some(Kept::default()) }).unwrap();
+    let part = seed["part"].as_object_mut().unwrap();
+    assert!(part.remove("run").is_some() && part.remove("snap").is_some());
+    let read: Seed = serde_json::from_value(seed).unwrap();
+    assert!(read.part.is_some_and(|p| p.run.is_none() && p.snap.is_none()));
 }

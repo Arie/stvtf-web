@@ -84,11 +84,13 @@ fn the_real_map_change_is_two_parts() {
     assert_eq!(parts.iter().map(|p| (p.n, p.map.as_str())).collect::<Vec<_>>(), [(0, "koth_viaduct"), (1, "koth_nucleus")]);
     let (old, new) = (&parts[0], &parts[1]);
     assert_eq!((old.changing, old.tail, old.last, old.end), (Some(change.changelevel), Some(change.server), last, Some(new.origin)));
-    assert_eq!((new.origin, new.first_tick, new.ready), (change.frozen, Some(68), true));
+    // It begins at its play: the frozen frame and the break are the map before's.
+    assert_eq!((new.origin, new.first_tick, new.ready), (change.play, Some(68), true));
+    assert!(old.last < change.frozen && change.frozen < new.origin, "the frozen frame falls between");
     assert!(new.changing.is_none() && !new.over(), "the announcements again were no change of its own");
     assert_eq!(new.last, r.length());
     let (hub, ..) = r.seek(new.origin, None);
-    assert_eq!((hub.map.as_deref(), hub.tick(), hub.has_snapshot()), (Some("koth_nucleus"), Some(68), true));
+    assert_eq!((hub.map.as_deref(), hub.tick(), hub.has_snapshot()), (Some("koth_nucleus"), Some(244), true));
     let (hub, ..) = r.seek(old.end.unwrap(), Some(old.last));
     assert_eq!((hub.map.as_deref(), hub.tick()), (Some("koth_viaduct"), Some(35084)), "its last moment");
 }
@@ -102,7 +104,7 @@ fn the_same_map_again_is_two_parts() {
     let change = s.change("koth_nucleus", 272, 3);
     let parts = r.parts();
     assert_eq!(parts.iter().map(|p| (p.n, p.map.as_str())).collect::<Vec<_>>(), [(0, "koth_nucleus"), (1, "koth_nucleus")]);
-    assert_eq!((parts[0].last, parts[0].tail, parts[0].end), (last, Some(change.server), Some(change.frozen)));
+    assert_eq!((parts[0].last, parts[0].tail, parts[0].end), (last, Some(change.server), Some(change.play)));
     assert!(parts[1].ready && !parts[1].over());
     assert_eq!(r.rounds_in(1), [change.play], "the round starting before its play is its own");
 }
@@ -195,10 +197,10 @@ fn a_map_change_with_one_signon_is_two_parts() {
         let parts = r.parts();
         assert_eq!(parts.iter().map(|p| (p.n, p.map.as_str())).collect::<Vec<_>>(), [(0, "koth_viaduct"), (1, map)]);
         let (old, new) = (&parts[0], &parts[1]);
-        assert_eq!((old.changing, old.tail, old.last, old.end), (Some(change.changelevel), Some(change.server), last, Some(change.frozen)));
-        assert_eq!((new.origin, new.first_tick, new.ready, new.over()), (change.frozen, Some(68), true, false));
+        assert_eq!((old.changing, old.tail, old.last, old.end), (Some(change.changelevel), Some(change.server), last, Some(change.play)));
+        assert_eq!((new.origin, new.first_tick, new.ready, new.over()), (change.play, Some(68), true, false));
         let (hub, ..) = r.seek(new.origin, None);
-        assert_eq!((hub.map.as_deref(), hub.tick()), (Some(map), Some(68)));
+        assert_eq!((hub.map.as_deref(), hub.tick()), (Some(map), Some(250)));
     }
 }
 
@@ -235,4 +237,36 @@ fn a_map_that_goes_on_through_announcements_is_not_over() {
     assert_eq!((r.parts().len(), part.changing, part.tail, part.over(), part.last), (1, None, None, false, r.length()));
     let length = r.length();
     assert_eq!(lock(&r.inner).parts[0].last, length, "it ends at its latest play again");
+}
+
+/// Voice from outside the match (no-delay commentary): recorded at its real time.
+fn commentary() -> Line {
+    line(
+        r#"{"type":"voice","tick":1,"player":null,"steamid":"[U:1:5]","rate":24000,"frames":["aAEC"],"injected":true,"pause":false,"team":null,"name":null}"#,
+    )
+}
+
+#[test]
+fn a_later_map_begins_at_its_first_frame_of_play_not_its_frozen_one() {
+    let r = Recording::live();
+    let mut s = Stream { r: &r, s: 0.0 };
+    viaduct(&mut s);
+    s.status(1.0, "changelevel");
+    s.status(5.0, "map_change");
+    s.signon(7.0, "koth_nucleus");
+    let frozen = s.push(15.0, &snapshot(68, None, vec![player(2, "scout", Team::Blue)]));
+    // The casters talk through the break.
+    for _ in 0..80 {
+        s.push(0.9, &commentary());
+    }
+    s.push(0.5, &line(r#"{"type":"round_start","full_reset":false,"tick":250}"#));
+    let play = s.snapshot(0.5, 250);
+    s.play(317, 3);
+    assert!(play - frozen > 60_000, "the talk kept the break's time");
+    let p = r.part(1).unwrap();
+    assert_eq!((p.n, p.map.as_str(), p.ready), (1, "koth_nucleus", true));
+    assert_eq!((p.origin, p.start), (play, play), "its clock starts at play");
+    assert_eq!(r.rounds_in(1).len(), 1, "its round");
+    let (hub, _, _) = r.seek(p.origin, None);
+    assert!(hub.has_snapshot() && hub.map.as_deref() == Some("koth_nucleus") && hub.tick() == Some(250), "its first moment of play");
 }

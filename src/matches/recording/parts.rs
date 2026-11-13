@@ -65,6 +65,33 @@ pub(super) struct Kept {
     first_tick: Option<u32>,
     /// Play time of its first snapshot: a seek there has it.
     first_at: Option<u64>,
+    /// Play time and tick of the first snapshot of the run of ticks it is in, and of the last
+    /// snapshot: when it turns ready, it begins at that run (not at a frozen frame before it).
+    run: Option<(u64, u32)>,
+    snap: Option<(u64, u32)>,
+}
+
+impl Kept {
+    /// A snapshot at play time `at`, `tick`: a run of ticks breaks where they jump more than a
+    /// second, or play time runs more than a second past them (a frozen frame, then the break).
+    fn run(&mut self, at: u64, tick: u32, interval: f64) {
+        let broke = self.snap.is_none_or(|(was_at, was)| {
+            let ms = f64::from(tick.saturating_sub(was)) * interval * 1000.0;
+            tick.saturating_sub(was) > ticks(READY_S, interval) || at.saturating_sub(was_at) as f64 > ms + READY_S * 1000.0
+        });
+        if broke || self.run.is_none() {
+            self.run = Some((at, tick));
+        }
+        self.snap = Some((at, tick));
+    }
+
+    /// A later map turns ready: it begins at its run of play; its frozen first frame and the break
+    /// after it go to the map before (its clock starts at play).
+    fn begin_at_play(&mut self) {
+        if let Some((at, _)) = self.run.filter(|(at, _)| *at > self.origin) {
+            (self.origin, self.first_at) = (at, Some(at));
+        }
+    }
 }
 
 /// The parts as they are at a chunk's start, for a file that begins there.
@@ -147,17 +174,25 @@ impl Inner {
         let map = self.loads.map().map(str::to_string);
         if starts && snapped {
             let map = map.unwrap_or_default();
-            self.parts.push(Kept { n, map, origin: at, last: at, first_tick: Some(tick), first_at: Some(at), ..Kept::default() });
+            let (first_tick, first_at, run) = (Some(tick), Some(at), Some((at, tick)));
+            self.parts.push(Kept { n, map, origin: at, last: at, first_tick, first_at, run, snap: run, ..Kept::default() });
             self.scores = None;
             return;
         }
+        let later = self.parts.len() > 1;
         let latest = self.parts.last_mut().expect("a part");
         if starts {
             (latest.n, latest.first_tick, latest.first_at) = (n, Some(tick), Some(at));
+            (latest.run, latest.snap) = (Some((at, tick)), Some((at, tick)));
             latest.map = map.unwrap_or_else(|| latest.map.clone());
             return;
         }
-        latest.ready |= latest.first_tick.is_some_and(|first| tick >= first.saturating_add(ticks(READY_S, interval)));
+        latest.run(at, tick, interval);
+        let ready = latest.first_tick.is_some_and(|first| tick >= first.saturating_add(ticks(READY_S, interval)));
+        if ready && !latest.ready && later {
+            latest.begin_at_play();
+        }
+        latest.ready |= ready;
         let went_on = latest.changing_tick.is_some_and(|before| tick > before.saturating_add(ticks(WENT_ON_S, interval)));
         // Its ticks went on, whatever was announced meanwhile (a reconnect): it was not over.
         if went_on {
