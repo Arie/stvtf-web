@@ -126,8 +126,7 @@ pub(super) fn serve_room(
         ("me", "GET") => me(&mut s, app, &room, &who)?,
         ("demos", "GET") => {
             // Its match's demos with comms in them.
-            let demos =
-                app.rooms.live_match(&room.id, sessions).map(|m| super::matches::comms_demos(app, sessions, &m.id)).unwrap_or_default();
+            let demos = app.rooms.live_match(&room.id, sessions).map_or_default(|m| super::matches::comms_demos(app, sessions, &m.id));
             respond(&mut s, "200 OK", JSON, serde_json::json!(demos).to_string().as_bytes())?;
         }
         // Its match's voice from outside: as on the match's own page.

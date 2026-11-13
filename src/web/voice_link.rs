@@ -32,7 +32,7 @@ pub(super) fn link(s: &mut TcpStream, app: &App) -> std::io::Result<()> {
 pub(super) fn linked(s: &mut TcpStream, app: &App, request: &Request) -> std::io::Result<()> {
     let Some(d) = &app.voice_links.discord else { return respond(s, "404 Not Found", TEXT, b"No linking here") };
     let state = param(&request.query, "state").unwrap_or_default();
-    let code = param(&request.query, "code").map(form_decode).unwrap_or_default();
+    let code = param(&request.query, "code").map_or_default(form_decode);
     if state.is_empty() || code.is_empty() || request.voice_link.as_deref() != Some(state) {
         return respond(s, "400 Bad Request", TEXT, b"Expired. Try again.");
     }

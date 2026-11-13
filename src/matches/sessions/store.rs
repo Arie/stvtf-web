@@ -153,7 +153,7 @@ impl Store {
 /// The `.dem` a recorded match's file was made from, if it was put beside it: `x.dem` for
 /// `x.jsonl.gz` or `x.jsonl`.
 pub(super) fn dem_beside(file: &std::path::Path) -> PathBuf {
-    let name = file.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    let name = file.file_name().map_or_default(|n| n.to_string_lossy().into_owned());
     let stem = name.strip_suffix(".gz").unwrap_or(&name);
     let stem = stem.strip_suffix(".jsonl").unwrap_or(stem);
     file.with_file_name(format!("{stem}.dem"))

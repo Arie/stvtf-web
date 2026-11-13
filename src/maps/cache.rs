@@ -145,8 +145,7 @@ fn demostf_maps_from(demostf: &str, cache: &Path) -> Vec<String> {
     overview_from(demostf, cache, "boundaries.json")
         .ok()
         .and_then(|b| serde_json::from_slice::<BTreeMap<String, IgnoredAny>>(&b).ok())
-        .map(|m| m.into_keys().collect())
-        .unwrap_or_default()
+        .map_or_default(|m| m.into_keys().collect())
 }
 
 /// Writes through a temporary file and a rename: a cached file that can be read is complete,

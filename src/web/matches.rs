@@ -49,7 +49,7 @@ pub(super) fn serve_match(
             if is_page(rest)
                 && let (Some(demo), Some(home)) = (sessions::id_demo(id), &app.home) =>
         {
-            let at = moment(&request.query, "t").map(|t| format!("&at={t}")).unwrap_or_default();
+            let at = moment(&request.query, "t").map_or_default(|t| format!("&at={t}"));
             let to = format!("{home}?connect=https%3A%2F%2Fdemos.tf%2F{demo}{at}");
             redirect(&mut s, "303 See Other", &to)?;
         }

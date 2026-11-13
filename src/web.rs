@@ -262,7 +262,7 @@ fn serve_many(
         ("/watch", "POST") => {
             let body = read_body(reader, request)?;
             let form = String::from_utf8_lossy(&body);
-            let line = param(&form, "connect").map(form_decode).unwrap_or_default();
+            let line = param(&form, "connect").map_or_default(form_decode);
             match sessions.open_as(counted(None, None, client).as_deref(), &line, None, None) {
                 Ok(m) => app.redirect(&mut s, "303 See Other", &format!("/w/{}/", m.id))?,
                 Err(e) => respond(&mut s, "400 Bad Request", HTML, &app.page(&landing(&format!("{e:#}"))))?,

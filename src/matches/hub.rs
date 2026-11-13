@@ -111,7 +111,7 @@ impl Hub {
 
     /// The players in the latest snapshot: their `SteamID` and name.
     pub(crate) fn players(&self) -> Vec<(String, String)> {
-        let name = |id: &PlayerId| self.names.get(id).map(|n| n.name.clone()).unwrap_or_default();
+        let name = |id: &PlayerId| self.names.get(id).map_or_default(|n| n.name.clone());
         self.steamids.iter().filter(|(s, ..)| s != "BOT").map(|(s, id, ..)| (s.clone(), name(id))).collect()
     }
 

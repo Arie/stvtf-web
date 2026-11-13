@@ -7,7 +7,7 @@ fn post_voice(app: &App, id: &str, key: Option<&str>, body: &str) -> String {
 }
 
 fn post_voice_as_is(app: &App, id: &str, key: Option<&str>, body: &str) -> String {
-    let auth = key.map(|k| format!("Authorization: Bearer {k}\r\n")).unwrap_or_default();
+    let auth = key.map_or_default(|k| format!("Authorization: Bearer {k}\r\n"));
     let send = format!("POST /w/{id}/voice HTTP/1.1\r\n{auth}Content-Length: {}\r\n\r\n{body}", body.len());
     request_to(app, send.as_bytes()).1
 }
