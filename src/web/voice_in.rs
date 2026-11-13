@@ -25,8 +25,8 @@ struct Said {
     /// The speaker's `SteamID`, when the bot knows their link; else who they are in Discord.
     #[serde(default)]
     steamid: Option<String>,
-    #[serde(default)]
-    discord: Option<String>,
+    #[serde(default, rename = "discord")]
+    voice_id: Option<String>,
     #[serde(default)]
     name: Option<String>,
     /// The Discord voice channel they are in: those in one are taken for a team.
@@ -75,9 +75,9 @@ pub(super) fn voice_in(
     }
     let b64 = base64::engine::general_purpose::STANDARD;
     let sound = !said.frames.is_empty() && said.frames.iter().all(|f| f.len() <= MAX_FRAME && b64.decode(f).is_ok_and(|d| !d.is_empty()));
-    let known = match (&said.steamid, &said.discord) {
+    let known = match (&said.steamid, &said.voice_id) {
         (Some(steamid), _) => is_steamid(steamid),
-        (None, Some(discord)) => is_voice_id(discord),
+        (None, Some(voice_id)) => is_voice_id(voice_id),
         (None, None) => false,
     };
     if !sound || !known || said.delay.is_some_and(|d| !(0.0..=MAX_DELAY).contains(&d)) {
@@ -85,7 +85,7 @@ pub(super) fn voice_in(
     }
     let who = Speaker {
         steamid: said.steamid,
-        discord: said.discord.filter(|d| is_voice_id(d)),
+        voice_id: said.voice_id.filter(|d| is_voice_id(d)),
         name: said.name.map(|n| n.chars().filter(|c| !c.is_control()).take(MAX_NAME).collect()),
         channel: said.channel.filter(|c| is_voice_id(c)),
     };

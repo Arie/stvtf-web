@@ -172,7 +172,8 @@ pub(super) fn voices(s: &mut TcpStream, app: &App, m: Option<&Session>, who: &Wh
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Match {
-    discord: String,
+    #[serde(rename = "discord")]
+    voice_id: String,
     #[serde(default)]
     player: Option<u16>,
     #[serde(default)]
@@ -213,10 +214,10 @@ pub(super) fn voice_match(
         },
         (None, None) => None,
     };
-    if !m.voice.set_match(&v.discord, steamid.clone()) {
+    if !m.voice.set_match(&v.voice_id, steamid.clone()) {
         return respond(s, "400 Bad Request", TEXT, b"Not found");
     }
     let caster = who.user.as_ref().is_some_and(|u| u.streamer);
-    app.voice_who.remember(&v.discord, steamid.as_deref(), &m.voice.name_of(&v.discord).unwrap_or_default(), caster);
+    app.voice_who.remember(&v.voice_id, steamid.as_deref(), &m.voice.name_of(&v.voice_id).unwrap_or_default(), caster);
     respond(s, "204 No Content", TEXT, b"")
 }

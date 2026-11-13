@@ -68,7 +68,7 @@ fn a_room_takes_voice_for_its_live_match_and_its_admins_match_who_is_who() {
     assert!(request_to(&app, keyless.as_bytes()).1.starts_with("HTTP/1.1 401"));
     // Its admins see who is not matched, and match them to a player.
     let voices = get(&app, &format!("{room}voices"), &cookie);
-    assert!(voices.contains(r#"{"confirmed":false,"discord":"77","heard":true,"linked":null,"name":"coach","steamid":null}"#), "{voices}");
+    assert!(voices.contains(r#"{"confirmed":false,"heard":true,"id":"77","linked":null,"name":"coach","steamid":null}"#), "{voices}");
     let matched = post(&app, &format!("{room}voice-match"), &cookie, r#"{"discord":"77","player":7}"#);
     assert!(matched.starts_with("HTTP/1.1 204"), "{matched}");
     assert!(get(&app, &format!("{room}voices"), &cookie).contains(r#""steamid":"[U:1:5]""#));
@@ -239,7 +239,7 @@ fn someone_in_mumble_is_known_by_who_they_are_on_their_server() {
     publish(&m.hub, &crate::matches::hub::tests::snapshot(1000, None, Vec::new()));
     let said = r#"{"discord":"mumble:mumble.example:user:97","name":"Arie","channel":"mumble:mumble.example:12","frames":["aA=="]}"#;
     assert!(post_voice(&app, &id, Some("k"), said).starts_with("HTTP/1.1 200"));
-    assert_eq!(m.voice.voices(&m.hub)[0].discord, "mumble:mumble.example:user:97");
+    assert_eq!(m.voice.voices(&m.hub)[0].voice_id, "mumble:mumble.example:user:97");
     let odd = r#"{"discord":"mumble:<script>","frames":["aA=="]}"#;
     assert!(post_voice(&app, &id, Some("k"), odd).starts_with("HTTP/1.1 400"));
 }
@@ -258,7 +258,7 @@ fn who_is_who_is_said_before_anyone_speaks_by_player_or_by_steam_id() {
     assert!(status(&app, &id, "k", there).starts_with("HTTP/1.1 204"));
     assert!(get(&app, &format!("{page}voice-comms"), "").ends_with(r#"{"discord":{"status":"In General with 2 people"},"mumble":[]}"#));
     let voices = get(&app, &format!("{page}voices"), "");
-    assert!(voices.contains(r#"{"confirmed":false,"discord":"77","heard":false,"linked":null,"name":"coach","steamid":null}"#), "{voices}");
+    assert!(voices.contains(r#"{"confirmed":false,"heard":false,"id":"77","linked":null,"name":"coach","steamid":null}"#), "{voices}");
     // One on a player in the match, one on a Steam id as people write them.
     assert!(post(&app, &format!("{page}voice-match"), "", r#"{"discord":"77","player":7}"#).starts_with("HTTP/1.1 204"));
     assert!(post(&app, &format!("{page}voice-match"), "", r#"{"discord":"78","steamid":"STEAM_0:1:4"}"#).starts_with("HTTP/1.1 204"));

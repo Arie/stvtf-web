@@ -25,12 +25,11 @@ const STILL: Duration = Duration::from_millis(700);
 /// With nothing held and nothing said this long, the feed needs no tending.
 const IDLE: Duration = Duration::from_secs(60);
 
-/// Who said something: their `SteamID` when the bot knows it (their link), else their Discord
-/// id and name; and the voice channel they are in.
+/// Who said something: their `SteamID` when the bot knows it (their link), else who they are/// id and name; and the voice channel they are in.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct Speaker {
     pub(crate) steamid: Option<String>,
-    pub(crate) discord: Option<String>,
+    pub(crate) voice_id: Option<String>,
     pub(crate) name: Option<String>,
     pub(crate) channel: Option<String>,
 }
@@ -45,7 +44,7 @@ impl From<&str> for Speaker {
 impl Speaker {
     /// What the hold knows them by: their `SteamID`, else `discord:<id>`.
     fn key(&self) -> String {
-        self.steamid.clone().unwrap_or_else(|| format!("{DISCORD}{}", self.discord.as_deref().unwrap_or_default()))
+        self.steamid.clone().unwrap_or_else(|| format!("{UNLINKED}{}", self.voice_id.as_deref().unwrap_or_default()))
     }
 }
 
@@ -55,14 +54,15 @@ fn account(steamid: &str) -> Option<u32> {
 }
 
 /// How a speaker with no `SteamID` is named in the hold and on their lines.
-const DISCORD: &str = "discord:";
+const UNLINKED: &str = "discord:";
 
 /// Someone in a channel brought into the match (Discord, Mumble), heard yet or not: for whoever
 /// has a say to put on a player (one with no link, or playing on another account).
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub(crate) struct Person {
     /// Who they are where they talk.
-    pub(crate) discord: String,
+    #[serde(rename = "id")]
+    pub(crate) voice_id: String,
     pub(crate) name: String,
     /// The `SteamID` they are put on: by someone, or guessed from their name.
     pub(crate) steamid: Option<String>,
@@ -184,7 +184,7 @@ impl VoiceFeed {
         for (id, before) in st.known_before.clone() {
             let placed = matches!(st.matched.get(&id), Some(Put::Nobody | Put::Player { confirmed: true, .. }));
             // Said to be nobody before: not for someone with a link of their own.
-            let linked = || st.known.values().any(|k| k.discord.as_deref() == Some(&id) && k.steamid.is_some());
+            let linked = || st.known.values().any(|k| k.voice_id.as_deref() == Some(&id) && k.steamid.is_some());
             let holds = match &before {
                 Put::Player { steamid, .. } => playing(steamid),
                 Put::Nobody => !linked(),
@@ -196,7 +196,7 @@ impl VoiceFeed {
         let mut people: BTreeMap<String, (String, Option<String>)> =
             st.roster().map(|(id, name)| (id.clone(), (name.clone(), None))).collect();
         for k in st.known.values() {
-            if let Some(id) = &k.discord {
+            if let Some(id) = &k.voice_id {
                 let name = k.name.clone().or_else(|| people.get(id).map(|p| p.0.clone())).unwrap_or_default();
                 people.insert(id.clone(), (name, k.steamid.clone()));
             }
@@ -232,16 +232,16 @@ impl VoiceFeed {
         let mut all: BTreeMap<String, Person> = BTreeMap::new();
         for (id, name) in st.roster() {
             let (steamid, confirmed) = put(id);
-            all.insert(id.clone(), Person { discord: id.clone(), name: name.clone(), steamid, linked: None, heard: false, confirmed });
+            all.insert(id.clone(), Person { voice_id: id.clone(), name: name.clone(), steamid, linked: None, heard: false, confirmed });
         }
         // Once each: someone who linked meanwhile is known both ways, the linked one last.
         for s in st.known.values() {
-            let Some(discord) = s.discord.clone() else { continue };
-            let before = all.remove(&discord);
-            let name = s.name.clone().or_else(|| before.as_ref().map(|h| h.name.clone())).unwrap_or_else(|| discord.clone());
+            let Some(voice_id) = s.voice_id.clone() else { continue };
+            let before = all.remove(&voice_id);
+            let name = s.name.clone().or_else(|| before.as_ref().map(|h| h.name.clone())).unwrap_or_else(|| voice_id.clone());
             let linked = s.steamid.clone().or_else(|| before.and_then(|h| h.linked));
-            let (steamid, confirmed) = put(&discord);
-            all.insert(discord.clone(), Person { discord, name, steamid, linked, heard: true, confirmed });
+            let (steamid, confirmed) = put(&voice_id);
+            all.insert(voice_id.clone(), Person { voice_id, name, steamid, linked, heard: true, confirmed });
         }
         all.into_values().collect()
     }
@@ -251,31 +251,31 @@ impl VoiceFeed {
         lock(&self.0).roster().map(|(id, _)| id.clone()).collect()
     }
 
-    /// The name `discord` talks under, in the channel or as heard.
-    pub(crate) fn name_of(&self, discord: &str) -> Option<String> {
+    /// The name `voice_id` talks under, in the channel or as heard.
+    pub(crate) fn name_of(&self, voice_id: &str) -> Option<String> {
         let st = lock(&self.0);
-        let heard = || st.known.values().find(|s| s.discord.as_deref() == Some(discord)).and_then(|s| s.name.clone());
-        st.roster().find(|(id, _)| *id == discord).map(|(_, name)| name.clone()).or_else(heard)
+        let heard = || st.known.values().find(|s| s.voice_id.as_deref() == Some(voice_id)).and_then(|s| s.name.clone());
+        st.roster().find(|(id, _)| *id == voice_id).map(|(_, name)| name.clone()).or_else(heard)
     }
 
-    /// Someone says whom `discord` is: a player's `SteamID`, or nobody. Whether there is such a
+    /// Someone says whom `voice_id` is: a player's `SteamID`, or nobody. Whether there is such a
     /// person, in the channel or heard.
-    pub(crate) fn set_match(&self, discord: &str, steamid: Option<String>) -> bool {
+    pub(crate) fn set_match(&self, voice_id: &str, steamid: Option<String>) -> bool {
         let mut st = lock(&self.0);
-        if !st.roster().any(|(id, _)| id == discord) && !st.known.values().any(|s| s.discord.as_deref() == Some(discord)) {
+        if !st.roster().any(|(id, _)| id == voice_id) && !st.known.values().any(|s| s.voice_id.as_deref() == Some(voice_id)) {
             return false;
         }
         let put = steamid.map_or(Put::Nobody, |steamid| Put::Player { steamid, confirmed: true });
-        st.matched.insert(discord.to_string(), put);
+        st.matched.insert(voice_id.to_string(), put);
         true
     }
 
-    /// Whom `discord` was said to be before: theirs here while that one plays here and nobody
+    /// Whom `voice_id` was said to be before: theirs here while that one plays here and nobody
     /// placed them; with that one not playing, their name is gone by first.
-    pub(crate) fn set_known_before(&self, discord: &str, before: Put) {
+    pub(crate) fn set_known_before(&self, voice_id: &str, before: Put) {
         let mut st = lock(&self.0);
-        if st.known_before.len() < MAX_KNOWN || st.known_before.contains_key(discord) {
-            st.known_before.insert(discord.to_string(), before);
+        if st.known_before.len() < MAX_KNOWN || st.known_before.contains_key(voice_id) {
+            st.known_before.insert(voice_id.to_string(), before);
         }
     }
 
@@ -287,13 +287,13 @@ impl VoiceFeed {
         let known = st.known.get(&said.who).cloned().unwrap_or_default();
         // The one they are put on (by someone, or by their name), else their own.
         let steamid_of = |key: &str| {
-            let discord = key.strip_prefix(DISCORD).or_else(|| st.known.get(key)?.discord.as_deref());
-            let own = (!key.starts_with(DISCORD)).then(|| key.to_string());
-            match discord.and_then(|d| st.matched.get(d)) {
+            let voice_id = key.strip_prefix(UNLINKED).or_else(|| st.known.get(key)?.voice_id.as_deref());
+            let own = (!key.starts_with(UNLINKED)).then(|| key.to_string());
+            match voice_id.and_then(|d| st.matched.get(d)) {
                 Some(Put::Player { steamid, .. }) => Some(steamid.clone()),
                 // Said to be no player: not even the one they linked.
                 Some(Put::Nobody) => None,
-                None => own.or_else(|| match st.known_before.get(discord?) {
+                None => own.or_else(|| match st.known_before.get(voice_id?) {
                     Some(Put::Player { steamid, .. }) => Some(steamid.clone()),
                     _ => None,
                 }),
@@ -487,8 +487,8 @@ mod tests {
     }
 
     /// Someone in Discord channel 9 with no Steam link.
-    fn unlinked(discord: &str, name: &str) -> Speaker {
-        Speaker { steamid: None, discord: Some(discord.into()), name: Some(name.into()), channel: Some("9".into()) }
+    fn unlinked(voice_id: &str, name: &str) -> Speaker {
+        Speaker { steamid: None, voice_id: Some(voice_id.into()), name: Some(name.into()), channel: Some("9".into()) }
     }
 
     #[test]
@@ -505,7 +505,7 @@ mod tests {
         assert_eq!((v["steamid"].as_str(), v["name"].as_str(), v["team"].as_str()), (Some("discord:77"), Some("coach"), Some("red")));
         assert_eq!(
             feed.voices(&hub),
-            [Person { discord: "77".into(), name: "coach".into(), steamid: None, linked: None, heard: true, confirmed: false }],
+            [Person { voice_id: "77".into(), name: "coach".into(), steamid: None, linked: None, heard: true, confirmed: false }],
             "for a room's admins to place"
         );
     }
@@ -554,7 +554,7 @@ mod tests {
         feed.take_in(&hub, &alt, frames(1), Some(0.0), now);
         assert!(voices(&page)[0]["player"].is_null());
         let heard = Person {
-            discord: "77".into(),
+            voice_id: "77".into(),
             name: "arie".into(),
             steamid: None,
             linked: Some("[U:1:99]".into()),

@@ -7,7 +7,7 @@ import { HOME } from "../room/home.js";
 import * as voice from "../core/voice.js";
 import { act, el, heading } from "./voicebits.js";
 
-/** @typedef {{ discord: string; name: string; steamid: string | null; linked: string | null; heard: boolean; confirmed: boolean }} Person */
+/** @typedef {{ id: string; name: string; steamid: string | null; linked: string | null; heard: boolean; confirmed: boolean }} Person */
 /** @type {Person[]} */
 let people = [];
 // Whose Steam ID is being typed, what is typed, and why it would not do.
@@ -44,7 +44,7 @@ function choices(v) {
 /** @param {Person} v */
 function picker(v) {
   const select = el("select", {});
-  select.dataset.who = v.discord;
+  select.dataset.who = v.id;
   const now = playerOf(v);
   const nobody = el("option", { value: "none" }, "Not a player");
   nobody.selected = !now && !v.steamid;
@@ -64,19 +64,17 @@ function picker(v) {
 function row(v) {
   const talking = voice
     .speakersHeard()
-    .some(
-      s => s.talking && (s.steamid === `discord:${v.discord}` || s.steamid === v.steamid || s.steamid === v.linked),
-    );
+    .some(s => s.talking && (s.steamid === `discord:${v.id}` || s.steamid === v.steamid || s.steamid === v.linked));
   const name = el("span", { className: `vname${talking ? " on" : ""}` }, v.name);
-  if (typing === v.discord) {
+  if (typing === v.id) {
     const input = el("input", {
       type: "text",
       value: typedId,
       placeholder: "Steam ID or profile link",
       spellcheck: false,
     });
-    input.dataset.steamid = v.discord;
-    return el("div", { className: "vrow vwho" }, name, input, act("✓", `who-id:${v.discord}`), act("✕", "who-cancel"));
+    input.dataset.steamid = v.id;
+    return el("div", { className: "vrow vwho" }, name, input, act("✓", `who-id:${v.id}`), act("✕", "who-cancel"));
   }
   const select = picker(v);
   const set = Boolean(playerOf(v)) || Boolean(v.steamid);
@@ -85,7 +83,7 @@ function row(v) {
   if (set) select.classList.add(v.confirmed || linked ? "set" : "maybe");
   const r = el("div", { className: "vrow vwho" }, name, select);
   if (linked) r.title = "Linked via Discord";
-  if (set && !v.confirmed && !linked) r.append(act("✓", `who-ok:${v.discord}`, "Confirm"));
+  if (set && !v.confirmed && !linked) r.append(act("✓", `who-ok:${v.id}`, "Confirm"));
   return r;
 }
 
@@ -111,13 +109,13 @@ export function askWho(show) {
     );
 }
 
-/** @param {string} discord @param {object} whom @param {() => void} show */
-function put(discord, whom, show) {
+/** @param {string} id @param {object} whom @param {() => void} show */
+function put(id, whom, show) {
   refused = "";
   fetch(new URL("voice-match", HOME), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ discord, ...whom }),
+    body: JSON.stringify({ discord: id, ...whom }),
   })
     .then(r => {
       if (r.ok) typing = "";
@@ -133,14 +131,14 @@ function put(discord, whom, show) {
 export function whoEvents(list, show) {
   list.addEventListener("change", e => {
     const select = /** @type {HTMLSelectElement} */ (e.target);
-    const discord = select.dataset.who;
-    if (!discord) return;
+    const id = select.dataset.who;
+    if (!id) return;
     select.blur();
     if (select.value === "steamid") {
-      [typing, typedId, refused] = [discord, "", ""];
+      [typing, typedId, refused] = [id, "", ""];
       return show();
     }
-    if (select.value !== "kept") put(discord, select.value === "none" ? {} : { player: Number(select.value) }, show);
+    if (select.value !== "kept") put(id, select.value === "none" ? {} : { player: Number(select.value) }, show);
   });
   list.addEventListener("input", e => {
     const input = /** @type {HTMLInputElement} */ (e.target);
@@ -162,8 +160,8 @@ export function whoEvents(list, show) {
       show();
     } else if (does.startsWith("who-id:")) put(does.slice(7), { steamid: typedId }, show);
     else if (does.startsWith("who-ok:")) {
-      const v = people.find(p => p.discord === does.slice(7));
-      if (v?.steamid) put(v.discord, { steamid: v.steamid }, show);
+      const v = people.find(p => p.id === does.slice(7));
+      if (v?.steamid) put(v.id, { steamid: v.steamid }, show);
     }
   });
 }

@@ -99,7 +99,7 @@ confirmed.
 | `GET <page>voice-invite` | `{"invite", "bot"}`: the match's invite, and where the bot is added to a Discord server (`STVTF_VOICE_BOT`) |
 | `GET <page>voice-comms` | `{"discord": {"status"} or null, "mumble": [{"id", "host", "port", "channel", "delay", "status"}]}`: each Mumble channel the bot is wanted in (at most four) |
 | `POST <page>voice-mumble` | `{"host", "port", "password", "channel", "delay"}` asks the bot into one more channel (each team's, on one server or several; no password: the one given for that server); with the `id` of one it is in, moves that; `{"leave": true}` takes it out of all, with an `id` out of that one |
-| `GET <page>voices` | everyone in the channel or heard: `discord` (who they are there), `name`, `steamid` (whom they are put on), `linked` (their own Discord link), `heard`, `confirmed` |
+| `GET <page>voices` | everyone in the channel or heard: `id` (who they are there), `name`, `steamid` (whom they are put on), `linked` (their own Discord link), `heard`, `confirmed` |
 | `POST <page>voice-match` | `{"discord", "player": <id>}`, `{"discord", "steamid": "<any form>"}`, or `{"discord"}` alone for nobody |
 
 `<page>` is a match's (`/w/<id>/`) or a room's on it. Those with no say get no content from the
