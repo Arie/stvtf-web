@@ -129,7 +129,7 @@ impl LocalRelay {
 
     /// Where the room is now.
     pub(crate) fn follow(&self, want: Want) {
-        self.playback.set(want);
+        self.playback.set_want(want);
     }
 
     /// TF2 clients in.
@@ -139,7 +139,7 @@ impl LocalRelay {
 
     /// Beams the TF2 clients in keep seeing, in place of those before.
     pub(crate) fn keep(&self, beams: Vec<Beam>) {
-        self.playback.keep(beams);
+        self.playback.keep_beams(beams);
     }
 
     /// Notes the TF2 clients in keep seeing, in place of those before.
@@ -149,7 +149,7 @@ impl LocalRelay {
 
     /// Voice from outside the match, sent to the TF2 clients in as a player's (or `SourceTV`'s).
     pub(crate) fn voice(&self, v: VoiceIn) {
-        self.playback.voice(v);
+        self.playback.push_voice(v);
     }
 
     /// The light the TF2 clients in keep seeing, in place of the one before.

@@ -375,7 +375,7 @@ fn keep_log(options: &Options) {
     {
         log!("no log kept in {}: {e}", logs.display());
     }
-    stvtf::relay::notes_to(log::line);
+    stvtf::relay::log_to(log::line);
 }
 
 fn main() -> Result<()> {
