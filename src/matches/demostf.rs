@@ -32,6 +32,9 @@ pub(crate) static DECODING: Mutex<()> = Mutex::new(());
 pub(crate) static HELD: Mutex<()> = Mutex::new(());
 /// How often the pages hear how far a download is, at most.
 const SAID_EVERY: Duration = Duration::from_millis(500);
+/// How long demos.tf gets to connect, and to send the next of an answer, before it is given up on.
+const CONNECT_FOR: Duration = Duration::from_secs(30);
+const STALLED_FOR: Duration = Duration::from_secs(60);
 
 /// Where a demo's files are kept from one play to the next.
 pub(crate) struct Kept {
@@ -50,12 +53,17 @@ struct Info {
     url: String,
 }
 
-fn demo_url(id: u64) -> Result<String> {
-    demo_url_from(API, id)
+/// What asks demos.tf: given up on once an answer stalls for `stalled`.
+fn agent(stalled: Duration) -> ureq::Agent {
+    ureq::AgentBuilder::new().timeout_connect(CONNECT_FOR).timeout_read(stalled).build()
 }
 
-fn demo_url_from(api: &str, id: u64) -> Result<String> {
-    let body = ureq::get(&format!("{api}{id}")).call().with_context(|| format!("demos.tf has no demo {id}"))?.into_string()?;
+fn demo_url(agent: &ureq::Agent, id: u64) -> Result<String> {
+    demo_url_from(agent, API, id)
+}
+
+fn demo_url_from(agent: &ureq::Agent, api: &str, id: u64) -> Result<String> {
+    let body = agent.get(&format!("{api}{id}")).call().with_context(|| format!("demos.tf has no demo {id}"))?.into_string()?;
     file_url(id, &body)
 }
 
@@ -80,7 +88,9 @@ fn fetch(hub: &SharedHub, id: u64, snapshot_hz: f32, stop: &AtomicBool, kept: Op
     if stop.load(Ordering::Relaxed) {
         return Ok(None);
     }
-    let download = |out: &mut dyn Write, said: &mut dyn FnMut(Option<u8>)| download(&demo_url(id)?, id, MAX_DEMO, out, stop, said);
+    let agent = agent(STALLED_FOR);
+    let download =
+        |out: &mut dyn Write, said: &mut dyn FnMut(Option<u8>)| download(&agent, &demo_url(&agent, id)?, id, MAX_DEMO, out, stop, said);
     fetch_with(hub, id, snapshot_hz, stop, kept, &download)
 }
 
@@ -159,8 +169,16 @@ fn fetch_with(
 /// What is at `url` (demo `id`, of `limit` bytes at most) written to `out`, telling `said` how
 /// far it is where the server says how much there is. Whether all of it came: not when told to
 /// `stop`.
-fn download(url: &str, id: u64, limit: u64, out: &mut dyn Write, stop: &AtomicBool, said: &mut dyn FnMut(Option<u8>)) -> Result<bool> {
-    let answer = ureq::get(url).call()?;
+fn download(
+    agent: &ureq::Agent,
+    url: &str,
+    id: u64,
+    limit: u64,
+    out: &mut dyn Write,
+    stop: &AtomicBool,
+    said: &mut dyn FnMut(Option<u8>),
+) -> Result<bool> {
+    let answer = agent.get(url).call()?;
     let all = answer.header("Content-Length").and_then(|l| l.parse::<u64>().ok()).filter(|l| *l > 0);
     let (mut from, mut chunk, mut got, mut told) = (answer.into_reader(), vec![0; 64 << 10], 0u64, None::<Instant>);
     said(all.map(|_| 0));
@@ -329,9 +347,9 @@ mod tests {
     #[test]
     fn demos_tf_is_asked_where_the_demo_is() {
         let (base, asked) = web_server(vec![("/7", br#"{"url":"https://static.demos.tf/7.dem"}"#.to_vec())]);
-        assert_eq!(demo_url_from(&base, 7).unwrap(), "https://static.demos.tf/7.dem");
+        assert_eq!(demo_url_from(&agent(STALLED_FOR), &base, 7).unwrap(), "https://static.demos.tf/7.dem");
         assert_eq!(*lock(&asked), ["/7"]);
-        let err = demo_url_from(&base, 8).unwrap_err();
+        let err = demo_url_from(&agent(STALLED_FOR), &base, 8).unwrap_err();
         assert!(format!("{err:#}").contains("demos.tf has no demo 8"), "{err:#}");
     }
 
@@ -340,14 +358,28 @@ mod tests {
         let (base, _) = web_server(vec![("/fits", vec![1; 10]), ("/big", vec![1; 11])]);
         let running = AtomicBool::new(false);
         let (mut out, mut said) = (Vec::new(), Vec::new());
-        assert!(download(&format!("{base}fits"), 7, 10, &mut out, &running, &mut |p| said.push(p)).unwrap());
+        assert!(download(&agent(STALLED_FOR), &format!("{base}fits"), 7, 10, &mut out, &running, &mut |p| said.push(p)).unwrap());
         assert_eq!((out.len(), said.first(), said.last()), (10, Some(&Some(0)), Some(&Some(100))));
-        let err = download(&format!("{base}big"), 7, 10, &mut Vec::new(), &running, &mut |_| {}).unwrap_err();
+        let err = download(&agent(STALLED_FOR), &format!("{base}big"), 7, 10, &mut Vec::new(), &running, &mut |_| {}).unwrap_err();
         assert!(err.to_string().contains("demo 7 is over"));
-        assert!(download(&format!("{base}gone"), 7, 10, &mut Vec::new(), &running, &mut |_| {}).is_err());
+        assert!(download(&agent(STALLED_FOR), &format!("{base}gone"), 7, 10, &mut Vec::new(), &running, &mut |_| {}).is_err());
         let mut out = Vec::new();
-        assert!(!download(&format!("{base}fits"), 7, 10, &mut out, &AtomicBool::new(true), &mut |_| {}).unwrap());
+        assert!(!download(&agent(STALLED_FOR), &format!("{base}fits"), 7, 10, &mut out, &AtomicBool::new(true), &mut |_| {}).unwrap());
         assert_eq!(out, Vec::<u8>::new());
+    }
+
+    #[test]
+    fn a_download_that_stalls_is_given_up_on() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}/7.dem", listener.local_addr().unwrap());
+        std::thread::spawn(move || {
+            let (_quiet, _) = listener.accept().unwrap();
+            std::thread::sleep(Duration::from_secs(5));
+        });
+        let started = Instant::now();
+        let running = AtomicBool::new(false);
+        assert!(download(&agent(Duration::from_millis(200)), &url, 7, 10, &mut Vec::new(), &running, &mut |_| {}).is_err());
+        assert!(started.elapsed() < Duration::from_secs(2));
     }
 
     /// A store, and whether relays play its demos; a download of the recorded demo that counts.
