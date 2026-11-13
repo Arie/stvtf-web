@@ -100,8 +100,8 @@ class Playbar {
       const l = this.last;
       // A bar with no map to go to (a viewer's own playback) goes back to the shared one.
       if (!l?.over || !o.map) return o.live(Math.round(this.length()));
-      const next = mapState(l).next;
-      if (next != null) o.map?.(next);
+      // The next map, or with none yet the room's own: follow again.
+      o.map(mapState(l).next ?? l.map ?? 0);
     };
     speed.onclick = () => {
       const now = performance.now();
@@ -180,9 +180,11 @@ class Playbar {
     if (this.shown.style.minWidth !== widest) this.shown.style.minWidth = widest;
     const over = mapState(l);
     this.live.hidden = !(l.live || l.over);
-    this.live.disabled = !this.allowed || (Boolean(l.over) && Boolean(this.o.map) && over.next == null);
+    this.live.disabled = !this.allowed;
+    this.live.title = "Back to live";
+    if (l.over && this.o.map) this.live.title = over.next == null ? "Follow live" : "Next map";
     this.live.classList.toggle("at", atLive);
-    if (!l.paused || over.status) say(this.o.replay ?? (b => b), behind, l, this.length() - now);
+    say(this.o.replay ?? (b => b), behind, l, this.length() - now);
   }
 
   /** The timeline `len` long, its marks and the playhead at `now`. @param {number} len @param {number} now @param {boolean} atLive */
@@ -252,9 +254,10 @@ function say(replay, behind, p, by) {
   // Behind is short, "−1:23", and says what it is behind on hover.
   let [want, why] = ["live", ""];
   if (p.over) want = mapState(p).status;
+  else if (p.paused) want = "paused";
   else if (!p.live) want = "replay";
   else if (replay(behind, p)) [want, why] = behind ? [`−${clock(by)}`, `${clock(by)} behind SourceTV`] : ["replay", ""];
-  if (playbackStatus(status) && status !== "paused" && status !== want) setStatus(want, true, why);
+  if (playbackStatus(status) && status !== want) setStatus(want, true, why);
 }
 
 // Clicking an event's or a chat line's time watches from a little before it.

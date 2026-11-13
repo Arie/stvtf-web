@@ -221,9 +221,10 @@ export const followDropListeners = new Set();
 /** @param {import("../../types/stream").PlaybackLine} m */
 function onPlayback(m) {
   setClockRate(m.paused ? 0 : m.speed);
+  // A paused room's map that is over says so instead (the bar does).
   if (m.paused) {
     state.lastData = performance.now();
-    setStatus("paused", true);
+    if (!m.over) setStatus("paused", true);
   } else if ($("status").textContent === "paused") setStatus("live", true);
   voicePlayback(m);
   onPlaybackMap(m);
