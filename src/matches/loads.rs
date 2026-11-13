@@ -21,7 +21,7 @@ pub(crate) struct Loads {
 impl Loads {
     /// Going on from load `n` of `map`, begun already, its latest snapshot at `last_tick`: the next
     /// snapshot is of `n` still, unless the rule says another.
-    pub(crate) fn from(n: usize, map: Option<String>, last_tick: Option<u32>) -> Loads {
+    pub(crate) fn resumed(n: usize, map: Option<String>, last_tick: Option<u32>) -> Loads {
         Loads { n, named: map.clone(), map, last_tick, begun: true }
     }
 
@@ -39,7 +39,12 @@ impl Loads {
 
     /// Whether a snapshot at `tick` would start a load.
     pub(crate) fn starts(&self, tick: u32) -> bool {
-        !self.begun || self.named != self.map || self.last_tick.is_some_and(|last| tick < last)
+        !self.begun || self.is_new(self.named.as_deref(), tick)
+    }
+
+    /// The rule: a snapshot at `tick` of `map` is of another load than the latest one begun.
+    fn is_new(&self, map: Option<&str>, tick: u32) -> bool {
+        self.map.as_deref() != map || self.last_tick.is_some_and(|last| tick < last)
     }
 
     /// The load a snapshot at `tick` is of, and whether it starts here.
@@ -55,8 +60,7 @@ impl Loads {
 
     /// The load a demo whose first frame is at `first_tick` of `map` will be of (nothing changes).
     pub(crate) fn would_be(&self, map: &str, first_tick: u32) -> usize {
-        let new = self.map.as_deref() != Some(map) || self.last_tick.is_some_and(|last| first_tick < last);
-        self.n + usize::from(self.begun && new)
+        self.n + usize::from(self.begun && self.is_new(Some(map), first_tick))
     }
 
     pub(crate) fn latest(&self) -> usize {
@@ -139,12 +143,12 @@ mod tests {
     }
 
     #[test]
-    fn from_goes_on_from_a_load_begun() {
-        let mut loads = Loads::from(3, Some("cp_a".into()), Some(9000));
+    fn resumed_goes_on_from_a_load_begun() {
+        let mut loads = Loads::resumed(3, Some("cp_a".into()), Some(9000));
         assert_eq!((loads.latest(), loads.would_be("cp_a", 9100)), (3, 3));
         assert_eq!(loads.snapshot(9100), (3, false));
         assert_eq!(loads.snapshot(50), (4, true));
-        let mut unticked = Loads::from(2, Some("cp_a".into()), None);
+        let mut unticked = Loads::resumed(2, Some("cp_a".into()), None);
         assert_eq!(unticked.snapshot(50), (2, false), "its ticks not known: whatever comes goes on");
         unticked.server("cp_b");
         assert_eq!(unticked.snapshot(60), (3, true));

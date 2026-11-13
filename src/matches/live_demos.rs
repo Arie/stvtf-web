@@ -281,7 +281,7 @@ impl LiveDemos {
         let mut inner = demos_on_disk(dir, id);
         let newest = inner.demos.iter().filter_map(|d| d.back).max().unwrap_or(0);
         inner.number_back(inner.deployed_at(newest, None));
-        inner.loads = inner.demos.last().map_or_else(Loads::default, |d| Loads::from(d.load, Some(d.map.clone()), Some(d.first_tick)));
+        inner.loads = inner.demos.last().map_or_else(Loads::default, |d| Loads::resumed(d.load, Some(d.map.clone()), Some(d.first_tick)));
         Arc::new(LiveDemos { dir: dir.to_owned(), id: id.to_string(), inner: Mutex::new(inner) })
     }
 

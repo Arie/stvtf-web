@@ -130,7 +130,7 @@ fn on_disk(dir: &Path, demos: &[(&str, &str)]) {
 
 /// The match's recording, resumed, is at load `n` of `map`.
 fn resumed_at(n: usize, map: &str) -> Loads {
-    Loads::from(n, Some(map.into()), Some(5000))
+    Loads::resumed(n, Some(map.into()), Some(5000))
 }
 
 #[test]

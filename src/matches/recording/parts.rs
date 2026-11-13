@@ -157,7 +157,7 @@ impl Inner {
             latest.tail.get_or_insert(at);
         }
         if latest.first_tick.is_some() && latest.map.is_empty() {
-            self.loads = Loads::from(self.loads.latest(), Some(map.to_string()), self.loads.last_tick());
+            self.loads = Loads::resumed(self.loads.latest(), Some(map.to_string()), self.loads.last_tick());
         }
         if latest.first_tick.is_none() || latest.map.is_empty() {
             latest.map = map.to_string();
@@ -337,7 +337,7 @@ impl Inner {
             ..PartState::default()
         };
         if tick.is_some() {
-            self.loads = Loads::from(n, map, tick);
+            self.loads = Loads::resumed(n, map, tick);
         } else if let Some(map) = map {
             // No snapshot yet: its first starts the load.
             self.loads.server(&map);
