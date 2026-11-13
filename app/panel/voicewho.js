@@ -95,22 +95,22 @@ export function whoRows() {
   return parts;
 }
 
-/** @param {() => void} show Draws the view anew. */
-export function askWho(show) {
+/** @param {() => void} redraw Draws the view anew. */
+export function pollWho(redraw) {
   fetch(new URL("voices", HOME))
     .then(r => (r.status === 200 ? r.json() : []))
     .then(
       (/** @type {Person[]} */ now) => {
         if (JSON.stringify(now) === JSON.stringify(people)) return;
         people = now;
-        show();
+        redraw();
       },
       () => {},
     );
 }
 
-/** @param {string} id @param {object} whom @param {() => void} show */
-function put(id, whom, show) {
+/** @param {string} id @param {object} whom @param {() => void} redraw */
+function putOn(id, whom, redraw) {
   refused = "";
   fetch(new URL("voice-match", HOME), {
     method: "POST",
@@ -122,13 +122,13 @@ function put(id, whom, show) {
       else return r.text().then(why => (refused = why));
     })
     .catch(() => (refused = "No answer"))
-    .finally(() => askWho(show))
-    .finally(show);
+    .finally(() => pollWho(redraw))
+    .finally(redraw);
 }
 
 // What the comms view's list hears that is of who is who.
-/** @param {HTMLElement} list @param {() => void} show */
-export function whoEvents(list, show) {
+/** @param {HTMLElement} list @param {() => void} redraw */
+export function whoEvents(list, redraw) {
   list.addEventListener("change", e => {
     const select = /** @type {HTMLSelectElement} */ (e.target);
     const id = select.dataset.who;
@@ -136,9 +136,9 @@ export function whoEvents(list, show) {
     select.blur();
     if (select.value === "steamid") {
       [typing, typedId, refused] = [id, "", ""];
-      return show();
+      return redraw();
     }
-    if (select.value !== "kept") put(id, select.value === "none" ? {} : { player: Number(select.value) }, show);
+    if (select.value !== "kept") putOn(id, select.value === "none" ? {} : { player: Number(select.value) }, redraw);
   });
   list.addEventListener("input", e => {
     const input = /** @type {HTMLInputElement} */ (e.target);
@@ -149,19 +149,19 @@ export function whoEvents(list, show) {
     if (e.key !== "Enter" || !input.dataset?.steamid) return;
     // Let go of, so the view is drawn anew (it is not, under someone typing).
     input.blur();
-    put(input.dataset.steamid, { steamid: typedId }, show);
+    putOn(input.dataset.steamid, { steamid: typedId }, redraw);
   });
   list.addEventListener("click", e => {
     const does =
-      /** @type {HTMLElement | null} */ (/** @type {Element} */ (e.target).closest("[data-invite]"))?.dataset.invite ??
+      /** @type {HTMLElement | null} */ (/** @type {Element} */ (e.target).closest("[data-action]"))?.dataset.action ??
       "";
     if (does === "who-cancel") {
       typing = "";
-      show();
-    } else if (does.startsWith("who-id:")) put(does.slice(7), { steamid: typedId }, show);
+      redraw();
+    } else if (does.startsWith("who-id:")) putOn(does.slice(7), { steamid: typedId }, redraw);
     else if (does.startsWith("who-ok:")) {
       const v = people.find(p => p.id === does.slice(7));
-      if (v?.steamid) put(v.id, { steamid: v.steamid }, show);
+      if (v?.steamid) putOn(v.id, { steamid: v.steamid }, redraw);
     }
   });
 }

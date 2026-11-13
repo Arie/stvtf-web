@@ -10,7 +10,7 @@ import { HOME } from "../room/home.js";
 import { copyText } from "../room/copy.js";
 import { addListExtra, renderList, setListView } from "./voicelist.js";
 import { act, el } from "./voicebits.js";
-import { askWho, whoEvents, whoRows } from "./voicewho.js";
+import { pollWho, whoEvents, whoRows } from "./voicewho.js";
 
 // What most of competitive TF2 sets `tv_delay` to, in seconds: the bot's own when none is said.
 const USUAL_DELAY = 90,
@@ -45,7 +45,7 @@ export function serverOf(text) {
 
 /** @typedef {{ id: number; host: string; port: number; channel: string; delay: number; status: string }} InMumble */
 /** @type {{ invite: string; bot: string | null } | null} */
-let given = null;
+let botInvite = null;
 // Where the bot is, as stv.tf last said.
 /** @type {{ discord: { status: string } | null; mumble: InMumble[] }} */
 let comms = { discord: null, mumble: [] };
@@ -64,7 +64,7 @@ let refused = "";
 
 /** @type {HTMLElement} */
 let list;
-const show = () => list.hidden || renderList(list);
+const redraw = () => list.hidden || renderList(list);
 
 /** @param {string} status */
 const failed = status => /^(Could not join|Left)/.test(status);
@@ -89,7 +89,7 @@ const labelOf = (/** @type {string} */ text) => el("span", { className: "vlabel"
 
 function delayRow() {
   const secs = el("input", { type: "number", min: "0", max: String(MAX_DELAY), value: String(delay) });
-  secs.dataset.invite = "delay";
+  secs.dataset.action = "delay";
   const row = el(
     "label",
     { className: "vrow vinvite vfield" },
@@ -127,12 +127,12 @@ function choice() {
 }
 
 function discordSetup() {
-  if (!given) return [];
+  if (!botInvite) return [];
   const copy = act(copied ? "✓ Copied" : "Copy command", "copy");
   copy.className = "vcopy";
   // The word Discord leads to where the bot is added to a server.
-  const discord = given.bot
-    ? el("a", { href: given.bot, target: "_blank", rel: "noopener", title: "Invite bot to server" }, "Discord")
+  const discord = botInvite.bot
+    ? el("a", { href: botInvite.bot, target: "_blank", rel: "noopener", title: "Invite bot to server" }, "Discord")
     : "Discord";
   const parts = [
     top("home", "Discord"),
@@ -194,8 +194,8 @@ function connected() {
 }
 
 // The view that takes the list's place.
-function view() {
-  if (!given) return [];
+function commsView() {
+  if (!botInvite) return [];
   const moved = screen === "reconnect" && comms.mumble.find(m => m.id === editing);
   if (moved) return mumbleSetup(moved);
   if (screen === "discord") return discordSetup();
@@ -207,14 +207,14 @@ function view() {
 }
 
 // In the speakers list: the way in.
-function entry() {
-  if (!given || screen) return [];
+function commsButton() {
+  if (!botInvite || screen) return [];
   const b = act("🎧 Comms", "go:home", "Discord or Mumble");
   b.className = "vcopy";
   return [el("div", { className: "vrow vinvite" }, b)];
 }
 
-const ask = (/** @type {object} */ body) =>
+const postMumble = (/** @type {object} */ body) =>
   fetch(new URL("voice-mumble", HOME), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -223,8 +223,8 @@ const ask = (/** @type {object} */ body) =>
 
 // Where the bot is, asked while the view is open: the view anew when that changed.
 let soon = 0;
-function look() {
-  if (!given || !screen || list.hidden) return;
+function pollComms() {
+  if (!botInvite || !screen || list.hidden) return;
   fetch(new URL("voice-comms", HOME))
     .then(r => (r.status === 200 ? r.json() : null))
     .then(
@@ -239,25 +239,25 @@ function look() {
         // On its way: asked again soon, so the dot turns as the bot gets there.
         clearTimeout(soon);
         if (now.mumble.some((/** @type {InMumble} */ m) => m.status === "connecting"))
-          soon = window.setTimeout(look, SOON_MS);
-        if (changed) show();
+          soon = window.setTimeout(pollComms, SOON_MS);
+        if (changed) redraw();
       },
       () => {},
     );
-  askWho(show);
+  pollWho(redraw);
 }
 
 let copiedTimer = 0;
 function copyCommand() {
-  if (!given) return;
-  copyText(joinCommand(HOME, given.invite, delay)).then(ok => {
+  if (!botInvite) return;
+  copyText(joinCommand(HOME, botInvite.invite, delay)).then(ok => {
     if (!ok) return;
     copied = true;
-    show();
+    redraw();
     clearTimeout(copiedTimer);
     copiedTimer = window.setTimeout(() => {
       copied = false;
-      show();
+      redraw();
     }, COPIED_MS);
   });
 }
@@ -268,19 +268,19 @@ function joinMumble() {
   refused = "";
   if (!server) refused = "Invalid server";
   else if (!typed.channel.trim()) refused = "Channel name required";
-  if (!server || refused) return void show();
+  if (!server || refused) return void redraw();
   const refuse = (/** @type {string} */ why) => {
     refused = why;
-    show();
+    redraw();
   };
   // No password typed: the one given before for that server, if any.
   const [id, channel] = [editing, typed.channel.trim()];
-  ask({ ...(id == null ? {} : { id }), ...server, password: typed.password || undefined, channel, delay }).then(
+  postMumble({ ...(id == null ? {} : { id }), ...server, password: typed.password || undefined, channel, delay }).then(
     r => {
       if (!r.ok) return void r.text().then(why => refuse(why || "Refused"));
       screen = "home";
       editing = null;
-      look();
+      pollComms();
     },
     () => refuse("No answer"),
   );
@@ -290,7 +290,7 @@ function joinMumble() {
 const serverText = (/** @type {InMumble} */ m) => (m.port === MUMBLE_PORT ? m.host : `${m.host}:${m.port}`);
 
 /** @param {"" | "home" | "discord" | "mumble" | "reconnect"} to @param {number | null} [id] The Mumble channel to move. */
-function go(to, id = null) {
+function showScreen(to, id = null) {
   screen = to;
   refused = "";
   editing = null;
@@ -307,45 +307,45 @@ function go(to, id = null) {
     const last = comms.mumble.at(-1);
     Object.assign(typed, { server: last ? serverText(last) : "", password: "", channel: "" });
   }
-  setListView(to ? view : null);
+  setListView(to ? commsView : null);
   list.classList.toggle("wide", Boolean(to));
-  show();
-  look();
+  redraw();
+  pollComms();
 }
 
 /** @param {string} does What the button clicked does. */
-function clicked(does) {
+function onAction(does) {
   if (does.startsWith("go:")) {
     const [to, id] = does.slice(3).split(":");
-    return go(/** @type {any} */ (to), id ? Number(id) : null);
+    return showScreen(/** @type {any} */ (to), id ? Number(id) : null);
   }
   if (does === "copy") return copyCommand();
   if (does === "join") return joinMumble();
   if (does === "leave") {
     const id = editing;
     comms = { ...comms, mumble: comms.mumble.filter(m => m.id !== id) };
-    ask(id == null ? { leave: true } : { leave: true, id }).then(look, () => {});
-    go("home");
+    postMumble(id == null ? { leave: true } : { leave: true, id }).then(pollComms, () => {});
+    showScreen("home");
   }
 }
 
 export function voiceInvite() {
   list = $("voicelist");
-  addListExtra(entry);
+  addListExtra(commsButton);
   fetch(new URL("voice-invite", HOME))
     .then(r => (r.status === 200 ? r.json() : null))
     .then(
       g => {
-        given = g?.invite ? { invite: String(g.invite), bot: typeof g.bot === "string" ? g.bot : null } : null;
-        show();
+        botInvite = g?.invite ? { invite: String(g.invite), bot: typeof g.bot === "string" ? g.bot : null } : null;
+        redraw();
       },
       () => {},
     );
-  setInterval(look, 1000);
-  whoEvents(list, show);
+  setInterval(pollComms, 1000);
+  whoEvents(list, redraw);
   list.addEventListener("click", e => {
-    const b = /** @type {HTMLElement | null} */ (/** @type {Element} */ (e.target).closest("[data-invite]"));
-    if (b?.dataset.invite && given) clicked(b.dataset.invite);
+    const b = /** @type {HTMLElement | null} */ (/** @type {Element} */ (e.target).closest("[data-action]"));
+    if (b?.dataset.action && botInvite) onAction(b.dataset.action);
   });
   list.addEventListener("input", e => {
     const input = /** @type {HTMLInputElement} */ (e.target);
@@ -354,7 +354,7 @@ export function voiceInvite() {
   });
   list.addEventListener("change", e => {
     const input = /** @type {HTMLInputElement} */ (e.target);
-    if (input.dataset.invite !== "delay") return;
+    if (input.dataset.action !== "delay") return;
     const n = Math.round(Number(input.value));
     delay = Number.isFinite(n) ? Math.max(0, Math.min(MAX_DELAY, n)) : USUAL_DELAY;
   });

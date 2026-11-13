@@ -22,6 +22,6 @@ export function heading(text, more = "") {
 /** @param {string} what @param {string} does @param {string} [title] */
 export function act(what, does, title = "") {
   const b = el("button", { title }, what);
-  b.dataset.invite = does;
+  b.dataset.action = does;
   return b;
 }
