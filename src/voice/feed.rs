@@ -6,6 +6,7 @@ use crate::lock;
 use crate::matches::hub::{Hub, NamedPlayer, SharedHub, VoiceClock, publish};
 use crate::matches::live_demos::Spoken;
 use crate::voice::hold::{Said, Took, VoiceHold};
+use crate::voice::ids::account_of;
 use std::collections::BTreeMap;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
@@ -46,11 +47,6 @@ impl Speaker {
     fn key(&self) -> String {
         self.steamid.clone().unwrap_or_else(|| format!("{UNLINKED}{}", self.voice_id.as_deref().unwrap_or_default()))
     }
-}
-
-/// The account of `[U:1:<account>]`.
-fn account(steamid: &str) -> Option<u32> {
-    steamid.strip_prefix("[U:1:")?.strip_suffix(']')?.parse().ok()
 }
 
 /// How a speaker with no `SteamID` is named in the hold and on their lines.
@@ -344,7 +340,7 @@ impl VoiceFeed {
         let team = known.and_then(|k| st.channel_team(&hub, k.channel.as_deref()));
         let name = known.and_then(|k| k.name.clone());
         // A player's, said in the running game: what a demo with the comms in it is made of.
-        let slot = steamid.as_deref().filter(|_| player.is_some() && !pause).and_then(|s| Some((hub.slot_of(s)?, account(s)?)));
+        let slot = steamid.as_deref().filter(|_| player.is_some() && !pause).and_then(|s| Some((hub.slot_of(s)?, account_of(s)?)));
         drop(hub);
         if let Some((slot, account)) = slot {
             st.record_spoken(Spoken { tick, slot, account, frames: said.frames.clone() });

@@ -1,6 +1,6 @@
 //! Discord users and the Steam accounts they linked, as Discord says, kept in the store.
 
-use super::ids::is_snowflake;
+use super::ids::{STEAM64_BASE, is_snowflake};
 use crate::lock;
 use crate::maps::cache::write_atomic;
 use anyhow::{Context, Result, bail};
@@ -11,8 +11,6 @@ use std::time::Duration;
 
 /// How long Discord gets to answer.
 const TIMEOUT: Duration = Duration::from_secs(10);
-/// What Steam's 64-bit ids of people start from.
-const STEAM64_BASE: u64 = 76_561_197_960_265_728;
 const FILE: &str = "voice-links.json";
 
 pub(crate) struct Discord {

@@ -12,7 +12,7 @@ use super::{
 use crate::matches::sessions;
 use crate::matches::sessions::{Session, Sessions, Viewer};
 use crate::rooms::room::StartAt;
-use crate::{App, lock};
+use crate::{App, is_name, lock};
 use anyhow::{Result, anyhow};
 use std::fmt::Write as _;
 use std::io::{BufReader, Take};
@@ -274,7 +274,7 @@ pub(super) fn comms_demos(app: &App, sessions: &Sessions, id: &str) -> Vec<serde
     let Some(store) = sessions.store.as_ref().filter(|_| sessions::is_id(id)) else { return Vec::new() };
     crate::matches::live_demos::downloads(&store.dir, id)
         .into_iter()
-        .filter(|d| d.map.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-'))
+        .filter(|d| is_name(&d.map, b"_-"))
         .map(|d| {
             let href = format!("{}/w/{id}/demos/{}.dem", app.base, d.file);
             serde_json::json!({ "map": d.map, "mb": d.bytes.div_ceil(1 << 20), "href": href })

@@ -18,7 +18,7 @@
 //! hold everywhere as said. What a match's starter said holds in their match, and elsewhere is a
 //! suggestion: shown as one, and it never takes the place of the surer.
 
-use super::ids::{is_voice_id, parse_steamid};
+use super::ids::{is_snowflake, is_voice_id, parse_steamid};
 use crate::lock;
 use crate::maps::cache::write_atomic;
 use anyhow::{Context, Result};
@@ -283,7 +283,7 @@ impl WhoIsWho {
     /// Someone is in a channel: the sites are asked who they are, if they are a Discord user
     /// and were not asked about lately. What the sites say is known a little later.
     pub(crate) fn look_up(&self, who: &str) {
-        if self.0.sites.is_empty() || who.is_empty() || who.len() > 20 || !who.bytes().all(|b| b.is_ascii_digit()) {
+        if self.0.sites.is_empty() || !is_snowflake(who) {
             return;
         }
         {

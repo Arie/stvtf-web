@@ -12,9 +12,9 @@
 //! within a budget, to download with the comms written into it: [`downloads`], [`build`],
 //! [`sweep_kept`]. Till then it is downloaded under its `live-` name.
 
-use crate::lock;
 use crate::matches::loads::Loads;
 use crate::matches::sessions::{LIVE_PREFIX, age};
+use crate::{is_name, lock};
 use anyhow::{Context, Result, bail};
 use base64::Engine;
 use serde::{Deserialize, Serialize};
@@ -126,7 +126,7 @@ pub(crate) fn build(dir: &Path, id: &str, file: &str) -> Result<(String, Vec<u8>
         });
     }
     let map = map_of(&path).context("not a demo")?;
-    if !map.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-') {
+    if !is_name(&map, b"_-") {
         bail!("a map of that name");
     }
     let src = std::io::BufReader::new(File::open(&path)?);

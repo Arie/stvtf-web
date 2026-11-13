@@ -1,11 +1,16 @@
 //! Who someone is where they talk, and on Steam, as given.
 
 /// What Steam's 64-bit ids of people start from.
-const STEAM64_BASE: u64 = 76_561_197_960_265_728;
+pub(crate) const STEAM64_BASE: u64 = 76_561_197_960_265_728;
 
 /// A Discord id: digits.
 pub(crate) fn is_snowflake(s: &str) -> bool {
     !s.is_empty() && s.len() <= 20 && s.bytes().all(|b| b.is_ascii_digit())
+}
+
+/// The account of `SteamID` `[U:1:<account>]`.
+pub(crate) fn account_of(steamid: &str) -> Option<u32> {
+    steamid.strip_prefix("[U:1:")?.strip_suffix(']')?.parse().ok()
 }
 
 /// Who someone is where they talk, or the channel they are in there: a Discord id, or for
