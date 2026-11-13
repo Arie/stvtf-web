@@ -136,11 +136,11 @@ pub(super) fn match_timeline(s: &mut TcpStream, m: &Arc<Session>, request: &Requ
     }
     let part = r.watchable();
     // While the server changes map, the one just played, at its end; the match is live all the same.
-    let length = part.end.unwrap_or_else(|| r.length());
+    let length = part.last;
     // A live match's is at its end, once it ended too: only a replay plays from the start.
     let at = if m.watches_server() { length } else { lock(&m.hub).played.min(length) };
     let (live, rounds, marks) = (r.is_live(), r.rounds_in(part.n), r.marks(usize::MAX).1);
-    let (start, origin) = (part.shown, part.origin);
+    let (start, origin) = (part.start, part.origin);
     let body =
         serde_json::json!({ "at": at, "length": length, "start": start, "origin": origin, "live": live, "rounds": rounds, "marks": marks });
     respond(s, "200 OK", JSON, body.to_string().as_bytes())

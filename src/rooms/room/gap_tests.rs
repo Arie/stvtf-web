@@ -44,7 +44,7 @@ fn a_room_keeps_the_last_moment_showing_through_the_gap() {
     until("the room to say its map is over", || playback(&room)["over"] == true);
     let p = playback(&room);
     assert_eq!((p["map"].as_u64(), p["live"].as_bool()), (Some(0), Some(false)));
-    assert_eq!(p["maps"].as_array().unwrap().len(), 1, "a map with no name yet is not listed");
+    assert_eq!(p["maps"].as_array().unwrap().len(), 1, "a map with nothing shown yet is not one");
     shows_the_last_moment(&room);
     new_map_with_play(&rec, "cp_b");
     on_map(&room, 1);
@@ -58,6 +58,8 @@ fn a_room_following_live_goes_past_a_map_that_never_had_play() {
     let (room, rec) = live_room_at_live_on("cp_a");
     push_changing(&rec);
     push_server(&rec, "cp_b");
+    // A frozen frame of it, and nothing more.
+    push(&rec, &snapshot(68, None, Vec::new()), rec.length() + 50);
     push_changing(&rec);
     new_map_with_play(&rec, "cp_c");
     assert!(!rec.part(1).unwrap().ready && rec.part(2).unwrap().ready);
@@ -68,11 +70,12 @@ fn a_room_following_live_goes_past_a_map_that_never_had_play() {
 }
 
 #[test]
-fn a_map_with_no_name_yet_is_no_map_to_go_to() {
+fn a_map_that_showed_nothing_yet_is_no_map_to_go_to() {
     let rec = live_on("cp_a");
     push_changing(&rec);
+    push_server(&rec, "cp_b");
     let room = Room::start("r".into(), "me", rec.clone());
-    assert_eq!(rec.latest().map, "");
+    assert_eq!(rec.parts().len(), 1);
     assert_eq!(room.go(&MapPost { map: 1 }).unwrap_err().to_string(), "Map gone");
     assert_eq!(lock(&room.state).part, 0);
     room.stop();
@@ -85,7 +88,7 @@ fn a_room_following_live_stays_on_its_map_through_a_snapshot_late_behind_the_cha
     let stroke = || read_marker(br#"[{"stroke":1,"by":1,"points":[[0.0,0.0,0.0]]}]"#, 0).remove(&0).unwrap();
     lock(&room.marker).insert(0, stroke());
     push(&rec, &status("changelevel"), rec.length() + 100);
-    push(&rec, &snapshot(60, None, Vec::new()), rec.length() + 86);
+    push(&rec, &snapshot(130, None, Vec::new()), rec.length() + 86);
     push(&rec, &status("map_change"), rec.length() + 14);
     until("the room to say its map is over", || playback(&room)["over"] == true);
     new_map_with_play(&rec, "cp_b");
@@ -121,7 +124,7 @@ fn a_room_opened_in_the_gap_is_on_the_map_just_played() {
 fn a_room_rewound_to_the_end_of_the_map_just_played_shows_its_last_moment() {
     let rec = live_on("cp_a");
     push_changing(&rec);
-    let end = rec.parts()[0].end.unwrap();
+    let end = rec.parts()[0].last;
     for at in [end, u64::MAX] {
         let room = Room::start_at("r".into(), "me", rec.clone(), at, 1.0, true);
         settle(&room);
@@ -149,13 +152,13 @@ fn an_admin_moves_the_room_to_where_a_map_after_a_change_shows() {
     push_changing(&rec);
     new_map_with_play(&rec, "cp_c");
     let part = rec.part(1).unwrap();
-    assert!(part.shown > part.origin, "{part:?}");
+    assert_eq!(part.start, part.origin, "its first snapshot");
     // Paused: it stays where it lands.
     let room = Room::start_at("r".into(), "me", rec.clone(), rec.length(), 1.0, true);
     room.go(&MapPost { map: 1 }).unwrap();
     on_map(&room, 1);
     settle(&room);
-    assert_eq!(playback(&room)["at"].as_u64(), Some(part.shown));
+    assert_eq!(playback(&room)["at"].as_u64(), Some(part.start));
     assert!(lock(&room.hub).has_snapshot() && lock(&room.hub).map.as_deref() == Some("cp_b"), "its own map's first moment");
     assert_eq!(lock(&room.state).tick, Some(50), "and that map's tick");
     room.stop();
@@ -165,7 +168,7 @@ fn an_admin_moves_the_room_to_where_a_map_after_a_change_shows() {
 fn stvtf_output_saved_as_the_server_changed_map_ends_as_one_without_it() {
     let mut lines = String::new();
     for line in
-        [server("cp_a"), snapshot(50, None, Vec::new()), snapshot(60, None, Vec::new()), status("changelevel"), status("map_change")]
+        [server("cp_a"), snapshot(50, None, Vec::new()), snapshot(117, None, Vec::new()), status("changelevel"), status("map_change")]
     {
         lines += &serde_json::to_string(&line).unwrap();
         lines += "\n";
@@ -176,6 +179,6 @@ fn stvtf_output_saved_as_the_server_changed_map_ends_as_one_without_it() {
     until("the room to pause at the end", || playback(&room)["paused"] == true);
     let p = playback(&room);
     assert_eq!((p["map"].as_u64(), p["over"].as_bool(), p["live"].as_bool()), (Some(0), Some(false), Some(false)));
-    assert_eq!((p["maps"].as_array().unwrap().len(), p["at"].as_u64()), (1, rec.parts()[0].end));
+    assert_eq!((p["maps"].as_array().unwrap().len(), p["at"].as_u64()), (1, Some(rec.length())));
     room.stop();
 }

@@ -17,8 +17,7 @@ pub(crate) struct MapPost {
 impl Room {
     /// An admin moves the room to map `m.map`: at live on the latest, where it shows on another.
     pub(crate) fn go(&self, m: &MapPost) -> Result<()> {
-        // Not kept, or one the server is changing to, not named yet: nothing to show.
-        let Some(part) = self.recording.part(m.map).filter(|p| p.n == 0 || !p.map.is_empty()) else { bail!("Map gone") };
+        let Some(part) = self.recording.part(m.map) else { bail!("Map gone") };
         let mut st = lock(&self.state);
         // At live it follows again (`at_end`); anywhere else it waits at its map's end.
         (st.part, st.follows) = (part.n, false);
@@ -26,7 +25,7 @@ impl Room {
             (st.paused, st.seek) = (false, Some(self.recording.length()));
         } else {
             // Where its map shows: its first snapshot, nothing of the map before.
-            st.seek = Some(part.shown);
+            st.seek = Some(part.start);
         }
         self.wake.notify_all();
         Ok(())
@@ -44,7 +43,7 @@ impl Room {
             return false;
         }
         let Some(next) = self.recording.parts().into_iter().find(|p| p.n > st.part && p.ready) else { return false };
-        let at = next.end.unwrap_or_else(|| self.recording.length());
+        let at = self.end_of(&next).unwrap_or_else(|| self.recording.length());
         (st.part, st.paused, st.speed, st.seek) = (next.n, false, 1.0, Some(at));
         true
     }
@@ -54,17 +53,23 @@ impl Room {
         self.placed(st).0
     }
 
-    /// Whether the room waits at the end of a part that has a successor.
+    /// Whether the room waits at the end of its part: one that has a successor, or the server is
+    /// changing from while the match goes on.
     pub(super) fn part_over(&self, st: &State) -> bool {
-        self.recording.went_on_from(&self.part(st))
+        self.end_of(&self.part(st)).is_some()
+    }
+
+    /// Where `part` ends for a room on it: its last line not tail, once over.
+    fn end_of(&self, part: &Part) -> Option<u64> {
+        (part.over() && (part.end.is_some() || self.recording.is_live())).then_some(part.last)
     }
 
     /// Where the room may be, from where its part shows (its first snapshot, for one after
-    /// another: not the map before) to its end: none while it is the latest (it goes as far as the
+    /// another: not the map before) to its end: none while it goes on (it goes as far as the
     /// recording does).
     pub(super) fn reach(&self, st: &State) -> (u64, Option<u64>) {
         let part = self.part(st);
-        (part.shown, part.end)
+        (part.start, self.end_of(&part))
     }
 
     /// A room whose part was dropped (the trim) goes to the earliest kept, where it shows, paused:
@@ -72,7 +77,7 @@ impl Room {
     pub(super) fn rehome(&self, st: &mut State) {
         let (part, dropped) = self.placed(st);
         if dropped {
-            (st.part, st.paused, st.seek, st.follows) = (part.n, true, Some(part.shown), false);
+            (st.part, st.paused, st.seek, st.follows) = (part.n, true, Some(part.start), false);
         }
     }
 

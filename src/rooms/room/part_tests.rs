@@ -45,19 +45,22 @@ pub(super) fn playback(room: &Room) -> Value {
     last().unwrap()
 }
 
-/// A watched room on a live match, opened on `cp_a`; then `cp_b` comes, whose play time is returned.
+/// A watched room on a live match, opened on `cp_a`; then `cp_b` comes. The play time `cp_a` ends
+/// at for the room (its last line not tail) is returned.
 pub(super) fn live_room_then_new_map() -> (Arc<Room>, Arc<Recording>, u64) {
     let rec = Arc::new(Recording::live());
     push(&rec, &server("cp_a"), 0);
     push(&rec, &snapshot(50, None, Vec::new()), 500);
+    push(&rec, &snapshot(117, None, Vec::new()), 1000);
     push(&rec, &stalemate(), 2000);
     let room = Room::start("r".into(), "me", rec.clone());
     // Someone watches, without a page to drop.
     room.viewers.fetch_add(1, Ordering::Relaxed);
     push(&rec, &server("cp_b"), 2500);
     push(&rec, &snapshot(50, None, Vec::new()), 3000);
-    let origin = rec.latest().origin;
-    (room, rec, origin)
+    push(&rec, &snapshot(117, None, Vec::new()), 3500);
+    let last = rec.part(0).unwrap().last;
+    (room, rec, last)
 }
 
 /// `cp_a` for a minute, `cp_b` for hours (the trim drops `cp_a`), then `cp_c`; a room opened on
@@ -65,24 +68,31 @@ pub(super) fn live_room_then_new_map() -> (Arc<Room>, Arc<Recording>, u64) {
 pub(super) fn room_on_a_part_then_trimmed() -> (Arc<Room>, Arc<Recording>) {
     let rec = Arc::new(Recording::live());
     push(&rec, &server("cp_a"), 0);
+    push(&rec, &snapshot(50, None, Vec::new()), 500);
+    push(&rec, &snapshot(117, None, Vec::new()), 1000);
     push(&rec, &stalemate(), 60_000);
     let room = Room::start("r".into(), "me", rec.clone());
     // As a watched one at live would: unwatched, it plays nothing.
     lock(&room.state).follows = true;
     push(&rec, &server("cp_b"), 61_000);
+    // A frame of it, no play: a room following stays on `cp_a` till the trim drops that.
+    push(&rec, &snapshot(50, None, Vec::new()), 61_500);
     for s in 62..=4 * 3600 {
         push(&rec, &stalemate(), s * 1000);
     }
     push(&rec, &server("cp_c"), 4 * 3600 * 1000 + 1000);
+    push(&rec, &snapshot(50, None, Vec::new()), 4 * 3600 * 1000 + 1500);
+    push(&rec, &snapshot(117, None, Vec::new()), 4 * 3600 * 1000 + 2000);
     (room, rec)
 }
 
-/// `cp_a`, `cp_b`, `cp_a` again, a snapshot in each.
+/// `cp_a`, `cp_b`, `cp_a` again, play in each.
 fn two_maps_recording() -> Arc<Recording> {
     let rec = Arc::new(Recording::live());
     for (i, map) in ["cp_a", "cp_b", "cp_a"].into_iter().enumerate() {
         push(&rec, &server(map), i as u64 * 1000);
         push(&rec, &snapshot(50, None, Vec::new()), i as u64 * 1000 + 500);
+        push(&rec, &snapshot(117, None, Vec::new()), i as u64 * 1000 + 700);
     }
     rec
 }
@@ -167,7 +177,8 @@ fn the_relay_is_pointed_at_the_demo_of_the_rooms_load_of_the_map() {
     let (room, asked) = room_on_part_with_demo_of(2);
     let st = lock(&room.state);
     room.want(&st, room.offer.get().unwrap(), true);
-    assert_eq!(lock(&asked).last().map(|(map, again, _)| (map.as_str(), *again)), Some(("cp_a", 1)));
+    // The load within its name is not asked yet: the next step asks for the load's number.
+    assert_eq!(lock(&asked).last().map(|(map, again, _)| (map.as_str(), *again)), Some(("cp_a", 0)));
     drop(st);
     room.stop();
 }
@@ -186,10 +197,10 @@ fn a_seek_to_the_start_of_a_later_map_lands_where_it_shows() {
     let (room, asked) = room_on_part_with_demo_of(2);
     room.control(&Control { seek: Some(0), ..Control::default() }).unwrap();
     settle(&room);
-    let shown = room.recording.part(2).unwrap().shown;
+    let shown = room.recording.part(2).unwrap().start;
     let p = playback(&room);
     assert_eq!((p["at"].as_u64(), p["start"].as_u64(), p["paused"].as_bool()), (Some(shown), Some(shown), Some(true)));
-    shows_the_first_of(&room, &asked, "cp_a", 1);
+    shows_the_first_of(&room, &asked, "cp_a", 0);
     room.stop();
 }
 

@@ -122,8 +122,9 @@ impl Room {
     /// map just played, while the next has none: there it goes on with the match).
     pub(crate) fn start(id: String, owner: &str, recording: Arc<Recording>) -> Arc<Room> {
         let at = if recording.is_live() { recording.length() } else { 0 };
-        let part = recording.watchable().n;
-        let follows = recording.is_live() && part != recording.latest().n;
+        let (part, latest) = (recording.watchable().n, recording.latest());
+        // Opened while the server changes map: at the end, so it goes on with the match.
+        let follows = recording.is_live() && (part != latest.n || latest.over());
         let state = State { paused: false, speed: 1.0, at, seek: (at > 0).then_some(at), stop: false, tick: None, part, follows };
         Room::run(id, People::new(owner), None, None, state, recording)
     }

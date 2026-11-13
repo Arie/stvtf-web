@@ -100,6 +100,7 @@ fn while_the_server_changes_map_the_timeline_is_of_the_map_just_played() {
     let rec = m.recording().unwrap();
     publish(&m.hub, &server("cp_a"));
     publish(&m.hub, &crate::matches::hub::tests::snapshot(50, None, Vec::new()));
+    publish(&m.hub, &crate::matches::hub::tests::snapshot(117, None, Vec::new()));
     let stalemate = serde_json::from_str::<Line>(r#"{"type":"stalemate","tick":500}"#).unwrap();
     while rec.length() < 50 || !rec.latest().ready {
         publish(&m.hub, &stalemate);
@@ -108,10 +109,10 @@ fn while_the_server_changes_map_the_timeline_is_of_the_map_just_played() {
     for state in ["changelevel", "map_change"] {
         publish(&m.hub, &serde_json::from_str(&format!(r#"{{"type":"status","state":"{state}"}}"#)).unwrap());
     }
-    while rec.parts().len() < 2 {
+    while rec.latest().changing.is_none() {
         std::thread::sleep(Duration::from_millis(5));
     }
-    let end = rec.parts()[0].end.unwrap();
+    let end = rec.latest().last;
     let timeline = get(&app, &format!("/w/{}/timeline", m.id), "");
     // Still live: the page follows the match as before.
     for want in [format!(r#""at":{end}"#), format!(r#""length":{end}"#), r#""origin":0"#.into(), r#""live":true"#.into()] {

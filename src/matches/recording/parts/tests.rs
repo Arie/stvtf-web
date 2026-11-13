@@ -1,4 +1,4 @@
-use super::super::tests::{live_lines, push_at, to};
+use super::super::tests::{push_at, script, to};
 use super::super::*;
 use crate::matches::hub::tests::snapshot;
 use crate::testing::server;
@@ -9,24 +9,64 @@ pub(super) fn line(json: &str) -> Line {
     serde_json::from_str(json).unwrap()
 }
 
-/// `cp_a` for 24 s of play, then `cp_b`; the play time of the switch.
+pub(super) fn status(state: &str) -> Line {
+    line(&format!(r#"{{"type":"status","state":"{state}"}}"#))
+}
+
+/// Lines pushed at wall-clock times, seconds from [`T0`]: what the stream sends, when.
+pub(super) struct Stream<'a> {
+    pub(super) r: &'a Recording,
+    pub(super) s: f64,
+}
+
+impl Stream<'_> {
+    /// `line`, `after` seconds on; its play time.
+    pub(super) fn push(&mut self, after: f64, line: &Line) -> u64 {
+        self.s += after;
+        push_at(self.r, line, T0 + (self.s * 1000.0).round() as u64);
+        self.r.length()
+    }
+
+    pub(super) fn status(&mut self, after: f64, state: &str) -> u64 {
+        self.push(after, &status(state))
+    }
+
+    pub(super) fn server(&mut self, after: f64, map: &str) -> u64 {
+        self.push(after, &server(map))
+    }
+
+    pub(super) fn snapshot(&mut self, after: f64, tick: u32) -> u64 {
+        self.push(after, &snapshot(tick, None, Vec::new()))
+    }
+
+    /// Play: a snapshot a second, 67 ticks apart, from `from` for `seconds`; the last's play time.
+    pub(super) fn play(&mut self, from: u32, seconds: u32) -> u64 {
+        let mut at = self.r.length();
+        for s in 0..seconds {
+            at = self.snapshot(1.0, from + s * 67);
+        }
+        at
+    }
+
+    /// Signon to `map`: `new`, its server line, `prespawn`, `spawn`, `full`; the server line's
+    /// play time.
+    pub(super) fn signon(&mut self, after: f64, map: &str) -> u64 {
+        self.status(after, "new");
+        let at = self.server(0.0, map);
+        self.status(1.9, "prespawn");
+        self.status(0.05, "spawn");
+        self.push(0.02, &line(&format!(r#"{{"type":"status","state":"full","map":"{map}"}}"#)));
+        at
+    }
+}
+
+/// `cp_a` for 24 s of play, then `cp_b`'s server line; the play time of that line.
 fn two_maps() -> (Recording, u64) {
-    two_maps_to(Box::new(|_: &Save| {}))
-}
-
-/// A round started and won, a second apart, from `time`.
-fn a_round(r: &Recording, time: u64) {
-    push_at(r, &line(r#"{"type":"round_start","full_reset":false,"tick":5}"#), time);
-    push_at(r, &line(r#"{"type":"round_win","tick":5,"team":"red","reason":1,"round_time":9.0}"#), time + 1000);
-}
-
-fn two_maps_with_a_round_and_a_win_each() -> (Recording, u64) {
     let r = Recording::live();
     push_at(&r, &server("cp_a"), T0);
-    a_round(&r, T0 + 1000);
-    push_at(&r, &server("cp_b"), T0 + 3000);
-    a_round(&r, T0 + 4000);
-    (r, 3000)
+    let time = snapshots(&r, 50, 2350, T0 + 500);
+    push_at(&r, &server("cp_b"), time);
+    (r, time - T0)
 }
 
 /// Snapshots of ticks `from` to `to`, half a second apart from `time`; the time after.
@@ -38,47 +78,78 @@ pub(super) fn snapshots(r: &Recording, from: u32, to: u32, mut time: u64) -> u64
     time
 }
 
-/// `cp_a` ticks 50..=1650, a Server line for `cp_a`, ticks going on from `again`.
-fn cp_a_twice(again: u32) -> Recording {
+/// `cp_a`, then `cp_b` from a server line on, each with play and a round started and won.
+fn two_maps_with_a_round_each() -> (Recording, u64) {
     let r = Recording::live();
     push_at(&r, &server("cp_a"), T0);
-    let time = snapshots(&r, 50, 1650, T0 + 500);
-    push_at(&r, &server("cp_a"), time);
-    snapshots(&r, again, again + 500, time + 500);
-    r
+    let time = snapshots(&r, 50, 500, T0 + 500);
+    a_round(&r, time);
+    push_at(&r, &server("cp_b"), time + 2000);
+    let time = snapshots(&r, 50, 500, time + 2500);
+    a_round(&r, time);
+    let origin = r.latest().origin;
+    (r, origin)
 }
 
-fn reconnected() -> Recording {
-    cp_a_twice(1700)
-}
-
-fn reloaded() -> Recording {
-    cp_a_twice(50)
-}
-
-fn two_maps_the_second_with_only_its_server_line() -> Recording {
-    two_maps().0
-}
-
-fn push_snapshot(r: &Recording, tick: u32) {
-    push_at(r, &snapshot(tick, None, Vec::new()), T0 + r.length() + 500);
+/// A round started and won, a second apart, from `time`.
+fn a_round(r: &Recording, time: u64) {
+    push_at(r, &line(r#"{"type":"round_start","full_reset":false,"tick":5}"#), time);
+    push_at(r, &line(r#"{"type":"round_win","tick":5,"team":"red","reason":1,"round_time":9.0}"#), time + 1000);
 }
 
 #[test]
-fn a_new_map_starts_a_part_and_keeps_the_one_before() {
+fn a_recording_of_plain_lines_is_one_part() {
+    let r = Recording::read(script(1650).as_bytes(), "test").unwrap();
+    let part = r.latest();
+    assert_eq!(r.parts(), std::slice::from_ref(&part));
+    assert_eq!((part.n, part.origin, part.start, part.last), (0, 0, 0, r.length()));
+    assert!(!part.over() && part.map.is_empty());
+    assert_eq!(
+        Recording::default().latest(),
+        Part {
+            n: 0,
+            map: String::new(),
+            origin: 0,
+            start: 0,
+            last: 0,
+            end: None,
+            changing: None,
+            tail: None,
+            ready: false,
+            first_tick: None
+        }
+    );
+}
+
+#[test]
+fn a_new_map_starts_a_part_at_its_first_snapshot() {
     let (r, at) = two_maps();
+    assert_eq!(r.parts().len(), 1, "a server line alone shows nothing of it");
+    assert_eq!(r.latest().map, "cp_a");
+    push_at(&r, &snapshot(50, None, Vec::new()), T0 + at + 500);
     let parts = r.parts();
-    assert_eq!(parts.iter().map(|p| (p.n, p.map.as_str(), p.again)).collect::<Vec<_>>(), [(0, "cp_a", 0), (1, "cp_b", 0)]);
-    assert_eq!((parts[0].origin, parts[0].end), (0, Some(at)));
-    assert_eq!((parts[1].origin, parts[1].end), (at, None));
+    assert_eq!(parts.iter().map(|p| (p.n, p.map.as_str())).collect::<Vec<_>>(), [(0, "cp_a"), (1, "cp_b")]);
+    assert_eq!((parts[0].end, parts[1].origin, parts[1].first_tick), (Some(at + 500), at + 500, Some(50)));
+    assert_eq!(parts[0].last, at - 500, "its last line that is play: the server line is the next map's");
     assert_eq!(r.start(), 0, "nothing is dropped");
-    assert_eq!(r.latest().origin, at, "the latest map's");
-    assert!(r.seek(at - 1, None).0.map.as_deref() == Some("cp_a") && r.seek(at, None).0.map.as_deref() == Some("cp_b"));
+    let (hub, ..) = r.seek(at + 500, None);
+    assert_eq!((hub.map.as_deref(), hub.tick()), (Some("cp_b"), Some(50)), "a seek to its origin has its first snapshot");
+}
+
+#[test]
+fn a_part_is_ready_a_second_of_ticks_past_its_first_snapshot() {
+    let r = Recording::live();
+    push_at(&r, &server("cp_a"), T0);
+    push_at(&r, &snapshot(50, None, Vec::new()), T0 + 500);
+    push_at(&r, &snapshot(100, None, Vec::new()), T0 + 1000);
+    assert!(!r.latest().ready);
+    push_at(&r, &snapshot(117, None, Vec::new()), T0 + 1500);
+    assert!(r.latest().ready);
 }
 
 #[test]
 fn rounds_and_marks_are_their_parts() {
-    let (r, at) = two_maps_with_a_round_and_a_win_each();
+    let (r, at) = two_maps_with_a_round_each();
     assert_eq!((r.rounds_in(0).len(), r.rounds_in(1).len()), (1, 1));
     assert!(r.rounds_in(0).iter().all(|t| *t < at) && r.rounds_in(1).iter().all(|t| *t >= at));
     let (first, all) = r.marks_in(0, 0);
@@ -89,47 +160,55 @@ fn rounds_and_marks_are_their_parts() {
 }
 
 #[test]
-fn the_same_map_loaded_again_is_another_part_and_a_reconnect_is_not() {
-    assert_eq!(reconnected().parts().len(), 1);
-    let parts = reloaded().parts();
-    assert_eq!(parts.iter().map(|p| (p.map.as_str(), p.again)).collect::<Vec<_>>(), [("cp_a", 0), ("cp_a", 1)]);
+fn a_round_in_a_tail_is_no_parts() {
+    // No frozen frame: the next map's round starts before its first snapshot.
+    let r = Recording::live();
+    let mut s = Stream { r: &r, s: 0.0 };
+    s.server(0.0, "cp_a");
+    s.play(50, 5);
+    s.status(1.0, "changelevel");
+    s.signon(5.0, "cp_b");
+    let round = s.push(1.0, &line(r#"{"type":"round_start","full_reset":false,"tick":5}"#));
+    s.play(70, 3);
+    assert_eq!(r.parts().len(), 2);
+    assert!(r.part(0).unwrap().tail.is_some_and(|tail| tail < round) && r.latest().origin > round);
+    assert_eq!((r.rounds_in(0), r.rounds_in(1)), (vec![], vec![]));
+    assert!(r.part(0).unwrap().last < r.part(0).unwrap().tail.unwrap(), "an event in its tail is not where it ends");
 }
 
 #[test]
-fn a_part_is_ready_at_its_first_snapshot() {
-    let r = two_maps_the_second_with_only_its_server_line();
-    assert!(!r.latest().ready);
-    push_snapshot(&r, 50);
-    assert!(r.latest().ready);
-    assert_eq!(r.parts().len(), 2, "the new map's ticks start over without starting a part");
-}
-
-#[test]
-fn a_recording_without_a_server_line_has_a_nameless_part() {
-    let r = Recording::read(r#"{"type":"stalemate","tick":50}"#.as_bytes(), "test").unwrap();
-    assert_eq!((r.latest().n, r.latest().map.as_str()), (0, ""));
-    assert_eq!(
-        Recording::default().latest(),
-        Part { n: 0, map: String::new(), again: 0, origin: 0, start: 0, shown: 0, end: None, ready: false }
-    );
+fn ticks_starting_over_on_the_same_map_start_a_part_and_a_chunk() {
+    let r = Recording::live();
+    push_at(&r, &server("cp_a"), T0);
+    let time = snapshots(&r, 50, 1650, T0 + 500);
+    snapshots(&r, 50, 500, time);
+    let part = r.latest();
+    assert_eq!((r.parts().len(), part.n, part.map.as_str(), part.first_tick), (2, 1, "cp_a", Some(50)));
+    assert_eq!(r.part(0).unwrap().tail, None, "no server line: no tail");
+    let (hub, i, played) = r.seek(part.origin, None);
+    assert_eq!((played, r.chunk(i).unwrap()[0].0), (1, part.origin), "its origin is the start of a chunk");
+    assert_eq!(hub.tick(), Some(50), "and a seek there has its first snapshot, not the one before");
 }
 
 #[test]
 fn a_part_trimmed_away_is_dropped_and_its_number_stays_used() {
     let r = Recording::live();
     push_at(&r, &server("cp_a"), T0);
+    push_at(&r, &snapshot(50, None, Vec::new()), T0 + 500);
     let stalemate = line(r#"{"type":"stalemate","tick":5}"#);
     for s in 1..=60 {
         push_at(&r, &stalemate, T0 + s * 1000);
     }
     push_at(&r, &server("cp_b"), T0 + 61_000);
+    push_at(&r, &snapshot(50, None, Vec::new()), T0 + 61_500);
     for s in 62..=(KEEP_MS + TRIM_MS) / 1000 + 100 {
         push_at(&r, &stalemate, T0 + s * 1000);
     }
     assert_eq!(r.parts().iter().map(|p| p.n).collect::<Vec<_>>(), [1]);
     assert!(r.part(0).is_none() && r.part(1).is_some());
-    assert_eq!(r.part(1).map(|p| (p.origin, p.start)), Some((61_000, r.start())), "its first line kept is the recording's");
+    assert_eq!(r.part(1).map(|p| (p.origin, p.start)), Some((61_500, r.start())), "its first line kept is the recording's");
     push_at(&r, &server("cp_c"), T0 + 99_999_000);
+    push_at(&r, &snapshot(50, None, Vec::new()), T0 + 99_999_500);
     assert_eq!(r.latest().n, 2);
 }
 
@@ -144,125 +223,8 @@ fn a_new_part_does_not_rewrite_the_file() {
         file(save);
     }));
     push_at(&r, &server("cp_a"), T0);
-    let time = live_lines(&r, 45, T0 + 500);
-    push_at(&r, &server("cp_b"), time);
-    live_lines(&r, 45, time + 500);
-    assert_eq!((r.parts().len(), *lock(&rewrites)), (2, 0));
-}
-
-impl Recording {
-    /// The parts as a resume can know them: none begun in the open chunk, the last one unended.
-    pub(super) fn parts_closed(&self) -> Vec<Part> {
-        let inner = lock(&self.inner);
-        let open = if inner.open.is_empty() { u64::MAX } else { inner.chunks.last().map_or(u64::MAX, |c| c.start) };
-        let mut parts: Vec<Part> = inner.part_list().into_iter().filter(|p| p.origin < open).collect();
-        if let Some(p) = parts.last_mut() {
-            p.end = None;
-        }
-        parts
-    }
-}
-
-/// What the file holds now.
-pub(super) fn file_of(r: &Recording) -> Vec<u8> {
-    lock(&r.inner).file().unwrap()
-}
-
-/// A file as the version before parts wrote it: only `origin`, `marks` and `hub` in the header.
-fn old_file() -> Vec<u8> {
-    let r = Recording::live();
-    push_at(&r, &server("cp_a"), T0);
-    live_lines(&r, 45, T0 + 500);
-    let mut gz = GzEncoder::new(Vec::new(), Compression::default());
-    let inner = lock(&r.inner);
-    let hub: Vec<_> = inner.chunks[0].hub.state().collect();
-    write!(gz, "origin\t0\nmarks\t0\n").unwrap();
-    for state in hub {
-        writeln!(gz, "hub\t{state}").unwrap();
-    }
-    let mut file = gz.finish().unwrap();
-    file.extend_from_slice(&inner.chunks[0].lines);
-    file
-}
-
-fn two_maps_to(sink: Sink) -> (Recording, u64) {
-    let r = Recording::live_to(sink);
-    push_at(&r, &server("cp_a"), T0);
-    let time = live_lines(&r, 47, T0 + 500);
-    push_at(&r, &server("cp_b"), time);
-    (r, time - T0)
-}
-
-/// Maps `(name, minutes in it)` one after another, a stalemate a second, till 3 h 11 min of play.
-fn long(maps: &[(&str, u64)]) -> Recording {
-    let r = Recording::live();
-    let stalemate = line(r#"{"type":"stalemate","tick":5}"#);
-    let mut at = 0;
-    for (map, minutes) in maps {
-        push_at(&r, &server(map), T0 + at);
-        let end = at + minutes * 60_000;
-        for s in (at / 1000 + 1)..=(end / 1000) {
-            push_at(&r, &stalemate, T0 + s * 1000);
-        }
-        at = end;
-    }
-    r
-}
-
-/// `cp_a` for 10 minutes, `cp_b` until 3 h 11 min of play in all.
-fn long_two_maps() -> Recording {
-    long(&[("cp_a", 10), ("cp_b", 181)])
-}
-
-#[test]
-fn a_resumed_recording_has_the_parts_it_had() {
-    let saved = Arc::default();
-    let (r, _) = two_maps_to(to(&saved));
-    let again = Recording::resume(lock(&saved).as_slice(), to(&saved)).unwrap();
-    assert_eq!(again.parts(), r.parts_closed(), "all but what the open chunk held");
-    assert_eq!(again.marks(0).1, r.marks(0).1);
-}
-
-#[test]
-fn the_trim_drops_a_part_with_nothing_left_and_its_number_stays_gone() {
-    let r = long_two_maps();
-    let parts = r.parts();
-    assert_eq!(parts.iter().map(|p| p.n).collect::<Vec<_>>(), [1]);
-    assert_eq!(r.part(0), None);
-    assert!(parts[0].start > parts[0].origin, "its own start is trimmed too");
-    let again = Recording::resume(file_of(&r).as_slice(), Box::new(|_: &Save| {})).unwrap();
-    assert_eq!(again.latest().n, 1, "numbers go on past the dropped");
-    assert_eq!(again.latest().origin, parts[0].origin, "and so does where the map began");
-    assert_eq!(again.latest().start, parts[0].start);
-}
-
-#[test]
-fn loads_dropped_still_count_after_a_restart() {
-    let r = long(&[("cp_a", 5), ("cp_b", 4), ("cp_a", 182)]);
-    assert_eq!(r.parts().iter().map(|p| (p.n, p.again)).collect::<Vec<_>>(), [(2, 1)]);
-    let again = Recording::resume(file_of(&r).as_slice(), Box::new(|_: &Save| {})).unwrap();
-    assert_eq!((again.latest().n, again.latest().map.as_str(), again.latest().again), (2, "cp_a", 1));
-    let t = T0 + again.length() + 1000;
-    push_at(&again, &server("cp_b"), t);
-    assert_eq!((again.latest().n, again.latest().again), (3, 1));
-}
-
-#[test]
-fn a_file_from_before_parts_is_one_part() {
-    let again = Recording::resume(old_file().as_slice(), Box::new(|_: &Save| {})).unwrap();
-    assert_eq!(again.parts().len(), 1);
-    assert_eq!((again.latest().n, again.latest().map.as_str()), (0, "cp_a"));
-}
-
-#[test]
-fn ticks_starting_over_on_the_same_map_start_a_chunk_of_their_own() {
-    let r = Recording::live();
-    push_at(&r, &server("cp_a"), T0);
     let time = snapshots(&r, 50, 1650, T0 + 500);
-    snapshots(&r, 50, 500, time);
-    let part = r.latest();
-    assert_eq!((r.parts().len(), part.n), (2, 1));
-    let (hub, i, played) = r.seek(part.origin, None);
-    assert_eq!((played, r.chunk(i).unwrap()[0].0), (1, part.origin), "its origin is the start of a chunk");
-    assert_eq!(hub.tick(), Some(50), "and a seek there has its first snapshot, not the one before");
+    push_at(&r, &server("cp_b"), time);
+    snapshots(&r, 50, 1650, time + 500);
+    assert_eq!((r.parts().len(), *lock(&rewrites)), (2, 0));
 }

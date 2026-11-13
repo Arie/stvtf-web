@@ -10,11 +10,12 @@ use crate::matches::hub::{subscribe, tests::snapshot};
 use crate::testing::server;
 use serde_json::Value;
 
-/// A live match on `map`, 200 ms of it so far.
+/// A live match on `map`, 200 ms of it so far, with play.
 pub(super) fn live_on(map: &str) -> Arc<Recording> {
     let rec = Arc::new(Recording::live());
     push(&rec, &server(map), 0);
     push(&rec, &snapshot(50, None, Vec::new()), 50);
+    push(&rec, &snapshot(117, None, Vec::new()), 100);
     push(&rec, &stalemate(), 200);
     rec
 }
@@ -30,12 +31,17 @@ pub(super) fn live_room_at_live_on(map: &str) -> (Arc<Room>, Arc<Recording>) {
 
 /// The server changes map to `map`: no play of it yet.
 pub(super) fn push_server(rec: &Recording, map: &str) {
-    push(rec, &server(map), rec.length() + 100);
+    let at = rec.length() + 100;
+    for state in ["changelevel", "map_change"] {
+        push(rec, &serde_json::from_str(&format!(r#"{{"type":"status","state":"{state}"}}"#)).unwrap(), at);
+    }
+    push(rec, &server(map), at);
 }
 
-/// A snapshot at `tick`: the latest map has play.
+/// A snapshot at `tick`, and one a second of ticks on: the latest map has play.
 pub(super) fn push_snapshot(rec: &Recording, tick: u32) {
     push(rec, &snapshot(tick, None, Vec::new()), rec.length() + 50);
+    push(rec, &snapshot(tick + 67, None, Vec::new()), rec.length() + 50);
 }
 
 pub(super) fn new_map_with_play(rec: &Recording, map: &str) {
@@ -179,7 +185,7 @@ fn an_admin_moves_the_room_to_the_latest_map_at_live_and_to_an_earlier_one_at_it
     room.control(&Control { paused: Some(true), ..Control::default() }).unwrap();
     push_snapshot(&rec, 50);
     assert_eq!(looked(&room), 0);
-    let at = rec.latest().origin;
+    let at = rec.part(0).unwrap().last;
     room.go(&MapPost { map: 1 }).unwrap();
     on_map(&room, 1);
     settle(&room);

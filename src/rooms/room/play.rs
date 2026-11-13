@@ -122,18 +122,18 @@ impl Room {
     }
 
     pub(super) fn announce(&self, st: &State) {
-        let (part, over) = (self.part(st), self.part_over(st));
-        // A map with no name yet is not one a page lists.
-        let named = self.recording.parts().into_iter().filter(|p| !p.map.is_empty());
-        let maps: Vec<_> = named.map(|p| serde_json::json!({ "n": p.n, "map": p.map, "ready": p.ready })).collect();
+        let (part, (_, end)) = (self.part(st), self.reach(st));
+        let over = end.is_some();
+        let maps: Vec<_> =
+            self.recording.parts().into_iter().map(|p| serde_json::json!({ "n": p.n, "map": p.map, "ready": p.ready })).collect();
         let line = serde_json::json!({
             "type": "playback",
             "paused": st.paused,
             "speed": st.speed,
             "at": st.at,
-            "length": part.end.unwrap_or_else(|| self.recording.length()),
+            "length": end.unwrap_or_else(|| self.recording.length()),
             // Where its map shows from (what is kept of it), and where the map began.
-            "start": part.shown,
+            "start": part.start,
             "origin": part.origin,
             "rounds": self.recording.rounds_in(part.n),
             "live": self.recording.is_live() && !over,
@@ -180,10 +180,10 @@ impl Room {
                 continue;
             }
             cur.refill(rec);
-            // No line is played at or past the end of its map; looked at after the lines, so a
-            // line seen has its part.
+            // No line is played past the end of its map; looked at after the lines, so a line seen
+            // has its part.
             let (_, end) = self.reach(&st);
-            let Some(t) = cur.lines.front().map(|l| l.0).filter(|t| end.is_none_or(|end| *t < end)) else {
+            let Some(t) = cur.lines.front().map(|l| l.0).filter(|t| end.is_none_or(|end| *t <= end)) else {
                 st = self.at_end(st, end);
                 clock = None;
                 continue;

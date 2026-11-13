@@ -3,8 +3,6 @@
 //! (the server's ticks started over: the same map loaded again). A server line naming the latest
 //! load's map, its ticks going on after, is no new load (a reconnect, a repeated announcement).
 
-#![allow(dead_code, reason = "for the recording and the demos' recorder")]
-
 use serde::{Deserialize, Serialize};
 
 /// Which load of the match a snapshot is of: one rule for the recording and the demos.
@@ -49,6 +47,7 @@ impl Loads {
     }
 
     /// The load a demo whose first frame is at `first_tick` of `map` will be of (nothing changes).
+    #[cfg_attr(not(test), expect(dead_code, reason = "for the demos' recorder"))]
     pub(crate) fn would_be(&self, map: &str, first_tick: u32) -> usize {
         let new = self.map.as_deref() != Some(map) || self.last_tick.is_some_and(|last| first_tick < last);
         self.n + usize::from(self.begun && new)

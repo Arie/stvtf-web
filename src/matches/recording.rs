@@ -11,13 +11,13 @@ pub(crate) use parts::Part;
 
 use crate::lock;
 use crate::matches::hub::{Hub, SharedHub, publish};
+use crate::matches::loads::Loads;
 use crate::matches::replay::{Clock, read_line};
 use anyhow::{Result, bail};
 use flate2::Compression;
 use flate2::read::GzDecoder;
 use flate2::write::GzEncoder;
 use serde::Serialize;
-use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -70,13 +70,9 @@ struct Inner {
     marks: Vec<Mark>,
     /// The latest score and when, for the next round won.
     scores: Option<(u64, [u16; 2])>,
-    /// The match's map loads, those kept, oldest first; dropped ones before are counted.
-    parts: Vec<parts::PartStart>,
-    parts_dropped: usize,
-    /// Loads so far of each map, dropped parts too.
-    names: HashMap<String, usize>,
-    /// The tick of the latest snapshot of the part going on.
-    last_tick: Option<u32>,
+    /// The match's map loads, and its parts kept, oldest first.
+    loads: Loads,
+    parts: Vec<parts::Kept>,
 }
 
 /// A score and a round won this close (ms) belong together, either first.
@@ -98,8 +94,9 @@ pub(crate) struct Mark {
 struct Chunk {
     /// Play time of its first line.
     start: u64,
-    /// The hub just before it.
+    /// The hub just before it, and the parts.
     hub: Hub,
+    seed: parts::Seed,
     /// Gzipped `{at}\t{json}\n` lines, once closed.
     lines: Vec<u8>,
 }
@@ -142,7 +139,7 @@ impl Inner {
     /// Drops the chunks before play time `before`, and the marks and rounds before what is left;
     /// the round going on stays.
     fn trim(&mut self, before: u64) {
-        let n = self.cut_at(self.chunks.partition_point(|c| c.start < before).min(self.chunks.len().saturating_sub(1)));
+        let n = self.chunks.partition_point(|c| c.start < before).min(self.chunks.len().saturating_sub(1));
         self.chunks.drain(..n);
         self.dropped += n;
         self.start = self.chunks.first().map_or(self.start, |c| c.start);
@@ -157,8 +154,8 @@ impl Inner {
     /// The file: a header (with the match as it was at the first chunk), then the closed chunks.
     fn file(&self) -> Result<Vec<u8>> {
         let mut gz = GzEncoder::new(Vec::new(), Compression::default());
-        writeln!(gz, "origin\t{}\nmarks\t{}", self.first_origin(), self.marks_dropped)?;
-        gz.write_all(self.parts_header().as_bytes())?;
+        writeln!(gz, "marks\t{}", self.marks_dropped)?;
+        gz.write_all(self.parts_header()?.as_bytes())?;
         for line in self.chunks.first().into_iter().flat_map(|c| c.hub.state()) {
             writeln!(gz, "hub\t{line}")?;
         }
@@ -187,34 +184,28 @@ impl Inner {
     /// Line `text`, read as `stamped`, at play time `at`; what the file gets, if anything.
     fn add(&mut self, at: u64, stamped: &Stamped, text: &str) -> Result<Option<Save>> {
         let mut save = None;
-        let new_part = self.begin_part(at, &stamped.line);
-        // A new map's chunk starts from its first line (its server line, or the status saying the
-        // map changes), so a seek to its origin lands past the old map.
-        let published = new_part && matches!(stamped.line, Line::Server(_) | Line::Status(_));
-        if published {
-            publish(&self.scratch, &stamped.line);
-        }
+        // A part's chunk starts at its first snapshot: its checkpoint holds its map as announced.
+        let new_part = self.starts_part(&stamped.line);
         if self.fresh || new_part || self.chunks.last().is_none_or(|c| at >= c.start + CHUNK_MS) {
             if self.close()? {
                 save = self.chunks.last().map(|c| Save::Add(c.lines.clone()));
             }
             let hub = lock(&self.scratch).checkpoint();
-            self.chunks.push(Chunk { start: at, hub, lines: Vec::new() });
+            self.chunks.push(Chunk { start: at, hub, seed: self.seed(), lines: Vec::new() });
             self.fresh = false;
             if at.saturating_sub(self.start) > KEEP_MS + TRIM_MS {
                 self.trim(at - KEEP_MS);
                 save = Some(Save::All(self.file()?));
             }
         }
+        self.take(at, &stamped.line);
         if matches!(stamped.line, Line::RoundStart(_)) {
             self.rounds.push(at);
         }
         self.open.push(format!("{at}\t{text}"));
         self.count += 1;
         self.mark(at, &stamped.line);
-        if !published {
-            publish(&self.scratch, &stamped.line);
-        }
+        publish(&self.scratch, &stamped.line);
         Ok(save)
     }
 }
@@ -258,29 +249,27 @@ impl Recording {
         let r = Recording::live();
         {
             let mut inner = lock(&r.inner);
-            let (mut at, mut cut, mut origin) = (0, false, None);
+            let (mut at, mut cut, mut header) = (0, false, Some(parts::Header::default()));
             for text in BufReader::new(flate2::read::MultiGzDecoder::new(saved)).lines() {
                 let text = text?;
                 let Some((key, value)) = text.split_once('\t') else { bail!("not a recording") };
                 match key {
-                    "origin" => origin = Some(value.parse()?),
                     "marks" => inner.marks_dropped = value.parse()?,
-                    "parts" | "loads" => inner.read_header(key, value)?,
                     "hub" => publish(&inner.scratch, &serde_json::from_str(value)?),
+                    _ if header.as_mut().map(|h| h.read(key, value)).transpose()?.unwrap_or(false) => {}
                     _ => {
                         at = key.parse()?;
-                        if inner.chunks.is_empty() {
+                        if let Some(header) = header.take() {
                             inner.start = at;
+                            inner.seed_from(header, at);
                         }
                         cut |= matches!(inner.add(at, &serde_json::from_str(value)?, value)?, Some(Save::All(_)));
-                        if let Some(origin) = origin.take() {
-                            inner.begin_at(origin);
-                        }
                     }
                 }
             }
             inner.close()?;
             inner.clock.resume(at);
+            inner.drop_parts();
             inner.start = inner.chunks.first().map_or(inner.start, |c| c.start);
             inner.fresh = true;
             // A file trimmed as it was read: its remains are the file.
@@ -371,15 +360,19 @@ impl Recording {
     }
 
     /// The hub just before play time `at` (the start, if before), the chunk it is in, and how
-    /// many of its lines are before it; in a map that ends at `end`, at or past it, the map's last
-    /// moment. Where a map shows from its first snapshot, with that snapshot: not the map before.
-    pub(crate) fn seek(&self, at: u64, end: Option<u64>) -> (Hub, usize, usize) {
+    /// many of its lines are before it; in a map over whose last line not tail is at `last`, at
+    /// or past it, the map's last moment, with that line. At a part's first snapshot, with it.
+    pub(crate) fn seek(&self, at: u64, last: Option<u64>) -> (Hub, usize, usize) {
         let (i, hub, at, with_at) = {
             let inner = lock(&self.inner);
-            let at = at.max(inner.start).min(end.unwrap_or(u64::MAX));
-            let i = inner.chunks.partition_point(|c| c.start <= at && end.is_none_or(|end| c.start < end)).saturating_sub(1);
+            let at = at.max(inner.start);
+            let (at, with_at) = match last {
+                Some(last) if at >= last => (last, true),
+                _ => (at, inner.first_snapshot_at(at)),
+            };
+            let i = inner.chunks.partition_point(|c| c.start <= at).saturating_sub(1);
             let Some(chunk) = inner.chunks.get(i) else { return (Hub::default(), inner.dropped, 0) };
-            (inner.dropped + i, chunk.hub.checkpoint(), at, inner.first_snapshot_at(at))
+            (inner.dropped + i, chunk.hub.checkpoint(), at, with_at)
         };
         let scratch = Arc::new(Mutex::new(hub));
         let lines = self.chunk(i).unwrap_or_default();
