@@ -11,6 +11,7 @@ use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
+use std::time::{Duration, SystemTime};
 
 /// A file per match, so the containers of a deploy, briefly running side by side, never write
 /// over each other's list. Encrypted with the token key when there is one.
@@ -130,9 +131,20 @@ impl Store {
         self.path(name).exists()
     }
 
+    /// Forgets the files `which` names that were not written or touched for `max_age`.
+    pub(crate) fn forget_older_than(&self, max_age: Duration, which: impl Fn(&str) -> bool) {
+        let Ok(entries) = std::fs::read_dir(&self.dir) else { return };
+        for entry in entries.flatten() {
+            let name = entry.file_name().to_string_lossy().into_owned();
+            if which(&name) && age(&entry).is_ok_and(|a| a > max_age) {
+                self.forget(&name);
+            }
+        }
+    }
+
     /// Marks `name` as in use now, so a sweep of old files leaves it.
     pub(crate) fn touch(&self, name: &str) {
-        let _ = std::fs::File::options().write(true).open(self.path(name)).and_then(|f| f.set_modified(std::time::SystemTime::now()));
+        let _ = std::fs::File::options().write(true).open(self.path(name)).and_then(|f| f.set_modified(SystemTime::now()));
     }
 
     /// What `put` wrote as `name`.
@@ -172,6 +184,37 @@ pub(crate) fn demo_dem(demo: u64) -> String {
 /// What a demos.tf demo decodes to (gzipped stvtf output), kept for the next to play it.
 pub(crate) fn demo_output(demo: u64) -> String {
     format!("{DEMO_PREFIX}{demo}.gz")
+}
+
+/// How long ago a file in the store was written or touched.
+pub(crate) fn age(entry: &std::fs::DirEntry) -> std::io::Result<Duration> {
+    entry.metadata()?.modified().map(|t| SystemTime::now().duration_since(t).unwrap_or_default())
+}
+
+/// Whether `name` is a demos.tf demo's file kept for the next to play it: not one half fetched.
+pub(crate) fn is_kept_demo(name: &str) -> bool {
+    name.starts_with(DEMO_PREFIX) && std::path::Path::new(name).extension().is_none_or(|e| e != "part")
+}
+
+/// Drops the demos.tf demos' files in `dir` not played for `max_age`, and the longest unplayed
+/// past `budget` bytes of them; not one played within `fresh` (a match or a room may be on it).
+pub(crate) fn sweep_demos(dir: &std::path::Path, max_age: Duration, budget: u64, fresh: Duration) {
+    let mut kept: Vec<(Duration, u64, PathBuf)> = std::fs::read_dir(dir)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter(|e| is_kept_demo(&e.file_name().to_string_lossy()))
+        .filter_map(|e| Some((age(&e).ok()?, e.metadata().ok()?.len(), e.path())))
+        .collect();
+    kept.sort_by_key(|(age, ..)| *age);
+    let mut total = 0;
+    for (age, bytes, path) in kept {
+        total += bytes;
+        if age > fresh && (total > budget || age > max_age) {
+            total -= bytes;
+            let _ = std::fs::remove_file(path);
+        }
+    }
 }
 
 /// A live match's recording beside its file.

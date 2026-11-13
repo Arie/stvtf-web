@@ -2,8 +2,11 @@
 //! replaces this one (a deploy) picks it up when its pages reconnect: a pause of a second or two.
 
 use crate::lock;
+use crate::matches::live_demos;
 use crate::matches::recording::Recording;
-use crate::matches::sessions::{DEMO_PREFIX, LIVE_PREFIX, Session, Sessions, Store, Viewer, demo_dem, demo_output, logged};
+use crate::matches::sessions::{
+    DEMO_PREFIX, LIVE_PREFIX, Session, Sessions, Store, Viewer, age, demo_dem, demo_output, is_kept_demo, logged, sweep_demos,
+};
 use crate::relays::pool::{DemoOf, Offer, Pool};
 use crate::rooms::room::{Room, Saved, StartAt, read_marker};
 use anyhow::{Result, bail};
@@ -11,7 +14,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, Weak};
-use std::time::{Duration, Instant, SystemTime};
+use std::time::{Duration, Instant};
 
 /// A saved room nobody came back for is dropped after this long.
 const STALE: Duration = Duration::from_hours(1);
@@ -106,40 +109,6 @@ fn file(id: &str) -> String {
 }
 fn marker_file(id: &str) -> String {
     format!("{}-marker", file(id))
-}
-
-/// How long ago a file in the store was written or touched.
-fn age(entry: &std::fs::DirEntry) -> std::io::Result<Duration> {
-    entry.metadata()?.modified().map(|t| SystemTime::now().duration_since(t).unwrap_or_default())
-}
-
-/// Whether `name` is a demos.tf demo's file kept for the next to play it: not one half fetched.
-fn kept_demo(name: &str) -> bool {
-    name.starts_with(DEMO_PREFIX) && std::path::Path::new(name).extension().is_none_or(|e| e != "part")
-}
-
-/// Drops the demos.tf demos' files in `dir` not played for `max_age`, and the longest unplayed
-/// past `budget` bytes of them; not one played within the hour (a match or a room may be on it).
-fn sweep_demos(dir: &std::path::Path, max_age: Duration, budget: u64) {
-    let mut kept: Vec<(Duration, u64, PathBuf)> = std::fs::read_dir(dir)
-        .into_iter()
-        .flatten()
-        .flatten()
-        .filter(|e| {
-            let name = e.file_name().to_string_lossy().into_owned();
-            kept_demo(&name)
-        })
-        .filter_map(|e| Some((age(&e).ok()?, e.metadata().ok()?.len(), e.path())))
-        .collect();
-    kept.sort_by_key(|(age, ..)| *age);
-    let mut total = 0;
-    for (age, bytes, path) in kept {
-        total += bytes;
-        if age > STALE && (total > budget || age > max_age) {
-            total -= bytes;
-            let _ = std::fs::remove_file(path);
-        }
-    }
 }
 
 impl Rooms {
@@ -438,29 +407,18 @@ impl Rooms {
 
     /// Drops saved rooms nobody came back for, demos no room plays, and the files of live matches
     /// gone: those not written or used for an hour. A live match's `.dem` files go three hours
-    /// after they were last written, unless the match is still running (`live`, by id): it drops
-    /// those of the maps its recording dropped itself. Run at start and from time to time.
+    /// after they were last written, unless the match is still running (`live`, by id). Run at
+    /// start and from time to time.
     pub(crate) fn sweep(&self, live: &HashSet<String>) {
         let Some(store) = &self.store else { return };
-        let Ok(entries) = std::fs::read_dir(&store.dir) else { return };
-        for entry in entries.flatten() {
-            let name = entry.file_name().to_string_lossy().into_owned();
-            // A live match's demos, and the voice kept beside them.
-            let dem = std::path::Path::new(name.strip_suffix(".voice").unwrap_or(&name)).extension().is_some_and(|e| e == "dem");
-            let running = name.strip_prefix(LIVE_PREFIX).and_then(|n| n.split_once('-')).is_some_and(|(id, _)| live.contains(id));
-            if dem && running {
-                continue;
-            }
-            let keep = if name.starts_with(LIVE_PREFIX) && dem { LIVE_DEMO_KEPT } else { STALE };
-            // A demos.tf demo's files are kept within a budget (below); one half fetched is not.
-            let demos_tf = kept_demo(&name);
+        // A demos.tf demo's files are kept within a budget (below); one half fetched is not.
+        store.forget_older_than(STALE, |name| {
             let ours = [ROOM_PREFIX, DEMO_PREFIX, LIVE_PREFIX].iter().any(|p| name.starts_with(p));
-            if ours && !demos_tf && age(&entry).is_ok_and(|a| a > keep) {
-                store.forget(&name);
-            }
-        }
-        sweep_demos(&store.dir, DEMOS_KEPT, DEMOS_BUDGET);
-        crate::matches::live_demos::sweep_kept(&store.dir, COMMS_DEMOS_KEPT, COMMS_DEMOS_BUDGET);
+            ours && !is_kept_demo(name) && !live_demos::is_live_demo(name)
+        });
+        live_demos::sweep_live(&store.dir, live, LIVE_DEMO_KEPT);
+        sweep_demos(&store.dir, DEMOS_KEPT, DEMOS_BUDGET, STALE);
+        live_demos::sweep_kept(&store.dir, COMMS_DEMOS_KEPT, COMMS_DEMOS_BUDGET);
     }
 }
 
@@ -469,6 +427,7 @@ mod tests {
     use super::*;
     use crate::testing::{TempDir, free_port};
     use std::fmt::Write as _;
+    use std::time::SystemTime;
 
     /// Sessions with a pinned demo rooms can play, and the folder its recording is in.
     fn demo() -> (Sessions, TempDir) {
@@ -703,10 +662,10 @@ mod tests {
             names
         };
         // Too old goes; so does the longest unplayed past the budget. Others' files are left.
-        sweep_demos(&dir, Duration::from_hours(48), 150);
+        sweep_demos(&dir, Duration::from_hours(48), 150, STALE);
         assert_eq!(left(), ["demo-1.gz", "demo-2.dem", "demo-2.gz", "room-x"]);
         // One played within the hour stays, whatever the budget.
-        sweep_demos(&dir, Duration::from_hours(48), 0);
+        sweep_demos(&dir, Duration::from_hours(48), 0, STALE);
         assert_eq!(left(), ["demo-1.gz", "room-x"]);
     }
 

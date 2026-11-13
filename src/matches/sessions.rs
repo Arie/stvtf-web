@@ -370,4 +370,4 @@ mod tests;
 pub(crate) use address::is_public;
 pub(crate) use ids::{demo_id, id_demo, is_id, logged, random_id};
 pub(crate) use session::{Listed, Session, Viewer};
-pub(crate) use store::{DEMO_PREFIX, LIVE_PREFIX, Store, demo_dem, demo_output, live_file};
+pub(crate) use store::{DEMO_PREFIX, LIVE_PREFIX, Store, age, demo_dem, demo_output, is_kept_demo, live_file, sweep_demos};

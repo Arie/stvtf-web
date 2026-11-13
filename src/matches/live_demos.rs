@@ -14,10 +14,11 @@
 
 use crate::lock;
 use crate::matches::loads::Loads;
-use crate::matches::sessions::LIVE_PREFIX;
+use crate::matches::sessions::{LIVE_PREFIX, age};
 use anyhow::{Context, Result, bail};
 use base64::Engine;
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 use std::fs::File;
 use std::io::{BufRead, Write};
 use std::path::{Path, PathBuf};
@@ -159,6 +160,34 @@ pub(crate) fn sweep_kept(dir: &Path, max_age: Duration, budget: u64) {
             total -= bytes;
             let _ = std::fs::remove_file(voice_of(&path));
             let _ = std::fs::remove_file(path);
+        }
+    }
+}
+
+/// The match a live match's demo, or the voice kept beside one, is of: `live-<match>-….dem`
+/// (`.voice`).
+fn live_demo_of(name: &str) -> Option<&str> {
+    let demo = name.strip_suffix(VOICE).unwrap_or(name);
+    if Path::new(demo).extension().is_none_or(|e| e != "dem") {
+        return None;
+    }
+    Some(name.strip_prefix(LIVE_PREFIX)?.split_once('-').map_or("", |(id, _)| id))
+}
+
+/// Whether `name` is a live match's demo, or the voice kept beside one.
+pub(crate) fn is_live_demo(name: &str) -> bool {
+    live_demo_of(name).is_some()
+}
+
+/// Drops the live matches' demos (and their voice) in `dir` not written for `max_age`, but for
+/// those of a match still running (`running`, by id): it drops those of the maps its recording
+/// dropped itself.
+pub(crate) fn sweep_live(dir: &Path, running: &HashSet<String>, max_age: Duration) {
+    for e in std::fs::read_dir(dir).into_iter().flatten().flatten() {
+        let name = e.file_name().to_string_lossy().into_owned();
+        let Some(id) = live_demo_of(&name) else { continue };
+        if !running.contains(id) && age(&e).is_ok_and(|a| a > max_age) {
+            let _ = std::fs::remove_file(e.path());
         }
     }
 }
