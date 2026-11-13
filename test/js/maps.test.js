@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { mapState } from "../../app/room/maps.js";
+import { mapNames, mapState } from "../../app/room/maps.js";
 
 test("the bar says the map is over, then that the next is ready", () => {
   const maps = [
@@ -51,4 +51,10 @@ test("the next map is the newest ready one after the room's, numbers not indexes
   assert.equal(mapState(p).next, 6);
   assert.equal(mapState({ ...p, map: 5 }).next, 6);
   assert.equal(mapState({ ...p, map: 6 }).next, null);
+});
+
+test("the same map twice is told apart, the first staying bare", () => {
+  assert.deepEqual(mapNames(["koth_a", "koth_b", "koth_a", "koth_a"]), ["koth_a", "koth_b", "koth_a 2", "koth_a 3"]);
+  assert.deepEqual(mapNames(["cp_a", "cp_b"]), ["cp_a", "cp_b"]);
+  assert.deepEqual(mapNames([]), []);
 });

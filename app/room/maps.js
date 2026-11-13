@@ -15,6 +15,12 @@ export function mapState(p) {
   return { status: next == null ? "Map over" : "Next map ready", next };
 }
 
+/** The names as the menu reads them: a map that comes again is `<name> 2`, `<name> 3`. @param {string[]} names */
+export function mapNames(names) {
+  const seen = /** @type {Record<string, number>} */ ({});
+  return names.map(n => ((seen[n] = (seen[n] ?? 0) + 1) > 1 ? `${n} ${seen[n]}` : n));
+}
+
 /** The maps control. @param {(n: number) => void} go @returns {(p: PlaybackLine, admin: boolean) => void} heard */
 export function mapsMenu(go) {
   const box = $("rb-mapbox"),
@@ -51,23 +57,24 @@ export function mapsMenu(go) {
     box.hidden = button.hidden = !shown;
     button.disabled = !admin;
     if (!shown || !admin) open(false);
+    const names = mapNames(maps.map(m => m.map));
     const key = JSON.stringify([here, maps]);
     if (shown && key !== listed) {
       listed = key;
-      button.textContent = `▤ ${maps.find(m => m.n === here)?.map ?? ""}`;
-      menu.replaceChildren(...maps.map(m => item(m, m.n === here)));
+      button.textContent = `▤ ${names[maps.findIndex(m => m.n === here)] ?? ""}`;
+      menu.replaceChildren(...maps.map((m, i) => item(m, names[i], m.n === here)));
     }
     target = mapState(p).next;
     next.hidden = !admin || target == null;
-    if (target != null) next.title = maps.find(m => m.n === target)?.map ?? "";
+    if (target != null) next.title = names[maps.findIndex(m => m.n === target)] ?? "";
   };
 }
 
-/** @param {{ n: number; map: string; ready: boolean }} m @param {boolean} here */
-function item(m, here) {
+/** @param {{ n: number; map: string; ready: boolean }} m @param {string} name @param {boolean} here */
+function item(m, name, here) {
   const b = document.createElement("button");
   b.dataset.map = String(m.n);
-  b.textContent = m.map;
+  b.textContent = name;
   b.disabled = !m.ready && !here;
   b.classList.toggle("on", here);
   return b;
