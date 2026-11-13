@@ -176,19 +176,18 @@ fn a_map_with_comms_is_kept_for_downloading_and_one_without_is_not() {
         }
     }
     assert_eq!(ticks, [0, 3, 4, 8, 10]);
-    // The next load: this one's is kept under another name, its voice with it, and still relayed.
+    // The next load: this one's stays as it is, so a relay on it is not moved to another file.
     play(&demos, 110);
     demos.line(&server("cp_b"));
     write_demo(demos.create("cp_b", 10).unwrap(), "cp_b", &[10, 14]);
     play(&demos, 10);
-    let kept = dir.join("kept-m-0-100.dem");
-    assert!(kept.exists() && voice_of(&kept).exists() && !dir.join("live-m-0-100.dem").exists());
-    assert_eq!(demos.at(0, 105), Some(kept.clone()));
+    assert_eq!(demos.at(0, 105), Some(dir.join("live-m-0-100.dem")));
     assert_eq!(downloads(&dir, "m"), std::slice::from_ref(&live), "still there");
     assert!(build(&dir, "m", "0-100").is_ok());
-    // The match gone, those with comms stay; a demo nobody talked in does not.
+    // The match gone, those with comms stay under another name; a demo nobody talked in does not.
     demos.forget();
-    assert!(kept.exists());
+    let kept = dir.join("kept-m-0-100.dem");
+    assert!(kept.exists() && voice_of(&kept).exists() && !dir.join("live-m-0-100.dem").exists());
     assert_eq!(downloads(&dir, "m"), [live], "the match gone, its comms stay");
     assert!(!dir.join("live-m-1-10.dem").exists(), "the map nobody talked in is gone");
     assert!(build(&dir, "m", "1-10").is_err() && build(&dir, "other", "0-100").is_err() && build(&dir, "m", "../x").is_err());
@@ -206,6 +205,8 @@ fn the_loads_dropped_by_the_recording_lose_their_demos_but_for_comms() {
     connect(&demos, "cp_c", 10);
     play(&demos, 9000);
     connect(&demos, "cp_c", 9100);
+    let relayed = (demos.at(0, 100), demos.at(1, 100));
+    assert_eq!(relayed, (Some(dir.join("live-m-0-100.dem")), Some(dir.join("live-m-1-10.dem"))), "the same files at the next load");
     demos.keep_from(2);
     let mut left: Vec<String> = std::fs::read_dir(&*dir).unwrap().map(|e| e.unwrap().file_name().to_string_lossy().into_owned()).collect();
     left.sort();

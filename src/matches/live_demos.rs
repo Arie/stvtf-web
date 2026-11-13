@@ -8,8 +8,9 @@
 //!
 //! Voice from outside the match that its players said (a team's Discord) is kept beside the demo
 //! it was heard in (`<demo>.voice`, a line each). A demo with any is not dropped but kept
-//! (`kept-…`, from when the next load starts), for a while and within a budget, to download with
-//! the comms written into it: [`downloads`], [`build`], [`sweep_kept`].
+//! (`kept-…`, once no room can be on it: its part dropped, or the match ended), for a while and
+//! within a budget, to download with the comms written into it: [`downloads`], [`build`],
+//! [`sweep_kept`]. Till then it is downloaded under its `live-` name.
 
 use crate::lock;
 use crate::matches::loads::Loads;
@@ -337,12 +338,6 @@ impl stvtf::demo::Files for LiveDemos {
         let mut inner = lock(&self.inner);
         // Made just before its first frame reaches the recording: the load that frame will be of.
         let load = inner.loads.would_be(map, first_tick);
-        // A new load: those before with comms are kept for downloading, and still relayed.
-        if inner.demos.last().is_some_and(|d| d.load < load) {
-            for d in &mut inner.demos {
-                d.keep();
-            }
-        }
         std::fs::create_dir_all(&self.dir)?;
         let path = self.dir.join(format!("{LIVE_PREFIX}{}-{load}-{first_tick}.dem", self.id));
         let file = File::create(&path)?;
