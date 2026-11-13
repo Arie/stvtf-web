@@ -63,3 +63,15 @@ test("another map empties the timeline's marks", () => {
   assert.equal(bar.marks.marks.length, 0);
   assert.equal(bar.marks.fetched, 0);
 });
+
+test("without a map to go to, Live on a map that is over takes the viewer back", () => {
+  /** @type {number[]} */
+  const back = [];
+  const bar = playbar({ home: new URL("http://stv.test/m/"), send() {}, live: n => back.push(n) });
+  bar.allow(true);
+  bar.heard(line({ map: 0, over: true, maps: [maps[0]] }));
+  assert.equal(bar.live.hidden, false);
+  assert.equal(bar.live.disabled, false, "no next map, and still back");
+  /** @type {any} */ (bar.live).onclick();
+  assert.equal(back.length, 1);
+});

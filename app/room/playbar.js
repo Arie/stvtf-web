@@ -42,7 +42,7 @@ export function moment(s) {
  * }} Options `home`: where the marks are; `send`: a control; `live`: the Live button (a live
  * match's); `replay`: whether the status says replay, from whether playback is behind a live match
  * (default: that); `room`: a room's, with no slow motion; `map`: Live on a map that is over,
- * going to the next.
+ * going to the next (without it, Live there is `live` too).
  */
 
 /** @param {Options} o */
@@ -98,7 +98,8 @@ class Playbar {
     play.onclick = () => this.last && this.control({ paused: !this.last.paused });
     live.onclick = () => {
       const l = this.last;
-      if (!l?.over) return o.live(Math.round(this.length()));
+      // A bar with no map to go to (a viewer's own playback) goes back to the shared one.
+      if (!l?.over || !o.map) return o.live(Math.round(this.length()));
       const next = mapState(l).next;
       if (next != null) o.map?.(next);
     };
@@ -179,7 +180,7 @@ class Playbar {
     if (this.shown.style.minWidth !== widest) this.shown.style.minWidth = widest;
     const over = mapState(l);
     this.live.hidden = !(l.live || l.over);
-    this.live.disabled = !this.allowed || (Boolean(l.over) && over.next == null);
+    this.live.disabled = !this.allowed || (Boolean(l.over) && Boolean(this.o.map) && over.next == null);
     this.live.classList.toggle("at", atLive);
     if (!l.paused || over.status) say(this.o.replay ?? (b => b), behind, l, this.length() - now);
   }
