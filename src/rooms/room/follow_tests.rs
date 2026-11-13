@@ -106,3 +106,22 @@ fn a_room_saved_in_the_gap_by_the_version_before_opens_and_decides_where_it_is()
     on_map(&again, 1);
     again.stop();
 }
+
+#[test]
+fn live_on_a_map_over_with_the_next_playing_goes_there_at_once() {
+    let (room, rec) = live_room_at_live_on("cp_a");
+    push_server(&rec, "cp_b");
+    assert!(decided(&room, 0));
+    room.clear("me");
+    push_snapshot(&rec, 50);
+    a_pass(&room);
+    assert_eq!(lock(&room.state).part, 0, "touched: it waits");
+    let page = subscribe(&room.hub, false);
+    let _joined: Vec<_> = page.try_iter().collect();
+    room.go(&MapPost { map: 0 }).unwrap();
+    on_map(&room, 1);
+    settle(&room);
+    let seeks = page.try_iter().filter(|l| l.contains(r#""type":"seek""#)).count();
+    assert_eq!(seeks, 1, "one move, not to the old map's end first");
+    room.stop();
+}

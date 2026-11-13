@@ -33,6 +33,8 @@ impl Room {
             (st.seek, st.follows, st.over) = (Some(part.origin.max(part.start)), false, Some(part.n));
         }
         st.part = part.n;
+        // Following again with a later map playing: straight there, not to this one's end first.
+        self.move_on(&mut st);
         self.wake.notify_all();
         Ok(())
     }
