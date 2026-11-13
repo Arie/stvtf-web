@@ -160,7 +160,7 @@ fn rounds_and_marks_are_their_parts() {
 }
 
 #[test]
-fn a_round_in_a_tail_is_no_parts() {
+fn a_round_in_a_tail_is_the_next_maps() {
     // No frozen frame: the next map's round starts before its first snapshot.
     let r = Recording::live();
     let mut s = Stream { r: &r, s: 0.0 };
@@ -169,11 +169,44 @@ fn a_round_in_a_tail_is_no_parts() {
     s.status(1.0, "changelevel");
     s.signon(5.0, "cp_b");
     let round = s.push(1.0, &line(r#"{"type":"round_start","full_reset":false,"tick":5}"#));
+    s.push(0.0, &line(r#"{"type":"round_win","tick":5,"team":"red","reason":1,"round_time":9.0}"#));
+    assert_eq!((r.rounds_in(0), r.parts().len()), (vec![], 1), "no part's till the next map shows");
     s.play(70, 3);
     assert_eq!(r.parts().len(), 2);
     assert!(r.part(0).unwrap().tail.is_some_and(|tail| tail < round) && r.latest().origin > round);
-    assert_eq!((r.rounds_in(0), r.rounds_in(1)), (vec![], vec![]));
+    assert_eq!((r.rounds_in(0), r.rounds_in(1)), (vec![], vec![round]));
+    assert!(r.marks_in(0, 0).0.is_empty() && r.marks_in(1, 0).0.iter().any(|m| m.kind == "win" && m.at == round));
     assert!(r.part(0).unwrap().last < r.part(0).unwrap().tail.unwrap(), "an event in its tail is not where it ends");
+}
+
+#[test]
+fn a_part_with_only_a_frozen_frame_holds_all_up_to_the_next() {
+    let r = Recording::live();
+    let mut s = Stream { r: &r, s: 0.0 };
+    s.server(0.0, "cp_a");
+    s.play(50, 5);
+    s.status(1.0, "changelevel");
+    s.signon(5.0, "cp_b");
+    s.snapshot(6.0, 68);
+    s.status(1.0, "changelevel");
+    s.signon(5.0, "cp_c");
+    let round = s.push(1.0, &line(r#"{"type":"round_start","full_reset":false,"tick":5}"#));
+    s.play(70, 3);
+    let frozen = r.part(1).unwrap();
+    assert_eq!((r.parts().len(), frozen.ready, frozen.changing, frozen.tail), (3, false, None, None));
+    assert_eq!((r.rounds_in(1), r.rounds_in(2)), (vec![round], vec![]), "never changing: no tail to hand on");
+}
+
+#[test]
+fn a_recording_begun_mid_stream_takes_the_map_of_its_first_server_line() {
+    let r = Recording::live();
+    let mut s = Stream { r: &r, s: 0.0 };
+    s.play(1000, 5);
+    assert_eq!(r.latest().map, "");
+    s.signon(1.0, "cp_a");
+    s.play(1000 + 5 * 67, 5);
+    let parts = r.parts();
+    assert_eq!(parts.iter().map(|p| (p.n, p.map.as_str())).collect::<Vec<_>>(), [(0, "cp_a")], "a reconnect: no new load");
 }
 
 #[test]

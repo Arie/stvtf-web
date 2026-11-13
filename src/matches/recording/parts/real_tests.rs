@@ -215,3 +215,24 @@ fn the_frozen_frame_alone_is_not_play_with_one_signon_either() {
     s.snapshot(80.0, 250);
     assert_eq!((r.latest().ready, r.watchable().n), (true, 1));
 }
+
+#[test]
+fn a_map_that_goes_on_through_announcements_is_not_over() {
+    // The faulty client reconnecting mid-map: the server announces it again before play goes on.
+    let r = Recording::live();
+    let mut s = Stream { r: &r, s: 0.0 };
+    s.signon(0.0, "koth_viaduct");
+    let tick = 1000 + 59 * 67;
+    s.play(1000, 60);
+    s.status(1.0, "map_change");
+    s.signon(2.0, "koth_viaduct");
+    s.signon(2.0, "koth_viaduct");
+    assert!(r.latest().tail.is_some() && r.latest().over());
+    s.play(tick + 67, 4);
+    assert!(r.latest().over(), "four seconds of ticks on: still changing");
+    s.play(tick + 5 * 67, 3);
+    let part = r.latest();
+    assert_eq!((r.parts().len(), part.changing, part.tail, part.over(), part.last), (1, None, None, false, r.length()));
+    let length = r.length();
+    assert_eq!(lock(&r.inner).parts[0].last, length, "it ends at its latest play again");
+}

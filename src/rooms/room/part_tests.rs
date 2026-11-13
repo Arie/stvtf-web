@@ -196,9 +196,9 @@ fn a_seek_to_the_start_of_a_later_map_lands_where_it_shows() {
     let (room, asked) = room_on_part_with_demo_of(2);
     room.control(&Control { seek: Some(0), ..Control::default() }).unwrap();
     settle(&room);
-    let shown = room.recording.part(2).unwrap().start;
+    let start = room.recording.part(2).unwrap().start;
     let p = playback(&room);
-    assert_eq!((p["at"].as_u64(), p["start"].as_u64(), p["paused"].as_bool()), (Some(shown), Some(shown), Some(true)));
+    assert_eq!((p["at"].as_u64(), p["start"].as_u64(), p["paused"].as_bool()), (Some(start), Some(start), Some(true)));
     shows_the_first_of(&room, &asked, "cp_a", 2);
     room.stop();
 }

@@ -48,11 +48,6 @@ impl Part {
     pub(crate) fn over(&self) -> bool {
         self.changing.is_some() || self.end.is_some()
     }
-
-    /// Whether play time `at` is its own: in it, and not in its tail.
-    fn holds(&self, at: u64) -> bool {
-        at >= self.origin && self.end.is_none_or(|end| at < end) && self.tail.is_none_or(|tail| at < tail)
-    }
 }
 
 /// What a recording keeps of a part as it goes.
@@ -97,8 +92,8 @@ impl Inner {
     /// Whether `line` would start a part: a snapshot of a new load, once the latest part showed
     /// something (the first part of all begins at the first line).
     pub(super) fn starts_part(&self, line: &Line) -> bool {
-        let shown = self.parts.last().is_some_and(|p| p.first_tick.is_some());
-        matches!(line, Line::Snapshot(s) if shown && self.loads.starts(s.tick))
+        let snapped = self.parts.last().is_some_and(|p| p.first_tick.is_some());
+        matches!(line, Line::Snapshot(s) if snapped && self.loads.starts(s.tick))
     }
 
     /// Notes `line`, at play time `at`, in the parts.
@@ -119,16 +114,20 @@ impl Inner {
         }
     }
 
-    /// A server line naming `map`: the tail of a part the server is changing from begins.
+    /// A server line naming `map`: the tail of a part the server is changing from begins. A part
+    /// with no map yet (a recording begun mid-stream) is of `map`: no new load.
     fn named(&mut self, at: u64, map: &str) {
-        self.loads.server(map);
         let latest = self.parts.last_mut().expect("a part");
         if latest.changing.is_some() {
             latest.tail.get_or_insert(at);
         }
-        if latest.first_tick.is_none() {
+        if latest.first_tick.is_some() && latest.map.is_empty() {
+            self.loads = Loads::from(self.loads.latest(), Some(map.to_string()), self.loads.last_tick());
+        }
+        if latest.first_tick.is_none() || latest.map.is_empty() {
             latest.map = map.to_string();
         }
+        self.loads.server(map);
     }
 
     /// The server says it is changing map: a part with play is over, unless it goes on.
@@ -143,10 +142,10 @@ impl Inner {
     /// A snapshot at `tick`: a new part if its load starts here, else play of the latest.
     fn snapshot(&mut self, at: u64, tick: u32) {
         let interval = lock(&self.scratch).tick_interval();
-        let shown = self.parts.last().is_some_and(|p| p.first_tick.is_some());
+        let snapped = self.parts.last().is_some_and(|p| p.first_tick.is_some());
         let (n, starts) = self.loads.snapshot(tick);
         let map = self.loads.map().map(str::to_string);
-        if starts && shown {
+        if starts && snapped {
             let map = map.unwrap_or_default();
             self.parts.push(Kept { n, map, origin: at, last: at, first_tick: Some(tick), first_at: Some(at), ..Kept::default() });
             self.scores = None;
@@ -160,8 +159,9 @@ impl Inner {
         }
         latest.ready |= latest.first_tick.is_some_and(|first| tick >= first.saturating_add(ticks(READY_S, interval)));
         let went_on = latest.changing_tick.is_some_and(|before| tick > before.saturating_add(ticks(WENT_ON_S, interval)));
-        if went_on && latest.tail.is_none() {
-            (latest.changing, latest.changing_tick) = (None, None);
+        // Its ticks went on, whatever was announced meanwhile (a reconnect): it was not over.
+        if went_on {
+            (latest.changing, latest.changing_tick, latest.tail) = (None, None, None);
         }
     }
 
@@ -221,8 +221,19 @@ impl Inner {
         })
     }
 
-    fn rounds_of(&self, part: &Part) -> Vec<u64> {
-        self.rounds.iter().copied().filter(|t| part.holds(*t)).collect()
+    /// Play times part `n` holds, from where it begins to where it ends, if kept: a part's tail is
+    /// the next part's (the next map's round can start before its first snapshot), and is no
+    /// part's till that exists.
+    fn span(&self, n: usize) -> Option<(u64, Option<u64>)> {
+        let parts = self.part_list();
+        let i = parts.iter().position(|p| p.n == n)?;
+        let from = i.checked_sub(1).and_then(|before| parts[before].tail).unwrap_or(parts[i].origin);
+        Some((from, parts[i].tail.or(parts[i].end)))
+    }
+
+    fn rounds_of(&self, n: usize) -> Vec<u64> {
+        let Some((from, to)) = self.span(n) else { return Vec::new() };
+        self.rounds.iter().copied().filter(|t| *t >= from && to.is_none_or(|to| *t < to)).collect()
     }
 }
 
@@ -315,19 +326,19 @@ impl Recording {
         self.parts().into_iter().find(|p| p.n == n)
     }
 
-    /// Play times of the rounds' starts in part `n`, not in its tail.
+    /// Play times of the rounds' starts in part `n` (see `span`).
     pub(crate) fn rounds_in(&self, n: usize) -> Vec<u64> {
-        let inner = lock(&self.inner);
-        inner.part_list().iter().find(|p| p.n == n).map(|p| inner.rounds_of(p)).unwrap_or_default()
+        lock(&self.inner).rounds_of(n)
     }
 
-    /// Marks of part `n` (not in its tail) from the `from`th of the match on, and how many the
-    /// match has in all.
+    /// Marks of part `n` (see `span`) from the `from`th of the match on, and how many the match
+    /// has in all.
     pub(crate) fn marks_in(&self, n: usize, from: usize) -> (Vec<Mark>, usize) {
         let inner = lock(&self.inner);
         let all = inner.marks_dropped + inner.marks.len();
-        let Some(part) = inner.part_list().into_iter().find(|p| p.n == n) else { return (Vec::new(), all) };
-        let marks = inner.marks.iter().enumerate().filter(|(i, m)| inner.marks_dropped + i >= from && part.holds(m.at));
+        let Some((start, to)) = inner.span(n) else { return (Vec::new(), all) };
+        let holds = |at: u64| at >= start && to.is_none_or(|to| at < to);
+        let marks = inner.marks.iter().enumerate().filter(|(i, m)| inner.marks_dropped + i >= from && holds(m.at));
         (marks.map(|(_, m)| m.clone()).collect(), all)
     }
 }
