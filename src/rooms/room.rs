@@ -76,7 +76,7 @@ pub(crate) struct Room {
     marker_part: AtomicUsize,
     /// The marker changed since the relay was last handed it.
     marker_dirty: AtomicBool,
-    /// The voice its relay was given, relay or not.
+    /// The voice handed to its relay, whether it has one or not.
     #[cfg(test)]
     relayed: Mutex<Vec<stvtf::relay::VoiceIn>>,
 }

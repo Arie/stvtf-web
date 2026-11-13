@@ -708,7 +708,7 @@ mod tests {
     fn sunshine_fields_beyond_the_clips_are_left_out() {
         let Some(data) = map("cp_sunshine") else { return };
         let g = geometry(&data).unwrap();
-        // The field beyond the clips (the fill leaked into it over them before the 256-unit rule).
+        // The field beyond the clips (without the 256-unit rule the fill goes over them into it).
         for (x, y) in [(-6100.0, 8715.0), (-6000.0, 8600.0)] {
             assert!(!g.floors.iter().any(|f| contains(&f.p, x, y)), "({x}, {y})");
         }
@@ -717,7 +717,7 @@ mod tests {
     #[test]
     fn swiftwater_cave_and_track_loop_grass_are_kept() {
         let Some(g) = swiftwater_built() else { return };
-        // The cave floor and the grass inside the track loop (both lost before the terrain rule).
+        // The cave floor and the grass inside the track loop (both lost without the terrain rule).
         for (x, y) in [(4263.0, -2873.0), (1617.0, -2993.0)] {
             assert!(g.floors.iter().any(|f| contains(&f.p, x, y)), "({x}, {y})");
         }
@@ -730,7 +730,7 @@ mod tests {
 
     #[test]
     fn maps_with_nothing_to_seed_keep_every_floor() {
-        // Review focus 1: a map with no spawns, packs, points or track.
+        // A map with no spawns, packs, points or track.
         let Some(data) = map("mge_training_v8_beta4b") else { return };
         let g = geometry(&data).unwrap();
         assert!(g.floors.len() > 1000);
@@ -763,7 +763,7 @@ mod tests {
 
     #[test]
     fn huge_bounds_coarsen_the_voxels() {
-        // Review focus 2: 40 000 x 40 000 x 8 000 units stays under the voxel cap.
+        // 40 000 x 40 000 x 8 000 units stays under the voxel cap.
         let (vox, dims) = grid_for(&Bounds { lo: [-20000.0; 3], hi: [20000.0, 20000.0, 8000.0] });
         assert!(vox > 16.0 && dims.iter().product::<usize>() <= 400_000_000);
     }

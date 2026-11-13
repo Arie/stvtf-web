@@ -93,7 +93,6 @@ impl Hub {
         self.tick_interval.unwrap_or_else(default_tick_interval)
     }
 
-    /// The latest snapshot's tick: where a room that played up to here is.
     /// What held voice goes by: the stream's tick, whether the game is paused, and how many
     /// times the stream started over.
     pub(crate) fn voice_clock(&self) -> (Option<u32>, bool, u64) {

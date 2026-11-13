@@ -324,7 +324,7 @@ fn geometry_counted(data: &[u8]) -> Result<(Geometry, (usize, f64))> {
     // Only maps with points or pickups: on the others (MGE, jump maps) the spawns are not where
     // the play is, so every floor is kept.
     let reach = bounds.and_then(|b| {
-        // A map whose brushes cannot be read keeps every floor, as before.
+        // A map whose brushes cannot be read keeps every floor.
         reach::reach(data, &disps, &b, &reach_seeds(&stands, &cap_areas, &track)).unwrap_or_else(|e| {
             log!("playable area left out: {e:#}");
             None
@@ -631,7 +631,7 @@ pub(crate) mod tests {
         set_i32(data, h + LUMP_LENGTH, len);
     }
 
-    // Broken maps must be an error, not a panic: a panic while serving `/map/NAME` used to
+    // Broken maps must be an error, not a panic: a panic while serving `/map/NAME` would
     // poison the lock around map loading and break every later map request.
     #[test]
     fn truncated_header_is_an_error() {
