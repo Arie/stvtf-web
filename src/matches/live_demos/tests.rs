@@ -326,9 +326,9 @@ fn a_voice_that_was_no_players_is_the_players_it_is_said_to_be_when_the_demo_is_
     let slots = slots_in(&std::fs::read(&demo).unwrap());
     let (tick, players) = slots.iter().rev().find(|(_, p)| !p.is_empty()).expect("players in the demo");
     let (account, slot) = players[0];
-    let said = |who: &str| Spoken { tick: *tick, by: By::Voice { who: who.into() }, frames: vec!["aA==".into()] };
+    let said = |who: &str| Spoken { tick: *tick, by: By::Voice { who: who.into(), name: Some("kx2".into()) }, frames: vec!["aA==".into()] };
     let lines: Vec<String> = [said("discord:77"), said("discord:78")].iter().map(|s| serde_json::to_string(s).unwrap()).collect();
-    assert_eq!(lines[0], format!(r#"{{"tick":{tick},"who":"discord:77","frames":["aA=="]}}"#));
+    assert_eq!(lines[0], format!(r#"{{"tick":{tick},"who":"discord:77","name":"kx2","frames":["aA=="]}}"#));
     std::fs::write(voice_of(&demo), lines.join("\n") + "\n").unwrap();
     let voices = |who: WhoNow| {
         let (_, built) = build(&dir, "m", "0-1", who).unwrap();

@@ -404,7 +404,7 @@ impl VoiceFeed {
         // No player's (yet): kept as whose voice it is, for whoever says so later.
         let by = match slot {
             Some((slot, account)) => Some(By::Player { slot, account }),
-            None => (!pause).then(|| By::Voice { who: said.who.clone() }),
+            None => (!pause).then(|| By::Voice { who: said.who.clone(), name: name.clone() }),
         };
         if let Some(by) = by {
             st.record_spoken(Spoken { tick, by, frames: said.frames.clone() });
@@ -725,7 +725,7 @@ mod tests {
         feed.take_in(&hub, &STEAMID.into(), frames(2), Some(0.0), now);
         feed.take_in(&hub, &unlinked("77", "coach"), frames(1), Some(0.0), now);
         let kept = feed.take_spoken();
-        let coach = Spoken { tick: 1000, by: By::Voice { who: "discord:77".into() }, frames: frames(1) };
+        let coach = Spoken { tick: 1000, by: By::Voice { who: "discord:77".into(), name: Some("coach".into()) }, frames: frames(1) };
         assert_eq!(kept, [Spoken { tick: 1000, by: By::Player { slot: 6, account: 5 }, frames: frames(2) }, coach]);
         assert_eq!(feed.take_spoken(), [], "once");
         publish(&hub, &Line::Pause(Pause { tick: 1000, paused: true }));

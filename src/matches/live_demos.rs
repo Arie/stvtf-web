@@ -48,9 +48,13 @@ pub(crate) struct Spoken {
 pub(crate) enum By {
     /// A player's then: their slot (their entity less one) and Steam account.
     Player { slot: u8, account: u32 },
-    /// No player's then, by who they are where they talk (as their lines name them): a player's
-    /// once someone says whose, when the demo is built.
-    Voice { who: String },
+    /// No player's then, by who they are where they talk (as their lines name them) and the
+    /// name they talk under: a player's once someone says whose, when the demo is built.
+    Voice {
+        who: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        name: Option<String>,
+    },
 }
 
 /// Whose account someone in a voice channel is said to be by now, by who they are there.
@@ -135,7 +139,7 @@ pub(crate) fn comms_key(dir: &Path, id: &str, file: &str, who: WhoNow) -> Option
         .unwrap_or_default()
         .into_iter()
         .filter_map(|s| match s.by {
-            By::Voice { who } => Some(who),
+            By::Voice { who, .. } => Some(who),
             By::Player { .. } => None,
         })
         .collect();
@@ -176,7 +180,7 @@ pub(crate) fn build(dir: &Path, id: &str, file: &str, who: WhoNow) -> Result<(St
     // Whose each voice is now, asked once; the players' slots only if any is someone's.
     let mut whom: HashMap<&str, Option<u32>> = HashMap::new();
     for s in &said {
-        if let By::Voice { who: voice } = &s.by {
+        if let By::Voice { who: voice, .. } = &s.by {
             whom.entry(voice).or_insert_with(|| who(voice));
         }
     }
@@ -190,7 +194,7 @@ pub(crate) fn build(dir: &Path, id: &str, file: &str, who: WhoNow) -> Result<(St
     for s in &said {
         let (slot, account) = match &s.by {
             By::Player { slot, account } => (*slot, *account),
-            By::Voice { who: voice } => {
+            By::Voice { who: voice, .. } => {
                 let Some(account) = whom.get(voice.as_str()).copied().flatten() else { continue };
                 let Some(slot) = slot_at(s.tick, account) else { continue };
                 (slot, account)
