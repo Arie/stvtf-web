@@ -241,6 +241,28 @@ fn a_stretch_two_releases_both_wrote_resumes_as_one_load_its_ticks_going_on() {
 }
 
 #[test]
+fn a_chunk_written_after_the_next_release_went_on_from_the_file_is_skipped_whole() {
+    let saved = Arc::new(Mutex::new(Vec::new()));
+    let old = Recording::live_to(to(&saved));
+    let mut o = Stream { r: &old, s: 0.0 };
+    o.server(0.0, "cp_a");
+    o.play(1000, 25);
+    // The new release goes on at the tick after the file's last, and closes a chunk into it;
+    // then the old one, a version that does not give its file, closes its own of that stretch.
+    let file = lock(&saved).clone();
+    let new = Recording::resume(file.as_slice(), to(&saved)).unwrap();
+    let mut n = Stream { r: &new, s: 19.0 };
+    n.play(1000 + 19 * 67, 11);
+    o.play(1000 + 25 * 67, 6);
+    n.play(1000 + 30 * 67, 12);
+    let file = lock(&saved).clone();
+    let again = resumed(&file);
+    let ticks = snapshot_ticks(&again);
+    assert!(ticks.windows(2).all(|t| t[1] == t[0] + 67), "every second once: {ticks:?}");
+    assert_eq!((ticks.len(), again.parts().len()), (39, 1));
+}
+
+#[test]
 fn a_file_torn_at_its_end_resumes_up_to_its_last_whole_chunk() {
     let saved = Arc::new(Mutex::new(Vec::new()));
     let r = Recording::live_to(to(&saved));

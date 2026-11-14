@@ -203,7 +203,6 @@ impl Inner {
     /// The lines of `text`, a gzip member of a file: its header, if this is the file's start,
     /// and chunks as a sink got them.
     fn read_lines(&mut self, text: &str) -> Result<()> {
-        let mut at = self.clock.play;
         for text in text.lines() {
             let Some((key, value)) = text.split_once('\t') else { bail!("not a recording") };
             let heads = self.header.is_some();
@@ -214,14 +213,13 @@ impl Inner {
                 // The header of a file written anew since its start was read.
                 _ if parts::Header::has(key) => {}
                 _ => {
-                    // Play time only goes on in a file: a line before the latest is of a
-                    // stretch another process wrote too.
-                    let line_at = key.parse()?;
-                    if line_at < at {
+                    // Play time only goes on in a file: a chunk that begins before the latest
+                    // line is of a stretch another process wrote too, and skipped whole.
+                    let at = key.parse()?;
+                    if at < self.clock.play {
                         self.rewrite = true;
-                        continue;
+                        return Ok(());
                     }
-                    at = line_at;
                     if let Some(header) = self.header.take() {
                         self.start = at;
                         let scratch = self.scratch.clone();
