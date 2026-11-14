@@ -264,7 +264,8 @@ fn serve_many(
         ("/", "GET") => respond(&mut s, "200 OK", HTML, &app.page(&landing("")))?,
         // What a page says went wrong in it (see `report`): taken or not, it is not told.
         ("/fault", "POST") => {
-            crate::report::page_fault(&read_body(reader, request)?, &request.agent);
+            let who = visitor::who(app, request).user;
+            crate::report::page_fault(&read_body(reader, request)?, &request.agent, who.as_ref().map(|u| u.uid.as_str()));
             respond(&mut s, "204 No Content", TEXT, b"")?;
         }
         ("/watch", "POST") if request.length as u64 > MAX_REQUEST => {
