@@ -3,7 +3,7 @@
 // muted, a speaker crossed out (a click on the card's mutes them: the badge is too small, on a dot
 // that moves). See core/voice.js.
 import { ctx } from "../core/core.js";
-import { isMuted, isTalking, loudnessOf, voiceOn } from "../core/voice.js";
+import { isMuted, isTalking, loudnessOf, voiceOn, waveTime } from "../core/voice.js";
 /** @typedef {import("../../types/stream").Player} Player */
 
 // The badge's size against the dot's, and the least it is in pixels. It sits on the dot's right,
@@ -45,7 +45,7 @@ export function drawVoiceBadges(dots) {
     ctx.save();
     ctx.globalAlpha = talking ? 1 : QUIET;
     if (muted) badge(bx, by, r);
-    else wave(bx, by, r, level, performance.now());
+    else wave(bx, by, r, level, waveTime(performance.now()));
     ctx.restore();
   }
 }

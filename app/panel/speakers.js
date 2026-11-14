@@ -143,7 +143,7 @@ function waves(t) {
     mark.style.color = colour;
     mark.style.borderColor = level > 0.55 ? colour : "";
     mark.style.transform = `scale(${(1 + GROW * level).toFixed(3)})`;
-    bars(level, t).forEach((h, i) => {
+    bars(level, voice.waveTime(t)).forEach((h, i) => {
       /** @type {HTMLElement} */ (mark.children[i]).style.height = `${Math.round(h * 75)}%`;
     });
   }

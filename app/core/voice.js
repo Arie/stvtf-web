@@ -44,6 +44,12 @@ const speakers = new Map();
 // show so until playback goes on or jumps.
 /** @type {Map<string, number | null> | null} */
 let held = null;
+// When it paused, by the page's clock: the waveforms stand still at that moment.
+let heldAt = 0;
+
+// The time the waveforms are drawn at: now, or paused, when it stopped.
+/** @param {number} t */
+export const waveTime = t => (held ? heldAt : t);
 /** @type {{ muted: string[]; volume: Record<string, number> }} */
 const prefs = { muted: [], volume: {}, ...parse(read(PREFS_KEY)) };
 // Told when who talks, or the mutes, change.
@@ -267,6 +273,7 @@ export function voicePlayback(m) {
   else if (!held) {
     const at = audio?.currentTime ?? 0;
     held = new Map([...speakers.values()].filter(talking).map(s => [s.steamid, loudAt(s, at, true)]));
+    heldAt = performance.now();
   }
   const now = !m.paused && m.speed === 1;
   if (now === playing) return;
