@@ -19,6 +19,7 @@ use crate::matches::recording::Recording;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant, SystemTime};
+use stvtf::Line;
 use stvtf::output::Stamped;
 
 /// How long the recorder waits for a line before it looks whether to stop, and how often it looks
@@ -227,7 +228,8 @@ impl Taking {
     /// Takes the file: what was added to it since it was read, then this process's own lines,
     /// which `recording` writes from now on. Of a file written since this process's stream began,
     /// the lines held up to its last tick are in it; the tick a line is then to be past before
-    /// those behind it count again.
+    /// those behind it count again. The statuses of its own connecting are not the match's: a
+    /// recording that goes on has none of them.
     fn take(mut self, file: &LiveFile, recording: &Recording, interval: f64) -> Option<u32> {
         let name = live_file(&file.id);
         // Said first: its writer, late, writes no more to it.
@@ -239,6 +241,12 @@ impl Taking {
             recording.rewrite();
         }
         recording.write_to(to_file(&file.store, &name));
+        if recording.count() > 0 {
+            let ticked = self.held.iter().position(|(s, _)| s.line.tick().is_some_and(|t| t > 0));
+            let stream = self.held.split_off(ticked.unwrap_or(self.held.len()));
+            self.held.retain(|(s, _)| !matches!(s.line, Line::Status(_)));
+            self.held.extend(stream);
+        }
         let last = recording.last_tick().filter(|_| since);
         let had = last.map_or(0, |last| in_file_already(self.held.iter().map(|(s, _)| s.line.tick()), last, interval));
         for (stamped, json) in self.held.drain(had..) {

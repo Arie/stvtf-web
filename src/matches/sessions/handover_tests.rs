@@ -9,6 +9,7 @@ use crate::matches::recording::{Recording, Save};
 use crate::testing::{TempDir, script, server};
 use std::time::Instant;
 use stvtf::Line;
+use stvtf::output::Status;
 
 /// A stream of `map`: its server line, and a snapshot every 100 ticks of `ticks`.
 fn stream(map: &str, ticks: std::ops::RangeInclusive<u32>) -> Vec<Line> {
@@ -304,5 +305,44 @@ fn a_release_told_to_stop_does_not_wait_long_for_a_tick_asked_at() {
     old.stop_all();
     assert!(told.elapsed() >= STOP_WAIT / 2 && told.elapsed() < GIVE_BY, "{:?}", told.elapsed());
     assert_eq!(ticks_of(&in_file(&dir, &m.id)), every_100(1000..=1700), "given as it is");
+    new.stop_all();
+}
+
+/// `stream` as one who connects gets it: after the statuses of its signon.
+fn connecting(stream: Vec<Line>) -> Vec<Line> {
+    let connecting = Status::Connecting { server: "192.0.2.1:27020".into(), build: "1".into() };
+    let signon = [connecting, Status::New, Status::Prespawn, Status::Spawn, Status::Full { map: None }];
+    signon.into_iter().map(Line::Status).chain(stream).collect()
+}
+
+/// How many of `r`'s lines are statuses.
+fn statuses_in(r: &Recording) -> usize {
+    (0..r.chunks()).flat_map(|i| r.chunk(i).unwrap_or_default()).filter(|(_, line)| matches!(line, Line::Status(_))).count()
+}
+
+#[test]
+fn a_recording_taken_has_none_of_the_next_release_s_signon() {
+    let dir = TempDir::new("handover");
+    // Its stream goes on from the old release's.
+    let target = "192.0.2.53:27020";
+    script(target, stream("cp_a", 1000..=1700), None);
+    let (old, _) = start_on(&dir);
+    let m = old.open(&format!("{target} tv"), None, None).unwrap();
+    until("the old release's lines", || ticks_of(&m.ready().unwrap()).last() == Some(&1700));
+    script(target, connecting(stream("cp_a", 1500..=2000)), None);
+    let (new, _) = start_on(&dir);
+    let rec = new.get(&m.id).unwrap().ready().unwrap();
+    until("its own lines", || rec.is_written() && ticks_of(&rec).last() == Some(&2000));
+    assert_eq!(statuses_in(&rec), 0);
+    old.stop_all();
+    new.stop_all();
+    // The old release is gone, and left a hole.
+    let target = "192.0.2.54:27020";
+    let id = left_by_a_crash(&dir, target);
+    script(target, connecting(stream("cp_a", 3500..=3800)), None);
+    let (new, _) = start_on(&dir);
+    let rec = new.get(&id).unwrap().ready().unwrap();
+    until("its own lines", || rec.is_written() && ticks_of(&rec).last() == Some(&3800));
+    assert_eq!(statuses_in(&rec), 0, "the match did not connect again");
     new.stop_all();
 }
