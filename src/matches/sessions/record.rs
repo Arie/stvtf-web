@@ -1,15 +1,17 @@
 //! A live match's recorder: its lines into its recording, and its demos' loads.
 //!
 //! The recording's file has one writer at a time. A process that picks a match up reads the file
-//! and writes nothing: once its own stream has a tick it asks for the file (`live-<id>.take`,
-//! its mark and that tick). The process that writes it writes on until its own stream is at that
-//! tick (a new connection's first frame is ahead of the stream), for [`GIVE_BY`] at most, saying
-//! every [`RECORD_POLL`] that it does (`live-<id>.beat`) and closing its open chunk into the file
-//! every [`BEAT`]; then it closes the last, writes no more and says so (`live-<id>.given`). It
-//! does the same as it stops, asked or not. The new one reads the file on as it grows, goes on
-//! with its own lines from the tick after the file's last, and writes from there. A file whose writer says nothing for [`GIVE_WAIT`] after
-//! the asking (it is gone, or of a version that gives at once) is taken as it is. A process that
-//! gave its file and still runs when the one that took it vanishes writes it again, whole.
+//! and writes nothing (its writer, the store another's now, closes its open chunk into it every
+//! [`BEAT`] for [`READ_ON_FOR`]): once its own stream has a tick it asks for the file
+//! (`live-<id>.take`, its mark and that tick). The process that writes it writes on until its own
+//! stream is at that tick (a new connection's first frame is ahead of the stream), for
+//! [`GIVE_BY`] at most, saying every [`RECORD_POLL`] that it does (`live-<id>.beat`) and closing
+//! its open chunk into the file every [`BEAT`]; then it closes the last, writes no more and says
+//! so (`live-<id>.given`). It does the same as it stops, asked or not. The new one reads the file
+//! on as it grows, goes on with its own lines from the tick after the file's last, and writes
+//! from there. A file whose writer says nothing for [`GIVE_WAIT`] after the asking (it is gone,
+//! or of a version that gives at once) is taken as it is, as is any [`TAKE_BY`] after. A process
+//! that gave its file and still runs when the one that took it vanishes writes it again, whole.
 
 use super::session::Session;
 use super::store::{LIVE_PREFIX, Store, live_file, to_file};
@@ -40,6 +42,9 @@ const TAKE_BY: Duration = Duration::from_millis((GIVE_BY.as_millis() + GIVE_WAIT
 /// so it is gone: another that has the recording writes it again.
 const BEAT: Duration = Duration::from_millis(if cfg!(test) { 40 } else { 1000 });
 const GONE_AFTER: Duration = Duration::from_millis(if cfg!(test) { 400 } else { 10_000 });
+/// How long after another process took the store a writer closes a chunk into its file at every
+/// beat, for that one to read on: longer than a connection takes to have a stream (22 s seen).
+const READ_ON_FOR: Duration = Duration::from_secs(60);
 /// Seconds of ticks the file's last tick may be past the stream held and still be of it.
 const AHEAD_S: f64 = 5.0;
 
@@ -300,7 +305,8 @@ pub(super) fn record(s: &Arc<Session>, store: Option<&Store>, mark: &str, resume
     // Everything: detail, voice, and what is only kept.
     let (lines, s) = (subscribe_all(&s.hub), s.clone());
     std::thread::spawn(move || {
-        Pump { file, taking, giving: None, behind: None, fresh, looked: Instant::now(), beat: Instant::now() }.run(&s, &lines, &recording);
+        let now = Instant::now();
+        Pump { file, taking, giving: None, behind: None, fresh, looked: now, beat: now, taken_over: None }.run(&s, &lines, &recording);
     });
 }
 
@@ -355,6 +361,8 @@ struct Pump {
     looked: Instant,
     /// When it last said it writes its file.
     beat: Instant,
+    /// When it first saw the store another process's.
+    taken_over: Option<Instant>,
 }
 
 impl Pump {
@@ -453,6 +461,11 @@ impl Pump {
             None if self.beat.elapsed() >= BEAT => {
                 self.beat = Instant::now();
                 file.beat();
+                // The process the store is now reads the file on until it asks for it.
+                let taken_over = file.store.taken_over(&file.mark).then(|| *self.taken_over.get_or_insert_with(Instant::now));
+                if taken_over.is_some_and(|since| since.elapsed() < READ_ON_FOR) {
+                    recording.flush();
+                }
             }
             None => {}
         }

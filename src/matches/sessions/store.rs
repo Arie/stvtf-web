@@ -62,7 +62,7 @@ impl Store {
     }
 
     /// Whether a newer process took the folder over from the one with `mark`.
-    pub(super) fn taken_over(&self, mark: &str) -> bool {
+    pub(crate) fn taken_over(&self, mark: &str) -> bool {
         std::fs::read(self.path(CURRENT)).is_ok_and(|current| current != mark.as_bytes())
     }
 

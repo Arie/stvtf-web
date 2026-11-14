@@ -346,3 +346,21 @@ fn a_recording_taken_has_none_of_the_next_release_s_signon() {
     assert_eq!(statuses_in(&rec), 0, "the match did not connect again");
     new.stop_all();
 }
+
+#[test]
+fn a_release_taken_over_closes_its_recording_into_the_file_as_it_goes_for_the_next_to_read_on() {
+    let dir = TempDir::new("handover");
+    let target = "192.0.2.55:27020";
+    script(target, stream("cp_a", 1000..=1700), None);
+    let (old, _) = start_on(&dir);
+    let m = old.open(&format!("{target} tv"), None, None).unwrap();
+    until("the old release's lines", || ticks_of(&m.ready().unwrap()).last() == Some(&1700));
+    // The new release is still signing on: it has no stream, and has not asked.
+    let (new, _) = start_on(&dir);
+    let rec = new.get(&m.id).unwrap().ready().unwrap();
+    goes_on(&m.hub, 1800..=2000);
+    until("what the old release recorded since", || ticks_of(&rec).last() == Some(&2000));
+    assert!(m.ready().unwrap().is_written() && !rec.is_written(), "the file is the old release's still");
+    old.stop_all();
+    new.stop_all();
+}
