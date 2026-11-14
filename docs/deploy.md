@@ -83,6 +83,11 @@ A change to how rooms move between maps needs both, and the relays go first (`bi
 `bin/deploy`): a new relay works with the old app, but a new app with an old relay shows TF2 the
 level change at a map change, which can crash the client.
 
+TF2 clients in a room of a live match play on through a deploy of stv.tf too: the next process
+records the match in a demo of its own, and the relay goes on into that one with a full update,
+no signon (it is the same map load of the same server). A room picked up plays on where its relay
+is until it knows its own place.
+
 A match running at a deploy goes on: the recording and its demos are picked up, and demos named
 without a load (`live-<match>-<tick>.dem`) are given loads by their order in time, a lower first
 tick than the file before starting the next. A version without maps does not read live

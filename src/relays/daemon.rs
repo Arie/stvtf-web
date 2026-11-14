@@ -5,9 +5,9 @@
 //! stv.tf talks to it over a unix socket (`--relay-socket`, on a volume both see), a JSON line per
 //! request and per answer:
 //!
-//! - `{"op": "start", "room", "want", "was"}`: the room's relay, started if it has none or its
-//!   own stopped (on the port and password it `was` on, if it can); its page line, null when
-//!   every port is taken.
+//! - `{"op": "start", "room", "want", "was", "known"}`: the room's relay, started if it has none
+//!   or its own stopped (on the port and password it `was` on, if it can); its page line, null
+//!   when every port is taken. One it has plays on where it is unless the room's place is `known`.
 //! - `{"op": "follow", "room", "want"}`: where the room is now.
 //! - `{"op": "status", "room"}`: TF2 clients in, whether it stopped, and its page line.
 //! - `{"op": "keep", "room", "beams"}`: lines the TF2 clients in keep seeing, in place of those
@@ -114,6 +114,9 @@ enum Request {
         want: WantLine,
         #[serde(default)]
         was: Option<Was>,
+        /// The room knows where it is: `want` is no stand-in.
+        #[serde(default = "yes")]
+        known: bool,
     },
     Follow {
         room: String,
@@ -188,6 +191,10 @@ fn beam(l: &BeamLine) -> Beam {
         width: l[10],
         speed: byte(l[11]),
     }
+}
+
+fn yes() -> bool {
+    true
 }
 
 struct Leased {
@@ -386,13 +393,15 @@ fn said_of(room: &str, started: &Result<Option<LocalRelay>>) {
 }
 
 /// Room `room`'s relay, started if it has none or its own stopped; its page line.
-fn start(room: String, want: WantLine, mut was: Option<Was>, rooms: &Rooms, relays: &Arc<Relays>) -> Value {
+fn start(room: String, want: WantLine, known: bool, mut was: Option<Was>, rooms: &Rooms, relays: &Arc<Relays>) -> Value {
     let mut all = lock(rooms);
     if let Some(l) = all.get_mut(&room) {
         if !l.relay.stopped() {
             l.seen = Instant::now();
-            l.shows.want = want.want();
-            l.relay.follow(l.shows.want.clone());
+            if known {
+                l.shows.want = want.want();
+                l.relay.follow(l.shows.want.clone());
+            }
             return json!({ "line": l.relay.line() });
         }
         // Stopped: a new one on its port.
@@ -415,7 +424,7 @@ fn start(room: String, want: WantLine, mut was: Option<Was>, rooms: &Rooms, rela
 
 fn handle(r: Request, rooms: &Rooms, relays: &Arc<Relays>) -> Value {
     match r {
-        Request::Start { room, want, was } => start(room, want, was, rooms, relays),
+        Request::Start { room, want, was, known } => start(room, want, known, was, rooms, relays),
         Request::Follow { room, want } => in_room(rooms, &room, |l| {
             l.seen = Instant::now();
             l.shows.want = want.want();
@@ -516,9 +525,10 @@ impl Remote {
     }
 
     /// Room `room`'s relay, started if it has none, playing as `want` says, on what it `was` on if
-    /// it can; None when every port is taken.
-    pub(crate) fn start(self: &Arc<Self>, room: &str, want: &Want, was: Option<&Was>) -> Result<Option<RemoteRelay>> {
-        let answer = self.call(&json!({ "op": "start", "room": room, "want": WantLine::of(want), "was": was }))?;
+    /// it can; None when every port is taken. One it has plays on where it is unless the room's
+    /// place is `known`.
+    pub(crate) fn start(self: &Arc<Self>, room: &str, want: &Want, was: Option<&Was>, known: bool) -> Result<Option<RemoteRelay>> {
+        let answer = self.call(&json!({ "op": "start", "room": room, "want": WantLine::of(want), "was": was, "known": known }))?;
         let Some(line) = answer.get("line").filter(|l| !l.is_null()).cloned() else { return Ok(None) };
         let shared = Arc::new(Shared {
             remote: self.clone(),
@@ -797,7 +807,7 @@ mod tests {
     fn start_when_free(remote: &Arc<Remote>, room: &str, was: Option<&Was>) -> RemoteRelay {
         let until = Instant::now() + Duration::from_secs(5);
         loop {
-            if let Some(r) = remote.start(room, &want(), was).unwrap() {
+            if let Some(r) = remote.start(room, &want(), was, true).unwrap() {
                 return r;
             }
             assert!(Instant::now() < until, "the port never came back");
@@ -817,10 +827,10 @@ mod tests {
         });
         let remote = Remote::new(&socket);
         let first = Instant::now();
-        assert!(remote.start("r", &want(), None).is_err());
+        assert!(remote.start("r", &want(), None, true).is_err());
         assert!(first.elapsed() >= ANSWER, "waited for it once");
         let again = Instant::now();
-        assert!(remote.start("r", &want(), None).is_err());
+        assert!(remote.start("r", &want(), None, true).is_err());
         assert!(again.elapsed() < Duration::from_millis(50), "not again: {:?}", again.elapsed());
     }
 
@@ -829,7 +839,7 @@ mod tests {
         let dir = TempDir::new("relay-nowait");
         let (socket, _) = serving(&dir, LEASE);
         let remote = Remote::new(&socket);
-        let r = remote.start("room", &want(), None).unwrap().unwrap();
+        let r = remote.start("room", &want(), None, true).unwrap().unwrap();
         // As a hung relay process would.
         let held = lock(&remote.conn);
         let t = Instant::now();
@@ -899,18 +909,34 @@ mod tests {
         assert!(left.rooms.is_empty() && lock(&rooms).is_empty());
     }
 
+    /// The next stv.tf, picking a room up before it knows where the room is, leaves its relay
+    /// playing where it is.
+    #[test]
+    fn a_relay_found_again_plays_on_where_it_is_until_the_room_knows_its_place() {
+        let relays = Relays::new("127.0.0.1", [free_port()]);
+        let rooms: Rooms = Arc::default();
+        let at = |tick| WantLine::of(&Want { tick, ..want() });
+        let wanted = || lock(&rooms).get("r").map(|l| l.shows.want.tick);
+        start("r".into(), at(500), true, None, &rooms, &relays);
+        assert_eq!(wanted(), Some(500));
+        start("r".into(), at(0), false, None, &rooms, &relays);
+        assert_eq!(wanted(), Some(500), "a stand-in");
+        start("r".into(), at(700), true, None, &rooms, &relays);
+        assert_eq!(wanted(), Some(700));
+    }
+
     #[test]
     fn a_room_finds_its_relay_again_and_ends_it() {
         let dir = TempDir::new("relay-daemon");
         let (socket, port) = serving(&dir, Duration::from_secs(1));
         let remote = Remote::new(&socket);
-        let a = remote.start("room-a", &want(), None).unwrap().unwrap();
+        let a = remote.start("room-a", &want(), None, true).unwrap().unwrap();
         assert_eq!(a.line()["connect"], format!("127.0.0.1:{port}"));
         // The next stv.tf (another connection) finds the same relay, password and all.
         let next = Remote::new(&socket);
-        let again = next.start("room-a", &want(), None).unwrap().unwrap();
+        let again = next.start("room-a", &want(), None, true).unwrap().unwrap();
         assert_eq!(again.line()["password"], a.line()["password"]);
-        assert!(next.start("room-b", &want(), None).unwrap().is_none(), "the only port is taken");
+        assert!(next.start("room-b", &want(), None, true).unwrap().is_none(), "the only port is taken");
         a.follow(&want());
         assert_eq!(a.clients(), 0);
         // Ended, its port is free for another room.
@@ -924,6 +950,6 @@ mod tests {
         // Not asked about for a lease, it goes.
         drop(b);
         std::thread::sleep(Duration::from_millis(2500));
-        assert!(next.start("room-c", &want(), None).unwrap().is_some(), "the lease ran out");
+        assert!(next.start("room-c", &want(), None, true).unwrap().is_some(), "the lease ran out");
     }
 }

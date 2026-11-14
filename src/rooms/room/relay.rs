@@ -61,9 +61,13 @@ impl Room {
         if lock(&self.relay.failed).as_ref().is_some_and(|(t, _)| t.elapsed() < RELAY_RETRY) {
             return;
         }
-        let Some(want) = self.want(&lock(&self.state), offer, true) else { return };
+        let (want, known) = {
+            let st = lock(&self.state);
+            (self.want(&st, offer, true), st.tick.is_some())
+        };
+        let Some(want) = want else { return };
         let was = lock(&self.relay.was).clone();
-        match offer.relays.start(&self.id, want.clone(), was.as_ref()) {
+        match offer.relays.start(&self.id, want.clone(), was.as_ref(), known) {
             Ok(Some(r)) => {
                 *lock(&self.relay.failed) = None;
                 let mut relay = lock(&self.relay.current);
@@ -72,7 +76,8 @@ impl Room {
                     if let Some(was) = r.was() {
                         *lock(&self.relay.was) = Some(was);
                     }
-                    *lock(&self.relay.sent) = Some(want);
+                    // A stand-in is not where the relay is: the room's own place goes once known.
+                    *lock(&self.relay.sent) = known.then_some(want);
                     *relay = Some(r);
                     // A new relay has no marker yet.
                     self.marker.dirty.store(true, Ordering::Relaxed);

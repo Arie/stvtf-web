@@ -217,10 +217,10 @@ pub(crate) enum Pool {
 impl Pool {
     /// Room `room`'s relay, playing as `want` says, on what it `was` on if it can; None when
     /// every port is taken. In the relay process, the one it had if it had one.
-    pub(crate) fn start(&self, room: &str, want: Want, was: Option<&Was>) -> Result<Option<RoomRelay>> {
+    pub(crate) fn start(&self, room: &str, want: Want, was: Option<&Was>, known: bool) -> Result<Option<RoomRelay>> {
         Ok(match self {
             Pool::Local(r) => r.start(want, was)?.map(RoomRelay::Local),
-            Pool::Remote(r) => r.start(room, &want, was)?.map(RoomRelay::Remote),
+            Pool::Remote(r) => r.start(room, &want, was, known)?.map(RoomRelay::Remote),
         })
     }
 }
