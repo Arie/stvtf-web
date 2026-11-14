@@ -192,6 +192,8 @@ function play(s, data) {
   const samples = buffer.getChannelData(0);
   data.copyTo(samples, { planeIndex: 0, format: "f32-planar" });
   data.close();
+  // Measured before the buffer is given away to play: Firefox detaches its samples then.
+  const loud = loudness(samples);
   const source = audio.createBufferSource();
   source.buffer = buffer;
   source.connect(s.gain);
@@ -203,7 +205,7 @@ function play(s, data) {
   // How loud it is, for when it plays; what played a while ago is forgotten.
   const now = audio.currentTime;
   s.loud = s.loud.filter(l => l.end > now - LOUD_HOLD);
-  s.loud.push({ at, end: s.at, level: loudness(samples) });
+  s.loud.push({ at, end: s.at, level: loud });
 }
 
 // How loud `samples` are, 0 (a murmur) to 1 (a shout): their level in decibels, between the two.
