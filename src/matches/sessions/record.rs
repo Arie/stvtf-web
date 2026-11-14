@@ -257,29 +257,29 @@ impl Taking {
             self.held.retain(|(s, _)| !matches!(s.line, Line::Status(_)));
             self.held.extend(stream);
         }
-        let last = recording.last_tick().filter(|_| since);
-        let had = last.map_or(0, |last| in_file_already(self.held.iter().map(|(s, _)| s.line.tick()), last, interval));
-        for (stamped, json) in self.held.drain(had..) {
+        // A stream's ticks do not only go up (a snapshot is of a few ticks back): every line
+        // held up to the file's last tick is in it, wherever it stands.
+        let last =
+            recording.last_tick().filter(|last| since && of_the_stream(self.held.iter().map(|(s, _)| s.line.tick()), *last, interval));
+        if let Some(last) = last {
+            self.held.retain(|(s, _)| !s.line.tick().is_some_and(|t| t > 0 && t <= last));
+        }
+        for (stamped, json) in self.held.drain(..) {
             let _ = recording.push(&stamped, &json);
         }
         recording.set_catching_up(false);
-        last.filter(|_| had > 0)
+        last
     }
 }
 
-/// How many of the lines held, by their `ticks`, a file whose last tick is `last` has already: up
-/// to the latest at or before it, if `last` is a tick of the stream held, or within [`AHEAD_S`]
-/// of its end (of `interval` seconds a tick). None of a stream that began after it, or whose
-/// ticks started over.
-fn in_file_already(ticks: impl Iterator<Item = Option<u32>>, last: u32, interval: f64) -> usize {
-    let ticks: Vec<u32> = ticks.map(|t| t.unwrap_or(0)).collect();
-    let mut ticked = ticks.iter().copied().filter(|t| *t > 0);
-    let (Some(first), Some(latest)) = (ticked.next(), ticks.iter().copied().rfind(|t| *t > 0)) else { return 0 };
+/// Whether a file whose last tick is `last` is of the stream held, by its `ticks`: within
+/// [`AHEAD_S`] (of `interval` seconds a tick) of them. Not of a stream that began well after it (a
+/// hole), or whose ticks started over (a map loaded again).
+fn of_the_stream(ticks: impl Iterator<Item = Option<u32>>, last: u32, interval: f64) -> bool {
+    let ticks: Vec<u32> = ticks.flatten().filter(|t| *t > 0).collect();
+    let (Some(lowest), Some(latest)) = (ticks.iter().min(), ticks.iter().max()) else { return false };
     let ahead = (AHEAD_S / interval.max(1e-6)).round() as u32;
-    if first > last || last > latest.saturating_add(ahead) {
-        return 0;
-    }
-    ticks.iter().rposition(|t| *t > 0 && *t <= last).map_or(0, |i| i + 1)
+    *lowest <= last.saturating_add(ahead) && last <= latest.saturating_add(ahead)
 }
 
 /// Records live match `s` from now on, to its file when there is a store, as the process with
@@ -315,6 +315,9 @@ pub(super) fn record(s: &Arc<Session>, store: Option<&Store>, mark: &str, resume
     });
 }
 
+/// Ticks a file is written on past the tick asked at: 3 s of a 66.67-tick server's.
+const PAST: u32 = if cfg!(test) { 0 } else { 200 };
+
 /// A file asked for, written on until its stream is at the tick asked at (none: at once).
 struct Giving {
     tick: Option<u32>,
@@ -335,7 +338,8 @@ impl Giving {
             recording.let_go();
             return false;
         }
-        let there = self.tick.is_none_or(|tick| recording.last_tick().is_none_or(|last| last >= tick));
+        // Some past it: a new connection's first snapshots are sparse.
+        let there = self.tick.is_none_or(|tick| recording.last_tick().is_none_or(|last| last >= tick.saturating_add(PAST)));
         if there || self.since.elapsed() >= GIVE_BY {
             file.give(recording);
             return false;
@@ -359,7 +363,7 @@ struct Pump {
     giving: Option<Giving>,
     /// The file's last tick when it was taken, and when that was, until this process's stream
     /// is past it: lines before it are in the file.
-    behind: Option<(u32, Instant)>,
+    behind: Option<(u32, u32, Instant)>,
     /// A fresh recording's first part is the load the match is at.
     fresh: bool,
     /// When it last looked whether its file is asked for.
@@ -425,7 +429,8 @@ impl Pump {
             if taking.may_take(file) {
                 let interval = lock(&s.hub).tick_interval();
                 let last = self.taking.take().and_then(|taking| taking.take(file, recording, interval));
-                self.behind = last.map(|tick| (tick, Instant::now()));
+                let ahead = (AHEAD_S / interval.max(1e-6)).round() as u32;
+                self.behind = last.map(|tick| (tick.saturating_sub(ahead), tick, Instant::now()));
             } else {
                 taking.read_on(file, recording);
             }
@@ -476,34 +481,35 @@ impl Pump {
         }
     }
 
-    /// Whether a line at `tick` is before the tick the file was taken at, its stream not yet past
-    /// it: the file has it. Not for long: lower ticks that go on are a map loaded again.
+    /// Whether a line at `tick` is one the file taken has: up to its last tick and not far before
+    /// it (lower ticks still are a map loaded again), for [`AHEAD_S`] after the take.
     fn is_behind(&mut self, tick: Option<u32>) -> bool {
-        let (Some((last, since)), Some(tick)) = (self.behind, tick.filter(|t| *t > 0)) else { return false };
-        if tick > last || since.elapsed() > Duration::from_secs_f64(AHEAD_S) {
+        let (Some((from, last, since)), Some(tick)) = (self.behind, tick.filter(|t| *t > 0)) else { return false };
+        if since.elapsed() > Duration::from_secs_f64(AHEAD_S) {
             self.behind = None;
+            return false;
         }
-        self.behind.is_some() && tick < last
+        (from..=last).contains(&tick)
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::in_file_already;
+    use super::of_the_stream;
 
     fn held(ticks: &[u32]) -> impl Iterator<Item = Option<u32>> + '_ {
         ticks.iter().map(|t| Some(*t).filter(|t| *t > 0))
     }
 
     #[test]
-    fn the_lines_held_up_to_the_file_s_last_tick_are_in_it_already() {
+    fn a_file_is_of_the_stream_held_when_its_last_tick_is_near_the_stream_s() {
         // A status and a server line, then ticks: a 66.67-tick server's, 15 ms each.
         let stream = [0, 0, 500, 500, 533, 566, 566, 600];
-        assert_eq!(in_file_already(held(&stream), 566, 0.015), 7);
-        assert_eq!(in_file_already(held(&stream), 540, 0.015), 5, "a tick of the file's own between two held");
-        assert_eq!(in_file_already(held(&stream), 700, 0.015), 8, "the file is ahead: what comes is looked at too");
-        assert_eq!(in_file_already(held(&stream), 499, 0.015), 0, "a stream begun after it: a hole, all of it kept");
-        assert_eq!(in_file_already(held(&stream), 90_000, 0.015), 0, "ticks that started over: a new load");
-        assert_eq!(in_file_already(held(&[0, 0]), 566, 0.015), 0, "no stream yet");
+        assert!(of_the_stream(held(&stream), 566, 0.015));
+        assert!(of_the_stream(held(&stream), 700, 0.015), "the file is ahead: what comes is looked at too");
+        assert!(of_the_stream(held(&[0, 620, 566, 600]), 580, 0.015), "a snapshot of some ticks back after an event");
+        assert!(!of_the_stream(held(&stream), 100, 0.015), "a stream begun well after it: a hole");
+        assert!(!of_the_stream(held(&stream), 90_000, 0.015), "ticks that started over: a new load");
+        assert!(!of_the_stream(held(&[0, 0]), 566, 0.015), "no stream yet");
     }
 }
