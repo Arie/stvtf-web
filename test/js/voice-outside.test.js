@@ -66,3 +66,20 @@ test("a voice of no player that fell silent is no longer listed (matched since, 
   assert.equal(heard.includes("discord:79"), false);
   assert.equal(heard.includes("[U:1:9]"), true, "a player stays");
 });
+
+test("paused, those talking stay shown as they were, until playback goes on or jumps", async () => {
+  v.setVoice(true);
+  v.onVoice(/** @type {any} */ ({ ...line, steamid: "[U:1:41]", player: 41 }));
+  assert.equal(v.isTalking(41), true);
+  v.voicePlayback({ paused: true, speed: 1 });
+  await new Promise(r => setTimeout(r, 450));
+  assert.equal(v.isTalking(41), true, "long after their last word: still as it stopped");
+  assert.equal(v.isTalking(42), false);
+  v.voicePlayback({ paused: true, speed: 1 });
+  assert.equal(v.isTalking(41), true, "said again, as it was");
+  v.dropAll();
+  assert.equal(v.isTalking(41), false, "a jump shows another moment");
+  v.onVoice(/** @type {any} */ ({ ...line, steamid: "[U:1:41]", player: 41 }));
+  v.voicePlayback({ paused: false, speed: 1 });
+  assert.equal(v.isTalking(41), false, "paused lines were not heard, and it plays on");
+});

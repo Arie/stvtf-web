@@ -40,6 +40,10 @@ let on = read(ON_KEY) === "1";
 let playing = true;
 /** @type {Map<string, Speaker>} */
 const speakers = new Map();
+// Paused: who was talking as it stopped, and how loud (null: nothing of them played yet). They
+// show so until playback goes on or jumps.
+/** @type {Map<string, number | null> | null} */
+let held = null;
 /** @type {{ muted: string[]; volume: Record<string, number> }} */
 const prefs = { muted: [], volume: {}, ...parse(read(PREFS_KEY)) };
 // Told when who talks, or the mutes, change.
@@ -217,8 +221,18 @@ export function loudness(samples) {
   return Math.min(1, Math.max(0, (db - QUIET_DB) / (LOUD_DB - QUIET_DB)));
 }
 
+// How loud `s` is at `now`, counting what is queued to play too when `ahead`; null with nothing
+// known of it.
+/** @param {Speaker} s @param {number} now @param {boolean} ahead */
+function loudAt(s, now, ahead) {
+  let loud = null;
+  for (const l of s.loud) if ((ahead || l.at <= now) && l.end > now - LOUD_HOLD) loud = Math.max(loud ?? 0, l.level);
+  return loud;
+}
+
 // How loud player `id` is as heard now, 0 to 1 (the loudest of the last moment, so it does not
 // flicker between words' beats); null with nothing known of it (not talking, or nothing played).
+// Paused, as loud as they were when it stopped.
 /** @param {number} id */
 export function loudnessOf(id) {
   if (!audio) return null;
@@ -226,7 +240,8 @@ export function loudnessOf(id) {
   let loud = null;
   for (const s of speakers.values()) {
     if (s.player !== id) continue;
-    for (const l of s.loud) if (l.at <= now && l.end > now - LOUD_HOLD) loud = Math.max(loud ?? 0, l.level);
+    const l = held ? (held.get(s.steamid) ?? null) : loudAt(s, now, false);
+    if (l != null) loud = Math.max(loud ?? 0, l);
   }
   return loud;
 }
@@ -247,10 +262,16 @@ export function onVoice(m) {
 // Playback paused, went on, or changed speed: only playing at 1× has voice.
 /** @param {{ paused: boolean; speed: number }} m */
 export function voicePlayback(m) {
+  // Paused: those talking stay shown as they were, with what was about to play of them.
+  if (!m.paused) held = null;
+  else if (!held) {
+    const at = audio?.currentTime ?? 0;
+    held = new Map([...speakers.values()].filter(talking).map(s => [s.steamid, loudAt(s, at, true)]));
+  }
   const now = !m.paused && m.speed === 1;
   if (now === playing) return;
   playing = now;
-  if (!now) dropAll();
+  if (!now) for (const s of speakers.values()) drop(s);
 }
 
 export const voicePlaying = () => playing;
@@ -262,13 +283,17 @@ export function streamSwitched() {
   dropAll();
 }
 
-// A seek or a jump: what is queued was of before it.
+// A seek or a jump: what is queued was of before it, and so is who was talking in a pause.
 export function dropAll() {
+  if (held) held = new Map();
   for (const s of speakers.values()) drop(s);
 }
 
+// Whether `s` is talking: paused, whether they were when it stopped.
 /** @param {Speaker} s */
-const talking = s => performance.now() - s.last < TALK_MS;
+function talking(s) {
+  return held ? held.has(s.steamid) : performance.now() - s.last < TALK_MS;
+}
 
 // Whether player `id` is talking, muted or not, for their card and their dot.
 /** @param {number} id */

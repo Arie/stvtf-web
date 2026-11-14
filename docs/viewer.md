@@ -55,7 +55,8 @@ browser by SteamID, across matches. Everyone heard has a faint 🔊 on their HUD
 taller, bigger and hotter (white to red) the louder they are, and their dot has one as a badge; a
 muted player's dot has the speaker crossed out. A click
 on the card's mark mutes or unmutes them (a muted team's player is then let through). Paused, sought or at
-another speed than 1×, voice is silent. It needs WebCodecs, so a secure page (https, or
+another speed than 1×, voice is silent; paused, those who were talking stay shown so, as loud as
+they were, until it plays on or jumps. It needs WebCodecs, so a secure page (https, or
 localhost); the overlay has none.
 
 Voice from outside the match (a team's Discord, through the voice bot): `POST /w/<id>/voice` with
