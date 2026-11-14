@@ -89,15 +89,27 @@ no signon (it is the same map load of the same server). A room picked up plays o
 is until it knows its own place.
 
 A match's recording (`/data/sessions/live-<match>.gz`) has one writer. The new container reads
-it and connects to the SourceTV itself; once its stream has a tick it asks for the file
-(`live-<match>.take`), and the old one, which looks every 250 ms, closes its open chunk into it,
-writes no more and says so (`live-<match>.given`). The new one then goes on from the tick after
-the file's last: nothing missing, nothing twice. The old one gives its files as it stops too,
-and writes one again, whole, when the container that took it is stopped first (a deploy that
-failed) or is gone without a word: the writer touches `live-<match>.beat` every second, and 10 s
-without is gone. A file not given within 3 s of the asking (a crash, a version before this) is taken as
-it is: what the old one had not written (10 s at most) and the time nobody was connected are a
-hole. A stretch an older version wrote twice is read once.
+it, and on as it grows (the old one closes its open chunk into it every second for a minute once
+the folder is the new one's, which rooms on the new one play meanwhile), and connects to the
+SourceTV itself; once its stream has a tick it asks for the file at that tick
+(`live-<match>.take`). A new connection's first frame can be ahead of the stream (11 s seen), so
+the old one, which looks every 250 ms, writes on until its own stream is at that tick, for 20 s
+at most, saying so at every look (`live-<match>.beat`) and closing a chunk every second. Then it
+closes the last, writes no more and says so (`live-<match>.given`), and the new one goes on from
+the tick after the file's last: nothing missing, nothing twice, none of its own signon. Told to
+stop meanwhile, the old one records on until it has given, for 15 s at most: its demo gets to
+that tick too.
+
+The old one gives its files as it stops too, and writes one again, whole, when the container
+that took it is stopped first (a deploy that failed) or is gone without a word: the writer
+touches `live-<match>.beat` every second, and 10 s without is gone. A file whose writer says
+nothing for 3 s after the asking (a crash; a version before this gives at once, at whatever
+tick) is taken as it is, as is any file 23 s after: what the old one had not written and the
+time nobody was connected, or its stream was short of the tick asked at, are a hole. A stretch
+an older version wrote twice is read once.
+
+A room at live stays there: more than 3 s behind its recording's end (the file's tail come at
+once) it goes to the end, as it does when the file is taken, and it is picked up at live.
 
 A match running at a deploy goes on: the recording and its demos are picked up, and demos named
 without a load (`live-<match>-<tick>.dem`) are given loads by their order in time, a lower first
