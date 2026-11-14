@@ -16,6 +16,7 @@ mod files;
 mod match_pages;
 mod room_pages;
 mod streams;
+mod uploads;
 mod voice;
 
 /// Runs `serve` on one connection, with `send` written by the client; returns serve's result and

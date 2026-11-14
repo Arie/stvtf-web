@@ -205,6 +205,12 @@ pub(crate) fn demo_output(demo: u64) -> String {
     format!("{DEMO_PREFIX}{demo}.gz")
 }
 
+/// What is known of a demo uploaded here (who by, and whether it is a player's own), kept with
+/// its files.
+pub(crate) fn demo_info(demo: u64) -> String {
+    format!("{DEMO_PREFIX}{demo}.up")
+}
+
 /// How long ago a file in the store was written or touched.
 pub(crate) fn age(entry: &std::fs::DirEntry) -> std::io::Result<Duration> {
     entry.metadata()?.modified().map(|t| SystemTime::now().duration_since(t).unwrap_or_default())

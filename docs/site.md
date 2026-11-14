@@ -40,6 +40,24 @@ live match, 3 minutes after its last viewer; not picked up after a restart. Coun
 `--max-matches`. Page: `/w/d<id>/`. Once ended, that link sends the visitor to `--home` with the
 demo filled in.
 
+## Uploaded demos
+
+`/upload`: a page that takes a `.dem` (512 MB at most) from whoever is signed in (where nobody
+signs in, from anyone) and plays it as a match of its own at `/w/d<number>/`, where a room is
+opened on it like on any other. A `SourceTV` demo, or a player's own: that one has only what
+that player's game was sent, so players out of their sight stand where they were last seen, and
+it is not relayed to TF2. The same file sent again, by anyone, is the one kept.
+
+Kept as a demos.tf demo is (30 days since last played, within the same 5 GB), and five of one
+person: their longest unplayed goes for a sixth, unless all five were played in the last hour.
+While it is kept its link plays it again.
+
+It is sent in parts of 32 MB at most (Cloudflare takes no more in a request): `POST /upload`
+`{"size"}` gives `{"id", "part"}`; `PUT /upload/<id>?at=<bytes so far>` adds a part (`409` with
+the bytes there are, when that is not where it goes on: a part whose answer was lost is not
+added twice); `POST /upload/<id>` `{"name"}` gives `{"page"}`. One not finished within the hour
+is dropped.
+
 ## Sign-in
 
 From a room ("Sign in with serveme"): `/signin?return=PATH` → the site's

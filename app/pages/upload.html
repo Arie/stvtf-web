@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>stv.tf</title>
+<base href="/">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="alternate icon" href="favicon.ico" sizes="any">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="stylesheet" href="app/dev/landing.css">
+<script type="module" src="app/dev/upload.js"></script>
+</head>
+<body>
+<main id="upload" data-signed="{signed}" data-max="{max}">
+  <h1>Upload a demo</h1>
+  <p>A SourceTV demo, or your own. Up to {max} MB.</p>
+  <form>
+    <input type="file" accept=".dem" required>
+    <button>Upload</button>
+  </form>
+  <a class="signin" href="signin?return=/upload" hidden>Sign in with serveme</a>
+  <progress max="1" value="0" hidden></progress>
+  <div class="error"></div>
+</main>
+</body>
+</html>

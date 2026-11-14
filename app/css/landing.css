@@ -68,3 +68,18 @@ button {
 code {
   color: var(--text);
 }
+/* The upload page: its file, how far it is, and the way to sign in. */
+input[type="file"] {
+  padding: 8px;
+}
+progress {
+  width: 100%;
+  margin-top: 12px;
+  accent-color: var(--blue);
+}
+.signin {
+  color: #9cc4ff;
+}
+form[hidden] {
+  display: none;
+}

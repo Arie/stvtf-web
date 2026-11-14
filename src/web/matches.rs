@@ -43,7 +43,12 @@ pub(super) fn serve_match(
     if let Some(file) = rest.strip_prefix("watch/") {
         return watch_comms_demo(&mut s, app, sessions, request, id, file, client);
     }
-    let session = sessions.get(id);
+    // A demo uploaded here, not playing (now): it plays again while it is kept.
+    let uploaded = || {
+        let demo = sessions::id_demo(id).filter(|d| sessions::is_own_demo(*d) && is_page(rest))?;
+        sessions.open_upload_as(counted(who(app, request).user.as_ref(), None, client).as_deref(), demo)?.ok()
+    };
+    let session = sessions.get(id).or_else(uploaded);
     // Looked for only when a page of a match that is gone is asked for: it reads the store.
     let kept = if session.is_none() && is_page(rest) { comms_demos(app, sessions, id) } else { Vec::new() };
     match (session, rest) {

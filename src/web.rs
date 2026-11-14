@@ -16,6 +16,7 @@ mod events;
 mod matches;
 mod rooms;
 pub(crate) mod token;
+mod upload;
 mod visitor;
 mod voice_in;
 pub(crate) mod voice_link;
@@ -233,6 +234,9 @@ fn serve_many(
     match (request.path.as_str(), request.method.as_str()) {
         (path @ ("/" | "/watch"), _) if app.keys.is_some() => front_door(&mut s, app, path)?,
         ("/matches", "GET") if let Some(keys) = &app.keys => list_matches(&mut s, keys, sessions, request)?,
+        (path, _) if path == "/upload" || path.starts_with("/upload/") => {
+            upload::serve_upload(&mut s, reader, app, sessions, request, client)?;
+        }
         ("/signin", "GET") if let Some(site) = app.home.as_deref().and_then(origin) => {
             redirect(&mut s, "302 Found", &format!("{site}/stv/sign_in?return={}", url_encode(&return_to(app, request))))?;
         }

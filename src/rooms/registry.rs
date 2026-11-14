@@ -339,6 +339,7 @@ impl Rooms {
         if let Source::Demo(demo) = source {
             store.touch(&demo_output(demo));
             store.touch(&demo_dem(demo));
+            store.touch(&crate::matches::sessions::demo_info(demo));
         }
         let mut saved = SavedRoom { source, room: room.saved(), by };
         // Apart: not rewritten with where playback is every second.

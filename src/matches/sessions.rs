@@ -145,7 +145,20 @@ impl Sessions {
     /// or starting it from the beginning; `owner` as for [`Sessions::open`], a new one counting
     /// against `by` as for [`Sessions::open_as`]. It is not saved for the next process.
     pub fn open_demo_as(&self, by: Option<&str>, demo: u64, owner: Option<&str>) -> Result<Arc<Session>> {
-        self.play_demo(by, demo, owner, None)
+        self.play_demo(by, demo, owner, None, true)
+    }
+
+    /// The session playing demo `demo`, uploaded here and kept (see [`Sessions::open_demo_as`]):
+    /// none when nothing is kept of it. A player's own demo is not relayed: its file goes once
+    /// decoded.
+    pub fn open_upload_as(&self, by: Option<&str>, demo: u64) -> Option<Result<Arc<Session>>> {
+        let store = self.store.as_ref()?;
+        let info: serde_json::Value = serde_json::from_slice(&store.read(&demo_info(demo)).ok()?).ok()?;
+        if !store.has(&demo_output(demo)) && !store.has(&demo_dem(demo)) {
+            return None;
+        }
+        let pov = info["pov"].as_bool().unwrap_or(false);
+        Some(self.play_demo(by, demo, None, None, !pov))
     }
 
     /// The session playing match `id`'s demo `file` with its comms in it, as a demo of its own
@@ -161,16 +174,18 @@ impl Sessions {
             let built = live_demos::build(&dir, &id, &file, &|key| who.account_now(key))?;
             Ok((built.demo, built.nobodys))
         };
-        self.play_demo(by, own_demo(&key), None, Some((of, Box::new(made))))
+        self.play_demo(by, own_demo(&key), None, Some((of, Box::new(made))), true)
     }
 
-    /// Plays demo `demo`: demos.tf's, or the one `made`, of a match's demo with its comms.
+    /// Plays demo `demo`: demos.tf's, or the one `made`, of a match's demo with its comms. Its
+    /// file is kept for relays only if `relayed`.
     fn play_demo(
         &self,
         by: Option<&str>,
         demo: u64,
         owner: Option<&str>,
         made: Option<((String, String), MadeDemo)>,
+        relayed: bool,
     ) -> Result<Arc<Session>> {
         let mut map = self.lock();
         if let Some(s) = map.values().find(|s| s.demo == Some(demo) && !s.done.load(Ordering::Relaxed)) {
@@ -186,7 +201,7 @@ impl Sessions {
             let _ = session.by.set(by.to_string());
         }
         let s = Arc::new(session);
-        let kept = self.store.clone().map(|store| demostf::DemoFiles { store, dem: self.demos });
+        let kept = self.store.clone().map(|store| demostf::DemoFiles { store, dem: self.demos && relayed });
         let (player, hz) = (s.clone(), self.hz);
         let thread = std::thread::spawn(move || {
             let made = made.as_deref().map(|m| m as demostf::Made);
@@ -438,4 +453,4 @@ mod tests;
 pub(crate) use address::is_public;
 pub(crate) use ids::{demo_id, id_demo, is_id, is_own_demo, logged, own_demo, random_id};
 pub(crate) use session::{Listed, Session, Viewer};
-pub(crate) use store::{DEMO_PREFIX, LIVE_PREFIX, Store, age, demo_dem, demo_output, is_kept_demo, sweep_demos};
+pub(crate) use store::{DEMO_PREFIX, LIVE_PREFIX, Store, age, demo_dem, demo_info, demo_output, is_kept_demo, sweep_demos};

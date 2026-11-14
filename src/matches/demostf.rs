@@ -175,6 +175,7 @@ fn kept_output(k: &DemoFiles, id: u64) -> Option<Vec<u8>> {
     }
     k.store.touch(&demo_output(id));
     k.store.touch(&demo_dem(id));
+    k.store.touch(&crate::matches::sessions::demo_info(id));
     log!("demo {id}: as kept, {} MiB", output.len() >> 20);
     Some(output)
 }

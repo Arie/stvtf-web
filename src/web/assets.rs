@@ -117,8 +117,8 @@ fn serve_backpack(s: &mut TcpStream, app: &App, file: &str) -> std::io::Result<(
 pub(crate) fn module_preloads() -> &'static str {
     static LINKS: std::sync::OnceLock<String> = std::sync::OnceLock::new();
     LINKS.get_or_init(|| {
-        // Not the embed's entry, which a page does not load.
-        let modules = APP.iter().filter(|(name, ctype, _)| *ctype == JS && *name != "stv-map.js");
+        // Not the embed's entry nor the upload page's, which the viewer's page does not load.
+        let modules = APP.iter().filter(|(name, ctype, _)| *ctype == JS && !["stv-map.js", "upload.js"].contains(name));
         modules.fold(String::new(), |links, (name, ..)| {
             format!("{links}<link rel=\"modulepreload\" fetchpriority=\"low\" href=\"app/{}/{name}\">\n", app_version())
         })

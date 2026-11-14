@@ -77,8 +77,9 @@ fn serves_the_page_and_its_modules_under_the_version() {
         imported.extend(imports(name, &file));
     }
     for (name, ctype, _) in APP {
-        // The page's entries, and the one /embed/v1/stv-map.js loads for other sites.
-        let entry = name == "main.js" || name == "core/faults.js" || name == "stv-map.js";
+        // The page's entries, the upload page's, and the one /embed/v1/stv-map.js loads for
+        // other sites.
+        let entry = ["main.js", "core/faults.js", "stv-map.js", "upload.js"].contains(&name);
         assert!(ctype != JS || entry || imported.contains(name), "nothing imports {name}");
     }
     // And everything imported is served: a module missing from APP would 404 in the browser.
