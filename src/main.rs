@@ -300,6 +300,8 @@ fn keep_house(app: Arc<App>, stop: &'static AtomicBool) {
         let Matches::Many(sessions) = &app.matches else { return };
         for round in 0u64.. {
             if stop.load(Ordering::Relaxed) {
+                // First, so what is saved is as it stops: the rooms play on meanwhile.
+                sessions.finish_giving();
                 // The feed up to now, and the voice held, for the process that takes over.
                 sessions.persist();
                 sessions.save_voice(true);

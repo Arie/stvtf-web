@@ -276,3 +276,33 @@ fn a_recording_picked_up_goes_on_with_its_file_while_it_waits_for_it() {
     old.stop_all();
     new.stop_all();
 }
+
+#[test]
+fn a_release_told_to_stop_records_on_until_the_recording_asked_for_is_at_the_tick_asked_at() {
+    let dir = TempDir::new("handover");
+    let (old, m, new, n) = asked_for_at(&dir, "192.0.2.51:27020", 2500);
+    let (before, rec) = (m.ready().unwrap(), n.ready().unwrap());
+    until("the old release to hear", || m.giving.load(Ordering::Relaxed));
+    std::thread::scope(|scope| {
+        let stopping = scope.spawn(|| old.stop_all());
+        std::thread::sleep(STOP_WAIT / 4);
+        assert!(!stopping.is_finished() && before.is_written(), "its match is not cut short");
+        goes_on(&m.hub, 1800..=2500);
+        stopping.join().unwrap();
+    });
+    until("the file to be the new release's", || rec.is_written());
+    assert_eq!(ticks_of(&rec), every_100(1000..=2500), "no hole");
+    new.stop_all();
+}
+
+#[test]
+fn a_release_told_to_stop_does_not_wait_long_for_a_tick_asked_at() {
+    let dir = TempDir::new("handover");
+    let (old, m, new, _) = asked_for_at(&dir, "192.0.2.52:27020", 9000);
+    until("the old release to hear", || m.giving.load(Ordering::Relaxed));
+    let told = Instant::now();
+    old.stop_all();
+    assert!(told.elapsed() >= STOP_WAIT / 2 && told.elapsed() < GIVE_BY, "{:?}", told.elapsed());
+    assert_eq!(ticks_of(&in_file(&dir, &m.id)), every_100(1000..=1700), "given as it is");
+    new.stop_all();
+}
