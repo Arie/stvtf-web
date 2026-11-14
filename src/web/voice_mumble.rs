@@ -9,6 +9,7 @@ use super::visitor::Who;
 use super::voice_in::{has_say, is_key};
 use super::{JSON, Request, TEXT, json_body, respond};
 use crate::matches::sessions::{Session, Sessions};
+use crate::voice::ChannelState;
 use crate::voice::feed::{DEFAULT_DELAY, MAX_DELAY};
 use crate::voice::mumble::{DEFAULT_PORT, MumbleJob, is_host, place};
 use crate::{App, lock};
@@ -114,6 +115,7 @@ fn want(app: &App, m: &Session, ask: Ask) -> Result<(), &'static str> {
         channel: channel.to_string(),
         delay,
         status: "connecting".into(),
+        state: Some(ChannelState::Connecting),
         asked: 1,
         id: wanted.iter().map(|j| j.id).max().unwrap_or(0) + 1,
         roster: None,

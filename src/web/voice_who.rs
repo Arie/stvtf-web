@@ -19,6 +19,7 @@ use crate::matches::sessions::Session;
 use crate::voice::feed::Put;
 use crate::voice::ids::{is_voice_id, parse_steamid};
 use crate::voice::who::Recalled;
+use crate::voice::{ChannelState, DiscordGoing};
 use crate::{App, lock};
 use serde::Deserialize;
 use std::io::{BufReader, Take};
@@ -45,6 +46,10 @@ struct Report {
     kind: String,
     #[serde(default)]
     status: String,
+    /// Where the bot is: `in`, `failed`, `left`; none from a bot before it said, and one not known
+    /// here goes by the status.
+    #[serde(default)]
+    state: Option<String>,
     #[serde(default)]
     people: Option<Vec<Member>>,
     #[serde(default)]
@@ -101,11 +106,12 @@ pub(super) fn post_voice_status(
 /// How it goes in a Discord `channel` the bot is in for match `m`, or that it left.
 fn discord_status(m: &Session, said: &Report, channel: &str, text: String) {
     let mut going = lock(&m.comms.discord);
-    going.retain(|_, (_, at)| at.elapsed() < DISCORD_SAID_FOR);
+    going.retain(|_, g| g.at.elapsed() < DISCORD_SAID_FOR);
     if said.left {
         going.remove(channel);
     } else if going.len() < MAX_CHANNELS || going.contains_key(channel) {
-        going.insert(channel.to_string(), (text, Instant::now()));
+        let state = ChannelState::said(said.state.as_deref(), &text);
+        going.insert(channel.to_string(), DiscordGoing { status: text, state, at: Instant::now() });
     }
 }
 
@@ -116,6 +122,7 @@ fn mumble_status(m: &Session, said: &Report, channel: &str, text: String) -> boo
     let only = jobs.len() == 1;
     let job = jobs.iter_mut().find(|j| said.job.map_or(only, |id| id == j.id));
     let Some(job) = job.filter(|j| said.asked.is_none_or(|a| a == j.asked)) else { return false };
+    job.state = Some(ChannelState::said(said.state.as_deref(), &text));
     job.status = text;
     if said.people.is_some() {
         job.roster = Some(channel.to_string());
@@ -156,13 +163,17 @@ fn theirs<'a>(app: &App, m: Option<&'a Session>, who: &Who) -> Option<&'a Sessio
 /// for someone with no say.
 pub(super) fn get_voice_comms(s: &mut TcpStream, app: &App, m: Option<&Session>, who: &Who) -> std::io::Result<()> {
     let Some(m) = theirs(app, m, who) else { return respond(s, "204 No Content", TEXT, b"") };
-    // Each Discord channel's going, one after the other.
-    let going: Vec<String> =
-        lock(&m.comms.discord).values().filter(|(_, at)| at.elapsed() < DISCORD_SAID_FOR).map(|(status, _)| status.clone()).collect();
-    let discord = (!going.is_empty()).then(|| serde_json::json!({ "status": going.join(" + ") }));
+    // Each Discord channel's going, one after the other; in, unless one is not.
+    let going: Vec<DiscordGoing> = lock(&m.comms.discord).values().filter(|g| g.at.elapsed() < DISCORD_SAID_FOR).cloned().collect();
+    let state = going.iter().map(|g| g.state).find(|s| *s != ChannelState::In).unwrap_or(ChannelState::In);
+    let status = going.iter().map(|g| g.status.as_str()).collect::<Vec<_>>().join(" + ");
+    let discord = (!going.is_empty()).then(|| serde_json::json!({ "status": status, "state": state }));
     let mumble: Vec<_> = lock(&m.comms.mumble)
         .iter()
-        .map(|j| serde_json::json!({ "id": j.id, "host": j.host, "port": j.port, "channel": j.channel, "delay": j.delay, "status": j.status }))
+        .map(|j| {
+            let state = j.state();
+            serde_json::json!({ "id": j.id, "host": j.host, "port": j.port, "channel": j.channel, "delay": j.delay, "status": j.status, "state": state })
+        })
         .collect();
     respond(s, "200 OK", JSON, serde_json::json!({ "discord": discord, "mumble": mumble }).to_string().as_bytes())
 }

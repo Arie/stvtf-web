@@ -294,3 +294,30 @@ fn a_match_page_s_voice_routes_take_the_methods_a_room_s_do() {
         assert!(!get(&app, &format!("/w/{id}/{path}"), "").starts_with("HTTP/1.1 404"), "{path}");
     }
 }
+
+#[test]
+fn where_the_bot_is_in_a_channel_is_what_it_says_else_what_its_status_says() {
+    let (app, id) = voice_app();
+    let page = format!("/w/{id}/");
+    let ask = r#"{"host":"mumble.example","channel":"B"}"#;
+    assert!(post(&app, &format!("{page}voice-mumble"), "", ask).starts_with("HTTP/1.1 204"));
+    let state = || {
+        let comms = get(&app, &format!("{page}voice-comms"), "");
+        comms.split(r#""state":""#).nth(1).map(|s| s.split('"').next().unwrap().to_string())
+    };
+    assert_eq!(state().as_deref(), Some("connecting"), "asked in");
+    for (body, now) in [
+        (r#"{"kind":"mumble","state":"failed","status":"Server full"}"#, "failed"),
+        (r#"{"kind":"mumble","state":"in","status":"B · 3"}"#, "in"),
+        // A bot that says no state, or one not known here: its status says.
+        (r#"{"kind":"mumble","status":"Could not join: no such channel"}"#, "failed"),
+        (r#"{"kind":"mumble","status":"Left: kicked"}"#, "left"),
+        (r#"{"kind":"mumble","state":"parked","status":"B · 2"}"#, "in"),
+    ] {
+        assert!(status(&app, &id, "k", body).starts_with("HTTP/1.1 204"), "{body}");
+        assert_eq!(state().as_deref(), Some(now), "{body}");
+    }
+    assert!(post(&app, &format!("{page}voice-mumble"), "", r#"{"leave":true}"#).starts_with("HTTP/1.1 204"));
+    assert!(status(&app, &id, "k", r#"{"kind":"discord","state":"in","status":"General · 2"}"#).starts_with("HTTP/1.1 204"));
+    assert!(get(&app, &format!("{page}voice-comms"), "").contains(r#"{"discord":{"state":"in","status":"General · 2"}"#));
+}

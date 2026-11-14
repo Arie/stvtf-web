@@ -4,6 +4,7 @@
 //! away.
 
 use crate::lock;
+use crate::voice::ChannelState;
 use serde::{Deserialize, Serialize};
 use std::sync::{Condvar, Mutex};
 use std::time::Duration;
@@ -24,6 +25,9 @@ pub(crate) struct MumbleJob {
     /// How it goes, as the bot last said.
     #[serde(default)]
     pub(crate) status: String,
+    /// Where the bot is in it; none in a job saved before: its status says.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) state: Option<ChannelState>,
     /// Counts each time the bot is asked to join: a new number, and it joins anew.
     #[serde(default)]
     pub(crate) asked: u64,
@@ -59,9 +63,14 @@ pub(crate) fn saved<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Vec<Mumble
 }
 
 impl MumbleJob {
+    /// Where the bot is in the channel, as it last said.
+    pub(crate) fn state(&self) -> ChannelState {
+        self.state.unwrap_or_else(|| ChannelState::of_status(&self.status))
+    }
+
     /// Whether the bot sits in the channel, as it last said.
     pub(crate) fn is_in(&self) -> bool {
-        !(self.status == "connecting" || self.status.starts_with("Could not join") || self.status.starts_with("Left"))
+        self.state() == ChannelState::In
     }
 }
 
@@ -128,4 +137,22 @@ pub(crate) fn place(wanted: &mut Vec<MumbleJob>, at: Option<usize>, mut job: Mum
     }
     wanted[at] = job;
     true
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_job_saved_without_a_state_loads_and_its_status_says_where_the_bot_is() {
+        #[derive(Deserialize)]
+        struct Saved {
+            #[serde(deserialize_with = "saved")]
+            mumble: Vec<MumbleJob>,
+        }
+        let old = r#"{"mumble":[{"host":"m.example","port":64738,"password":"","channel":"B","delay":90.0,"status":"Left: kicked"}]}"#;
+        let jobs = serde_json::from_str::<Saved>(old).unwrap().mumble;
+        assert_eq!((jobs[0].state, jobs[0].state()), (None, ChannelState::Left));
+        assert!(!serde_json::to_string(&jobs[0]).unwrap().contains("state"), "written as it was read");
+    }
 }

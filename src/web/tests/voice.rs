@@ -256,7 +256,10 @@ fn who_is_who_is_said_before_anyone_speaks_by_player_or_by_steam_id() {
     // The bot is in a Discord channel, and says who is there: nobody has said a word.
     let there = r#"{"kind":"discord","status":"In General with 2 people","people":[{"id":"77","name":"coach"},{"id":"78","name":"sub"}]}"#;
     assert!(status(&app, &id, "k", there).starts_with("HTTP/1.1 204"));
-    assert!(get(&app, &format!("{page}voice-comms"), "").ends_with(r#"{"discord":{"status":"In General with 2 people"},"mumble":[]}"#));
+    assert!(
+        get(&app, &format!("{page}voice-comms"), "")
+            .ends_with(r#"{"discord":{"state":"in","status":"In General with 2 people"},"mumble":[]}"#)
+    );
     let voices = get(&app, &format!("{page}voices"), "");
     assert!(voices.contains(r#"{"confirmed":false,"heard":false,"id":"77","linked":null,"name":"coach","steamid":null}"#), "{voices}");
     // One on a player in the match, one on a Steam id as people write them.
