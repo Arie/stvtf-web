@@ -7,7 +7,11 @@
 //! over [`GAP`]): the first frame goes out at its due tick, the rest follow at 20 ms each, never
 //! more than [`AHEAD`] before their own due tick. A pause stops everything where it is; what is
 //! said during one is set apart.
+//!
+//! What is held can be saved for another process on the same stream ([`VoiceHold::saved`],
+//! [`VoiceHold::adopt`]): due ticks stand, clocks do not.
 
+use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, VecDeque};
 use std::time::{Duration, Instant};
 
@@ -26,6 +30,14 @@ pub(crate) const MAX_HELD: usize = 16_000;
 /// The most speakers held at once, and the most frames of pause talk kept.
 const MAX_SPEAKERS: usize = 64;
 const MAX_PAUSE_TALK: usize = 6000;
+/// How often what is held is saved while it changes.
+pub(crate) const SAVED_EVERY: Duration = Duration::from_secs(5);
+/// A hold that saved and went on may have let go what was due this long after.
+const MAYBE_PLAYED: Duration = Duration::from_secs(7);
+/// The latest that what fell due with no process holding it still goes out.
+const MAX_LATE: Duration = Duration::from_secs(30);
+/// The most holds remembered as taken from.
+const MAX_ADOPTED: usize = 8;
 
 /// Frames (base64 Opus, in order) of one speaker: `who` is whatever names them.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -47,15 +59,45 @@ pub(crate) enum Took {
     Full,
     /// Not held: its source is not behind the stream (commentary), so it went straight out.
     Live,
+    /// The process is stopping: what it held is saved for the next, which takes this too.
+    Closed,
 }
 
 struct Frame {
+    /// Its number in this hold: they count up.
+    n: u64,
     due: u32,
     opus: String,
     /// The first of an utterance: it waits for its tick, those after it for the clock.
     starts: bool,
-    /// When it came in.
-    came: Instant,
+    /// When it came in; none for one another hold had.
+    came: Option<Instant>,
+}
+
+/// A held frame as saved: its number, its due tick, whether it starts an utterance, the Opus.
+#[derive(Debug, Serialize, Deserialize)]
+struct SavedFrame(u64, u32, bool, String);
+
+/// What a hold holds, as saved for another process.
+#[derive(Debug, Default, Serialize, Deserialize)]
+pub(crate) struct Held {
+    /// Each speaker's frames, in order.
+    #[serde(default)]
+    speakers: BTreeMap<String, Vec<SavedFrame>>,
+    /// Pause talk nobody asked for yet: its number, who, their frames.
+    #[serde(default)]
+    pause_talk: Vec<(u64, String, Vec<String>)>,
+}
+
+impl Held {
+    pub(crate) fn is_empty(&self) -> bool {
+        self.speakers.is_empty() && self.pause_talk.is_empty()
+    }
+
+    /// Whether anything of `who` is in it.
+    pub(crate) fn has(&self, who: &str) -> bool {
+        self.speakers.contains_key(who) || self.pause_talk.iter().any(|(_, w, _)| w == who)
+    }
 }
 
 #[derive(Default)]
@@ -74,17 +116,100 @@ pub(crate) struct VoiceHold {
     /// Since when the game is paused.
     paused: Option<Instant>,
     speakers: BTreeMap<String, Speaker>,
-    pause_talk: Vec<Said>,
+    /// Each with its number, as frames have.
+    pause_talk: Vec<(u64, Said)>,
+    /// How many numbers were given out.
+    count: u64,
+    /// The highest number taken from each hold adopted from, by its name.
+    adopted: BTreeMap<String, u64>,
 }
 
 impl VoiceHold {
     /// A hold for a stream of ticks `interval` seconds long.
     pub(crate) fn new(interval: f64) -> Self {
-        VoiceHold { interval, tick: None, paused: None, speakers: BTreeMap::new(), pause_talk: Vec::new() }
+        VoiceHold {
+            interval,
+            tick: None,
+            paused: None,
+            speakers: BTreeMap::new(),
+            pause_talk: Vec::new(),
+            count: 0,
+            adopted: BTreeMap::new(),
+        }
     }
 
     fn ticks(&self, time: f64) -> u32 {
         (time / self.interval.max(1e-6)).round() as u32
+    }
+
+    fn number(&mut self) -> u64 {
+        self.count += 1;
+        self.count
+    }
+
+    fn pause_talk_frames(&self) -> usize {
+        self.pause_talk.iter().map(|(_, s)| s.frames.len()).sum()
+    }
+
+    /// Set apart as pause talk, while there is room.
+    fn set_apart(&mut self, said: Said) {
+        if self.pause_talk_frames() + said.frames.len() <= MAX_PAUSE_TALK {
+            let n = self.number();
+            self.pause_talk.push((n, said));
+        }
+    }
+
+    /// Different whenever what is held is: something came in, went out or was dropped.
+    pub(crate) fn mark(&self) -> (u64, usize, usize) {
+        (self.count, self.held(), self.pause_talk_frames())
+    }
+
+    /// What is held now, for another process.
+    pub(crate) fn saved(&self) -> Held {
+        let frames = |s: &Speaker| s.frames.iter().map(|f| SavedFrame(f.n, f.due, f.starts, f.opus.clone())).collect();
+        Held {
+            speakers: self.speakers.iter().filter(|(_, s)| !s.frames.is_empty()).map(|(who, s)| (who.clone(), frames(s))).collect(),
+            pause_talk: self.pause_talk.iter().map(|(n, s)| (*n, s.who.clone(), s.frames.clone())).collect(),
+        }
+    }
+
+    /// Takes what the hold named `from` saved with its stream at tick `at`, on the same stream:
+    /// what was not taken from it before, each speaker's ahead of what they said here. `last`: it
+    /// let nothing go after saving; else what it may have played since is dropped. What is late
+    /// goes out at once, by the clock, unless over [`MAX_LATE`] late. Nothing without a tick.
+    pub(crate) fn adopt(&mut self, from: &str, held: Held, at: u32, last: bool) {
+        let Some(tick) = self.tick else { return };
+        let had = self.adopted.get(from).copied().unwrap_or(0);
+        let mut top = had;
+        let (too_late, maybe_played) = (self.ticks(MAX_LATE.as_secs_f64()), at.saturating_add(self.ticks(MAYBE_PLAYED.as_secs_f64())));
+        let stands = |due: u32| due.saturating_add(too_late) >= tick && (last || due > tick || due > maybe_played);
+        for (who, frames) in held.speakers {
+            top = frames.iter().map(|f| f.0).fold(top, u64::max);
+            let new: Vec<SavedFrame> = frames.into_iter().filter(|f| f.0 > had && stands(f.1)).collect();
+            if new.is_empty() || (!self.speakers.contains_key(&who) && self.speakers.len() >= MAX_SPEAKERS) {
+                continue;
+            }
+            let new: Vec<Frame> =
+                new.into_iter().map(|SavedFrame(_, due, starts, opus)| Frame { n: self.number(), due, opus, starts, came: None }).collect();
+            let s = self.speakers.entry(who).or_default();
+            let own = s.frames.iter().position(|f| f.came.is_some()).unwrap_or(s.frames.len());
+            let said_here = s.frames.split_off(own);
+            s.frames.extend(new);
+            s.frames.extend(said_here);
+            while s.frames.len() > MAX_HELD {
+                s.frames.pop_front();
+            }
+        }
+        for (n, who, frames) in held.pause_talk {
+            top = top.max(n);
+            if n > had {
+                self.set_apart(Said { who, frames });
+            }
+        }
+        if self.adopted.len() >= MAX_ADOPTED && !self.adopted.contains_key(from) {
+            self.adopted.clear();
+        }
+        self.adopted.insert(from.to_string(), top);
     }
 
     /// Frames held, all speakers'.
@@ -97,20 +222,20 @@ impl VoiceHold {
     pub(crate) fn take_in(&mut self, said: Said, delay: f64, now: Instant) -> Took {
         let Some(tick) = self.tick else { return Took::NoStream };
         if self.paused.is_some() {
-            if self.pause_talk.iter().map(|s| s.frames.len()).sum::<usize>() + said.frames.len() <= MAX_PAUSE_TALK {
-                self.pause_talk.push(said);
-            }
+            self.set_apart(said);
             return Took::PauseTalk;
         }
         if !self.speakers.contains_key(&said.who) && self.speakers.len() >= MAX_SPEAKERS {
             return Took::Full;
         }
         let due = tick + self.ticks(delay);
+        let first = self.count + 1;
+        self.count += said.frames.len() as u64;
         let s = self.speakers.entry(said.who).or_default();
         let mut starts = s.heard.is_none_or(|h| now.duration_since(h) > GAP);
         s.heard = Some(now);
-        for opus in said.frames {
-            s.frames.push_back(Frame { due, opus, starts, came: now });
+        for (n, opus) in (first..).zip(said.frames) {
+            s.frames.push_back(Frame { n, due, opus, starts, came: Some(now) });
             starts = false;
         }
         while s.frames.len() > MAX_HELD {
@@ -163,12 +288,17 @@ impl VoiceHold {
         match (paused, self.paused) {
             (true, None) => {
                 self.paused = Some(now);
+                let mut talk = Vec::new();
                 for (who, s) in &mut self.speakers {
-                    let kept = s.frames.iter().take_while(|f| f.came <= since + NOTICED).count();
+                    let kept = s.frames.iter().take_while(|f| f.came.is_none_or(|came| came <= since + NOTICED)).count();
                     let frames: Vec<String> = s.frames.drain(kept..).map(|f| f.opus).collect();
                     if !frames.is_empty() {
-                        self.pause_talk.push(Said { who: who.clone(), frames });
+                        talk.push(Said { who: who.clone(), frames });
                     }
+                }
+                for said in talk {
+                    let n = self.number();
+                    self.pause_talk.push((n, said));
                 }
             }
             (false, Some(since)) => {
@@ -184,7 +314,7 @@ impl VoiceHold {
 
     /// What was said during pauses since last asked.
     pub(crate) fn pause_talk(&mut self) -> Vec<Said> {
-        std::mem::take(&mut self.pause_talk)
+        std::mem::take(&mut self.pause_talk).into_iter().map(|(_, said)| said).collect()
     }
 
     /// The stream is gone, or on another map (its ticks start over): nothing held stands.
@@ -360,5 +490,107 @@ mod tests {
         assert_eq!(h.take_in(said("team", 0..1), 90.0, t0), Took::Held { due: 7000 });
         assert_eq!(h.take_in(said("other", 0..1), 30.0, t0), Took::Held { due: 3000 });
         assert_eq!(h.due(Some(3000), t0 + 30 * SEC), [said("other", 0..1)]);
+    }
+
+    /// What `h` holds, as another process would read it.
+    fn handed_on(h: &VoiceHold) -> Held {
+        serde_json::from_str(&serde_json::to_string(&h.saved()).unwrap()).unwrap()
+    }
+
+    #[test]
+    fn what_a_hold_saved_comes_out_of_the_next_at_its_tick() {
+        let t0 = Instant::now();
+        let mut old = hold(t0);
+        for i in 0..3u32 {
+            old.take_in(said("a", i..i + 1), 90.0, t0 + FRAME * i);
+        }
+        // The next process: another clock, the same stream.
+        let t1 = t0 + 10 * SEC;
+        let mut new = VoiceHold::new(0.015);
+        new.due(Some(1700), t1);
+        new.adopt("old", handed_on(&old), 1650, true);
+        assert_eq!(new.held(), 3);
+        assert_eq!(new.due(Some(6999), t1 + 80 * SEC).len(), 0, "not before its tick");
+        assert_eq!(new.due(Some(7000), t1 + 80 * SEC), [said("a", 0..1)], "the first at its tick");
+        assert_eq!(new.due(Some(7003), t1 + 80 * SEC + 2 * FRAME), [said("a", 1..3)], "the rest by the clock");
+    }
+
+    #[test]
+    fn a_hold_saved_again_gives_only_what_is_new_in_it() {
+        let t0 = Instant::now();
+        let mut old = hold(t0);
+        old.take_in(said("a", 0..2), 90.0, t0);
+        let mut new = VoiceHold::new(0.015);
+        new.due(Some(1000), t0);
+        new.adopt("old", handed_on(&old), 1000, false);
+        // The old one goes on a while beside the new one, as at a deploy.
+        old.take_in(said("a", 2..3), 90.0, t0 + FRAME);
+        new.take_in(said("a", 7..8), 90.0, t0 + SEC);
+        new.adopt("old", handed_on(&old), 1000, true);
+        new.adopt("old", handed_on(&old), 1000, true);
+        assert_eq!(new.held(), 4, "each frame once");
+        let mut out = Vec::new();
+        for i in 0..10 {
+            out.extend(new.due(Some(7100), t0 + 100 * SEC + FRAME * i));
+        }
+        let frames: Vec<String> = out.into_iter().flat_map(|s| s.frames).collect();
+        assert_eq!(frames, ["0", "1", "2", "7"], "the old hold's before what was said here since");
+    }
+
+    #[test]
+    fn what_fell_due_with_nobody_holding_it_goes_out_at_once_unless_long_late() {
+        let t0 = Instant::now();
+        let mut old = hold(t0);
+        old.take_in(said("late", 0..1), 10.0, t0);
+        old.take_in(said("gone", 0..1), 1.0, t0);
+        old.take_in(said("ahead", 0..1), 90.0, t0);
+        // The stream is 39 s on: one is 29 s late, one 38 s.
+        let mut new = VoiceHold::new(0.015);
+        new.due(Some(3600), t0);
+        new.adopt("old", handed_on(&old), 1000, true);
+        assert_eq!(new.due(None, t0), [said("late", 0..1)]);
+        assert_eq!(new.held(), 1, "what was too late is dropped, what is ahead waits");
+    }
+
+    #[test]
+    fn what_a_hold_that_went_on_after_saving_may_have_played_is_not_played_again() {
+        let t0 = Instant::now();
+        let mut old = hold(t0);
+        old.take_in(said("soon", 0..1), 3.0, t0);
+        old.take_in(said("later", 0..1), 12.0, t0);
+        // It saved at tick 1000 and stopped without a word (a crash); the stream is 15 s on.
+        let mut new = VoiceHold::new(0.015);
+        new.due(Some(2000), t0);
+        new.adopt("old", handed_on(&old), 1000, false);
+        assert_eq!(new.due(None, t0), [said("later", 0..1)], "due after it would have saved again: not played");
+        assert_eq!(new.held(), 0, "due soon after it saved: played by it, as likely as not");
+    }
+
+    #[test]
+    fn pause_talk_is_handed_on_once() {
+        let t0 = Instant::now();
+        let mut old = hold(t0);
+        old.on_pause(true, t0, t0);
+        old.take_in(said("a", 0..3), 90.0, t0);
+        let mut new = VoiceHold::new(0.015);
+        new.due(Some(1000), t0);
+        new.adopt("old", handed_on(&old), 1000, false);
+        new.adopt("old", handed_on(&old), 1000, true);
+        assert_eq!(new.pause_talk(), [said("a", 0..3)]);
+    }
+
+    #[test]
+    fn a_hold_says_when_what_it_holds_changed() {
+        let t0 = Instant::now();
+        let mut h = hold(t0);
+        let empty = h.mark();
+        h.take_in(said("a", 0..1), 90.0, t0);
+        let held = h.mark();
+        assert_ne!(empty, held);
+        h.due(Some(6000), t0 + 80 * SEC);
+        assert_eq!(h.mark(), held, "nothing went out");
+        h.due(Some(7000), t0 + 90 * SEC);
+        assert_ne!(h.mark(), held, "something did");
+        assert!(h.saved().is_empty());
     }
 }

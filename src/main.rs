@@ -56,6 +56,8 @@ const HOUSEKEEPING: Duration = Duration::from_millis(250);
 const PERSIST_ROUNDS: u64 = 20;
 /// Rounds between saves of the rooms: a second.
 const ROOM_PERSIST_ROUNDS: u64 = 4;
+/// Rounds between saves of the voice held.
+const VOICE_ROUNDS: u64 = (voice::hold::SAVED_EVERY.as_millis() / HOUSEKEEPING.as_millis()) as u64;
 /// Rounds between sweeps of old files: five minutes.
 const SWEEP_ROUNDS: u64 = 1200;
 
@@ -298,8 +300,9 @@ fn keep_house(app: Arc<App>, stop: &'static AtomicBool) {
         let Matches::Many(sessions) = &app.matches else { return };
         for round in 0u64.. {
             if stop.load(Ordering::Relaxed) {
-                // The feed up to now, for the process that takes over.
+                // The feed up to now, and the voice held, for the process that takes over.
                 sessions.persist();
+                sessions.save_voice(true);
                 app.rooms.persist();
                 sessions.stop_all();
                 std::process::exit(0);
@@ -310,10 +313,15 @@ fn keep_house(app: Arc<App>, stop: &'static AtomicBool) {
             if round % PERSIST_ROUNDS == 0 {
                 sessions.persist();
             }
-            // Where each room is, to the second; relayed rooms the process before let go of.
+            // Where each room is, to the second; relayed rooms the process before let go of,
+            // and the voice it held.
             if round % ROOM_PERSIST_ROUNDS == 0 {
                 app.rooms.persist();
                 app.rooms.pick_up_relayed(sessions);
+                sessions.adopt_voice();
+            }
+            if round % VOICE_ROUNDS == 0 {
+                sessions.save_voice(false);
             }
             // Old files of rooms, demos and live matches.
             if round % SWEEP_ROUNDS == 0 {

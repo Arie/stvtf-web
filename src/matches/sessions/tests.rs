@@ -435,3 +435,82 @@ fn stopping_all_waits_for_every_watcher_to_finish() {
     assert!(a.done.load(Ordering::Relaxed) && b.done.load(Ordering::Relaxed));
     assert!(s.get(&a.id).is_none() && s.get(&b.id).is_none());
 }
+
+/// The watchers of `target` find a stream on it, at tick 1000: one for each process.
+fn streaming(target: &str, processes: usize) {
+    for _ in 0..processes {
+        script(target, vec![server("cp_process_f12"), crate::matches::hub::tests::snapshot(1000, None, Vec::new())], None);
+    }
+}
+
+fn wait_for_stream(m: &Session) {
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while !m.has_stream() {
+        assert!(Instant::now() < deadline, "the watcher should have a stream");
+        std::thread::sleep(Duration::from_millis(1));
+    }
+}
+
+/// The files of held voice in `dir`.
+fn held_files(dir: &TempDir) -> Vec<String> {
+    let names = std::fs::read_dir(dir).unwrap().map(|e| e.unwrap().file_name().to_string_lossy().into_owned());
+    names.filter(|n| n.starts_with("held-")).collect()
+}
+
+fn say(m: &Arc<Session>) -> Option<crate::voice::hold::Took> {
+    m.take_in_voice(&"[U:1:5]".into(), vec!["aA==".to_string()], None)
+}
+
+#[test]
+fn held_voice_goes_to_the_release_that_takes_over() {
+    use crate::voice::hold::Took;
+    let dir = TempDir::new("sessions");
+    streaming("192.0.2.31:27020", 2);
+    let (old, _) = start_on(&dir);
+    let m = old.open("192.0.2.31:27020 tv", None, None).unwrap();
+    wait_for_stream(&m);
+    assert_eq!(say(&m), Some(Took::Held { due: 7000 }));
+    old.save_voice(false);
+    let (new, _) = start_on(&dir);
+    let again = new.get(&m.id).unwrap();
+    wait_for_stream(&again);
+    new.adopt_voice();
+    assert_eq!(again.comms.feed.held(), 1, "what the old release last saved, were it to stop without a word");
+    // Voice comes in at the old release until the proxy switches; it saves the last as it stops.
+    assert_eq!(say(&m), Some(Took::Held { due: 7000 }));
+    old.save_voice(true);
+    assert_eq!(say(&m), Some(Took::Closed), "and takes no more");
+    new.adopt_voice();
+    assert_eq!(again.comms.feed.held(), 2, "each frame once");
+    assert_eq!(held_files(&dir), [format!("held-{}-{}", m.id, new.claim)], "the new release's own, for the one after it");
+    old.adopt_voice();
+    assert_eq!(held_files(&dir).len(), 1, "a release taken over takes nothing");
+    new.reap(Duration::ZERO);
+    assert_eq!(held_files(&dir).len(), 0, "a match that ended leaves none");
+    old.stop_all();
+    new.stop_all();
+}
+
+#[test]
+fn held_voice_of_no_match_or_saved_long_ago_is_dropped() {
+    let dir = TempDir::new("sessions");
+    streaming("192.0.2.32:27020", 2);
+    let (old, _) = start_on(&dir);
+    let m = old.open("192.0.2.32:27020 tv", None, None).unwrap();
+    wait_for_stream(&m);
+    say(&m);
+    old.save_voice(true);
+    let saved = held_files(&dir).remove(0);
+    let long_ago = std::time::SystemTime::now() - Duration::from_secs(600);
+    std::fs::File::options().write(true).open(dir.join(&saved)).unwrap().set_modified(long_ago).unwrap();
+    let of_none = format!("held-{}-{}", random_id(), random_id());
+    std::fs::write(dir.join(&of_none), "{}").unwrap();
+    let (new, _) = start_on(&dir);
+    let again = new.get(&m.id).unwrap();
+    wait_for_stream(&again);
+    new.adopt_voice();
+    assert_eq!(held_files(&dir).len(), 0);
+    assert_eq!(again.comms.feed.held(), 0, "nothing in it is still due");
+    old.stop_all();
+    new.stop_all();
+}

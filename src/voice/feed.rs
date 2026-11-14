@@ -1,12 +1,16 @@
 //! A live match's voice from outside it: what the bot posts goes into a [`VoiceHold`], and what
 //! the hold lets go is published to the match's hub as `voice` lines (pages that asked, and the
 //! recording). The hold goes by the hub's stream: its tick, its pauses, its new starts.
+//!
+//! What is held outlives the process: it is saved ([`VoiceFeed::save`]) for the next one on the
+//! same stream to take ([`VoiceFeed::adopt`]).
 
 use crate::lock;
 use crate::matches::hub::{Hub, NamedPlayer, SharedHub, VoiceClock, publish};
 use crate::matches::live_demos::Spoken;
-use crate::voice::hold::{Said, Took, VoiceHold};
+use crate::voice::hold::{Held, Said, Took, VoiceHold};
 use crate::voice::ids::account_of;
+use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
@@ -25,14 +29,54 @@ const RATE: u16 = 24000;
 const STILL: Duration = Duration::from_millis(700);
 /// With nothing held and nothing said this long, the feed needs no tending.
 const IDLE: Duration = Duration::from_secs(60);
+/// Another process on the same stream may be this far behind the one that saved.
+const BEHIND: f64 = 5.0;
 
 /// Who said something: their `SteamID` when the bot knows it (their link), else who they are/// id and name; and the voice channel they are in.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
 pub(crate) struct Speaker {
     pub(crate) steamid: Option<String>,
     pub(crate) voice_id: Option<String>,
     pub(crate) name: Option<String>,
     pub(crate) channel: Option<String>,
+}
+
+/// What a feed holds, as saved for the next process.
+#[derive(Debug, Serialize, Deserialize)]
+pub(crate) struct SavedVoice {
+    /// The stream's map and tick as it was saved.
+    map: Option<String>,
+    tick: u32,
+    /// Saved as its process stopped: that let nothing go after.
+    #[serde(default)]
+    last: bool,
+    /// The tick the game stood still at, for the pause talk.
+    #[serde(default)]
+    paused_at: u32,
+    /// Those whose voice is held, as they were heard.
+    #[serde(default)]
+    known: BTreeMap<String, Speaker>,
+    held: Held,
+}
+
+/// What there is to save of a feed.
+pub(crate) enum Save {
+    /// As last saved.
+    Same,
+    /// Nothing is held now, though something was when last saved.
+    Nothing,
+    Held(Box<SavedVoice>),
+}
+
+/// What became of held voice given to a feed.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum Adopt {
+    Taken,
+    /// No stream to hold it against yet.
+    NotYet,
+    /// Not this stream's: another map, or ticks that started over.
+    Not,
 }
 
 impl From<&str> for Speaker {
@@ -111,6 +155,10 @@ struct State {
     said: Option<Instant>,
     /// What players said, as it went out, for the demo being recorded: until taken.
     spoken: Vec<Spoken>,
+    /// The hold's mark when last saved.
+    saved: Option<(u64, usize, usize)>,
+    /// Saved for the next process as this one stops: nothing comes in or goes out any more.
+    closed: bool,
 }
 
 impl State {
@@ -220,6 +268,9 @@ impl VoiceFeed {
         let key = who.key();
         {
             let mut st = lock(&self.0);
+            if st.closed {
+                return Took::Closed;
+            }
             if st.known.len() < MAX_KNOWN || st.known.contains_key(&key) {
                 st.known.insert(key.clone(), who.clone());
             }
@@ -363,10 +414,70 @@ impl VoiceFeed {
         std::mem::take(&mut lock(&self.0).spoken)
     }
 
+    /// Frames held.
+    pub(crate) fn held(&self) -> usize {
+        lock(&self.0).hold.as_ref().map_or(0, VoiceHold::held)
+    }
+
     /// Whether nothing is held and nothing was said for a while: no need to tend it.
     pub(crate) fn idle(&self, now: Instant) -> bool {
-        let st = lock(&self.0);
-        st.hold.as_ref().is_none_or(|h| h.held() == 0) && st.said.is_none_or(|s| now.duration_since(s) > IDLE)
+        self.held() == 0 && lock(&self.0).said.is_none_or(|s| now.duration_since(s) > IDLE)
+    }
+
+    /// What is held, for the next process, if it changed since last asked; `last`, as this
+    /// process stops: always, and from then on nothing comes in or goes out here.
+    pub(crate) fn save(&self, hub: &SharedHub, last: bool) -> Save {
+        let mut st = lock(&self.0);
+        let mark = st.hold.as_ref().map_or_default(VoiceHold::mark);
+        if !last && st.saved.unwrap_or_default() == mark {
+            return Save::Same;
+        }
+        st.saved = Some(mark);
+        st.closed |= last;
+        let held = st.hold.as_ref().map_or_default(VoiceHold::saved);
+        if held.is_empty() {
+            return Save::Nothing;
+        }
+        let (map, tick) = {
+            let hub = lock(hub);
+            (hub.map.clone(), hub.voice_clock().tick.unwrap_or(0))
+        };
+        let known = st.known.iter().filter(|(key, _)| held.has(key)).map(|(key, who)| (key.clone(), who.clone())).collect();
+        Save::Held(Box::new(SavedVoice { map, tick, last, paused_at: st.paused_at, known, held }))
+    }
+
+    /// Takes what the feed of the process named `from` saved of this match (see
+    /// `VoiceHold::adopt`), once there is a stream; its pause talk at once when the game goes on.
+    pub(crate) fn adopt(&self, hub: &SharedHub, from: &str, saved: SavedVoice, now: Instant) -> Adopt {
+        // New starts first: the first look at a stream is one.
+        self.step(hub, now);
+        let pause_talk = {
+            let mut st = lock(&self.0);
+            let (tick, map, interval) = {
+                let hub = lock(hub);
+                (hub.voice_clock().tick, hub.map.clone(), hub.tick_interval())
+            };
+            let Some(tick) = tick else { return Adopt::NotYet };
+            let behind = (BEHIND / interval.max(1e-6)) as u32;
+            if st.closed || map != saved.map || tick.saturating_add(behind) < saved.tick {
+                return Adopt::Not;
+            }
+            for (key, who) in saved.known {
+                if st.known.len() < MAX_KNOWN {
+                    st.known.entry(key).or_insert(who);
+                }
+            }
+            st.said = Some(now);
+            let paused = st.paused;
+            let hold = st.hold.get_or_insert_with(|| VoiceHold::new(interval));
+            hold.adopt(from, saved.held, saved.tick, saved.last);
+            if paused { Vec::new() } else { hold.pause_talk() }
+        };
+        for said in pause_talk {
+            let line = self.line(hub, said, saved.paused_at, true);
+            publish(hub, &line);
+        }
+        Adopt::Taken
     }
 
     /// One look at the stream: the hold follows its tick, pauses and new starts, and what is due
@@ -375,6 +486,9 @@ impl VoiceFeed {
         let (out, pause_talk, at, tick) = {
             // The feed first, then the stream's clock: two looking at once see it in turn.
             let mut st = lock(&self.0);
+            if st.closed {
+                return;
+            }
             let (VoiceClock { tick, paused, epoch }, interval) = {
                 let hub = lock(hub);
                 (hub.voice_clock(), hub.tick_interval())
@@ -743,5 +857,98 @@ mod tests {
         publish(&hub, &Line::Pause(Pause { tick: 1000, paused: true }));
         assert_eq!(feed.take_in(&hub, &"[U:1:99]".into(), frames(1), Some(0.0), now), Took::Live, "casters see the pause too");
         assert_eq!(voices(&page).len(), 1);
+    }
+
+    /// A hub on `map`, its stream at `tick`, as a process just connected has it.
+    fn on(map: &str, tick: u32) -> SharedHub {
+        let hub = SharedHub::default();
+        publish(&hub, &crate::testing::server(map));
+        at(&hub, tick);
+        hub
+    }
+
+    /// What `feed` saves, as the next process reads it.
+    fn handed_on(feed: &VoiceFeed, hub: &SharedHub, last: bool) -> SavedVoice {
+        let Save::Held(saved) = feed.save(hub, last) else { panic!("nothing to save") };
+        serde_json::from_slice(&serde_json::to_vec(&saved).unwrap()).unwrap()
+    }
+
+    #[test]
+    fn what_a_feed_held_as_its_process_stopped_comes_out_of_the_next_at_its_tick() {
+        let (old_hub, old, now) = (on("cp_process_f12", 1000), VoiceFeed::default(), Instant::now());
+        assert_eq!(old.take_in(&old_hub, &unlinked("77", "coach"), frames(2), None, now), Took::Held { due: 7000 });
+        let saved = handed_on(&old, &old_hub, true);
+        // The next process is on the stream a little later.
+        let (hub, new) = (on("cp_process_f12", 1400), VoiceFeed::default());
+        let page = subscribe_to(&hub, false, true);
+        assert_eq!(new.adopt(&hub, "old", saved, now), Adopt::Taken);
+        assert!(!new.idle(now), "it needs tending");
+        at(&hub, 6999);
+        new.step(&hub, now);
+        assert_eq!(voices(&page).len(), 0, "not before its tick");
+        at(&hub, 7000);
+        new.step(&hub, now);
+        let out = voices(&page);
+        assert_eq!((out.len(), out[0]["tick"].as_u64(), out[0]["name"].as_str()), (1, Some(7000), Some("coach")), "{out:?}");
+    }
+
+    #[test]
+    fn a_feed_saved_as_its_process_stops_takes_no_more_and_lets_nothing_go() {
+        let (hub, feed, now) = (on("cp_process_f12", 1000), VoiceFeed::default(), Instant::now());
+        feed.take_in(&hub, &STEAMID.into(), frames(1), None, now);
+        let page = subscribe_to(&hub, false, true);
+        handed_on(&feed, &hub, true);
+        assert_eq!(feed.take_in(&hub, &STEAMID.into(), frames(1), None, now), Took::Closed, "the next process has it");
+        at(&hub, 7000);
+        feed.step(&hub, now);
+        assert_eq!(voices(&page).len(), 0, "the next process plays it");
+    }
+
+    #[test]
+    fn a_feed_is_saved_again_only_when_what_it_holds_changed() {
+        let (hub, feed, now) = (on("cp_process_f12", 1000), VoiceFeed::default(), Instant::now());
+        assert!(matches!(feed.save(&hub, false), Save::Same), "nothing held, nothing saved");
+        feed.take_in(&hub, &STEAMID.into(), frames(1), None, now);
+        assert!(matches!(feed.save(&hub, false), Save::Held(_)));
+        assert!(matches!(feed.save(&hub, false), Save::Same));
+        at(&hub, 7000);
+        feed.step(&hub, now);
+        assert!(matches!(feed.save(&hub, false), Save::Nothing), "it went out: what was saved is not held now");
+        assert!(matches!(feed.save(&hub, false), Save::Same));
+    }
+
+    #[test]
+    fn held_voice_is_not_taken_on_another_map_or_a_stream_that_started_over() {
+        let (old_hub, old, now) = (on("cp_process_f12", 9000), VoiceFeed::default(), Instant::now());
+        old.take_in(&old_hub, &STEAMID.into(), frames(1), None, now);
+        let other_map = on("cp_gullywash_f9", 9100);
+        assert_eq!(VoiceFeed::default().adopt(&other_map, "old", handed_on(&old, &old_hub, false), now), Adopt::Not);
+        let started_over = on("cp_process_f12", 500);
+        assert_eq!(VoiceFeed::default().adopt(&started_over, "old", handed_on(&old, &old_hub, true), now), Adopt::Not);
+    }
+
+    #[test]
+    fn held_voice_waits_for_the_stream_to_be_taken() {
+        let (old_hub, old, now) = (on("cp_process_f12", 1000), VoiceFeed::default(), Instant::now());
+        old.take_in(&old_hub, &STEAMID.into(), frames(1), None, now);
+        let (hub, new) = (SharedHub::default(), VoiceFeed::default());
+        assert_eq!(new.adopt(&hub, "old", handed_on(&old, &old_hub, true), now), Adopt::NotYet);
+    }
+
+    #[test]
+    fn pause_talk_handed_on_is_kept_at_the_tick_the_game_stood_still_at() {
+        let (old_hub, old, now) = (on("cp_process_f12", 1000), VoiceFeed::default(), Instant::now());
+        old.step(&old_hub, now);
+        publish(&old_hub, &Line::Pause(Pause { tick: 1000, paused: true }));
+        old.step(&old_hub, now);
+        assert_eq!(old.take_in(&old_hub, &STEAMID.into(), frames(3), None, now), Took::PauseTalk);
+        let saved = handed_on(&old, &old_hub, true);
+        // The game went on before the next process was there.
+        let (hub, new) = (on("cp_process_f12", 1200), VoiceFeed::default());
+        let (page, recorder) = (subscribe_to(&hub, true, true), subscribe_all(&hub));
+        assert_eq!(new.adopt(&hub, "old", saved, now), Adopt::Taken);
+        assert_eq!(voices(&page).len(), 0, "no page hears it");
+        let kept = voices(&recorder);
+        assert_eq!((kept.len(), kept[0]["pause"].as_bool(), kept[0]["tick"].as_u64()), (1, Some(true), Some(1000)), "{kept:?}");
     }
 }

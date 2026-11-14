@@ -50,6 +50,18 @@ fn voice_posted_to_a_live_match_is_held_to_its_tick() {
 }
 
 #[test]
+fn voice_posted_as_the_server_stops_is_to_be_posted_again() {
+    let (app, id) = voice_app();
+    let Matches::Many(sessions) = &app.matches else { panic!() };
+    let m = sessions.get(&id).unwrap();
+    publish(&m.hub, &crate::matches::hub::tests::snapshot(1000, None, Vec::new()));
+    // What it holds is saved for the next process: that one takes what comes now.
+    m.comms.feed.save(&m.hub, true);
+    let stopping = post_voice(&app, &id, Some("k"), VOICE);
+    assert!(stopping.starts_with("HTTP/1.1 503"), "{stopping}");
+}
+
+#[test]
 fn a_room_takes_voice_for_its_live_match_and_its_admins_match_who_is_who() {
     let (app, id) = voice_app();
     let Matches::Many(sessions) = &app.matches else { panic!() };

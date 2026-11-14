@@ -333,6 +333,7 @@ impl Sessions {
         if let Some(store) = &self.store {
             store.forget(&s.id);
             store.forget(&live_file(&s.id));
+            self.forget_voice(store, &s.id);
         }
         if let Some(d) = s.demos.get() {
             d.forget();

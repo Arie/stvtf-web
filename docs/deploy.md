@@ -41,6 +41,12 @@ Europe. They are asked again after a day, or after ten minutes when no site knew
 word on who is who stands over a link; a match starter's does in their own match, and is a
 suggestion elsewhere.
 
+Voice held for a match's delay goes over a deploy: the old container saves what it holds
+(`/data/sessions/held-<match>-<process>`) every 5 s and as it stops, and the new one plays it at
+its tick. After a crash what came in since the last save is gone, as is what was due in the 7 s
+after it; the rest plays, late by no more than 30 s. A version that does not know these files
+leaves them be.
+
 ## Logs
 
 What the app and the relays say of themselves is on the containers' own logs (`kamal app logs`,

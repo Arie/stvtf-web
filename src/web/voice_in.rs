@@ -96,6 +96,7 @@ pub(super) fn post_voice(
         Some(Took::Live) => respond(s, "200 OK", TEXT, b"live"),
         Some(Took::NoStream) => respond(s, "409 Conflict", TEXT, b"no stream yet"),
         Some(Took::Full) => respond(s, "429 Too Many Requests", TEXT, b"too many speakers"),
+        Some(Took::Closed) => respond(s, "503 Service Unavailable", TEXT, b"restarting"),
     }
 }
 

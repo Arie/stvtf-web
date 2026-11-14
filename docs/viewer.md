@@ -67,7 +67,12 @@ comes out as `voice` lines with `injected`, for a live match only. What is said 
 paused is kept in the recording (`pause`), and played to no one. With `"delay": 0` it is
 commentary on the stream itself (casters watching it): straight out, paused or not. 401 without
 the key, 403 without the match's invite, 404 with no key set or no live match, 409 before the
-stream has a tick.
+stream has a tick, 503 as the server stops (the next one takes it).
+
+What is held goes on to the next process: each saves what it holds of a match in the store
+(`held-<match>-<process>`, every 5 s while it changes and as it stops), and the one the store
+belongs to takes the others' and plays it at its tick. What fell due with no process there goes
+out at once, unless over 30 s late.
 
 The invite is what lets a Discord channel into a match: the key only says it is our bot, which
 anyone can have in their server. `GET /w/<id>/voice-invite` (a room's too) gives `{"invite",
