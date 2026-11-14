@@ -6,7 +6,8 @@
 //! says so (`live-<id>.given`); it does the same as it stops, asked or not. The new one reads what
 //! was added, goes on with its own lines from the tick after the file's last, and writes from
 //! there. A file not given within [`GIVE_WAIT`] of the asking (its writer is gone) is taken as it
-//! is.
+//! is. A process that gave its file and still runs when the one that took it stops (a deploy
+//! that failed) writes it again, whole.
 
 use super::session::Session;
 use super::store::{LIVE_PREFIX, Store, live_file, to_file};
@@ -35,7 +36,8 @@ pub(super) fn take_file(id: &str) -> String {
     format!("{LIVE_PREFIX}{id}.take")
 }
 
-/// There once match `id`'s file is closed and nobody writes it.
+/// There once match `id`'s file is closed and nobody writes it: the mark of the process that
+/// closed it.
 pub(super) fn given_file(id: &str) -> String {
     format!("{LIVE_PREFIX}{id}.given")
 }
@@ -70,14 +72,23 @@ impl LiveFile {
         Some(SystemTime::now().duration_since(at).unwrap_or_default())
     }
 
-    fn is_given(&self) -> bool {
-        self.store.has(&given_file(&self.id))
+    /// Whether another process closed the file and this one is the one to have it: the first
+    /// that takes its word away.
+    fn take_given(&self) -> bool {
+        let name = given_file(&self.id);
+        if self.store.read(&name).map_or(true, |by| by == self.mark.as_bytes()) {
+            return false;
+        }
+        let mine = format!("{name}.{}", self.mark);
+        let got = std::fs::rename(self.store.path(&name), self.store.path(&mine)).is_ok();
+        self.store.forget(&mine);
+        got
     }
 
     /// Closes `recording` into the file, if this process writes it, and says nobody does now.
     pub(super) fn give(&self, recording: &Recording) {
         if recording.give()
-            && let Err(e) = self.store.replace(&given_file(&self.id), b"")
+            && let Err(e) = self.store.replace(&given_file(&self.id), self.mark.as_bytes())
         {
             log!("giving match {}'s recording: {e:#}", self.id);
         }
@@ -140,7 +151,7 @@ impl Taking {
             return false;
         }
         self.looked = Some(Instant::now());
-        file.is_given()
+        file.take_given()
     }
 
     /// Takes the file: what was added to it since it was read, then this process's own lines,
@@ -162,7 +173,6 @@ impl Taking {
         if !whole {
             recording.rewrite();
         }
-        file.store.forget(&given_file(&file.id));
         recording.write_to(to_file(&file.store, &name));
         let last = recording.last_tick().filter(|_| since);
         let had = last.map_or(0, |last| in_file_already(self.held.iter().map(|(s, _)| s.line.tick()), last, interval));
@@ -273,7 +283,8 @@ impl Pump {
         recording.end();
     }
 
-    /// Takes the file once it may, or gives it once another process asks for it.
+    /// Takes the file once it may, gives it once another process asks for it, or takes it back
+    /// once that one stops.
     fn hand_over(&mut self, s: &Session, recording: &Recording) {
         let Some(file) = &self.file else { return };
         if let Some(taking) = &mut self.taking {
@@ -284,10 +295,19 @@ impl Pump {
             }
             return;
         }
-        if !recording.is_written() || self.looked.elapsed() < RECORD_POLL {
+        if self.looked.elapsed() < RECORD_POLL {
             return;
         }
         self.looked = Instant::now();
+        if !recording.is_written() {
+            // The process that took the file stopped: this one has it all, and writes it again.
+            if file.take_given() {
+                file.ask();
+                recording.rewrite();
+                recording.write_to(to_file(&file.store, &live_file(&file.id)));
+            }
+            return;
+        }
         match file.asked() {
             Some(ago) if ago < GIVE_WITHIN => file.give(recording),
             Some(_) => recording.let_go(),

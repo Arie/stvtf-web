@@ -136,3 +136,27 @@ fn a_map_loaded_again_meanwhile_is_a_new_load_with_all_its_lines() {
     assert_eq!(rec.parts().iter().map(|p| p.load).collect::<Vec<_>>(), [0, 1]);
     new.stop_all();
 }
+
+#[test]
+fn a_release_writes_its_recording_again_when_the_one_that_took_it_stops() {
+    let dir = TempDir::new("handover");
+    let target = "192.0.2.45:27020";
+    script(target, stream("cp_a", 1000..=1700), None);
+    let (old, _) = start_on(&dir);
+    let m = old.open(&format!("{target} tv"), None, None).unwrap();
+    let before = m.ready().unwrap();
+    until("the old release's lines", || ticks_of(&before).last() == Some(&1700));
+    script(target, stream("cp_a", 1500..=2000), None);
+    let (new, _) = start_on(&dir);
+    let rec = new.get(&m.id).unwrap().ready().unwrap();
+    until("the file to be the new release's", || rec.is_written());
+    // The old release's stream went on too; the new one is taken down (a deploy that failed).
+    for tick in every_100(1800..=2200) {
+        crate::matches::hub::publish(&m.hub, &snapshot(tick, None, Vec::new()));
+    }
+    new.stop_all();
+    until("the file to be the old release's again", || before.is_written());
+    until("its lines", || ticks_of(&before).last() == Some(&2200));
+    old.stop_all();
+    assert_eq!(ticks_of(&in_file(&dir, &m.id)), every_100(1000..=2200), "all it has, once");
+}

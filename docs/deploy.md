@@ -92,10 +92,11 @@ A match's recording (`/data/sessions/live-<match>.gz`) has one writer. The new c
 it and connects to the SourceTV itself; once its stream has a tick it asks for the file
 (`live-<match>.take`), and the old one, which looks every 250 ms, closes its open chunk into it,
 writes no more and says so (`live-<match>.given`). The new one then goes on from the tick after
-the file's last: nothing missing, nothing twice. The old one gives its files as it stops too. A
-file not given within 3 s of the asking (a crash, a version before this) is taken as it is: what
-the old one had not written (10 s at most) and the time nobody was connected are a hole. A
-stretch an older version wrote twice is read once.
+the file's last: nothing missing, nothing twice. The old one gives its files as it stops too,
+and writes one again, whole, when the container that took it is stopped first (a deploy that
+failed). A file not given within 3 s of the asking (a crash, a version before this) is taken as
+it is: what the old one had not written (10 s at most) and the time nobody was connected are a
+hole. A stretch an older version wrote twice is read once.
 
 A match running at a deploy goes on: the recording and its demos are picked up, and demos named
 without a load (`live-<match>-<tick>.dem`) are given loads by their order in time, a lower first
