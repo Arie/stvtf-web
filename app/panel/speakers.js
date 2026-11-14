@@ -14,7 +14,7 @@ import { voiceDemos } from "./voicedemos.js";
 // How often the cards and the list show who talks, in milliseconds.
 const REFRESH_MS = 150;
 // How much bigger a card's mark is for someone at their loudest.
-const GROW = 0.6;
+const GROW = 0.4;
 
 // How loud each card's waveform shows its player, eased.
 /** @type {Map<number, number>} */

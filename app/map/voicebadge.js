@@ -15,8 +15,8 @@ const SIZE = 0.62,
   LOW = 0.35,
   // How faint a muted player's badge is while they are silent.
   QUIET = 0.4,
-  // How much bigger the badge of someone at their loudest is: about the dot's own size then.
-  GROW = 0.7,
+  // How much bigger the badge of someone at their loudest is.
+  GROW = 0.45,
   // The waveform's bars: how tall each gets against the others, and how fast they move.
   BARS = [0.5, 0.85, 1, 0.7, 0.45],
   BEAT = 0.011;
