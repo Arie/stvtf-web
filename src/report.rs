@@ -127,7 +127,7 @@ fn page_event(fault: &PageFault, agent: &str) -> Event<'static> {
         request: Some(Request { headers: [("User-Agent".to_string(), cut(agent, 300))].into(), ..Default::default() }),
         ..Default::default()
     };
-    event.tags.insert("page".into(), cut(&unnamed(&fault.page), 100));
+    event.tags.insert("page".into(), cut(&fault.page, 100));
     event.tags.insert("build".into(), cut(&fault.build, 40));
     event
 }
@@ -135,15 +135,6 @@ fn page_event(fault: &PageFault, agent: &str) -> Event<'static> {
 /// `text`, no longer than `most` characters.
 fn cut(text: &str, most: usize) -> String {
     text.chars().take(most).collect()
-}
-
-/// A page's path without whose it is: a room's or a match's id is its key.
-fn unnamed(path: &str) -> String {
-    let mut parts: Vec<&str> = path.split('/').collect();
-    if let [_, "r" | "w", id, ..] = parts.as_mut_slice() {
-        *id = "…";
-    }
-    parts.join("/")
 }
 
 /// A browser's stack as frames, the innermost last (as Sentry has them): `at name (file:1:2)`
@@ -210,13 +201,6 @@ mod tests {
     }
 
     #[test]
-    fn a_page_is_told_without_whose_room_it_is() {
-        assert_eq!(unnamed("/r/1e0da2222f5d5576f2f5ad01d26d603a/"), "/r/…/");
-        assert_eq!(unnamed("/w/d1495403/overlay"), "/w/…/overlay");
-        assert_eq!(unnamed("/"), "/");
-    }
-
-    #[test]
     fn a_page_s_report_becomes_an_error_of_its_kind() {
         let fault: PageFault = serde_json::from_str(
             r#"{"kind":"TypeError","message":"x is undefined","stack":"f@https://stv.tf/app/1/a.js:1:2","page":"/r/abc/","build":"1"}"#,
@@ -225,7 +209,7 @@ mod tests {
         let event = page_event(&fault, "Mozilla/5.0");
         assert_eq!(event.exception[0].ty, "TypeError");
         assert_eq!(event.exception[0].value.as_deref(), Some("x is undefined"));
-        assert_eq!(event.tags["page"], "/r/…/");
+        assert_eq!(event.tags["page"], "/r/abc/");
         assert_eq!(event.exception[0].stacktrace.as_ref().unwrap().frames.len(), 1);
     }
 

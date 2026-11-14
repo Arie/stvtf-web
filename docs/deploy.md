@@ -71,7 +71,7 @@ nothing is sent):
 - the lines of the log that should never be said (a save that failed, a recording or clients
   not handed over, no port for a relay), each kind once a minute at most;
 - what a viewer's page reports of itself (`POST /fault`: an error or a rejected promise, five a
-  page and 30 a minute of all at most), without the room's or match's id.
+  page and 30 a minute of all at most), with the room's or match's path.
 
 Each says its region (`STVTF_REGION`), whether the app, a relay or a page said it, and its
 version (`SENTRY_RELEASE`, the image's). No addresses are sent, and no names.
