@@ -18,7 +18,7 @@ use crate::{is_name, lock};
 use anyhow::{Context, Result, bail};
 use base64::Engine;
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::{BufRead, Write};
 use std::path::{Path, PathBuf};
@@ -30,19 +30,31 @@ const KEPT_PREFIX: &str = "kept-";
 /// What follows a demo's name in that of its voice.
 const VOICE: &str = ".voice";
 
-/// Something a player said from outside the match, as the match's stream came to its tick: what
-/// writing it into a demo takes.
+/// Something said from outside the match, as the match's stream came to its tick: what writing it
+/// into a demo takes.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct Spoken {
     /// The server's tick it was heard at.
     pub(crate) tick: u32,
-    /// The player's slot: their entity less one.
-    pub(crate) slot: u8,
-    /// Their Steam account.
-    pub(crate) account: u32,
+    #[serde(flatten)]
+    pub(crate) by: By,
     /// Opus frames, base64.
     pub(crate) frames: Vec<String>,
 }
+
+/// Whose voice it was.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub(crate) enum By {
+    /// A player's then: their slot (their entity less one) and Steam account.
+    Player { slot: u8, account: u32 },
+    /// No player's then, by who they are where they talk (as their lines name them): a player's
+    /// once someone says whose, when the demo is built.
+    Voice { who: String },
+}
+
+/// Whose account someone in a voice channel is said to be by now, by who they are there.
+pub(crate) type WhoNow<'a> = &'a dyn Fn(&str) -> Option<u32>;
 
 /// A demo to download with its comms in it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -107,35 +119,90 @@ pub(crate) fn downloads(dir: &Path, id: &str) -> Vec<Download> {
     found.into_iter().map(|(_, d)| d).collect()
 }
 
+/// What was said in `demo`, as kept beside it. A line cut short (the match still going) is left
+/// out.
+fn spoken_in(demo: &Path) -> Result<Vec<Spoken>> {
+    let lines = std::io::BufReader::new(File::open(voice_of(demo))?).lines();
+    Ok(lines.map_while(Result::ok).filter_map(|l| serde_json::from_str(&l).ok()).collect())
+}
+
 /// What tells match `id`'s demo `file` with its comms from any other, and from itself once more
-/// was recorded or said: None if it is none.
-pub(crate) fn comms_key(dir: &Path, id: &str, file: &str) -> Option<String> {
+/// was recorded or said, or someone in it is said to be another (`who`): None if it is none.
+pub(crate) fn comms_key(dir: &Path, id: &str, file: &str, who: WhoNow) -> Option<String> {
     let path = with_comms(dir, id, file)?;
     let len = |p: &Path| std::fs::metadata(p).map_or(0, |m| m.len());
-    Some(format!("{id}-{file}-{}-{}", len(&path), len(&voice_of(&path))))
+    let mut said: Vec<String> = spoken_in(&path)
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|s| match s.by {
+            By::Voice { who } => Some(who),
+            By::Player { .. } => None,
+        })
+        .collect();
+    said.sort();
+    said.dedup();
+    let whom: Vec<String> = said.iter().filter_map(|w| Some(format!("{w}={}", who(w)?))).collect();
+    Some(format!("{id}-{file}-{}-{}-{}", len(&path), len(&voice_of(&path)), whom.join(",")))
+}
+
+/// How often the players' slots are looked at in a demo, for the voices put on them since.
+const SLOTS_HZ: f32 = 1.0;
+
+/// Where each account's player was in `demo`, snapshot by snapshot: the tick, and each one's slot
+/// (their entity less one). Of a demo still being written, as far as it reads.
+fn slots_in(demo: &[u8]) -> Vec<(u32, Vec<(u32, u8)>)> {
+    let mut slots = Vec::new();
+    let _ = stvtf::decode::demo_file(demo, SLOTS_HZ, &mut |line| {
+        if let stvtf::Line::Snapshot(snap) = line {
+            let slot =
+                |p: &stvtf::output::Player| Some((crate::voice::ids::account_of(&p.steamid)?, u8::try_from(p.ent.checked_sub(1)?).ok()?));
+            slots.push((snap.tick, snap.players.iter().filter_map(slot).collect()));
+        }
+    });
+    slots
 }
 
 /// Match `id`'s demo `file` as TF2 plays it, the comms written into it as its players' voice:
-/// what to call it, and the demo.
-pub(crate) fn build(dir: &Path, id: &str, file: &str) -> Result<(String, Vec<u8>)> {
+/// what to call it, and the demo. A voice that was no player's is the player's it is said to be
+/// by now (`who`), where that one was playing.
+pub(crate) fn build(dir: &Path, id: &str, file: &str, who: WhoNow) -> Result<(String, Vec<u8>)> {
     let path = with_comms(dir, id, file).context("no such demo")?;
     let first = i64::from(load_tick(file).context("no such demo")?.1);
-    let b64 = base64::engine::general_purpose::STANDARD;
-    let mut voices = Vec::new();
-    for line in std::io::BufReader::new(File::open(voice_of(&path))?).lines() {
-        // A line cut short (the match still going) is left out.
-        let Ok(said) = serde_json::from_str::<Spoken>(&line?) else { continue };
-        voices.push(stvtf::demo::Voiced {
-            tick: i32::try_from(i64::from(said.tick) - first).unwrap_or(0),
-            slot: said.slot,
-            account: said.account,
-            rate: 24000,
-            frames: said.frames.iter().filter_map(|f| b64.decode(f).ok()).collect(),
-        });
-    }
     let map = map_of(&path).context("not a demo")?;
     if !is_name(&map, b"_-") {
         bail!("a map of that name");
+    }
+    let said = spoken_in(&path)?;
+    // Whose each voice is now, asked once; the players' slots only if any is someone's.
+    let mut whom: HashMap<&str, Option<u32>> = HashMap::new();
+    for s in &said {
+        if let By::Voice { who: voice } = &s.by {
+            whom.entry(voice).or_insert_with(|| who(voice));
+        }
+    }
+    let slots = if whom.values().any(Option::is_some) { slots_in(&std::fs::read(&path)?) } else { Vec::new() };
+    let slot_at = |tick: u32, account: u32| {
+        let at = slots.partition_point(|(t, _)| *t <= tick).checked_sub(1)?;
+        slots[at].1.iter().find(|(a, _)| *a == account).map(|(_, slot)| *slot)
+    };
+    let b64 = base64::engine::general_purpose::STANDARD;
+    let mut voices = Vec::new();
+    for s in &said {
+        let (slot, account) = match &s.by {
+            By::Player { slot, account } => (*slot, *account),
+            By::Voice { who: voice } => {
+                let Some(account) = whom.get(voice.as_str()).copied().flatten() else { continue };
+                let Some(slot) = slot_at(s.tick, account) else { continue };
+                (slot, account)
+            }
+        };
+        voices.push(stvtf::demo::Voiced {
+            tick: i32::try_from(i64::from(s.tick) - first).unwrap_or(0),
+            slot,
+            account,
+            rate: 24000,
+            frames: s.frames.iter().filter_map(|f| b64.decode(f).ok()).collect(),
+        });
     }
     let src = std::io::BufReader::new(File::open(&path)?);
     let demo = stvtf::demo::with_voice(src, &voices, std::io::Cursor::new(Vec::new()))?.into_inner();
@@ -382,7 +449,7 @@ impl LiveDemos {
         }
     }
 
-    /// A player said something from outside the match: kept beside the demo being recorded.
+    /// Something was said from outside the match: kept beside the demo being recorded.
     pub(crate) fn append_voice(&self, said: &Spoken) {
         let inner = lock(&self.inner);
         let Some(demo) = inner.demos.last() else { return };

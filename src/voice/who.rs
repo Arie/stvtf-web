@@ -241,6 +241,15 @@ impl WhoIsWho {
         })
     }
 
+    /// The account whoever talked as `key` (as their lines name one who is no player: by who
+    /// they are where they talk) is said to be by now, for sure.
+    pub(crate) fn account_now(&self, key: &str) -> Option<u32> {
+        match self.recall(key.strip_prefix(super::feed::UNLINKED)?)? {
+            Recalled::Player { steamid, sure: true } => super::ids::account_of(&steamid),
+            _ => None,
+        }
+    }
+
     fn save(&self, kept: &WhoList) {
         if let Some(file) = &self.0.file
             && let Err(e) = write_atomic(file, serde_json::json!(kept).to_string().as_bytes())

@@ -12,6 +12,7 @@ use super::{
 use crate::matches::sessions;
 use crate::matches::sessions::{Session, Sessions, Viewer};
 use crate::rooms::room::StartAt;
+use crate::voice::who::WhoIsWho;
 use crate::{App, is_name, lock};
 use anyhow::{Result, anyhow};
 use std::fmt::Write as _;
@@ -37,7 +38,7 @@ pub(super) fn serve_match(
         return Ok(respond(&mut s, "200 OK", JSON, serde_json::json!(comms_demos(app, sessions, id)).to_string().as_bytes())?);
     }
     if let Some(file) = rest.strip_prefix("demos/") {
-        return Ok(comms_demo(&mut s, sessions, request, id, file)?);
+        return Ok(comms_demo(&mut s, app, sessions, request, id, file)?);
     }
     if let Some(file) = rest.strip_prefix("watch/") {
         return watch_comms_demo(&mut s, app, sessions, request, id, file, client);
@@ -292,7 +293,7 @@ fn watch_comms_demo(
     client: IpAddr,
 ) -> Result<()> {
     let by = counted(who(app, request).user.as_ref(), None, client);
-    match sessions.open_comms_demo_as(by.as_deref(), id, file, None) {
+    match sessions.open_comms_demo_as(by.as_deref(), id, file, app.voice.who.clone()) {
         Ok(m) => redirect(s, "303 See Other", &format!("{}/w/{}/", app.base, m.id))?,
         Err(e) => refuse(s, "404 Not Found", &e)?,
     }
@@ -320,14 +321,14 @@ static BUILT: Mutex<Option<Built>> = Mutex::new(None);
 
 /// The demo `file` of match `id` with its comms written in: built once for all who ask at a
 /// time or soon after. One at a time: a demo is built in memory.
-pub(super) fn build_comms_demo(dir: &Path, id: &str, file: &str) -> Option<Arc<CommsDemo>> {
+pub(super) fn build_comms_demo(dir: &Path, id: &str, file: &str, who: &WhoIsWho) -> Option<Arc<CommsDemo>> {
     let key = format!("{id}/{file}");
     let mut last = lock(&BUILT);
     if let Some(built) = last.as_ref().filter(|b| b.key == key && b.at.elapsed() < BUILT_FOR) {
         return Some(built.demo.clone());
     }
     *last = None;
-    let (name, bytes) = crate::matches::live_demos::build(dir, id, file).ok()?;
+    let (name, bytes) = crate::matches::live_demos::build(dir, id, file, &|key| who.account_now(key)).ok()?;
     let demo = Arc::new(CommsDemo { name, bytes });
     let at = Instant::now();
     *last = Some(Built { key, at, demo: demo.clone() });
@@ -345,13 +346,13 @@ pub(super) fn build_comms_demo(dir: &Path, id: &str, file: &str) -> Option<Arc<C
 /// `GET /w/<id>/demos/<file>.dem`: that demo as TF2 plays it, the comms written into it. Asked
 /// with `?built=<mark>`, the answer sets that mark as a cookie: the page that waits for it then
 /// knows the demo is built and on its way.
-fn comms_demo(s: &mut TcpStream, sessions: &Sessions, request: &Request, id: &str, file: &str) -> std::io::Result<()> {
+fn comms_demo(s: &mut TcpStream, app: &App, sessions: &Sessions, request: &Request, id: &str, file: &str) -> std::io::Result<()> {
     let built = sessions
         .store
         .as_ref()
         .filter(|_| sessions::is_id(id))
         .zip(file.strip_suffix(".dem"))
-        .and_then(|(store, file)| build_comms_demo(&store.dir, id, file));
+        .and_then(|(store, file)| build_comms_demo(&store.dir, id, file, &app.voice.who));
     let Some(built) = built else { return respond(s, "404 Not Found", TEXT, b"No such demo.") };
     let attachment = format!(r#"attachment; filename="{}""#, built.name);
     let mut headers = vec![("Content-Type", "application/octet-stream"), ("Content-Disposition", attachment.as_str())];

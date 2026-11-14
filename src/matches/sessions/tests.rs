@@ -118,11 +118,14 @@ fn a_matchs_demo_with_comms_plays_as_a_demo_made_here() {
     std::fs::write(dir.join(format!("kept-{id}-0-1.dem.voice")), "{\"tick\":40,\"slot\":1,\"account\":5,\"frames\":[\"aA==\"]}\n").unwrap();
     let mut s = Sessions::new(false, 3, 20.0);
     s.store = Some(Store { dir: dir.to_path_buf(), keys: None });
-    let a = s.open_comms_demo_as(None, &id, "0-1", None).unwrap();
+    let a = s.open_comms_demo_as(None, &id, "0-1", WhoIsWho::default()).unwrap();
     let demo = a.demo_id().unwrap();
     assert!(is_own_demo(demo) && a.id == demo_id(demo));
-    assert_eq!(s.open_comms_demo_as(None, &id, "0-1", None).unwrap().id, a.id, "joined where it is");
-    assert!(s.open_comms_demo_as(None, &id, "0-2", None).is_err() && s.open_comms_demo_as(None, "x", "0-1", None).is_err());
+    assert_eq!(s.open_comms_demo_as(None, &id, "0-1", WhoIsWho::default()).unwrap().id, a.id, "joined where it is");
+    assert!(
+        s.open_comms_demo_as(None, &id, "0-2", WhoIsWho::default()).is_err()
+            && s.open_comms_demo_as(None, "x", "0-1", WhoIsWho::default()).is_err()
+    );
     // It holds still until watched.
     let _viewer = Viewer::new(a.clone());
     let deadline = Instant::now() + Duration::from_secs(60);
@@ -135,7 +138,7 @@ fn a_matchs_demo_with_comms_plays_as_a_demo_made_here() {
     // More said in it since, it is another demo.
     std::fs::write(dir.join(format!("kept-{id}-0-1.dem.voice")), "{\"tick\":40,\"slot\":1,\"account\":5,\"frames\":[\"aA==\",\"aA==\"]}\n")
         .unwrap();
-    assert_ne!(s.open_comms_demo_as(None, &id, "0-1", None).unwrap().id, a.id);
+    assert_ne!(s.open_comms_demo_as(None, &id, "0-1", WhoIsWho::default()).unwrap().id, a.id);
     s.stop_all();
 }
 

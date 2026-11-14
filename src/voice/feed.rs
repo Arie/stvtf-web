@@ -7,7 +7,7 @@
 
 use crate::lock;
 use crate::matches::hub::{Hub, NamedPlayer, SharedHub, VoiceClock, publish};
-use crate::matches::live_demos::Spoken;
+use crate::matches::live_demos::{By, Spoken};
 use crate::voice::hold::{Held, Said, Took, VoiceHold};
 use crate::voice::ids::account_of;
 use serde::{Deserialize, Serialize};
@@ -101,7 +101,7 @@ impl Speaker {
 }
 
 /// How a speaker with no `SteamID` is named in the hold and on their lines.
-const UNLINKED: &str = "discord:";
+pub(crate) const UNLINKED: &str = "discord:";
 
 /// Someone in a channel brought into the match (Discord, Mumble), heard yet or not: for whoever
 /// has a say to put on a player (one with no link, or playing on another account).
@@ -160,7 +160,7 @@ struct State {
     /// The stream's tick, and since when it is that.
     seen: Option<(u32, Instant)>,
     said: Option<Instant>,
-    /// What players said, as it went out, for the demo being recorded: until taken.
+    /// What was said, as it went out, for the demo being recorded: until taken.
     spoken: Vec<Spoken>,
     /// The hold's mark when last saved.
     saved: Option<(u64, usize, usize)>,
@@ -397,11 +397,17 @@ impl VoiceFeed {
         let known = st.known.get(&said.who).filter(|_| player.is_none());
         let team = known.and_then(|k| st.channel_team(&hub, k.channel.as_deref()));
         let name = known.and_then(|k| k.name.clone());
-        // A player's, said in the running game: what a demo with the comms in it is made of.
+        // Said in the running game: what a demo with the comms in it is made of. A player's, by
+        // their slot.
         let slot = steamid.as_deref().filter(|_| player.is_some() && !pause).and_then(|s| Some((hub.slot_of(s)?, account_of(s)?)));
         drop(hub);
-        if let Some((slot, account)) = slot {
-            st.record_spoken(Spoken { tick, slot, account, frames: said.frames.clone() });
+        // No player's (yet): kept as whose voice it is, for whoever says so later.
+        let by = match slot {
+            Some((slot, account)) => Some(By::Player { slot, account }),
+            None => (!pause).then(|| By::Voice { who: said.who.clone() }),
+        };
+        if let Some(by) = by {
+            st.record_spoken(Spoken { tick, by, frames: said.frames.clone() });
         }
         Line::Voice(Voice {
             tick,
@@ -416,7 +422,7 @@ impl VoiceFeed {
         })
     }
 
-    /// What players said since last asked, as it went out.
+    /// What was said since last asked, as it went out.
     pub(crate) fn take_spoken(&self) -> Vec<Spoken> {
         std::mem::take(&mut lock(&self.0).spoken)
     }
@@ -719,7 +725,8 @@ mod tests {
         feed.take_in(&hub, &STEAMID.into(), frames(2), Some(0.0), now);
         feed.take_in(&hub, &unlinked("77", "coach"), frames(1), Some(0.0), now);
         let kept = feed.take_spoken();
-        assert_eq!(kept, [Spoken { tick: 1000, slot: 6, account: 5, frames: frames(2) }]);
+        let coach = Spoken { tick: 1000, by: By::Voice { who: "discord:77".into() }, frames: frames(1) };
+        assert_eq!(kept, [Spoken { tick: 1000, by: By::Player { slot: 6, account: 5 }, frames: frames(2) }, coach]);
         assert_eq!(feed.take_spoken(), [], "once");
         publish(&hub, &Line::Pause(Pause { tick: 1000, paused: true }));
         feed.step(&hub, now);

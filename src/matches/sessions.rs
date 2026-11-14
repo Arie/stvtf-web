@@ -7,6 +7,7 @@ use crate::lock;
 use crate::matches::demostf;
 use crate::matches::hub::{SharedHub, watch_into};
 use crate::matches::live_demos::{self, LiveDemos};
+use crate::voice::who::WhoIsWho;
 use anyhow::{Result, anyhow, bail};
 use record::{LiveFile, record};
 use session::{Source, join};
@@ -148,12 +149,15 @@ impl Sessions {
     }
 
     /// The session playing match `id`'s demo `file` with its comms in it, as a demo of its own
-    /// (see [`Sessions::open_demo_as`]): recorded on or said more since, it is another.
-    pub fn open_comms_demo_as(&self, by: Option<&str>, id: &str, file: &str, owner: Option<&str>) -> Result<Arc<Session>> {
+    /// (see [`Sessions::open_demo_as`]): recorded on or said more since, or someone in it said to
+    /// be another (`who`), it is another.
+    pub fn open_comms_demo_as(&self, by: Option<&str>, id: &str, file: &str, who: WhoIsWho) -> Result<Arc<Session>> {
         let dir = self.store.as_ref().map(|s| s.dir.clone()).ok_or_else(|| anyhow!("no demos are kept here"))?;
-        let key = live_demos::comms_key(&dir, id, file).filter(|_| is_id(id)).ok_or_else(|| anyhow!("no such demo"))?;
+        let whom = |key: &str| who.account_now(key);
+        let key = live_demos::comms_key(&dir, id, file, &whom).filter(|_| is_id(id)).ok_or_else(|| anyhow!("no such demo"))?;
         let (id, file) = (id.to_string(), file.to_string());
-        self.play_demo(by, own_demo(&key), owner, Some(Box::new(move || Ok(live_demos::build(&dir, &id, &file)?.1))))
+        let made = move || Ok(live_demos::build(&dir, &id, &file, &|key| who.account_now(key))?.1);
+        self.play_demo(by, own_demo(&key), None, Some(Box::new(made)))
     }
 
     /// Plays demo `demo`: demos.tf's, or the one `made`.

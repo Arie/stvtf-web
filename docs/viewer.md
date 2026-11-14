@@ -86,7 +86,10 @@ Instead of `steamid` a post may say who talks where they talk: `"discord": "<who
 user id; for Mumble `mumble:<server>:<who they are there>`), with a `"name"` and the `"channel"`
 they are in. Until put on a player such a voice is nobody's, heard as of no player, on the team
 most of its channel's players are on; on the page it is listed by its name, under that team or
-under Others (two minutes after its last word, no longer).
+under Others (two minutes after its last word, no longer). It is kept beside the demo
+being recorded all the same: a [demo with comms](rooms.md#maps) built after someone said whose it
+is (for sure: a caster, the match's starter, a site's link) has it as that player's voice, where
+they were playing.
 
 Comms are set up in the speakers list, by whoever started the match and by the site's streamers
 (where nobody signs in, by anyone): "Comms" swaps the list for a wider view. With no channel
