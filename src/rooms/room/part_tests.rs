@@ -245,3 +245,13 @@ fn a_demo_is_announced_as_before() {
     assert!(!rec.rounds_in(0).is_empty() && rec.length() > 0);
     room.stop();
 }
+
+#[test]
+fn a_room_picked_up_is_where_it_played_on_to_since_it_was_saved_unless_paused() {
+    let mut saved: Saved = serde_json::from_str(OLD_SAVED_ROOM).unwrap();
+    saved.played_on(Duration::from_secs(10));
+    assert_eq!(saved.at, 600, "paused");
+    (saved.paused, saved.speed) = (false, 2.0);
+    saved.played_on(Duration::from_secs(10));
+    assert_eq!(saved.at, 20_600);
+}

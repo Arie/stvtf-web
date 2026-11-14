@@ -18,6 +18,9 @@ use std::time::{Duration, Instant};
 
 /// A saved room nobody came back for is dropped after this long.
 const STALE: Duration = Duration::from_hours(1);
+/// A room picked up within this of its last save played on meanwhile (a deploy): after longer its
+/// process was gone, and so was its relay.
+const PLAYED_ON: Duration = Duration::from_mins(2);
 /// A room file not saved or touched for this long has no process playing it (they do every second).
 const QUIET: Duration = Duration::from_secs(5);
 /// A live match's `.dem` file not written for this long is past what its recording keeps.
@@ -266,7 +269,10 @@ impl Rooms {
         if !crate::matches::sessions::is_id(id) {
             return None;
         }
+        // How long ago it was saved: its relay played on meanwhile.
+        let ago = store.written(&file(id)).and_then(|at| at.elapsed().ok());
         let mut saved: SavedRoom = serde_json::from_slice(&store.take(&file(id)).ok()?).ok()?;
+        saved.room.played_on(ago.filter(|a| *a < PLAYED_ON).unwrap_or_default());
         let recording = match &saved.source {
             Source::Pinned(match_id) | Source::Live(match_id) => sessions.get(match_id)?.recording().ok()?,
             Source::Demo(demo) => self.shared(&format!("demo:{demo}"), || {

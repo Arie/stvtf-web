@@ -192,7 +192,18 @@ impl Room {
         let state = State { paused, speed, at, seek: Some(at), stop: false, tick: None, load, follows_live, over, pace };
         Room::run(id, People::new(owner), None, None, state, recording)
     }
+}
 
+impl Saved {
+    /// It played on for `time` since it was saved, unless paused: where it is now.
+    pub(crate) fn played_on(&mut self, time: Duration) {
+        if !self.paused {
+            self.at += (time.as_secs_f64() * 1000.0 * self.speed) as u64;
+        }
+    }
+}
+
+impl Room {
     /// The room `saved` was, back where it was.
     pub(crate) fn restore(id: String, saved: Saved, recording: Arc<Recording>) -> Arc<Room> {
         // At live it is at live here too: the match went on since it was saved.
