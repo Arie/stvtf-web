@@ -146,7 +146,10 @@ impl Taking {
         let data = file.store.read(&live_file(&file.id)).unwrap_or_default();
         let recording = Recording::live();
         match recording.read_on(&data) {
-            Ok(read) => (recording, Taking { read: Some((read, data[..read.min(HEAD)].to_vec())), ..Taking::default() }),
+            Ok(read) => {
+                recording.set_catching_up(true);
+                (recording, Taking { read: Some((read, data[..read.min(HEAD)].to_vec())), ..Taking::default() })
+            }
             Err(e) => {
                 log!("match {}'s recording does not read, and starts anew: {e:#}", file.id);
                 (Recording::live(), Taking::default())
@@ -201,6 +204,7 @@ impl Taking {
         for (stamped, json) in self.held.drain(had..) {
             let _ = recording.push(&stamped, &json);
         }
+        recording.set_catching_up(false);
         last.filter(|_| had > 0)
     }
 }

@@ -48,6 +48,8 @@ pub(crate) struct Recording {
     /// Still being recorded (a live match): playback waits at its end for more.
     live: AtomicBool,
     sink: Mutex<Option<Sink>>,
+    /// Picked up from a file another process still writes: its end is not the match's latest yet.
+    catching_up: AtomicBool,
 }
 
 #[derive(Default)]
@@ -348,6 +350,15 @@ impl Recording {
     /// Its chunks go to `sink` from now on.
     pub(crate) fn write_to(&self, sink: Sink) {
         *lock(&self.sink) = Some(sink);
+    }
+
+    /// Its end is not the match's latest until the file another process writes is taken.
+    pub(crate) fn set_catching_up(&self, catching_up: bool) {
+        self.catching_up.store(catching_up, Ordering::Relaxed);
+    }
+
+    pub(crate) fn is_catching_up(&self) -> bool {
+        self.catching_up.load(Ordering::Relaxed)
     }
 
     /// Whether its chunks go to a file.

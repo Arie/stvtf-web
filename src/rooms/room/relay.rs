@@ -61,9 +61,11 @@ impl Room {
         if lock(&self.relay.failed).as_ref().is_some_and(|(t, _)| t.elapsed() < RELAY_RETRY) {
             return;
         }
+        // A recording picked up is not at the match's latest until its file is taken: the relay
+        // is, and plays on.
         let (want, known) = {
             let st = lock(&self.state);
-            (self.want(&st, offer, true), st.tick.is_some())
+            (self.want(&st, offer, true), st.tick.is_some() && !self.recording.is_catching_up())
         };
         let Some(want) = want else { return };
         let was = lock(&self.relay.was).clone();
@@ -118,6 +120,9 @@ impl Room {
         let interval = lock(&self.hub).tick_interval();
         let relay = lock(&self.relay.current);
         let Some(r) = &*relay else { return };
+        if self.recording.is_catching_up() {
+            return;
+        }
         let Some(want) = self.want(st, offer, false) else { return };
         let mut sent = lock(&self.relay.sent);
         if sent.as_ref().is_some_and(|s| on_course(s, &want, interval)) {
