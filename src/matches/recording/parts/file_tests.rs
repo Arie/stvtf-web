@@ -239,3 +239,19 @@ fn a_stretch_two_releases_both_wrote_resumes_as_one_load_its_ticks_going_on() {
     let clean = lock(&saved).clone();
     assert_eq!(snapshot_ticks(&resumed(&clean)), ticks, "the file is written anew without what was skipped");
 }
+
+#[test]
+fn a_file_torn_at_its_end_resumes_up_to_its_last_whole_chunk() {
+    let saved = Arc::new(Mutex::new(Vec::new()));
+    let r = Recording::live_to(to(&saved));
+    let mut s = Stream { r: &r, s: 0.0 };
+    s.server(0.0, "cp_a");
+    s.play(1000, 35);
+    // Three chunks, the process killed as it wrote the third.
+    let whole = lock(&saved).clone();
+    let again = Recording::resume(&whole[..whole.len() - 20], to(&saved)).unwrap();
+    assert_eq!((again.chunks(), again.length()), (2, 19_000));
+    let file = lock(&saved).clone();
+    assert_eq!(resumed(&file).chunks(), 2, "the file is written anew without the torn chunk");
+    assert!(Recording::resume(&whole[5..], to(&saved)).is_err(), "nothing of it reads: not a recording");
+}

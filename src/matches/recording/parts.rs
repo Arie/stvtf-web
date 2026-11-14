@@ -384,6 +384,11 @@ pub(super) struct Header {
 }
 
 impl Header {
+    /// Whether `key` is a header line's, the parts' or not.
+    pub(super) fn has(key: &str) -> bool {
+        matches!(key, "marks" | "hub" | "origin" | "parts" | "seed" | "loads")
+    }
+
     /// Reads `key`'s `value`, if it is one of the parts'.
     pub(super) fn read(&mut self, key: &str, value: &str) -> anyhow::Result<bool> {
         match key {

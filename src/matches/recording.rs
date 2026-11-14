@@ -75,8 +75,10 @@ struct Inner {
     /// The match's map loads, and its parts kept.
     parts: parts::Parts,
     /// The file is written whole at the next chunk closed: its header says what chunks alone do
-    /// not (the first part's number).
+    /// not (the first part's number), or it holds what this does not.
     rewrite: bool,
+    /// The header of the file it is read from, until that file's first line.
+    header: Option<parts::Header>,
 }
 
 /// A score and a round won this close (ms) belong together, either first.
@@ -185,19 +187,60 @@ impl Inner {
         Ok(true)
     }
 
+    /// Closes the open chunk; what the file gets for it, if it had lines.
+    fn closed(&mut self) -> Result<Option<Save>> {
+        if !self.close()? {
+            return Ok(None);
+        }
+        if std::mem::take(&mut self.rewrite) {
+            return Ok(Some(Save::All(self.file()?)));
+        }
+        Ok(self.chunks.last().map(|c| Save::Add(c.lines.clone())))
+    }
+
+    /// The lines of `text`, a gzip member of a file: its header, if this is the file's start,
+    /// and chunks as a sink got them.
+    fn read_lines(&mut self, text: &str) -> Result<()> {
+        let mut at = self.clock.play;
+        for text in text.lines() {
+            let Some((key, value)) = text.split_once('\t') else { bail!("not a recording") };
+            let heads = self.header.is_some();
+            match key {
+                "marks" if heads => self.marks_dropped = value.parse()?,
+                "hub" if heads => publish(&self.scratch, &serde_json::from_str(value)?),
+                _ if self.header.as_mut().map(|h| h.read(key, value)).transpose()?.unwrap_or(false) => {}
+                // The header of a file written anew since its start was read.
+                _ if parts::Header::has(key) => {}
+                _ => {
+                    // Play time only goes on in a file: a line before the latest is of a
+                    // stretch another process wrote too.
+                    let line_at = key.parse()?;
+                    if line_at < at {
+                        self.rewrite = true;
+                        continue;
+                    }
+                    at = line_at;
+                    if let Some(header) = self.header.take() {
+                        self.start = at;
+                        let scratch = self.scratch.clone();
+                        self.parts.seed_from(header, at, &scratch);
+                    }
+                    // A file trimmed as it is read: its remains are the file.
+                    self.rewrite |= matches!(self.add(at, &serde_json::from_str(value)?, value)?, Some(Save::All(_)));
+                    self.clock.play = at;
+                }
+            }
+        }
+        Ok(())
+    }
+
     /// Line `text`, read as `stamped`, at play time `at`; what the file gets, if anything.
     fn add(&mut self, at: u64, stamped: &Stamped, text: &str) -> Result<Option<Save>> {
         let mut save = None;
         // A part's chunk starts at its first snapshot: its checkpoint holds its map as announced.
         let new_part = self.parts.starts_part(&stamped.line);
         if self.fresh || new_part || self.chunks.last().is_none_or(|c| at >= c.start + CHUNK_MS) {
-            if self.close()? {
-                save = if std::mem::take(&mut self.rewrite) {
-                    Some(Save::All(self.file()?))
-                } else {
-                    self.chunks.last().map(|c| Save::Add(c.lines.clone()))
-                };
-            }
+            save = self.closed()?;
             let hub = lock(&self.scratch).checkpoint();
             self.chunks.push(Chunk { start: at, hub, seed: self.parts.seed(), lines: Vec::new() });
             self.fresh = false;
@@ -253,43 +296,18 @@ impl Recording {
     }
 
     /// A live recording going on from the chunks `saved` (as a sink got them), to `sink`.
-    pub(crate) fn resume(saved: impl Read, mut sink: Sink) -> Result<Recording> {
+    pub(crate) fn resume(mut saved: impl Read, mut sink: Sink) -> Result<Recording> {
         let r = Recording::live();
+        let mut file = Vec::new();
+        saved.read_to_end(&mut file)?;
+        let whole = r.read_on(&file)? == file.len();
         {
             let mut inner = lock(&r.inner);
-            let (mut at, mut cut, mut header) = (0, false, Some(parts::Header::default()));
-            for text in BufReader::new(flate2::read::MultiGzDecoder::new(saved)).lines() {
-                let text = text?;
-                let Some((key, value)) = text.split_once('\t') else { bail!("not a recording") };
-                match key {
-                    "marks" => inner.marks_dropped = value.parse()?,
-                    "hub" => publish(&inner.scratch, &serde_json::from_str(value)?),
-                    _ if header.as_mut().map(|h| h.read(key, value)).transpose()?.unwrap_or(false) => {}
-                    _ => {
-                        // Play time only goes on in a file: a line before the latest is of a
-                        // stretch another process wrote too.
-                        let line_at = key.parse()?;
-                        if line_at < at {
-                            cut = true;
-                            continue;
-                        }
-                        at = line_at;
-                        if let Some(header) = header.take() {
-                            inner.start = at;
-                            let scratch = inner.scratch.clone();
-                            inner.parts.seed_from(header, at, &scratch);
-                        }
-                        cut |= matches!(inner.add(at, &serde_json::from_str(value)?, value)?, Some(Save::All(_)));
-                    }
-                }
+            if inner.count == 0 && !file.is_empty() {
+                bail!("not a recording");
             }
-            inner.close()?;
-            inner.clock.resume(at);
-            inner.drop_parts();
-            inner.start = inner.chunks.first().map_or(inner.start, |c| c.start);
-            inner.fresh = true;
-            // A file trimmed as it was read, or with lines skipped: its remains are the file.
-            if cut {
+            // A file trimmed as it was read, with lines skipped, or torn: its remains are the file.
+            if std::mem::take(&mut inner.rewrite) || !whole {
                 sink(&Save::All(inner.file()?));
             }
         }
@@ -297,14 +315,43 @@ impl Recording {
         Ok(r)
     }
 
+    /// Takes in `saved`, the next bytes of the file a recording not pushed to yet goes on from:
+    /// its whole gzip members, up to one torn or unreadable. How many bytes that was. What is
+    /// before its latest line in play time is skipped, and the file is then to be written anew.
+    pub(crate) fn read_on(&self, saved: &[u8]) -> Result<usize> {
+        let mut inner = lock(&self.inner);
+        if inner.count == 0 && inner.header.is_none() {
+            inner.header = Some(parts::Header::default());
+        }
+        let mut taken = 0;
+        while taken < saved.len() {
+            let mut member = flate2::bufread::GzDecoder::new(&saved[taken..]);
+            let mut text = String::new();
+            if member.read_to_string(&mut text).is_err() {
+                break;
+            }
+            inner.read_lines(&text)?;
+            taken = saved.len() - member.into_inner().len();
+        }
+        inner.close()?;
+        let at = inner.clock.play;
+        inner.clock.resume(at);
+        inner.drop_parts();
+        inner.start = inner.chunks.first().map_or(inner.start, |c| c.start);
+        inner.fresh = true;
+        Ok(taken)
+    }
+
     /// The next line, `text` as read into `stamped`.
     pub(crate) fn push(&self, stamped: &Stamped, text: &str) -> Result<()> {
+        // Held from the line to its chunk in the file: none goes in after the file is given.
+        let mut sink = lock(&self.sink);
         let save = {
             let mut inner = lock(&self.inner);
             let at = inner.clock.at(stamped);
             inner.add(at, stamped, text)?
         };
-        if let (Some(save), Some(sink)) = (save, lock(&self.sink).as_mut()) {
+        if let (Some(save), Some(sink)) = (save, sink.as_mut()) {
             sink(&save);
         }
         Ok(())
