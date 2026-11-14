@@ -1,11 +1,17 @@
 #!/usr/bin/env bash
 # Restarts the rooms' SourceTV relays (the `relay` accessory) at the version bin/build pushed, in
-# the given region(s), or all four. TF2 clients in rooms drop; `retry` gets them back in (same port
-# and password). Deploys of stv.tf itself (bin/deploy) leave the relays be. The first time on a host, it boots them.
+# the given region(s), or all four. The relays hand their TF2 clients to the new process: they
+# play on after a pause of some seconds. Deploys of stv.tf itself (bin/deploy) leave the relays
+# be. The first time on a host, it boots them.
+#
+# A region is left alone when its relays run this code already, or when they are of a version
+# that cannot hand clients over (its TF2 clients would drop, and need `retry`): --now restarts
+# those too.
 #
 # Usage:
 #   bin/relays            # all four regions
 #   bin/relays eu na      # a subset
+#   bin/relays --now eu   # whatever runs there
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -14,15 +20,45 @@ if [[ -z "${VERSION:-}" ]] && [[ -n "$(git status --porcelain)$(git -C ../stvtf 
   exit 1
 fi
 
-regions=("$@")
+now=false
+regions=()
+for arg in "$@"; do
+  if [[ $arg == --now ]]; then now=true; else regions+=("$arg"); fi
+done
 [[ ${#regions[@]} -eq 0 ]] && regions=(eu na au sea)
+
+version=${VERSION:-$(git rev-parse --short=12 HEAD)_stvtf_$(git -C ../stvtf rev-parse --short=12 HEAD)}
+# What the relay process is built from here; of stvtf, all of it.
+relay_paths=(src/relays src/main.rs src/cli.rs src/log.rs Cargo.toml Cargo.lock Dockerfile)
+
+# Whether the relays' code changed since the image tagged $1; a tag that names no commits did.
+changed() {
+  [[ $1 =~ ^([0-9a-f]{12})_stvtf_([0-9a-f]{12})$ ]] || return 0
+  ! git diff --quiet "${BASH_REMATCH[1]}" HEAD -- "${relay_paths[@]}" 2>/dev/null ||
+    ! git -C ../stvtf diff --quiet "${BASH_REMATCH[2]}" HEAD -- src Cargo.toml Cargo.lock 2>/dev/null
+}
 
 status=0
 for d in "${regions[@]}"; do
-  if kamal accessory details relay -d "$d" 2>/dev/null | grep -q "Up "; then
-    kamal accessory reboot relay -d "$d" || status=1
-  else
+  details=$(kamal accessory details relay -d "$d" 2>/dev/null || true)
+  if ! grep -q "Up " <<<"$details"; then
     kamal accessory boot relay -d "$d" || status=1
+    continue
   fi
+  tag=$(grep -o 'stvtf:[A-Za-z0-9_]*' <<<"$details" | head -1 | cut -d: -f2)
+  if ! $now && ! changed "$tag"; then
+    echo "$d: relays are current ($tag), left"
+    continue
+  fi
+  clients=$(kamal accessory exec relay -d "$d" --reuse -q 'stvtf-web --relay-clients /data/relay.sock' 2>/dev/null | grep -o '"clients":[0-9]*' | cut -d: -f2 || true)
+  if ! $now && [[ -z $clients ]]; then
+    echo "$d: relays ($tag) cannot hand TF2 clients over, left: --now restarts them" >&2
+    status=1
+    continue
+  fi
+  echo "$d: restarting relays ($tag), ${clients:-an unknown number of} TF2 clients in"
+  # The image there before the relays stop: the pause is the restart alone.
+  kamal server exec -d "$d" -q "docker pull -q ghcr.io/arie/stvtf:$version" >/dev/null || true
+  kamal accessory reboot relay -d "$d" || status=1
 done
 exit $status
