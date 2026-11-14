@@ -1,5 +1,5 @@
-// At the end of the speakers list (panel/voicelist.js): the match's demos to download with the
-// comms in them, as the players' voice, once anything was said from outside it (a team's
+// At the end of the speakers list (panel/voicelist.js): the match's demos to watch here or
+// download with the comms in them, as the players' voice, once anything was said from outside it (a team's
 // Discord). One a map, or more when the connection to its server dropped. See the viewer's Voice.
 import { $ } from "../core/core.js";
 import { HOME } from "../room/home.js";
@@ -12,7 +12,7 @@ const ASK_MS = 30_000;
 const BUILT_MS = 200,
   GIVE_UP_MS = 60_000;
 
-/** @typedef {{ map: string; mb: number; href: string }} Demo */
+/** @typedef {{ map: string; mb: number; href: string; watch: string }} Demo */
 // Demos being built, by link: stv.tf sets a cookie of the mark each was asked with once it is.
 /** @type {Set<string>} */
 const building = new Set();
@@ -23,15 +23,23 @@ function rows() {
   if (!demos.length) return [];
   const head = document.createElement("div");
   head.className = "vteam t-none";
-  head.title = "For playdemo";
-  head.append(Object.assign(document.createElement("span"), { className: "vtname", textContent: "Demos with comms" }));
+  head.append(Object.assign(document.createElement("span"), { className: "vtname", textContent: "With comms" }));
   return [
     head,
     ...demos.map(d => {
-      const a = Object.assign(document.createElement("a"), { href: d.href, className: "vrow vdemo", download: "" });
+      const row = Object.assign(document.createElement("div"), { className: "vrow" });
+      // Played here, as a match of its own.
+      const watch = Object.assign(document.createElement("a"), {
+        href: d.watch,
+        className: "vwatch",
+        textContent: `▶ ${d.map}`,
+      });
+      const a = Object.assign(document.createElement("a"), { href: d.href, className: "vdemo", download: "" });
       a.dataset.demo = d.href;
-      a.textContent = building.has(d.href) ? `${d.map} · building…` : `${d.map} (${d.mb} MB) ↓`;
-      return a;
+      a.title = "For playdemo";
+      a.textContent = building.has(d.href) ? "building…" : `${d.mb} MB ↓`;
+      row.append(watch, a);
+      return row;
     }),
   ];
 }

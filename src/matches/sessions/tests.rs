@@ -110,6 +110,36 @@ fn a_demo_plays_once_for_everyone_who_opens_it() {
 }
 
 #[test]
+fn a_matchs_demo_with_comms_plays_as_a_demo_made_here() {
+    let dir = TempDir::new("comms-sessions");
+    let id = "ab".repeat(ID_BYTES);
+    let kept = dir.join(format!("kept-{id}-0-1.dem"));
+    std::fs::copy(concat!(env!("CARGO_MANIFEST_DIR"), "/../stvtf/tests/fixtures/tc_hydro.dem"), &kept).unwrap();
+    std::fs::write(dir.join(format!("kept-{id}-0-1.dem.voice")), "{\"tick\":40,\"slot\":1,\"account\":5,\"frames\":[\"aA==\"]}\n").unwrap();
+    let mut s = Sessions::new(false, 3, 20.0);
+    s.store = Some(Store { dir: dir.to_path_buf(), keys: None });
+    let a = s.open_comms_demo_as(None, &id, "0-1", None).unwrap();
+    let demo = a.demo_id().unwrap();
+    assert!(is_own_demo(demo) && a.id == demo_id(demo));
+    assert_eq!(s.open_comms_demo_as(None, &id, "0-1", None).unwrap().id, a.id, "joined where it is");
+    assert!(s.open_comms_demo_as(None, &id, "0-2", None).is_err() && s.open_comms_demo_as(None, "x", "0-1", None).is_err());
+    // It holds still until watched.
+    let _viewer = Viewer::new(a.clone());
+    let deadline = Instant::now() + Duration::from_secs(60);
+    while lock(&a.hub).map.is_none() {
+        assert!(Instant::now() < deadline && !a.done.load(Ordering::Relaxed), "it never played");
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    assert_eq!(lock(&a.hub).map.as_deref(), Some("tc_hydro"));
+    assert!(dir.join(demo_output(demo)).exists(), "kept for the next to play it");
+    // More said in it since, it is another demo.
+    std::fs::write(dir.join(format!("kept-{id}-0-1.dem.voice")), "{\"tick\":40,\"slot\":1,\"account\":5,\"frames\":[\"aA==\",\"aA==\"]}\n")
+        .unwrap();
+    assert_ne!(s.open_comms_demo_as(None, &id, "0-1", None).unwrap().id, a.id);
+    s.stop_all();
+}
+
+#[test]
 fn a_session_knows_whether_it_is_watched() {
     let s = Sessions::new(false, 1, 20.0);
     s.pin("demo", |_| {});

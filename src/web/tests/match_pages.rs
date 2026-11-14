@@ -319,3 +319,25 @@ fn a_matchs_demos_with_comms_are_listed_and_downloaded_the_match_gone_too() {
     let gone = get(&app, &format!("/w/{id}/"), "");
     assert!(gone.starts_with("HTTP/1.1 404") && gone.contains(&format!("/w/{id}/demos/100.dem")), "{gone}");
 }
+
+#[test]
+fn a_matchs_demo_with_comms_is_watched_as_a_demo_of_its_own() {
+    let id = "ab".repeat(16);
+    let (app, _dir) = kept_app(&id);
+    assert!(get(&app, &format!("/w/{id}/demos"), "").contains(&format!(r#""watch":"/w/{id}/watch/100""#)));
+    assert!(get(&app, &format!("/w/{id}/"), "").contains(&format!(r#"href="/w/{id}/watch/100""#)), "the gone match's page too");
+    let watched = get(&app, &format!("/w/{id}/watch/100"), "");
+    let page = watched.split("Location: ").nth(1).and_then(|l| l.split("\r\n").next()).unwrap_or_default().to_string();
+    let demo = page.strip_prefix("/w/").and_then(|p| p.strip_suffix('/')).and_then(sessions::id_demo);
+    assert!(watched.starts_with("HTTP/1.1 303") && demo.is_some_and(sessions::is_own_demo), "{watched}");
+    assert!(get(&app, &format!("/w/{id}/watch/100"), "").contains(&page), "the same one again");
+    // Nothing of another match, or by another name.
+    assert!(get(&app, &format!("/w/{}/watch/100", "cd".repeat(16)), "").starts_with("HTTP/1.1 404"));
+    assert!(get(&app, &format!("/w/{id}/watch/..%2f100"), "").starts_with("HTTP/1.1 404"));
+    assert!(get(&app, &format!("/w/{id}/watch/101"), "").starts_with("HTTP/1.1 404"));
+    // Not playing any more, it is not one the site can play again.
+    let (site, _key, _site_dir) = site_app();
+    let gone = get(&site, &format!("/w/d{}/", demo.unwrap()), "");
+    assert!(gone.starts_with("HTTP/1.1 404"), "{gone}");
+    sessions_of(&app).stop_all();
+}

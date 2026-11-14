@@ -454,8 +454,12 @@
   font-size: 11px;
 }
 #voicelist .vhint a,
+#voicelist a.vwatch,
 #voicelist a.vdemo {
   color: #9cc4ff;
+}
+#voicelist a.vwatch {
+  flex: 1;
 }
 #voicelist .vteam {
   display: flex;

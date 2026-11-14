@@ -39,6 +39,9 @@ pub(super) fn serve_match(
     if let Some(file) = rest.strip_prefix("demos/") {
         return Ok(comms_demo(&mut s, sessions, request, id, file)?);
     }
+    if let Some(file) = rest.strip_prefix("watch/") {
+        return watch_comms_demo(&mut s, app, sessions, request, id, file, client);
+    }
     let session = sessions.get(id);
     // Looked for only when a page of a match that is gone is asked for: it reads the store.
     let kept = if session.is_none() && is_page(rest) { comms_demos(app, sessions, id) } else { Vec::new() };
@@ -48,7 +51,7 @@ pub(super) fn serve_match(
         // A demo not playing (now): the site plays it again.
         (None, rest)
             if is_page(rest)
-                && let (Some(demo), Some(home)) = (sessions::id_demo(id), &app.home) =>
+                && let (Some(demo), Some(home)) = (sessions::id_demo(id).filter(|d| !sessions::is_own_demo(*d)), &app.home) =>
         {
             let at = moment(&request.query, "t").map_or_default(|t| format!("&at={t}"));
             let to = format!("{home}?connect=https%3A%2F%2Fdemos.tf%2F{demo}{at}");
@@ -251,18 +254,19 @@ fn gone_with_demos(kept: &[serde_json::Value]) -> String {
     let mut links = String::new();
     for d in kept {
         let (href, map) = (d["href"].as_str().unwrap_or_default(), d["map"].as_str().unwrap_or_default());
-        let _ = write!(links, r#"<li><a href="{href}" download>{map} ({} MB)</a></li>"#, d["mb"]);
+        let watch = d["watch"].as_str().unwrap_or_default();
+        let _ = write!(links, r#"<li><a href="{watch}">{map}</a> · <a href="{href}" download>{} MB ↓</a></li>"#, d["mb"]);
     }
     format!(
         "<!doctype html><meta charset=utf-8><meta name=viewport content=\"width=device-width\"><title>stv.tf</title>\
          <body style=\"font:16px system-ui;background:#16171a;color:#ddd;max-width:32em;margin:3em auto;padding:0 1em\">\
-         <p>Match ended. Demos with comms:</p>\
+         <p>Match ended. With comms:</p>\
          <ul>{links}</ul>"
     )
 }
 
-/// Match `id`'s demos with comms in them, to download: per demo its map, its size in MB, and
-/// where it is. None without a store, or for an id that is none.
+/// Match `id`'s demos with comms in them: per demo its map, its size in MB, where it is to
+/// download (`href`) and what plays it here (`watch`). None without a store, or for an id that is none.
 pub(super) fn comms_demos(app: &App, sessions: &Sessions, id: &str) -> Vec<serde_json::Value> {
     let Some(store) = sessions.store.as_ref().filter(|_| sessions::is_id(id)) else { return Vec::new() };
     crate::matches::live_demos::downloads(&store.dir, id)
@@ -270,9 +274,29 @@ pub(super) fn comms_demos(app: &App, sessions: &Sessions, id: &str) -> Vec<serde
         .filter(|d| is_name(&d.map, b"_-"))
         .map(|d| {
             let href = format!("{}/w/{id}/demos/{}.dem", app.base, d.file);
-            serde_json::json!({ "map": d.map, "mb": d.bytes.div_ceil(1 << 20), "href": href })
+            let watch = format!("{}/w/{id}/watch/{}", app.base, d.file);
+            serde_json::json!({ "map": d.map, "mb": d.bytes.div_ceil(1 << 20), "href": href, "watch": watch })
         })
         .collect()
+}
+
+/// `GET /w/<id>/watch/<file>`: plays that demo with its comms as a match of its own, and sends
+/// the visitor to its page.
+fn watch_comms_demo(
+    s: &mut TcpStream,
+    app: &App,
+    sessions: &Sessions,
+    request: &Request,
+    id: &str,
+    file: &str,
+    client: IpAddr,
+) -> Result<()> {
+    let by = counted(who(app, request).user.as_ref(), None, client);
+    match sessions.open_comms_demo_as(by.as_deref(), id, file, None) {
+        Ok(m) => redirect(s, "303 See Other", &format!("{}/w/{}/", app.base, m.id))?,
+        Err(e) => refuse(s, "404 Not Found", &e)?,
+    }
+    Ok(())
 }
 
 /// How long a demo built stays at hand for the next to ask for it.

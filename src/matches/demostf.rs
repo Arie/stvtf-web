@@ -80,18 +80,30 @@ fn file_url(id: u64, body: &str) -> Result<String> {
     Ok(info.url)
 }
 
+/// What makes a demo that is not demos.tf's (a match's, with its comms): the file.
+pub(crate) type Made<'a> = &'a dyn Fn() -> Result<Vec<u8>>;
+
 /// Demo `id` as gzipped stvtf output, with `snapshot_hz` snapshots a second; None when told to
-/// `stop` meanwhile. From what is `kept` of it, else downloaded and decoded (and then kept): the
-/// pages on `hub` hear how far that is.
-fn fetch(hub: &SharedHub, id: u64, snapshot_hz: f32, stop: &AtomicBool, kept: Option<&DemoFiles>) -> Result<Option<Vec<u8>>> {
+/// `stop` meanwhile. From what is `kept` of it, else downloaded (or `made`) and decoded (and then
+/// kept): the pages on `hub` hear how far that is.
+fn fetch(
+    hub: &SharedHub,
+    id: u64,
+    snapshot_hz: f32,
+    stop: &AtomicBool,
+    kept: Option<&DemoFiles>,
+    made: Option<Made>,
+) -> Result<Option<Vec<u8>>> {
     #[cfg(test)]
     let _held = lock(&HELD);
     if stop.load(Ordering::Relaxed) {
         return Ok(None);
     }
     let agent = agent(STALLED_FOR);
-    let download =
-        |out: &mut dyn Write, said: &mut dyn FnMut(Option<u8>)| download(&agent, &demo_url(&agent, id)?, id, MAX_DEMO, out, stop, said);
+    let download = |out: &mut dyn Write, said: &mut dyn FnMut(Option<u8>)| match made {
+        Some(made) => out.write_all(&made()?).map(|()| true).map_err(Into::into),
+        None => download(&agent, &demo_url(&agent, id)?, id, MAX_DEMO, out, stop, said),
+    };
     fetch_with(hub, id, snapshot_hz, stop, kept, &download)
 }
 
@@ -238,9 +250,10 @@ fn decode(id: u64, demo: &[u8], snapshot_hz: f32) -> Result<Vec<u8>> {
     Ok(gz.into_inner().map_err(std::io::IntoInnerError::into_error)?.finish()?)
 }
 
-/// Plays demos.tf demo `id` into `hub` once, holding still while `play` says nobody watches,
-/// until it ends or `stop`; its files are `kept` from one play to the next, and `keep` gets the
-/// output once it is there.
+/// Plays demo `id` (demos.tf's, or the one `made`) into `hub` once, holding still while `play`
+/// says nobody watches, until it ends or `stop`; its files are `kept` from one play to the next,
+/// and `keep` gets the output once it is there.
+#[expect(clippy::too_many_arguments, reason = "a demo's play")]
 pub(crate) fn play(
     hub: &SharedHub,
     id: u64,
@@ -248,9 +261,10 @@ pub(crate) fn play(
     play: &dyn Fn() -> bool,
     stop: &AtomicBool,
     kept: Option<&DemoFiles>,
+    made: Option<Made>,
     keep: &dyn Fn(Arc<Vec<u8>>),
 ) -> Result<()> {
-    let played = fetch(hub, id, snapshot_hz, stop, kept).and_then(|output| match output {
+    let played = fetch(hub, id, snapshot_hz, stop, kept, made).and_then(|output| match output {
         Some(output) => {
             let output = Arc::new(output);
             keep(output.clone());
@@ -313,7 +327,7 @@ mod tests {
         let dir = crate::testing::TempDir::new("demostf-stopped");
         let kept = DemoFiles { store: Store { dir: dir.join("store"), keys: None }, dem: false };
         kept.store.put(&demo_output(1), &decode(1, &recorded(), 20.0).unwrap()).unwrap();
-        play(&hub, 1, 20.0, &|| true, &AtomicBool::new(true), Some(&kept), &drop).unwrap();
+        play(&hub, 1, 20.0, &|| true, &AtomicBool::new(true), Some(&kept), None, &drop).unwrap();
         assert_eq!(crate::matches::hub::subscribe(&hub, false).try_iter().count(), 0);
     }
 

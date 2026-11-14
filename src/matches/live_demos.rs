@@ -107,6 +107,14 @@ pub(crate) fn downloads(dir: &Path, id: &str) -> Vec<Download> {
     found.into_iter().map(|(_, d)| d).collect()
 }
 
+/// What tells match `id`'s demo `file` with its comms from any other, and from itself once more
+/// was recorded or said: None if it is none.
+pub(crate) fn comms_key(dir: &Path, id: &str, file: &str) -> Option<String> {
+    let path = with_comms(dir, id, file)?;
+    let len = |p: &Path| std::fs::metadata(p).map_or(0, |m| m.len());
+    Some(format!("{id}-{file}-{}-{}", len(&path), len(&voice_of(&path))))
+}
+
 /// Match `id`'s demo `file` as TF2 plays it, the comms written into it as its players' voice:
 /// what to call it, and the demo.
 pub(crate) fn build(dir: &Path, id: &str, file: &str) -> Result<(String, Vec<u8>)> {

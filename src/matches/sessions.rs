@@ -6,7 +6,7 @@ use crate::cli::{DEFAULT_TV_PASSWORD, parse_connect};
 use crate::lock;
 use crate::matches::demostf;
 use crate::matches::hub::{SharedHub, watch_into};
-use crate::matches::live_demos::LiveDemos;
+use crate::matches::live_demos::{self, LiveDemos};
 use anyhow::{Result, anyhow, bail};
 use record::{LiveFile, record};
 use session::{Source, join};
@@ -15,6 +15,9 @@ use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
+/// What makes a demo of ours, for the thread that plays it.
+type MadeDemo = Box<dyn Fn() -> Result<Vec<u8>> + Send>;
+
 /// A live match in play stays watched with nobody watching it for this long, at most.
 const UNWATCHED_PLAY: Duration = Duration::from_hours(6);
 /// A match nobody has watched for this long makes room for a new one when there are as many as
@@ -141,6 +144,20 @@ impl Sessions {
     /// or starting it from the beginning; `owner` as for [`Sessions::open`], a new one counting
     /// against `by` as for [`Sessions::open_as`]. It is not saved for the next process.
     pub fn open_demo_as(&self, by: Option<&str>, demo: u64, owner: Option<&str>) -> Result<Arc<Session>> {
+        self.play_demo(by, demo, owner, None)
+    }
+
+    /// The session playing match `id`'s demo `file` with its comms in it, as a demo of its own
+    /// (see [`Sessions::open_demo_as`]): recorded on or said more since, it is another.
+    pub fn open_comms_demo_as(&self, by: Option<&str>, id: &str, file: &str, owner: Option<&str>) -> Result<Arc<Session>> {
+        let dir = self.store.as_ref().map(|s| s.dir.clone()).ok_or_else(|| anyhow!("no demos are kept here"))?;
+        let key = live_demos::comms_key(&dir, id, file).filter(|_| is_id(id)).ok_or_else(|| anyhow!("no such demo"))?;
+        let (id, file) = (id.to_string(), file.to_string());
+        self.play_demo(by, own_demo(&key), owner, Some(Box::new(move || Ok(live_demos::build(&dir, &id, &file)?.1))))
+    }
+
+    /// Plays demo `demo`: demos.tf's, or the one `made`.
+    fn play_demo(&self, by: Option<&str>, demo: u64, owner: Option<&str>, made: Option<MadeDemo>) -> Result<Arc<Session>> {
         let mut map = self.lock();
         if let Some(s) = map.values().find(|s| s.demo == Some(demo) && !s.done.load(Ordering::Relaxed)) {
             return Ok(join(s, owner));
@@ -156,7 +173,8 @@ impl Sessions {
         let kept = self.store.clone().map(|store| demostf::DemoFiles { store, dem: self.demos });
         let (player, hz) = (s.clone(), self.hz);
         let thread = std::thread::spawn(move || {
-            if let Err(e) = demostf::play(&player.hub, demo, hz, &|| player.watched(), &player.stop, kept.as_ref(), &|gz| {
+            let made = made.as_deref().map(|m| m as demostf::Made);
+            if let Err(e) = demostf::play(&player.hub, demo, hz, &|| player.watched(), &player.stop, kept.as_ref(), made, &|gz| {
                 *lock(&player.source) = Some(Source::Output(gz));
             }) {
                 log!("match {} (demo {demo}) gave up: {e:#}", player.label());
@@ -402,6 +420,6 @@ mod load_tests;
 #[cfg(test)]
 mod tests;
 pub(crate) use address::is_public;
-pub(crate) use ids::{demo_id, id_demo, is_id, logged, random_id};
+pub(crate) use ids::{demo_id, id_demo, is_id, is_own_demo, logged, own_demo, random_id};
 pub(crate) use session::{Listed, Session, Viewer};
 pub(crate) use store::{DEMO_PREFIX, LIVE_PREFIX, Store, age, demo_dem, demo_output, is_kept_demo, sweep_demos};
