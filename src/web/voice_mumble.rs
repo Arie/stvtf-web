@@ -119,6 +119,7 @@ fn want(app: &App, m: &Session, ask: Ask) -> Result<(), &'static str> {
         asked: 1,
         id: wanted.iter().map(|j| j.id).max().unwrap_or(0) + 1,
         roster: None,
+        said: None,
     };
     if !place(&mut wanted, at, job, &|j| drop_roster(m, j)) {
         return Err("Too many channels");

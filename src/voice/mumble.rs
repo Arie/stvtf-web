@@ -7,7 +7,7 @@ use crate::lock;
 use crate::voice::ChannelState;
 use serde::{Deserialize, Serialize};
 use std::sync::{Condvar, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 /// Mumble's own port.
 pub(crate) const DEFAULT_PORT: u16 = 64738;
@@ -37,7 +37,23 @@ pub(crate) struct MumbleJob {
     /// What the bot calls its channel when it says who is there.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) roster: Option<String>,
+    /// When the bot last said how it goes; not since this process started, for a job saved.
+    #[serde(skip)]
+    pub(crate) said: Option<Said>,
 }
+
+/// When the bot said something of a job: no part of what the job is.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct Said(pub(crate) Instant);
+
+impl PartialEq for Said {
+    fn eq(&self, _: &Said) -> bool {
+        true
+    }
+}
+
+/// How long the bot's word that it is in a channel stands: it says so every 10 s while it is.
+pub(crate) const SAID_FOR: Duration = Duration::from_secs(45);
 
 /// The most channels wanted for one match.
 pub(crate) const MAX_JOBS: usize = 4;
@@ -63,9 +79,12 @@ pub(crate) fn saved<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Vec<Mumble
 }
 
 impl MumbleJob {
-    /// Where the bot is in the channel, as it last said.
+    /// Where the bot is in the channel, as it last said. In it only while it keeps saying so:
+    /// after [`SAID_FOR`] without (the bot is down), it is on its way in again.
     pub(crate) fn state(&self) -> ChannelState {
-        self.state.unwrap_or_else(|| ChannelState::of_status(&self.status))
+        let state = self.state.unwrap_or_else(|| ChannelState::of_status(&self.status));
+        let silent = self.said.is_none_or(|Said(at)| at.elapsed() > SAID_FOR);
+        if state == ChannelState::In && silent { ChannelState::Connecting } else { state }
     }
 
     /// Whether the bot sits in the channel, as it last said.
@@ -154,5 +173,27 @@ mod tests {
         let jobs = serde_json::from_str::<Saved>(old).unwrap().mumble;
         assert_eq!((jobs[0].state, jobs[0].state()), (None, ChannelState::Left));
         assert!(!serde_json::to_string(&jobs[0]).unwrap().contains("state"), "written as it was read");
+    }
+
+    #[test]
+    fn the_bot_is_in_a_channel_only_while_it_keeps_saying_so() {
+        let job = |state, ago: u64| MumbleJob {
+            host: "m.example".into(),
+            port: DEFAULT_PORT,
+            password: String::new(),
+            channel: "B".into(),
+            delay: 90.0,
+            status: "B · 2".into(),
+            state: Some(state),
+            asked: 1,
+            id: 1,
+            roster: None,
+            said: Instant::now().checked_sub(Duration::from_secs(ago)).map(Said),
+        };
+        assert_eq!(job(ChannelState::In, 5).state(), ChannelState::In);
+        assert_eq!(job(ChannelState::In, 50).state(), ChannelState::Connecting, "the bot is down");
+        assert_eq!(job(ChannelState::Failed, 50).state(), ChannelState::Failed, "it said why, and that stands");
+        let saved = MumbleJob { said: None, ..job(ChannelState::In, 0) };
+        assert_eq!(saved.state(), ChannelState::Connecting, "picked up by the next process: till the bot says");
     }
 }

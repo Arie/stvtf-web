@@ -123,6 +123,7 @@ fn mumble_status(m: &Session, said: &Report, channel: &str, text: String) -> boo
     let job = jobs.iter_mut().find(|j| said.job.map_or(only, |id| id == j.id));
     let Some(job) = job.filter(|j| said.asked.is_none_or(|a| a == j.asked)) else { return false };
     job.state = Some(ChannelState::said(said.state.as_deref(), &text));
+    job.said = Some(crate::voice::mumble::Said(Instant::now()));
     job.status = text;
     if said.people.is_some() {
         job.roster = Some(channel.to_string());
