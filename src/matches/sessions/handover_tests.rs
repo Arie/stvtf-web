@@ -364,3 +364,22 @@ fn a_release_taken_over_closes_its_recording_into_the_file_as_it_goes_for_the_ne
     old.stop_all();
     new.stop_all();
 }
+
+#[test]
+fn a_release_gone_while_it_writes_a_file_on_is_not_waited_for() {
+    let dir = TempDir::new("handover");
+    let (old, m, new, n) = asked_for_at(&dir, "192.0.2.56:27020", 9000);
+    let rec = n.ready().unwrap();
+    until("the old release to hear", || m.giving.load(Ordering::Relaxed));
+    // The old release crashes: its recorders stop, and nothing is said.
+    for s in old.lock().values() {
+        s.stop.store(true, Ordering::Relaxed);
+    }
+    let gone = Instant::now();
+    until("the file to be the new release's", || rec.is_written());
+    assert!(gone.elapsed() >= GIVE_WAIT / 2 && gone.elapsed() < GIVE_BY / 2, "{:?}", gone.elapsed());
+    until("its own line", || ticks_of(&rec).last() == Some(&9000));
+    assert_eq!(ticks_of(&rec), [every_100(1000..=1700), vec![9000]].concat(), "what the file had, and its own");
+    old.stop_all();
+    new.stop_all();
+}
