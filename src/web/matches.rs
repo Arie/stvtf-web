@@ -294,7 +294,11 @@ fn watch_comms_demo(
 ) -> Result<()> {
     let by = counted(who(app, request).user.as_ref(), None, client);
     match sessions.open_comms_demo_as(by.as_deref(), id, file, app.voice.who.clone()) {
-        Ok(m) => redirect(s, "303 See Other", &format!("{}/w/{}/", app.base, m.id))?,
+        Ok(m) => {
+            // The moment asked for goes along: whoever said whose voice is whose watches on there.
+            let at = moment(&request.query, "t").map_or_default(|t| format!("?t={t}"));
+            redirect(s, "303 See Other", &format!("{}/w/{}/{at}", app.base, m.id))?;
+        }
         Err(e) => refuse(s, "404 Not Found", &e)?,
     }
     Ok(())
@@ -328,7 +332,8 @@ pub(super) fn build_comms_demo(dir: &Path, id: &str, file: &str, who: &WhoIsWho)
         return Some(built.demo.clone());
     }
     *last = None;
-    let (name, bytes) = crate::matches::live_demos::build(dir, id, file, &|key| who.account_now(key)).ok()?;
+    let built = crate::matches::live_demos::build(dir, id, file, &|key| who.account_now(key)).ok()?;
+    let (name, bytes) = (built.name, built.demo);
     let demo = Arc::new(CommsDemo { name, bytes });
     let at = Instant::now();
     *last = Some(Built { key, at, demo: demo.clone() });

@@ -25,10 +25,15 @@ const PLAYED_ON: Duration = Duration::from_mins(2);
 const QUIET: Duration = Duration::from_secs(5);
 /// A live match's `.dem` file not written for this long is past what its recording keeps.
 const LIVE_DEMO_KEPT: Duration = Duration::from_hours(3);
-/// Demos kept to download with their comms: for two weeks, and at most 10 GB of them (the oldest
-/// go first).
-const COMMS_DEMOS_KEPT: Duration = Duration::from_hours(14 * 24);
-const COMMS_DEMOS_BUDGET: u64 = 10 << 30;
+/// Demos kept with their comms, to download, to watch, and for their teams to say whose voice
+/// is whose: for 30 days, and at most 25 GB of them unless said (the oldest go first).
+const COMMS_DEMOS_KEPT: Duration = Duration::from_hours(30 * 24);
+const COMMS_DEMOS_BUDGET: u64 = 25 << 30;
+
+/// The most there is kept of demos with comms: `STVTF_COMMS_GB` where a region's disk is small.
+fn comms_demos_budget() -> u64 {
+    std::env::var("STVTF_COMMS_GB").ok().and_then(|gb| gb.parse::<u64>().ok()).map_or(COMMS_DEMOS_BUDGET, |gb| gb << 30)
+}
 /// demos.tf demos kept for the next to play them (the file, and what it decodes to): for a
 /// month since last played, and at most 5 GB of them (the longest unplayed go first).
 const DEMOS_KEPT: Duration = Duration::from_hours(30 * 24);
@@ -434,7 +439,7 @@ impl Rooms {
         });
         live_demos::sweep_live(&store.dir, live, LIVE_DEMO_KEPT);
         sweep_demos(&store.dir, DEMOS_KEPT, DEMOS_BUDGET, STALE);
-        live_demos::sweep_kept(&store.dir, COMMS_DEMOS_KEPT, COMMS_DEMOS_BUDGET);
+        live_demos::sweep_kept(&store.dir, COMMS_DEMOS_KEPT, comms_demos_budget());
     }
 }
 

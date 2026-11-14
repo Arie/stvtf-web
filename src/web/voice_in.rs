@@ -113,6 +113,10 @@ pub(super) fn has_say(app: &App, m: &Session, who: &super::visitor::Who) -> bool
 /// server (`STVTF_VOICE_BOT`), to those with a say. Every page asks: no content for the rest, and
 /// where no voice comes in, rather than an error in everyone's console.
 pub(super) fn get_voice_invite(s: &mut TcpStream, app: &App, m: Option<&Session>, who: &super::visitor::Who) -> std::io::Result<()> {
+    // A demo with comms watched here: no bot to bring in, only whose its voices are.
+    if super::voice_who::reviewed(app, m, who).is_some() {
+        return respond(s, "200 OK", super::JSON, br#"{"review":true}"#);
+    }
     let Some(m) = m.filter(|m| m.is_live() && app.voice.key.is_some() && has_say(app, m, who)) else {
         return respond(s, "204 No Content", TEXT, b"");
     };

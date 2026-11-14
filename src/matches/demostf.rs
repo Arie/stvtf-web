@@ -20,7 +20,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use std::time::Instant;
 use stvtf::Line;
-use stvtf::output::{Stamped, Status};
+use stvtf::output::{Stamped, Status, Voice};
 
 const API: &str = "https://api.demos.tf/demos/";
 /// A whole evening on one demo is a few hundred MiB.
@@ -81,7 +81,8 @@ fn file_url(id: u64, body: &str) -> Result<String> {
 }
 
 /// What makes a demo that is not demos.tf's (a match's, with its comms): the file.
-pub(crate) type Made<'a> = &'a dyn Fn() -> Result<Vec<u8>>;
+/// With what was said in it that is in no player's voice there: lines of their own, by tick.
+pub(crate) type Made<'a> = &'a dyn Fn() -> Result<(Vec<u8>, Vec<Voice>)>;
 
 /// Demo `id` as gzipped stvtf output, with `snapshot_hz` snapshots a second; None when told to
 /// `stop` meanwhile. From what is `kept` of it, else downloaded (or `made`) and decoded (and then
@@ -100,11 +101,25 @@ fn fetch(
         return Ok(None);
     }
     let agent = agent(STALLED_FOR);
+    // One made here is made anew unless what it decoded to is kept: its lines come with it.
+    if made.is_some()
+        && let Some(k) = kept
+    {
+        if let Some(output) = kept_output(k, id) {
+            return Ok(Some(output));
+        }
+        let _ = std::fs::remove_file(k.store.dir.join(demo_dem(id)));
+    }
+    let extra = Mutex::new(Vec::new());
     let download = |out: &mut dyn Write, said: &mut dyn FnMut(Option<u8>)| match made {
-        Some(made) => out.write_all(&made()?).map(|()| true).map_err(Into::into),
+        Some(made) => {
+            let (demo, lines) = made()?;
+            *lock(&extra) = lines;
+            out.write_all(&demo).map(|()| true).map_err(Into::into)
+        }
         None => download(&agent, &demo_url(&agent, id)?, id, MAX_DEMO, out, stop, said),
     };
-    fetch_with(hub, id, snapshot_hz, stop, kept, &download)
+    fetch_with(hub, id, snapshot_hz, stop, kept, &download, &extra)
 }
 
 fn fetch_with(
@@ -114,6 +129,7 @@ fn fetch_with(
     stop: &AtomicBool,
     kept: Option<&DemoFiles>,
     download: Download,
+    extra: &Mutex<Vec<Voice>>,
 ) -> Result<Option<Vec<u8>>> {
     if let Some(output) = kept.and_then(|k| kept_output(k, id)) {
         return Ok(Some(output));
@@ -140,7 +156,7 @@ fn fetch_with(
         Some(file) => std::fs::read(file)?,
         None => in_memory,
     };
-    let output = decode_and_keep(id, &demo, snapshot_hz, kept.zip(file.as_deref()))?;
+    let output = decode_and_keep(id, &demo, snapshot_hz, std::mem::take(&mut *lock(extra)), kept.zip(file.as_deref()))?;
     log!(
         "demo {id}: {} MiB fetched in {:.1} s, decoded to {} MiB in {:.1} s",
         demo.len() >> 20,
@@ -179,8 +195,8 @@ fn download_to_file(file: &Path, download: Download, said: &mut dyn FnMut(Option
 
 /// `demo` decoded, and kept in `kept`'s store, its `file` too where relays play it: a file that
 /// will not decode is not kept to fail again.
-fn decode_and_keep(id: u64, demo: &[u8], snapshot_hz: f32, kept: Option<(&DemoFiles, &Path)>) -> Result<Vec<u8>> {
-    let output = decode(id, demo, snapshot_hz);
+fn decode_and_keep(id: u64, demo: &[u8], snapshot_hz: f32, extra: Vec<Voice>, kept: Option<(&DemoFiles, &Path)>) -> Result<Vec<u8>> {
+    let output = decode(id, demo, snapshot_hz, extra);
     if let Some((k, file)) = kept {
         if output.is_err() || !k.dem {
             let _ = std::fs::remove_file(file);
@@ -233,19 +249,31 @@ fn download(
     Ok(true)
 }
 
-/// A demo file as gzipped stvtf output.
-fn decode(id: u64, demo: &[u8], snapshot_hz: f32) -> Result<Vec<u8>> {
+/// A demo file as gzipped stvtf output, the `extra` lines (in tick order) among its own at their
+/// ticks.
+fn decode(id: u64, demo: &[u8], snapshot_hz: f32, extra: Vec<Voice>) -> Result<Vec<u8>> {
     // Kept for the whole match: half the size of a fast level (a 24-minute demo is under 6 MiB).
     // Buffered: flate2 runs the compressor on every write, and serde writes a line in many small
     // pieces.
     let mut gz = BufWriter::new(GzEncoder::new(Vec::new(), Compression::default()));
     let mut written = Ok(());
-    stvtf::decode::demo_file(demo, snapshot_hz, &mut |line| {
+    let mut write = |line: Line| {
         if written.is_ok() {
             written = serde_json::to_writer(&mut gz, &Stamped { line, time: None }).map_err(Into::into).and_then(|()| writeln!(gz));
         }
+    };
+    let mut extra = extra.into_iter().peekable();
+    stvtf::decode::demo_file(demo, snapshot_hz, &mut |line| {
+        // What was said up to this line's tick goes before it; a line with no tick waits for none.
+        while let Some(said) = extra.next_if(|v| line.tick().is_some_and(|t| v.tick <= t)) {
+            write(Line::Voice(said));
+        }
+        write(line);
     })
     .with_context(|| format!("decoding demo {id}"))?;
+    for said in extra {
+        write(Line::Voice(said));
+    }
     written?;
     Ok(gz.into_inner().map_err(std::io::IntoInnerError::into_error)?.finish()?)
 }
@@ -326,7 +354,7 @@ mod tests {
         // Kept already, so nothing is asked of demos.tf: told to stop, it plays none of it.
         let dir = crate::testing::TempDir::new("demostf-stopped");
         let kept = DemoFiles { store: Store { dir: dir.join("store"), keys: None }, dem: false };
-        kept.store.put(&demo_output(1), &decode(1, &recorded(), 20.0).unwrap()).unwrap();
+        kept.store.put(&demo_output(1), &decode(1, &recorded(), 20.0, Vec::new()).unwrap()).unwrap();
         play(&hub, 1, 20.0, &|| true, &AtomicBool::new(true), Some(&kept), None, &drop).unwrap();
         assert_eq!(crate::matches::hub::subscribe(&hub, false).try_iter().count(), 0);
     }
@@ -344,7 +372,7 @@ mod tests {
 
     #[test]
     fn a_demo_is_kept_as_gzipped_lines_that_play_as_a_match() {
-        let output = decode(1, &recorded(), 20.0).unwrap();
+        let output = decode(1, &recorded(), 20.0, Vec::new()).unwrap();
         let lines = lines(&output);
         assert!(lines.iter().any(|l| matches!(&l.line, Line::Server(s) if s.map == "tc_hydro")));
         assert!(lines.iter().any(|l| matches!(l.line, Line::Snapshot(_))));
@@ -363,14 +391,15 @@ mod tests {
 
     #[test]
     fn the_snapshot_rate_reaches_the_decoder() {
-        let snapshots = |hz| lines(&decode(1, &recorded(), hz).unwrap()).iter().filter(|l| matches!(l.line, Line::Snapshot(_))).count();
+        let snapshots =
+            |hz| lines(&decode(1, &recorded(), hz, Vec::new()).unwrap()).iter().filter(|l| matches!(l.line, Line::Snapshot(_))).count();
         assert_eq!(snapshots(0.0), 0);
         assert!(snapshots(5.0) < snapshots(20.0));
     }
 
     #[test]
     fn a_file_that_is_no_demo_is_an_error() {
-        let err = decode(7, b"not a demo", 20.0).unwrap_err();
+        let err = decode(7, b"not a demo", 20.0, Vec::new()).unwrap_err();
         assert!(format!("{err:#}").contains("decoding demo 7"), "{err:#}");
     }
 
@@ -429,17 +458,17 @@ mod tests {
         };
         // No relay plays it: only what it decodes to is kept.
         let k = kept(&dir, false);
-        let first = fetch_with(&hub, 5, 20.0, &running, Some(&k), &download).unwrap().unwrap();
+        let first = fetch_with(&hub, 5, 20.0, &running, Some(&k), &download, &Mutex::default()).unwrap().unwrap();
         assert!(k.store.has(&demo_output(5)) && !k.store.has(&demo_dem(5)));
         let states: Vec<String> = told(&hub).iter().map(|l| l["state"].as_str().unwrap_or_default().to_string()).collect();
         assert_eq!(states.last().map(String::as_str), Some("decoding"), "the pages hear how far it is: {states:?}");
-        assert_eq!(fetch_with(&hub, 5, 20.0, &running, Some(&k), &download).unwrap().unwrap(), first);
+        assert_eq!(fetch_with(&hub, 5, 20.0, &running, Some(&k), &download, &Mutex::default()).unwrap().unwrap(), first);
         assert_eq!(*lock(&fetched), 1);
         // A relay plays it: the demo file is wanted too, fetched once more and then kept.
         let k = kept(&dir, true);
-        assert_eq!(fetch_with(&hub, 5, 20.0, &running, Some(&k), &download).unwrap().unwrap(), first);
+        assert_eq!(fetch_with(&hub, 5, 20.0, &running, Some(&k), &download, &Mutex::default()).unwrap().unwrap(), first);
         assert!(k.store.has(&demo_dem(5)));
-        fetch_with(&hub, 5, 20.0, &running, Some(&k), &download).unwrap();
+        fetch_with(&hub, 5, 20.0, &running, Some(&k), &download, &Mutex::default()).unwrap();
         assert_eq!(*lock(&fetched), 2);
     }
 
@@ -448,12 +477,12 @@ mod tests {
         let dir = crate::testing::TempDir::new("demostf-bad");
         let (hub, running, k) = (SharedHub::default(), AtomicBool::new(false), kept(&dir, true));
         let fails = |_: &mut dyn Write, _: &mut dyn FnMut(Option<u8>)| anyhow::bail!("down");
-        assert!(fetch_with(&hub, 6, 20.0, &running, Some(&k), &fails).is_err());
+        assert!(fetch_with(&hub, 6, 20.0, &running, Some(&k), &fails, &Mutex::default()).is_err());
         let junk = |out: &mut dyn Write, _: &mut dyn FnMut(Option<u8>)| {
             out.write_all(b"not a demo")?;
             Ok(true)
         };
-        assert!(fetch_with(&hub, 6, 20.0, &running, Some(&k), &junk).is_err());
+        assert!(fetch_with(&hub, 6, 20.0, &running, Some(&k), &junk, &Mutex::default()).is_err());
         let left: Vec<_> = std::fs::read_dir(&k.store.dir).unwrap().flatten().map(|e| e.file_name()).collect();
         assert!(left.is_empty(), "{left:?}");
     }
@@ -481,10 +510,10 @@ mod tests {
         };
         std::thread::scope(|scope| {
             scope.spawn(|| {
-                assert!(fetch_with(&SharedHub::default(), 4, 20.0, &running, Some(&k), &stops).unwrap().is_none());
+                assert!(fetch_with(&SharedHub::default(), 4, 20.0, &running, Some(&k), &stops, &Mutex::default()).unwrap().is_none());
                 first_done.store(true, Ordering::Relaxed);
             });
-            assert!(fetch_with(&SharedHub::default(), 4, 20.0, &running, Some(&k), &whole).unwrap().is_some());
+            assert!(fetch_with(&SharedHub::default(), 4, 20.0, &running, Some(&k), &whole, &Mutex::default()).unwrap().is_some());
         });
         assert_eq!(std::fs::read(k.store.dir.join(demo_dem(4))).unwrap(), recorded());
     }

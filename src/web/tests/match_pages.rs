@@ -341,3 +341,40 @@ fn a_matchs_demo_with_comms_is_watched_as_a_demo_of_its_own() {
     assert!(gone.starts_with("HTTP/1.1 404"), "{gone}");
     sessions_of(&app).stop_all();
 }
+
+#[test]
+fn a_demo_with_comms_watched_here_has_its_voices_put_on_players_after_the_match() {
+    let id = "ef".repeat(16);
+    let dir = TempDir::new("review-web");
+    std::fs::copy(concat!(env!("CARGO_MANIFEST_DIR"), "/../stvtf/tests/fixtures/tc_hydro.dem"), dir.join(format!("kept-{id}-0-1.dem")))
+        .unwrap();
+    let said = r#"{"tick":40,"who":"discord:77","name":"kx2","frames":["aA=="]}"#;
+    std::fs::write(dir.join(format!("kept-{id}-0-1.dem.voice")), format!("{said}\n")).unwrap();
+    let mut sessions = Sessions::new(false, 4, 20.0);
+    sessions.store = Some(sessions::Store { dir: dir.to_path_buf(), keys: None });
+    let mut app = app(Matches::Many(sessions));
+    let watch = |app: &App| {
+        let watched = get(app, &format!("/w/{id}/watch/0-1?t=1:02"), "");
+        watched.split("Location: ").nth(1).and_then(|l| l.split("\r\n").next()).unwrap_or_default().to_string()
+    };
+    let page = watch(&app);
+    assert!(page.starts_with("/w/d") && page.ends_with("/?t=1:02"), "the moment goes along: {page}");
+    let page = page.trim_end_matches("?t=1:02").to_string();
+    // Where nobody signs in, anyone says who is who.
+    assert!(get(&app, &format!("{page}voice-invite"), "").ends_with(r#"{"review":true}"#));
+    let voices = get(&app, &format!("{page}voices"), "");
+    assert!(voices.ends_with(r#"[{"confirmed":false,"heard":true,"id":"77","linked":null,"name":"kx2","steamid":null}]"#), "{voices}");
+    let put = post(&app, &format!("{page}voice-match"), "", r#"{"discord":"77","steamid":"[U:1:5]"}"#);
+    assert!(put.starts_with("HTTP/1.1 200") && put.ends_with(&format!(r#"{{"watch":"/w/{id}/watch/0-1"}}"#)), "{put}");
+    assert!(
+        get(&app, &format!("{page}voices"), "")
+            .contains(r#"{"confirmed":true,"heard":true,"id":"77","linked":null,"name":"kx2","steamid":"[U:1:5]"}"#)
+    );
+    assert!(post(&app, &format!("{page}voice-match"), "", r#"{"discord":"78"}"#).starts_with("HTTP/1.1 400"), "no such voice");
+    assert_ne!(watch(&app).trim_end_matches("?t=1:02"), page, "built anew: another demo");
+    // Behind a site, not someone who is not signed in.
+    app.keys = Some(Arc::new(token::Keys::from_hex(&"42".repeat(32)).unwrap()));
+    assert!(get(&app, &format!("{page}voice-invite"), "").starts_with("HTTP/1.1 204"));
+    assert!(post(&app, &format!("{page}voice-match"), "", r#"{"discord":"77"}"#).starts_with("HTTP/1.1 403"));
+    sessions_of(&app).stop_all();
+}

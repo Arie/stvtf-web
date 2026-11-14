@@ -37,6 +37,8 @@ pub struct Session {
     pub(super) pinned: bool,
     /// The demos.tf demo it plays instead of watching `server`.
     pub(super) demo: Option<u64>,
+    /// The match and its demo (`<load>-<tick>`) a demo made here is of: one with comms.
+    pub(super) comms_of: Option<(String, String)>,
     pub(super) stop: AtomicBool,
     /// Set when the watcher gave up (a wrong password, say) or was stopped.
     pub(super) done: AtomicBool,
@@ -89,6 +91,7 @@ impl Session {
             reservation: AtomicU64::new(0),
             pinned,
             demo: None,
+            comms_of: None,
             stop: AtomicBool::new(false),
             done: AtomicBool::new(false),
             viewers: AtomicUsize::new(0),
@@ -127,6 +130,11 @@ impl Session {
     /// The demos.tf demo it plays, if it plays one.
     pub fn demo_id(&self) -> Option<u64> {
         self.demo
+    }
+
+    /// The match and its demo this one, made here with its comms, is of.
+    pub(crate) fn comms_of(&self) -> Option<(&str, &str)> {
+        self.comms_of.as_ref().map(|(id, file)| (id.as_str(), file.as_str()))
     }
 
     /// A demo's gzipped stvtf output, once fetched.

@@ -242,11 +242,12 @@ impl WhoIsWho {
     }
 
     /// The account whoever talked as `key` (as their lines name one who is no player: by who
-    /// they are where they talk) is said to be by now, for sure.
+    /// they are where they talk) is known as by now, a suggestion too: for a demo they talked
+    /// in, where it holds only while that account was playing.
     pub(crate) fn account_now(&self, key: &str) -> Option<u32> {
         match self.recall(key.strip_prefix(super::feed::UNLINKED)?)? {
-            Recalled::Player { steamid, sure: true } => super::ids::account_of(&steamid),
-            _ => None,
+            Recalled::Player { steamid, .. } => super::ids::account_of(&steamid),
+            Recalled::Nobody => None,
         }
     }
 

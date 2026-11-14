@@ -36,4 +36,6 @@ accessories:
 env:
   clear:
     STVTF_REGION: au
+    # A small disk: less of the demos with comms is kept than the 25 GB elsewhere.
+    STVTF_COMMS_GB: 10
     STVTF_VOICE_HOME: https://stv.tf

@@ -10,6 +10,9 @@ import { act, el, heading } from "./voicebits.js";
 /** @typedef {{ id: string; name: string; steamid: string | null; linked: string | null; heard: boolean; confirmed: boolean }} Person */
 /** @type {Person[]} */
 let people = [];
+// On a demo with comms watched here: where it plays with what was said of its voices since, once
+// anything was (it is built anew).
+let rebuilt = "";
 // Whose Steam ID is being typed, what is typed, and why it would not do.
 let typing = "",
   typedId = "",
@@ -87,6 +90,15 @@ function row(v) {
   return r;
 }
 
+// The way to the demo built anew, from the moment watched now.
+export function rebuiltRow() {
+  if (!rebuilt) return [];
+  const t = new URLSearchParams(location.search).get("t");
+  const a = el("a", { href: t && /^[\d:]+$/.test(t) ? `${rebuilt}?t=${t}` : rebuilt, className: "vcopy" }, "▶ Apply");
+  a.title = "Rebuilds the demo";
+  return [el("div", { className: "vrow vinvite" }, a)];
+}
+
 export function whoRows() {
   if (!people.length) return [el("div", { className: "vhint" }, "Nobody there")];
   const set = people.filter(v => playerOf(v) || v.steamid || v.confirmed).length;
@@ -118,8 +130,9 @@ function putOn(id, whom, redraw) {
     body: JSON.stringify({ discord: id, ...whom }),
   })
     .then(r => {
-      if (r.ok) typing = "";
-      else return r.text().then(why => (refused = why));
+      if (!r.ok) return r.text().then(why => (refused = why));
+      typing = "";
+      if (r.status === 200) return r.json().then(said => (rebuilt = String(said.watch ?? "")));
     })
     .catch(() => (refused = "No answer"))
     .finally(() => pollWho(redraw))

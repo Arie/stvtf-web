@@ -17,7 +17,7 @@ use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 /// What makes a demo of ours, for the thread that plays it.
-type MadeDemo = Box<dyn Fn() -> Result<Vec<u8>> + Send>;
+type MadeDemo = Box<dyn Fn() -> Result<(Vec<u8>, Vec<stvtf::output::Voice>)> + Send>;
 
 /// A live match in play stays watched with nobody watching it for this long, at most.
 const UNWATCHED_PLAY: Duration = Duration::from_hours(6);
@@ -155,13 +155,23 @@ impl Sessions {
         let dir = self.store.as_ref().map(|s| s.dir.clone()).ok_or_else(|| anyhow!("no demos are kept here"))?;
         let whom = |key: &str| who.account_now(key);
         let key = live_demos::comms_key(&dir, id, file, &whom).filter(|_| is_id(id)).ok_or_else(|| anyhow!("no such demo"))?;
-        let (id, file) = (id.to_string(), file.to_string());
-        let made = move || Ok(live_demos::build(&dir, &id, &file, &|key| who.account_now(key))?.1);
-        self.play_demo(by, own_demo(&key), None, Some(Box::new(made)))
+        let of = (id.to_string(), file.to_string());
+        let (id, file) = of.clone();
+        let made = move || {
+            let built = live_demos::build(&dir, &id, &file, &|key| who.account_now(key))?;
+            Ok((built.demo, built.nobodys))
+        };
+        self.play_demo(by, own_demo(&key), None, Some((of, Box::new(made))))
     }
 
-    /// Plays demo `demo`: demos.tf's, or the one `made`.
-    fn play_demo(&self, by: Option<&str>, demo: u64, owner: Option<&str>, made: Option<MadeDemo>) -> Result<Arc<Session>> {
+    /// Plays demo `demo`: demos.tf's, or the one `made`, of a match's demo with its comms.
+    fn play_demo(
+        &self,
+        by: Option<&str>,
+        demo: u64,
+        owner: Option<&str>,
+        made: Option<((String, String), MadeDemo)>,
+    ) -> Result<Arc<Session>> {
         let mut map = self.lock();
         if let Some(s) = map.values().find(|s| s.demo == Some(demo) && !s.done.load(Ordering::Relaxed)) {
             return Ok(join(s, owner));
@@ -170,6 +180,8 @@ impl Sessions {
         self.check_room(&mut map)?;
         let mut session = Session::new(demo_id(demo), SharedHub::default(), NOWHERE, String::new(), owner.map(str::to_string), false);
         session.demo = Some(demo);
+        let (of, made) = made.unzip();
+        session.comms_of = of;
         if let Some(by) = by {
             let _ = session.by.set(by.to_string());
         }

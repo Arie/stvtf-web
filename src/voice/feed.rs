@@ -404,7 +404,11 @@ impl VoiceFeed {
         // No player's (yet): kept as whose voice it is, for whoever says so later.
         let by = match slot {
             Some((slot, account)) => Some(By::Player { slot, account }),
-            None => (!pause).then(|| By::Voice { who: said.who.clone(), name: name.clone() }),
+            None => (!pause).then(|| {
+                // By who they are where they talk, a linked one too: that is whom one is put on.
+                let voice_id = known.and_then(|k| k.voice_id.as_ref());
+                By::Voice { who: voice_id.map_or_else(|| said.who.clone(), |v| format!("{UNLINKED}{v}")), name: name.clone() }
+            }),
         };
         if let Some(by) = by {
             st.record_spoken(Spoken { tick, by, frames: said.frames.clone() });

@@ -87,9 +87,16 @@ user id; for Mumble `mumble:<server>:<who they are there>`), with a `"name"` and
 they are in. Until put on a player such a voice is nobody's, heard as of no player, on the team
 most of its channel's players are on; on the page it is listed by its name, under that team or
 under Others (two minutes after its last word, no longer). It is kept beside the demo
-being recorded all the same: a [demo with comms](rooms.md#maps) built after someone said whose it
-is (for sure: a caster, the match's starter, a site's link) has it as that player's voice, where
-they were playing.
+being recorded all the same, by who they are where they talk and their name.
+
+After the match, a [demo with comms](rooms.md#maps) watched here plays such a voice by its name,
+under Others, and "🎧 Who is who" in its speakers list puts it on a player (or a Steam ID, or
+nobody), for that demo: by anyone signed in who plays in it at the moment shown, and the site's
+streamers (where nobody signs in, by anyone). "▶ Apply" then plays the demo built anew, the voice
+its player's where they were playing; the download has it so too. What is said so is also
+remembered for their next match (a streamer's word for sure, a player's as a suggestion). Without
+anyone saying, a voice is the player's it is known as from before or since (a link at a site, an
+earlier match).
 
 Comms are set up in the speakers list, by whoever started the match and by the site's streamers
 (where nobody signs in, by anyone): "Comms" swaps the list for a wider view. With no channel

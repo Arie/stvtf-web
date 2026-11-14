@@ -239,7 +239,7 @@ fn a_map_with_comms_is_kept_for_downloading_and_one_without_is_not() {
     let live = Download { file: "0-100".into(), map: "cp_a".into(), bytes: std::fs::metadata(dir.join("live-m-0-100.dem")).unwrap().len() };
     assert_eq!(downloads(&dir, "m"), std::slice::from_ref(&live), "while it is played, too");
     // The demo as TF2 plays it, the comms in it at their ticks.
-    let (name, demo) = build(&dir, "m", "0-100", &|_| None).unwrap();
+    let Built { name, demo, .. } = build(&dir, "m", "0-100", &|_| None).unwrap();
     assert_eq!(name, "cp_a-comms-0-100.dem");
     let mut r = stvtf::demo::Reader::new(std::io::Cursor::new(&demo)).unwrap();
     assert_eq!((r.header.map.as_str(), r.header.frames), ("cp_a", 5), "three frames and two of voice");
@@ -330,8 +330,9 @@ fn a_voice_that_was_no_players_is_the_players_it_is_said_to_be_when_the_demo_is_
     let lines: Vec<String> = [said("discord:77"), said("discord:78")].iter().map(|s| serde_json::to_string(s).unwrap()).collect();
     assert_eq!(lines[0], format!(r#"{{"tick":{tick},"who":"discord:77","name":"kx2","frames":["aA=="]}}"#));
     std::fs::write(voice_of(&demo), lines.join("\n") + "\n").unwrap();
+    let nobodys = |who: WhoNow| build(&dir, "m", "0-1", who).unwrap().nobodys.into_iter().map(|v| (v.steamid, v.name)).collect::<Vec<_>>();
     let voices = |who: WhoNow| {
-        let (_, built) = build(&dir, "m", "0-1", who).unwrap();
+        let built = build(&dir, "m", "0-1", who).unwrap().demo;
         let mut voices = Vec::new();
         stvtf::decode::demo_file(&built, 0.0, &mut |line| {
             if let stvtf::Line::Voice(v) = line {
@@ -346,6 +347,17 @@ fn a_voice_that_was_no_players_is_the_players_it_is_said_to_be_when_the_demo_is_
     assert_eq!(voices(&now), [format!("[U:1:{account}]")], "theirs, on slot {slot}");
     // Not someone who was not playing then.
     assert_eq!(voices(&|_| Some(account + 1_000_000)), Vec::<String>::new());
+    // Nobody's still: lines of their own, by the name they talked under.
+    let kx2 = |who: &str| (who.to_string(), Some("kx2".to_string()));
+    assert_eq!(nobodys(&|_| None), [kx2("discord:77"), kx2("discord:78")]);
+    assert_eq!(nobodys(&now), [kx2("discord:78")]);
+    assert_eq!(voices_in(&dir, "m", "0-1"), [("discord:77".to_string(), "kx2".to_string()), ("discord:78".to_string(), "kx2".to_string())]);
+    // What is said of this demo's voices holds for it, whatever is known elsewhere.
+    pick(&dir, "m", "0-1", "discord:78", Some(&format!("[U:1:{account}]"))).unwrap();
+    pick(&dir, "m", "0-1", "discord:77", None).unwrap();
+    assert_eq!(nobodys(&now), [kx2("discord:77")], "77 nobody here, 78 the player");
+    assert!(pick(&dir, "m", "9-9", "discord:78", None).is_err(), "no such demo");
+    std::fs::remove_file(picks_file(&dir, "m", "0-1")).unwrap();
     // Said to be another, it is another demo to play.
     assert_ne!(comms_key(&dir, "m", "0-1", &|_| None), comms_key(&dir, "m", "0-1", &now));
     assert_eq!(comms_key(&dir, "m", "0-1", &now), comms_key(&dir, "m", "0-1", &now));

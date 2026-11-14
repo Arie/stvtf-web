@@ -3,8 +3,9 @@
 // connected: Discord or Mumble. Discord: a button that copies the command that brings the voice
 // bot into a voice channel, to paste there or pass on to a team. Mumble: the server, its password
 // and the channel, and the bot joins at once. Once it is in a channel, those it is in show: how
-// each goes, a way to add another (the other team's), and who is who (voicewho.js). See the
-// viewer's Voice.
+// each goes, a way to add another (the other team's), and who is who (voicewho.js). On a demo
+// with comms watched here, for its players and for casters: only who is who, of its voices that
+// were no player's. See the viewer's Voice.
 import { $ } from "../core/core.js";
 import { HOME } from "../room/home.js";
 import { copyText } from "../room/copy.js";
@@ -20,7 +21,7 @@ import {
   serverOf,
   typed,
 } from "./mumbleform.js";
-import { pollWho, whoEvents, whoRows } from "./voicewho.js";
+import { pollWho, rebuiltRow, whoEvents, whoRows } from "./voicewho.js";
 
 // What most of competitive TF2 sets `tv_delay` to, in seconds: the bot's own when none is said.
 const USUAL_DELAY = 90,
@@ -44,6 +45,9 @@ export function joinCommand(page, invite, delay) {
 /** @typedef {import("./mumbleform.js").InMumble} InMumble */
 /** @type {{ invite: string; bot: string | null } | null} */
 let botInvite = null;
+// A demo with comms watched here, by someone who may say whose its voices are: no bot to bring
+// in, only who is who.
+let review = false;
 // Where the bot is, as stv.tf last said.
 /** @type {{ discord: { status: string; state?: string } | null; mumble: InMumble[] }} */
 let comms = { discord: null, mumble: [] };
@@ -170,6 +174,7 @@ function connected() {
 
 // The view that takes the list's place.
 function commsView() {
+  if (review) return [top("", "Voices"), ...whoRows(), ...rebuiltRow()];
   if (!botInvite) return [];
   const moved = view.screen === "reconnect" && comms.mumble.find(m => m.id === view.editing);
   if (moved) return mumbleSetup(moved);
@@ -183,8 +188,8 @@ function commsView() {
 
 // In the speakers list: the way in.
 function commsButton() {
-  if (!botInvite || view.screen) return [];
-  const b = act("🎧 Comms", "go:home", "Discord or Mumble");
+  if ((!botInvite && !review) || view.screen) return [];
+  const b = review ? act("🎧 Who is who", "go:home") : act("🎧 Comms", "go:home", "Discord or Mumble");
   b.className = "vcopy";
   return [el("div", { className: "vrow vinvite" }, b)];
 }
@@ -199,6 +204,7 @@ const postMumble = (/** @type {object} */ body) =>
 // Where the bot is, asked while the view is open: the view anew when that changed.
 let soon = 0;
 function pollComms() {
+  if (review && view.screen && !list.hidden) return pollWho(redraw);
   if (!botInvite || !view.screen || list.hidden) return;
   fetch(new URL("voice-comms", HOME))
     .then(r => (r.status === 200 ? r.json() : null))
@@ -302,6 +308,7 @@ export function voiceInvite() {
     .then(
       g => {
         botInvite = g?.invite ? { invite: String(g.invite), bot: typeof g.bot === "string" ? g.bot : null } : null;
+        review = Boolean(g?.review);
         redraw();
       },
       () => {},
@@ -310,7 +317,7 @@ export function voiceInvite() {
   whoEvents(list, redraw);
   list.addEventListener("click", e => {
     const b = /** @type {HTMLElement | null} */ (/** @type {Element} */ (e.target).closest("[data-action]"));
-    if (b?.dataset.action && botInvite) onAction(b.dataset.action);
+    if (b?.dataset.action && (botInvite || review)) onAction(b.dataset.action);
   });
   list.addEventListener("input", e => keepTyped(/** @type {HTMLInputElement} */ (e.target)));
   list.addEventListener("change", e => {

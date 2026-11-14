@@ -11,6 +11,10 @@
 //!
 //! What someone says of who is who is remembered (`voice::who`), and holds when the same
 //! person is in a channel again, in any region.
+//!
+//! A match's demo with its comms, watched here as a demo of its own, has the last two too, for
+//! its voices that were no player's: whose each is said to be holds for that demo (built anew
+//! with it), by its players (signed in, playing in it at the moment shown) and the streamers.
 
 use super::visitor::Who;
 use super::voice_in::{has_say, is_key};
@@ -179,8 +183,53 @@ pub(super) fn get_voice_comms(s: &mut TcpStream, app: &App, m: Option<&Session>,
     respond(s, "200 OK", JSON, serde_json::json!({ "discord": discord, "mumble": mumble }).to_string().as_bytes())
 }
 
+/// Where the demos are kept.
+fn demos_dir(app: &App) -> Option<&std::path::Path> {
+    match &app.matches {
+        crate::Matches::Many(sessions) => sessions.store.as_ref().map(|s| s.dir.as_path()),
+        crate::Matches::One(_) => None,
+    }
+}
+
+/// The match and demo `m`, a demo with comms watched here, is of, and where the demos are, if
+/// `who` may say whose its voices are: a player in it now, signed in, or a streamer; where nobody
+/// signs in, anyone.
+pub(super) fn reviewed<'a>(app: &'a App, m: Option<&'a Session>, who: &Who) -> Option<(&'a std::path::Path, &'a str, &'a str)> {
+    let m = m?;
+    let (id, file) = m.comms_of()?;
+    let plays = |uid: &str| parse_steamid(uid).is_some_and(|steamid| lock(&m.hub).player_with(&steamid).is_some());
+    let may = app.keys.is_none() || who.user.as_ref().is_some_and(|u| u.streamer || plays(&u.uid));
+    may.then_some((demos_dir(app)?, id, file))
+}
+
+/// Who they are where they talk, for one a demo's lines name `discord:<that>`.
+fn voice_id(key: &str) -> Option<&str> {
+    key.strip_prefix(crate::voice::feed::UNLINKED).filter(|id| is_voice_id(id))
+}
+
+/// A demo's voices that were no player's, and whom each is said to be: for that demo, else as
+/// known from before.
+fn review_voices(app: &App, dir: &std::path::Path, id: &str, file: &str) -> Vec<crate::voice::feed::Person> {
+    let picks = crate::matches::live_demos::picks(dir, id, file);
+    let person = |(key, name): (String, String)| {
+        let voice_id = voice_id(&key)?.to_string();
+        let (steamid, confirmed) = match (picks.get(&key), app.voice.who.recall(&voice_id)) {
+            (Some(steamid), _) => (steamid.clone(), true),
+            (None, Some(Recalled::Player { steamid, sure })) => (Some(steamid), sure),
+            (None, Some(Recalled::Nobody)) => (None, true),
+            (None, None) => (None, false),
+        };
+        let name = if name.is_empty() { voice_id.clone() } else { name };
+        Some(crate::voice::feed::Person { voice_id, name, steamid, linked: None, heard: true, confirmed })
+    };
+    crate::matches::live_demos::voices_in(dir, id, file).into_iter().filter_map(person).collect()
+}
+
 /// `GET <page>voices`: those in the channel and those heard, and whom each is put on.
 pub(super) fn get_voices(s: &mut TcpStream, app: &App, m: Option<&Session>, who: &Who) -> std::io::Result<()> {
+    if let Some((dir, id, file)) = reviewed(app, m, who) {
+        return respond(s, "200 OK", JSON, serde_json::json!(review_voices(app, dir, id, file)).to_string().as_bytes());
+    }
     let Some(m) = theirs(app, m, who) else { return respond(s, "204 No Content", TEXT, b"") };
     // What the sites said since of those in the channel shows at once.
     recall(app, m);
@@ -208,6 +257,9 @@ pub(super) fn post_voice_match(
     request: &Request,
     who: &Who,
 ) -> std::io::Result<()> {
+    if m.is_some_and(|m| m.comms_of().is_some()) {
+        return post_review_match(s, reader, app, m, request, who);
+    }
     let Some(m) = m.filter(|m| m.is_live() && app.voice.key.is_some()) else {
         return respond(s, "409 Conflict", TEXT, b"No voice here");
     };
@@ -238,4 +290,42 @@ pub(super) fn post_voice_match(
     let caster = who.user.as_ref().is_some_and(|u| u.streamer);
     app.voice.who.remember(&v.voice_id, steamid.as_deref(), &m.comms.feed.name_of(&v.voice_id).unwrap_or_default(), caster);
     respond(s, "204 No Content", TEXT, b"")
+}
+
+/// `POST <page>voice-match` on a demo with comms watched here: one of its voices that was no
+/// player's is a player of it, a `SteamID`, or nobody, for this demo. The answer says where it
+/// plays with that (`watch`): built anew.
+fn post_review_match(
+    s: &mut TcpStream,
+    reader: &mut BufReader<Take<TcpStream>>,
+    app: &App,
+    m: Option<&Session>,
+    request: &Request,
+    who: &Who,
+) -> std::io::Result<()> {
+    let Some((dir, id, file)) = reviewed(app, m, who) else { return respond(s, "403 Forbidden", TEXT, b"Not allowed") };
+    let Ok(v) = json_body::<Match>(reader, request) else { return respond(s, "400 Bad Request", TEXT, b"Invalid") };
+    let player = v.player.and_then(|p| lock(&m?.hub).steamid_of_player(stvtf::output::PlayerId(p)).map(str::to_owned));
+    let steamid = match (v.player, v.steamid.as_deref()) {
+        (Some(_), _) if player.is_none() => return respond(s, "400 Bad Request", TEXT, b"No such player"),
+        (Some(_), _) => player,
+        (None, Some(text)) => match parse_steamid(text) {
+            Some(steamid) => Some(steamid),
+            None => return respond(s, "400 Bad Request", TEXT, b"Invalid Steam ID"),
+        },
+        (None, None) => None,
+    };
+    let key = format!("{}{}", crate::voice::feed::UNLINKED, v.voice_id);
+    let Some((_, name)) = crate::matches::live_demos::voices_in(dir, id, file).into_iter().find(|(k, _)| *k == key) else {
+        return respond(s, "400 Bad Request", TEXT, b"Not found");
+    };
+    if crate::matches::live_demos::pick(dir, id, file, &key, steamid.as_deref()).is_err() {
+        return respond(s, "500 Internal Server Error", TEXT, b"Not kept");
+    }
+    // For the next match they talk in too: a streamer's word for sure, a player's a suggestion.
+    let caster = who.user.as_ref().is_some_and(|u| u.streamer);
+    app.voice.who.remember(&v.voice_id, steamid.as_deref(), &name, caster);
+    log!("demo {id} {file}: {} said to be {}", v.voice_id, steamid.as_deref().unwrap_or("nobody"));
+    let watch = format!("{}/w/{id}/watch/{file}", app.base);
+    respond(s, "200 OK", JSON, serde_json::json!({ "watch": watch }).to_string().as_bytes())
 }

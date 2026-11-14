@@ -123,7 +123,8 @@ speed with it.
   - A live match's are kept while it runs. A map's go when the map is dropped, all when the match
     ends; those of a match no longer running, 3 hours after last written.
   - One with comms (voice from outside the match, written into it on download) is then kept as
-    `kept-<match>-<load>-<tick>.dem` for 14 days, within 10 GB.
+    `kept-<match>-<load>-<tick>.dem` for 30 days, within 25 GB (`STVTF_COMMS_GB`: 10 in au
+    and sea, whose disks are small).
     The speakers list, and the page of a match that is gone, list them: each to download
     (`GET /w/<match>/demos/<load>-<tick>.dem`) and to watch here (`GET /w/<match>/watch/<load>-<tick>`),
     played with its comms as a demo of its own (as a [demos.tf demo](site.md#demostf-demos) is,

@@ -18,7 +18,7 @@ use crate::{is_name, lock};
 use anyhow::{Context, Result, bail};
 use base64::Engine;
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs::File;
 use std::io::{BufRead, Write};
 use std::path::{Path, PathBuf};
@@ -123,6 +123,34 @@ pub(crate) fn downloads(dir: &Path, id: &str) -> Vec<Download> {
     found.into_iter().map(|(_, d)| d).collect()
 }
 
+/// Where what was said of whose voice is whose in match `id`'s demo `file` is kept: for that demo
+/// alone, whatever is known of them elsewhere.
+fn picks_file(dir: &Path, id: &str, file: &str) -> PathBuf {
+    dir.join(format!("picks-{id}-{file}.json"))
+}
+
+/// Whom those who talked in match `id`'s demo `file` as no player were said to be since, by who
+/// they are where they talk: a `SteamID`, or nobody.
+pub(crate) fn picks(dir: &Path, id: &str, file: &str) -> BTreeMap<String, Option<String>> {
+    std::fs::read(picks_file(dir, id, file)).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default()
+}
+
+/// `who` in match `id`'s demo `file` is the player with `steamid`, or nobody.
+pub(crate) fn pick(dir: &Path, id: &str, file: &str, who: &str, steamid: Option<&str>) -> Result<()> {
+    with_comms(dir, id, file).context("no such demo")?;
+    let mut all = picks(dir, id, file);
+    all.insert(who.to_string(), steamid.map(str::to_string));
+    Ok(std::fs::write(picks_file(dir, id, file), serde_json::to_vec(&all)?)?)
+}
+
+/// Whose account `voice` is in a demo with `picks`: as said of that demo, else as known (`who`).
+fn whose(picks: &BTreeMap<String, Option<String>>, who: WhoNow, voice: &str) -> Option<u32> {
+    match picks.get(voice) {
+        Some(steamid) => crate::voice::ids::account_of(steamid.as_deref()?),
+        None => who(voice),
+    }
+}
+
 /// What was said in `demo`, as kept beside it. A line cut short (the match still going) is left
 /// out.
 fn spoken_in(demo: &Path) -> Result<Vec<Spoken>> {
@@ -145,9 +173,13 @@ pub(crate) fn comms_key(dir: &Path, id: &str, file: &str, who: WhoNow) -> Option
         .collect();
     said.sort();
     said.dedup();
-    let whom: Vec<String> = said.iter().filter_map(|w| Some(format!("{w}={}", who(w)?))).collect();
+    let picks = picks(dir, id, file);
+    let whom: Vec<String> = said.iter().filter_map(|w| Some(format!("{w}={}", whose(&picks, who, w)?))).collect();
     Some(format!("{id}-{file}-{}-{}-{}", len(&path), len(&voice_of(&path)), whom.join(",")))
 }
+
+/// Samples a second of the voice kept.
+const RATE: u16 = 24000;
 
 /// How often the players' slots are looked at in a demo, for the voices put on them since.
 const SLOTS_HZ: f32 = 1.0;
@@ -166,10 +198,34 @@ fn slots_in(demo: &[u8]) -> Vec<(u32, Vec<(u32, u8)>)> {
     slots
 }
 
-/// Match `id`'s demo `file` as TF2 plays it, the comms written into it as its players' voice:
-/// what to call it, and the demo. A voice that was no player's is the player's it is said to be
-/// by now (`who`), where that one was playing.
-pub(crate) fn build(dir: &Path, id: &str, file: &str, who: WhoNow) -> Result<(String, Vec<u8>)> {
+/// A demo with its comms written into it.
+pub(crate) struct Built {
+    /// What to call it.
+    pub(crate) name: String,
+    pub(crate) demo: Vec<u8>,
+    /// What was said in it by those who are no player's still: not in the demo, lines of their
+    /// own for whoever watches it here.
+    pub(crate) nobodys: Vec<stvtf::output::Voice>,
+}
+
+/// Those who talked in match `id`'s demo `file` as no player: who each is where they talk, and
+/// the name they talked under.
+pub(crate) fn voices_in(dir: &Path, id: &str, file: &str) -> Vec<(String, String)> {
+    let mut found: Vec<(String, String)> = Vec::new();
+    for s in with_comms(dir, id, file).and_then(|p| spoken_in(&p).ok()).unwrap_or_default() {
+        if let By::Voice { who, name } = s.by
+            && !found.iter().any(|(w, _)| *w == who)
+        {
+            found.push((who, name.unwrap_or_default()));
+        }
+    }
+    found
+}
+
+/// Match `id`'s demo `file` as TF2 plays it, the comms written into it as its players' voice. A
+/// voice that was no player's is the player's it is said to be by now (`who`), where that one
+/// was playing; else it is nobody's still.
+pub(crate) fn build(dir: &Path, id: &str, file: &str, who: WhoNow) -> Result<Built> {
     let path = with_comms(dir, id, file).context("no such demo")?;
     let first = i64::from(load_tick(file).context("no such demo")?.1);
     let map = map_of(&path).context("not a demo")?;
@@ -177,11 +233,14 @@ pub(crate) fn build(dir: &Path, id: &str, file: &str, who: WhoNow) -> Result<(St
         bail!("a map of that name");
     }
     let said = spoken_in(&path)?;
+    let picks = picks(dir, id, file);
     // Whose each voice is now, asked once; the players' slots only if any is someone's.
-    let mut whom: HashMap<&str, Option<u32>> = HashMap::new();
+    let mut whom: HashMap<String, Option<u32>> = HashMap::new();
     for s in &said {
-        if let By::Voice { who: voice, .. } = &s.by {
-            whom.entry(voice).or_insert_with(|| who(voice));
+        if let By::Voice { who: voice, .. } = &s.by
+            && !whom.contains_key(voice)
+        {
+            whom.insert(voice.clone(), whose(&picks, who, voice));
         }
     }
     let slots = if whom.values().any(Option::is_some) { slots_in(&std::fs::read(&path)?) } else { Vec::new() };
@@ -190,27 +249,39 @@ pub(crate) fn build(dir: &Path, id: &str, file: &str, who: WhoNow) -> Result<(St
         slots[at].1.iter().find(|(a, _)| *a == account).map(|(_, slot)| *slot)
     };
     let b64 = base64::engine::general_purpose::STANDARD;
-    let mut voices = Vec::new();
-    for s in &said {
-        let (slot, account) = match &s.by {
-            By::Player { slot, account } => (*slot, *account),
+    let (mut voices, mut nobodys) = (Vec::new(), Vec::new());
+    for s in said {
+        let player = match &s.by {
+            By::Player { slot, account } => Some((*slot, *account)),
             By::Voice { who: voice, .. } => {
-                let Some(account) = whom.get(voice.as_str()).copied().flatten() else { continue };
-                let Some(slot) = slot_at(s.tick, account) else { continue };
-                (slot, account)
+                whom.get(voice.as_str()).copied().flatten().and_then(|account| Some((slot_at(s.tick, account)?, account)))
             }
         };
-        voices.push(stvtf::demo::Voiced {
-            tick: i32::try_from(i64::from(s.tick) - first).unwrap_or(0),
-            slot,
-            account,
-            rate: 24000,
-            frames: s.frames.iter().filter_map(|f| b64.decode(f).ok()).collect(),
-        });
+        match (player, s.by) {
+            (Some((slot, account)), _) => voices.push(stvtf::demo::Voiced {
+                tick: i32::try_from(i64::from(s.tick) - first).unwrap_or(0),
+                slot,
+                account,
+                rate: RATE,
+                frames: s.frames.iter().filter_map(|f| b64.decode(f).ok()).collect(),
+            }),
+            (None, By::Voice { who, name }) => nobodys.push(stvtf::output::Voice {
+                tick: s.tick,
+                player: None,
+                steamid: who,
+                rate: RATE,
+                frames: s.frames,
+                injected: true,
+                pause: false,
+                team: None,
+                name,
+            }),
+            (None, By::Player { .. }) => {}
+        }
     }
     let src = std::io::BufReader::new(File::open(&path)?);
     let demo = stvtf::demo::with_voice(src, &voices, std::io::Cursor::new(Vec::new()))?.into_inner();
-    Ok((format!("{map}-comms-{file}.dem"), demo))
+    Ok(Built { name: format!("{map}-comms-{file}.dem"), demo, nobodys })
 }
 
 /// Drops kept demos (and their voice) older than `max_age`, then the oldest until what is left
@@ -238,6 +309,11 @@ pub(crate) fn sweep_kept(dir: &Path, max_age: Duration, budget: u64) {
         if total > budget || now.duration_since(written).is_ok_and(|age| age > max_age) {
             total -= bytes;
             let _ = std::fs::remove_file(voice_of(&path));
+            // `kept-<match>-<file>.dem`: what was said of its voices goes with it.
+            let of = path.file_stem().and_then(|n| n.to_str()).and_then(|n| n.strip_prefix(KEPT_PREFIX)).and_then(|n| n.split_once('-'));
+            if let Some((id, file)) = of {
+                let _ = std::fs::remove_file(picks_file(dir, id, file));
+            }
             let _ = std::fs::remove_file(path);
         }
     }
