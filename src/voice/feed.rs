@@ -23,6 +23,13 @@ pub(crate) const DEFAULT_DELAY: f64 = 90.0;
 pub(crate) const MAX_DELAY: f64 = 300.0;
 /// A delay under this is none: commentary on the stream itself.
 const NO_DELAY: f64 = 0.05;
+
+/// What is left of `delay` (the usual, unless given) for what was said `late` seconds ago: held
+/// voice stays held, however late; commentary has none to take from.
+pub(crate) fn delay_left(delay: Option<f64>, late: f64) -> f64 {
+    let delay = delay.unwrap_or(DEFAULT_DELAY);
+    if delay < NO_DELAY { delay } else { (delay - late).max(NO_DELAY) }
+}
 /// The rate the frames are labelled with: Opus decodes any packet at it; TF2 and pages play it.
 const RATE: u16 = 24000;
 /// A tick that has not moved this long is a paused game's.

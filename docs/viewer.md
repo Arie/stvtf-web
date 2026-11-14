@@ -69,6 +69,9 @@ commentary on the stream itself (casters watching it): straight out, paused or n
 the key, 403 without the match's invite, 404 with no key set or no live match, 409 before the
 stream has a tick, 503 as the server stops (the next one takes it).
 
+A post that waited says how long, `"late": <seconds>`: that much comes off its delay, so it is
+held to the tick of when it was said.
+
 What is held goes on to the next process: each saves what it holds of a match in the store
 (`held-<match>-<process>`, every 5 s while it changes and as it stops), and the one the store
 belongs to takes the others' and plays it at its tick. What fell due with no process there goes

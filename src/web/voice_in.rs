@@ -4,7 +4,7 @@
 use super::{Request, TEXT, json_body, respond};
 use crate::App;
 use crate::matches::sessions::Session;
-use crate::voice::feed::{MAX_DELAY, Speaker};
+use crate::voice::feed::{MAX_DELAY, Speaker, delay_left};
 use crate::voice::hold::Took;
 use crate::voice::ids::is_voice_id;
 use base64::Engine;
@@ -36,6 +36,9 @@ struct VoicePost {
     /// How far the match's stream is behind its game, in seconds, when the bot was told.
     #[serde(default)]
     delay: Option<f64>,
+    /// How long ago it was said, in seconds: a post that waited (the server away, a slow post).
+    #[serde(default)]
+    late: f64,
 }
 
 /// Whether `given` is the key, compared without stopping at the first difference.
@@ -80,7 +83,7 @@ pub(super) fn post_voice(
         (None, Some(voice_id)) => is_voice_id(voice_id),
         (None, None) => false,
     };
-    if !sound || !known || said.delay.is_some_and(|d| !(0.0..=MAX_DELAY).contains(&d)) {
+    if !sound || !known || said.delay.is_some_and(|d| !(0.0..=MAX_DELAY).contains(&d)) || said.late < 0.0 {
         return respond(s, "400 Bad Request", TEXT, b"not voice");
     }
     let who = Speaker {
@@ -89,7 +92,7 @@ pub(super) fn post_voice(
         name: said.name.map(|n| n.chars().filter(|c| !c.is_control()).take(MAX_NAME).collect()),
         channel: said.channel.filter(|c| is_voice_id(c)),
     };
-    match m.take_in_voice(&who, said.frames, said.delay) {
+    match m.take_in_voice(&who, said.frames, Some(delay_left(said.delay, said.late))) {
         None => respond(s, "404 Not Found", TEXT, b"not a live match"),
         Some(Took::Held { due }) => respond(s, "200 OK", TEXT, format!("held until tick {due}").as_bytes()),
         Some(Took::PauseTalk) => respond(s, "200 OK", TEXT, b"pause talk"),

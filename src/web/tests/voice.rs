@@ -50,6 +50,21 @@ fn voice_posted_to_a_live_match_is_held_to_its_tick() {
 }
 
 #[test]
+fn a_post_that_waited_is_held_to_the_tick_of_when_it_was_said() {
+    let (app, id) = voice_app();
+    let Matches::Many(sessions) = &app.matches else { panic!() };
+    let m = sessions.get(&id).unwrap();
+    publish(&m.hub, &crate::matches::hub::tests::snapshot(1000, None, Vec::new()));
+    let post = |more: &str| post_voice(&app, &id, Some("k"), &format!(r#"{{"steamid":"[U:1:5]","frames":["aA=="],{more}}}"#));
+    let waited = post(r#""late":30"#);
+    assert!(waited.ends_with("held until tick 5000"), "30 s of its 90 are gone: {waited}");
+    let long = post(r#""late":120"#);
+    assert!(long.ends_with("held until tick 1003"), "its tick is past: out at once, as held voice is: {long}");
+    assert!(post(r#""delay":0,"late":5"#).ends_with("live"), "commentary has no tick to be late for");
+    assert!(post(r#""late":-1"#).starts_with("HTTP/1.1 400"));
+}
+
+#[test]
 fn voice_posted_as_the_server_stops_is_to_be_posted_again() {
     let (app, id) = voice_app();
     let Matches::Many(sessions) = &app.matches else { panic!() };
