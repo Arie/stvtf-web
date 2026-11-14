@@ -1,5 +1,6 @@
 // A speaker badge on a player's dot: while they talk, and while muted (crossed out), as on their
-// HUD card; a click on it mutes or unmutes them (panel/speakers.js). See core/voice.js.
+// HUD card (where a click mutes them: the badge is too small, on a dot that moves). See
+// core/voice.js.
 import { ctx } from "../core/core.js";
 import { isMuted, isTalking, voiceOn } from "../core/voice.js";
 /** @typedef {import("../../types/stream").Player} Player */
@@ -14,13 +15,9 @@ const SIZE = 0.5,
   // How faint a muted player's badge is while they are silent.
   QUIET = 0.4;
 
-/** @type {{ id: number; steamid: string; x: number; y: number; r: number }[]} */
-let shown = [];
-
 // The badges of `dots`' players who talk or are muted.
 /** @param {{ p: Player; x: number; y: number; rad: number }[]} dots */
 export function drawVoiceBadges(dots) {
-  shown = [];
   if (!voiceOn()) return;
   for (const { p, x, y, rad } of dots) {
     const muted = Boolean(p.steamid) && isMuted(p.steamid),
@@ -34,14 +31,7 @@ export function drawVoiceBadges(dots) {
     ctx.globalAlpha = talking ? 1 : QUIET;
     badge(bx, by, r, muted);
     ctx.restore();
-    shown.push({ id: p.id, steamid: p.steamid, x: bx, y: by, r });
   }
-}
-
-// The player whose badge is at x, y (canvas pixels), if one is.
-/** @param {number} x @param {number} y */
-export function voiceBadgeAt(x, y) {
-  return shown.find(b => Math.hypot(b.x - x, b.y - y) <= b.r) ?? null;
 }
 
 // A speaker on a dark disc: sound coming out of it, or crossed out in red.

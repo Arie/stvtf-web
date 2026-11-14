@@ -2,8 +2,7 @@
 // panel/voicelist.js), and who talks on the HUD cards: for anyone heard a 🔊 (🔇 while muted),
 // faint while silent and lit while they talk; a click on it mutes or unmutes them (elsewhere on
 // the card, it still follows them). See core/voice.js.
-import { $, canvas, state } from "../core/core.js";
-import { voiceBadgeAt } from "../map/voicebadge.js";
+import { $, state } from "../core/core.js";
 import { env } from "../core/env.js";
 import { openStream } from "../core/stream.js";
 import * as voice from "../core/voice.js";
@@ -56,7 +55,6 @@ export function initVoice() {
   voiceInvite();
   voiceDemos();
   for (const id of ["hud-blue", "hud-red"]) cardClicks($(id));
-  badgeClicks();
   setInterval(() => {
     cards();
     if (!list.hidden) markTalking(list);
@@ -100,24 +98,6 @@ function cardMark(card) {
   // Faint while silent, lit while talking, muted or not.
   mark.classList.toggle("quiet", !now?.talking);
   mark.title = now?.muted ? "Muted: click to unmute" : "Click to mute";
-}
-
-// A click on a dot's voice badge mutes or unmutes its player, and neither follows nor drags (but a
-// drawing tool in hand draws).
-function badgeClicks() {
-  canvas.addEventListener(
-    "mousedown",
-    e => {
-      if (env.el.classList.contains("drawing")) return;
-      const r = canvas.getBoundingClientRect();
-      const b = voiceBadgeAt(e.clientX - r.left, e.clientY - r.top);
-      if (!b) return;
-      e.stopImmediatePropagation();
-      e.preventDefault();
-      voice.toggleMuted(b.steamid);
-    },
-    { capture: true },
-  );
 }
 
 // A click on a card's voice mark mutes or unmutes its player, and follows nobody.

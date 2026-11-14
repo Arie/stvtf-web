@@ -53,7 +53,7 @@ each with a mute and a volume.
 A team's mute covers its players to come too, for this page; one's own mutes are kept in the
 browser by SteamID, across matches. Everyone heard has a 🔊 on their HUD card (🔇 muted), faint
 while silent and lit while they talk; a talking or muted player's dot has the same badge. A click
-on either mutes or unmutes them (a muted team's player is then let through). Paused, sought or at
+on the card's mutes or unmutes them (a muted team's player is then let through). Paused, sought or at
 another speed than 1×, voice is silent. It needs WebCodecs, so a secure page (https, or
 localhost); the overlay has none.
 
