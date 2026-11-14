@@ -137,3 +137,27 @@ test("sound still queued plays on without a gap: only a queue run dry gets the l
   assert.equal(startAt(9.99, 10), 10.1);
   assert.equal(startAt(0, 10), 10.1, "a speaker's first");
 });
+
+test("a shout is louder than a murmur, and both are within 0 and 1", async () => {
+  const { loudness } = await import("../../app/core/voice.js");
+  const tone = (/** @type {number} */ peak) => Float32Array.from({ length: 480 }, (_, i) => peak * Math.sin(i / 5));
+  const [silence, murmur, talk, shout] = [0, 0.01, 0.1, 0.6].map(p => loudness(tone(p)));
+  assert.equal(silence, 0);
+  assert.ok(murmur < talk && talk < shout, `${murmur} ${talk} ${shout}`);
+  assert.ok(murmur < 0.2 && shout > 0.9 && shout <= 1);
+  assert.equal(loudness(new Float32Array(0)), 0, "nothing is not loud");
+});
+
+test("a badge's waveform is taller and hotter the louder its speaker is", async () => {
+  const { bars, heat } = await import("../../app/map/voicebadge.js");
+  for (const t of [0, 137, 990, 12345]) {
+    const [quiet, loud] = [bars(0.1, t), bars(0.9, t)];
+    assert.equal(quiet.length, loud.length);
+    assert.ok(
+      quiet.every((h, i) => h > 0 && h < loud[i] && loud[i] <= 1),
+      `${quiet} ${loud}`,
+    );
+  }
+  assert.notDeepEqual(bars(0.5, 0), bars(0.5, 200), "it moves");
+  assert.deepEqual([heat(0), heat(0.5), heat(1)], ["rgb(255 255 255)", "rgb(255 214 74)", "rgb(255 86 54)"]);
+});

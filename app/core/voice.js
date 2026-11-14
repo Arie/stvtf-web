@@ -17,6 +17,11 @@ const FORGET_MS = 120_000;
 // most speakers (a client that claims a new SteamID each packet makes a new one each time).
 const MAX_AHEAD = 1,
   MAX_SPEAKERS = 64;
+// The levels (dB of full scale, RMS) a speaker's loudness goes from 0 to 1 between, and how long
+// a level heard stands, in seconds.
+const QUIET_DB = -42,
+  LOUD_DB = -14,
+  LOUD_HOLD = 0.12;
 // What the browser keeps: whether voice is on, and the mutes and volumes.
 const ON_KEY = "voice",
   PREFS_KEY = "voice-prefs";
@@ -24,7 +29,7 @@ const ON_KEY = "voice",
 /**
  * @typedef {{
  *   steamid: string; player: number | null; name: string | null; team: string | null; decoder: AudioDecoder | null; gain: GainNode | null;
- *   at: number; n: number; last: number; queued: Set<AudioBufferSourceNode>;
+ *   at: number; n: number; last: number; queued: Set<AudioBufferSourceNode>; loud: { at: number; end: number; level: number }[];
  * }} Speaker
  */
 
@@ -118,6 +123,7 @@ function forget(id) {
 function drop(s) {
   for (const q of s.queued) q.stop();
   s.queued.clear();
+  s.loud = [];
   s.at = 0;
   if (s.decoder && s.decoder.state !== "closed") s.decoder.close();
   s.decoder = null;
@@ -141,6 +147,7 @@ function speaker(m) {
       n: 0,
       last: 0,
       queued: new Set(),
+      loud: [],
     };
     speakers.set(m.steamid, s);
   }
@@ -182,7 +189,8 @@ function play(s, data) {
   // Not playing, or so far behind (a stall, a burst) that it would run late: dropped.
   if (!audio || !s.gain || !playing || s.at - audio.currentTime > MAX_AHEAD) return data.close();
   const buffer = audio.createBuffer(1, data.numberOfFrames, data.sampleRate);
-  data.copyTo(buffer.getChannelData(0), { planeIndex: 0, format: "f32-planar" });
+  const samples = buffer.getChannelData(0);
+  data.copyTo(samples, { planeIndex: 0, format: "f32-planar" });
   data.close();
   const source = audio.createBufferSource();
   source.buffer = buffer;
@@ -192,6 +200,33 @@ function play(s, data) {
   source.onended = () => s.queued.delete(source);
   s.queued.add(source);
   s.at = at + buffer.duration;
+  // How loud it is, for when it plays; what played a while ago is forgotten.
+  const now = audio.currentTime;
+  s.loud = s.loud.filter(l => l.end > now - LOUD_HOLD);
+  s.loud.push({ at, end: s.at, level: loudness(samples) });
+}
+
+// How loud `samples` are, 0 (a murmur) to 1 (a shout): their level in decibels, between the two.
+/** @param {Float32Array} samples */
+export function loudness(samples) {
+  let sum = 0;
+  for (const v of samples) sum += v * v;
+  const db = 10 * Math.log10(sum / Math.max(1, samples.length) + 1e-12);
+  return Math.min(1, Math.max(0, (db - QUIET_DB) / (LOUD_DB - QUIET_DB)));
+}
+
+// How loud player `id` is as heard now, 0 to 1 (the loudest of the last moment, so it does not
+// flicker between words' beats); null with nothing known of it (not talking, or nothing played).
+/** @param {number} id */
+export function loudnessOf(id) {
+  if (!audio) return null;
+  const now = audio.currentTime;
+  let loud = null;
+  for (const s of speakers.values()) {
+    if (s.player !== id) continue;
+    for (const l of s.loud) if (l.at <= now && l.end > now - LOUD_HOLD) loud = Math.max(loud ?? 0, l.level);
+  }
+  return loud;
 }
 
 /** @param {VoiceLine} m */

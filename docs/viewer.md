@@ -52,8 +52,9 @@ one), RED and BLU each with a team mute and everyone on it now, heard or not, an
 each with a mute and a volume.
 A team's mute covers its players to come too, for this page; one's own mutes are kept in the
 browser by SteamID, across matches. Everyone heard has a 🔊 on their HUD card (🔇 muted), faint
-while silent and lit while they talk; a talking or muted player's dot has the same badge. A click
-on the card's mutes or unmutes them (a muted team's player is then let through). Paused, sought or at
+while silent and lit while they talk. A talking player's dot has a waveform badge, taller, bigger
+and hotter (white to red) the louder they are; a muted player's has the speaker crossed out. A click
+on the card's mark mutes or unmutes them (a muted team's player is then let through). Paused, sought or at
 another speed than 1×, voice is silent. It needs WebCodecs, so a secure page (https, or
 localhost); the overlay has none.
 
@@ -100,13 +101,13 @@ whoever has a say (a player of the match, a Steam ID as people write them, or no
 said of them in an earlier match, or by their name, when just one player's looks like it: that
 last is a guess, shown as one until confirmed.
 
-| | |
-|---|---|
-| `GET <page>voice-invite` | `{"invite", "bot"}`: the match's invite, and where the bot is added to a Discord server (`STVTF_VOICE_BOT`) |
-| `GET <page>voice-comms` | `{"discord": {"status", "state"} or null, "mumble": [{"id", "host", "port", "channel", "delay", "status", "state"}]}`: each Mumble channel the bot is wanted in (at most four). `state`: where the bot is, `connecting`, `in`, `failed` or `left`. It is in a channel only while it keeps saying so: 45 s without, a Mumble channel is `connecting` and a Discord one gone |
-| `POST <page>voice-mumble` | `{"host", "port", "password", "channel", "delay"}` asks the bot into one more channel (each team's, on one server or several; no password: the one given for that server); with the `id` of one it is in, moves that; `{"leave": true}` takes it out of all, with an `id` out of that one |
-| `GET <page>voices` | everyone in the channel or heard: `id` (who they are there), `name`, `steamid` (whom they are put on), `linked` (their own Discord link), `heard`, `confirmed` |
-| `POST <page>voice-match` | `{"discord", "player": <id>}`, `{"discord", "steamid": "<any form>"}`, or `{"discord"}` alone for nobody |
+|                           |                                                                                                                                                                                                                                                                                                                                                                            |
+| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET <page>voice-invite`  | `{"invite", "bot"}`: the match's invite, and where the bot is added to a Discord server (`STVTF_VOICE_BOT`)                                                                                                                                                                                                                                                                |
+| `GET <page>voice-comms`   | `{"discord": {"status", "state"} or null, "mumble": [{"id", "host", "port", "channel", "delay", "status", "state"}]}`: each Mumble channel the bot is wanted in (at most four). `state`: where the bot is, `connecting`, `in`, `failed` or `left`. It is in a channel only while it keeps saying so: 45 s without, a Mumble channel is `connecting` and a Discord one gone |
+| `POST <page>voice-mumble` | `{"host", "port", "password", "channel", "delay"}` asks the bot into one more channel (each team's, on one server or several; no password: the one given for that server); with the `id` of one it is in, moves that; `{"leave": true}` takes it out of all, with an `id` out of that one                                                                                  |
+| `GET <page>voices`        | everyone in the channel or heard: `id` (who they are there), `name`, `steamid` (whom they are put on), `linked` (their own Discord link), `heard`, `confirmed`                                                                                                                                                                                                             |
+| `POST <page>voice-match`  | `{"discord", "player": <id>}`, `{"discord", "steamid": "<any form>"}`, or `{"discord"}` alone for nobody                                                                                                                                                                                                                                                                   |
 
 `<page>` is a match's (`/w/<id>/`) or a room's on it. Those with no say get no content from the
 `GET`s (every page asks) and 403 from the `POST`s. The bot's own, with its key: `POST
@@ -125,7 +126,6 @@ key: `{"steamid": "[U:1:N]"}` or null. Needs a Discord application: `STVTF_DISCO
 `STVTF_DISCORD_CLIENT_SECRET`, and `STVTF_DISCORD_REDIRECT` (this site's `/voice/linked`, as the
 application has it).
 
-
 ## Camera
 
 Keeps every living player in view, tightly: quick when one leaves the view, gentle for a fresh
@@ -135,14 +135,14 @@ blue spawns left (`rotate` changes that).
 
 ## Keys
 
-| key | |
-|---|---|
-| `h` / `s` / `e` | player HUD / scoreboard / events and chat |
-| `g` | overview or geometry (also the corner switch) |
-| `o` | broadcast overlay and back |
-| `k` | overkill layer settings (gear button) |
-| `x` / `j` / `l` | all layers / jump trails / loadouts |
-| `?` | this list |
+| key             |                                               |
+| --------------- | --------------------------------------------- |
+| `h` / `s` / `e` | player HUD / scoreboard / events and chat     |
+| `g`             | overview or geometry (also the corner switch) |
+| `o`             | broadcast overlay and back                    |
+| `k`             | overkill layer settings (gear button)         |
+| `x` / `j` / `l` | all layers / jump trails / loadouts           |
+| `?`             | this list                                     |
 
 Choices are kept per browser. All layers are on by default (the overlay shows capture areas only).
 Layers that need detail lines make the page ask for `?detail=1`.
@@ -157,13 +157,13 @@ It shows players (dot, class, direction), an X where one died until respawn, üb
 the intelligence or ball, control points and active spawn rooms. The rest is off unless asked for
 with [display options](#display-options). Its own options, e.g. `/overlay?names=1&score=1&panel=0.6`:
 
-| option | |
-|---|---|
-| `panel=0..1` | backdrop opacity (default 0) |
-| `zoom=map` | whole map instead of following the players |
+| option                          |                                                                                                                                                                                  |
+| ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `panel=0..1`                    | backdrop opacity (default 0)                                                                                                                                                     |
+| `zoom=map`                      | whole map instead of following the players                                                                                                                                       |
 | `rotate=teams\|auto\|<degrees>` | also on the main view. `teams` (default): blue spawns left of red (upright when a team has none); `0`: north up; `auto`: a quarter turn when that fills the panel clearly better |
-| `ui=<factor>` | marker scale (default 1; already follows panel size) |
-| `dot=<px>` | fixed player dot radius |
+| `ui=<factor>`                   | marker scale (default 1; already follows panel size)                                                                                                                             |
+| `dot=<px>`                      | fixed player dot radius                                                                                                                                                          |
 
 ## Display options
 
@@ -171,28 +171,28 @@ Main view and overlay: `1` shows, `0` hides, anything else keeps the default. E.
 `/overlay?beams=0&deaths=0&caps=0`. On the main view they override saved settings for that
 visit, without changing them.
 
-| option | shows | main | overlay |
-|---|---|---|---|
-| `names` | names under the dots | on | off |
-| `facing` | view direction pointer | on | on |
-| `numbers` | point numbers, cap rate (×2) | on | on |
-| `score` | scoreboard | on | off |
-| `health` | health ring (cards keep theirs) | on | off |
-| `projectiles` | rockets, grenades, stickies… | on | off |
-| `beams` | heal beams | on | on |
-| `buildings` | buildings, their shots, upgrades, repairs, carried ones | on | off |
-| `shots` | tracers, explosions, flames, airblasts | on | off |
-| `deaths` | X until respawn; `0` also drops the main view's kill marks | off | on |
-| `caps`, `heals`, `hits`, `marks`, `jumps`, `pickups`, `points`, `flow`, `loadout`, `effects` | overkill layers | on | `caps` only |
+| option                                                                                       | shows                                                      | main | overlay     |
+| -------------------------------------------------------------------------------------------- | ---------------------------------------------------------- | ---- | ----------- |
+| `names`                                                                                      | names under the dots                                       | on   | off         |
+| `facing`                                                                                     | view direction pointer                                     | on   | on          |
+| `numbers`                                                                                    | point numbers, cap rate (×2)                               | on   | on          |
+| `score`                                                                                      | scoreboard                                                 | on   | off         |
+| `health`                                                                                     | health ring (cards keep theirs)                            | on   | off         |
+| `projectiles`                                                                                | rockets, grenades, stickies…                               | on   | off         |
+| `beams`                                                                                      | heal beams                                                 | on   | on          |
+| `buildings`                                                                                  | buildings, their shots, upgrades, repairs, carried ones    | on   | off         |
+| `shots`                                                                                      | tracers, explosions, flames, airblasts                     | on   | off         |
+| `deaths`                                                                                     | X until respawn; `0` also drops the main view's kill marks | off  | on          |
+| `caps`, `heals`, `hits`, `marks`, `jumps`, `pickups`, `points`, `flow`, `loadout`, `effects` | overkill layers                                            | on   | `caps` only |
 
 `bg=` picks the background (a map with only one shows that one); `bgopacity=0..1` its strength.
 
-| `bg=` | |
-|---|---|
-| `overview` | demos.tf overview (default) |
-| `geometry` | map geometry with textures, walls, shadows |
-| `flat` | geometry as a plain shape, three shades for height |
-| `outline` | a line round the playable area |
+| `bg=`      |                                                    |
+| ---------- | -------------------------------------------------- |
+| `overview` | demos.tf overview (default)                        |
+| `geometry` | map geometry with textures, walls, shadows         |
+| `flat`     | geometry as a plain shape, three shades for height |
+| `outline`  | a line round the playable area                     |
 
 ## Delay
 
@@ -210,8 +210,8 @@ with play; a viewer's own rewind stays on its map ([maps](rooms.md#maps)).
 
 `?t=12:34` (from map start) opens a private playback there; the link button copies one.
 
-| route | |
-|---|---|
-| `GET /w/<id>/timeline` | `{"at", "length", "start", "origin", "live", "rounds", "marks"}` of the newest map with play (`marks`: how many); `202 {}` while a demo is being read |
-| `GET /w/<id>/marks?from=N` | `{"marks", "all"}`: marks from the Nth |
-| `POST /w/<id>/rewind` | `{"at", "speed", "paused"}` → `{"page": "/r/<id>/"}`; events at `events?overlay=1`, controls at `control`, as its owner |
+| route                      |                                                                                                                                                       |
+| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /w/<id>/timeline`     | `{"at", "length", "start", "origin", "live", "rounds", "marks"}` of the newest map with play (`marks`: how many); `202 {}` while a demo is being read |
+| `GET /w/<id>/marks?from=N` | `{"marks", "all"}`: marks from the Nth                                                                                                                |
+| `POST /w/<id>/rewind`      | `{"at", "speed", "paused"}` → `{"page": "/r/<id>/"}`; events at `events?overlay=1`, controls at `control`, as its owner                               |
