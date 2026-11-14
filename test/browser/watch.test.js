@@ -581,6 +581,37 @@ test("a viewer of a match page goes back on their own", async () => {
   await page.close();
 });
 
+test("the wheel zooms the timeline in about the pointer, and out to all of it again", async () => {
+  const { page, errors } = await open();
+  await page.goto(base);
+  await until(
+    page,
+    () => !document.getElementById("roombar").hidden && document.getElementById("rb-clock").textContent,
+  );
+  const shows = () =>
+    page.$eval("#rb-time", (/** @type {HTMLInputElement} */ t) => [
+      Number(t.min),
+      Number(t.max),
+      /** @type {HTMLElement} */ (t.parentElement).classList.contains("zoomed"),
+    ]);
+  const [from, to, zoomed] = await shows();
+  assert.equal(zoomed, false);
+  const box = await page.$eval("#rb-track", e => {
+    const r = e.getBoundingClientRect();
+    return [r.x, r.y, r.width];
+  });
+  await page.mouse.move(box[0] + box[2] * 0.9, box[1] + 20);
+  await page.mouse.wheel(0, -100);
+  await until(page, () => document.getElementById("rb-track").classList.contains("zoomed"));
+  const [inFrom, inTo] = await shows();
+  assert.ok(inFrom > from && inTo <= to + 1 && inTo - inFrom < to - from, `${inFrom} to ${inTo} of ${from} to ${to}`);
+  await page.mouse.wheel(0, 400);
+  await until(page, () => !document.getElementById("rb-track").classList.contains("zoomed"));
+  assert.equal((await shows())[0], from);
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
 test("a link to a moment watches from there", async () => {
   const { page, errors } = await open();
   await page.goto(`${base}?t=0:10`);

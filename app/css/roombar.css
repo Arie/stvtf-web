@@ -147,8 +147,27 @@
   height: 40px;
   min-width: 120px;
 }
-/* The slider spans the timeline; its handle is a thin playhead. */
+/* Zoomed in (room/zoom.js): where what shows is in the whole, along the bottom. */
+#rb-track.zoomed::before,
+#rb-track.zoomed::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 2px;
+  border-radius: 1px;
+  background: #ffffff1f;
+  pointer-events: none;
+}
+#rb-track.zoomed::after {
+  left: var(--view-from, 0%);
+  right: calc(100% - var(--view-to, 100%));
+  background: var(--attention);
+}
+/* The slider spans the timeline; its handle is a thin playhead. Two fingers on it pinch. */
 #rb-track input {
+  touch-action: none;
   position: absolute;
   inset: 0;
   z-index: 1;

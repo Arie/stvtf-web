@@ -1,10 +1,12 @@
 // The playback bar: play and pause, the timeline with its marks, the time, speed and Live. A room
 // drives it with the room's playback; a match page with the shared playback, or a viewer's own.
+// The timeline zooms (room/zoom.js): the wheel or a pinch, each viewer's own.
 import { $, afterDraw, msPerTick, playbackStatus, setStatus, state } from "../core/core.js";
 import { env } from "../core/env.js";
 import { atTick } from "./roomview.js";
 import { mapState } from "./maps.js";
 import { timeline } from "./timeline.js";
+import { following, panned, pinched, wheel, within, zoomed } from "./zoom.js";
 /** @typedef {import("../../types/stream").PlaybackLine} PlaybackLine */
 /** @typedef {{ paused?: boolean; speed?: number; seek?: number }} Control */
 
@@ -20,6 +22,10 @@ const LEAD_MS = 2000;
 const LIVE_MS = 2500;
 // How far the arrow keys jump, in milliseconds.
 const STEP_MS = 5000;
+// A zoomed timeline goes after playback that left it this long after its viewer last moved it, and
+// a pinch's fingers letting go seek nowhere for this long, in milliseconds.
+const FOLLOW_AFTER_MS = 4000,
+  PINCH_MS = 500;
 
 /** @param {number} ms */
 export function clock(ms) {
@@ -82,6 +88,10 @@ class Playbar {
     this.allowed = false;
     // How far a live match's timeline shows: as far as this viewer has watched.
     this.seen = 0;
+    /** @type {[number, number] | null} What a zoomed timeline shows, moved by its viewer at `viewedAt`. */
+    this.view = null;
+    this.viewedAt = 0;
+    this.pinchedAt = -Infinity;
     /** @type {{ at: number; since: number } | null} A jump made here, shown until playback confirms it. */
     this.jumped = null;
     /** @type {{ speed: number; since: number } | null} A speed asked for here, until playback has it. */
@@ -110,12 +120,14 @@ class Playbar {
       this.asked = { speed: next, since: now };
       this.control({ speed: next });
     };
+    const pinching = () => performance.now() - this.pinchedAt < PINCH_MS;
     time.oninput = () => {
-      this.dragging = true;
+      this.dragging = !pinching();
       this.show();
     };
     const seek = () => {
       this.dragging = false;
+      if (pinching()) return this.show();
       this.control({ seek: Math.round(Number(time.value)) });
     };
     time.onchange = seek;
@@ -123,8 +135,63 @@ class Playbar {
     time.onpointerup = time.onpointercancel = time.onblur = () => setTimeout(() => this.dragging && seek());
     const at = () => this.at(),
       control = (/** @type {Control} */ c) => this.control(c);
+    this.zooms();
     shortcuts(() => (this.allowed ? this.last : null), control, at);
     timesJump(() => this.allowed, control, at);
+  }
+
+  // The wheel zooms the timeline about the pointer, or pans it; two fingers pinch and drag it.
+  zooms() {
+    const { track } = this;
+    const share = (/** @type {number} */ x) => {
+      const box = track.getBoundingClientRect();
+      return Math.min(1, Math.max(0, (x - box.left) / Math.max(1, box.width)));
+    };
+    const moved = (/** @type {[number, number] | null} */ view) => {
+      [this.view, this.viewedAt] = [view, performance.now()];
+      this.show();
+    };
+    track.addEventListener(
+      "wheel",
+      e => {
+        if (!this.last) return;
+        e.preventDefault();
+        const whole = this.whole(),
+          [from, to] = this.view ?? whole,
+          w = wheel(e);
+        const at = from + (to - from) * share(e.clientX);
+        moved(w.factor ? zoomed(this.view, whole, at, w.factor) : panned(this.view, whole, w.pan * (to - from)));
+      },
+      { passive: false },
+    );
+    /** @type {Map<number, number>} Fingers on the track, each where it is (a share of its width). */
+    const fingers = new Map();
+    /** @type {{ view: [number, number]; at: [number, number] } | null} */
+    let pinch = null;
+    const two = () => /** @type {[number, number]} */ ([...fingers.values()].slice(0, 2));
+    const touch = (/** @type {PointerEvent} */ e) => {
+      if (e.pointerType !== "touch" || !this.last) return;
+      if (e.type === "pointerdown" || fingers.has(e.pointerId)) fingers.set(e.pointerId, share(e.clientX));
+      if (fingers.size < 2) return;
+      // Two fingers are no drag of the playhead.
+      [this.dragging, this.pinchedAt] = [false, performance.now()];
+      pinch ??= { view: this.view ?? this.whole(), at: two() };
+      moved(pinched(pinch.view, this.whole(), pinch.at, two()));
+    };
+    const lift = (/** @type {PointerEvent} */ e) => {
+      if (fingers.delete(e.pointerId) && pinch) this.pinchedAt = performance.now();
+      pinch = null;
+    };
+    for (const type of ["pointerdown", "pointermove"])
+      track.addEventListener(type, e => touch(/** @type {PointerEvent} */ (e)), { capture: true });
+    for (const type of ["pointerup", "pointercancel"])
+      track.addEventListener(type, e => lift(/** @type {PointerEvent} */ (e)), { capture: true });
+  }
+
+  // All the timeline has: from what is kept to its length now.
+  /** @returns {[number, number]} */
+  whole() {
+    return [this.start(), Math.max(this.start() + 1, this.length())];
   }
 
   // How long the recording is by now: a live match's grows, between playback lines no further
@@ -195,15 +262,31 @@ class Playbar {
   showTrack(len, now, atLive) {
     const { time, track } = this,
       l = /** @type {PlaybackLine} */ (this.last);
-    time.min = String(this.start());
-    time.max = String(len);
-    this.marks.place(len, this.width());
+    // Zoomed in, it shows a stretch of it: after playback again, a while after its viewer moved it.
+    /** @type {[number, number]} */
+    const whole = [this.start(), len];
+    if (this.view) this.view = within(this.view, whole);
+    if (!this.dragging && performance.now() - this.viewedAt > FOLLOW_AFTER_MS)
+      this.view = following(this.view, whole, now);
+    const [from, to] = this.view ?? whole;
+    time.min = String(from);
+    time.max = String(to);
+    this.marks.place(len, this.width(), this.view);
     // A live match's timeline shows only as far as this viewer has watched; a demo's, all of it.
     if (l.live) this.seen = Math.max(this.seen, atLive ? len : this.at());
     this.marks.reveal(l.live ? this.seen : Infinity);
     if (!this.dragging) time.value = String(now);
-    track.classList.toggle("at-live", atLive && !this.dragging);
-    track.style.setProperty("--played", `${(100 * (Number(time.value) - this.start())) / (len - this.start())}%`);
+    const at = this.dragging ? Number(time.value) : now,
+      away = at < from || at > to;
+    // No playhead at live, nor while playback is beside what a zoomed timeline shows.
+    track.classList.toggle("at-live", (atLive || away) && !this.dragging);
+    track.classList.toggle("zoomed", Boolean(this.view));
+    const pct = (/** @type {number} */ ms, /** @type {[number, number]} */ [a, b]) =>
+      `${Math.min(100, Math.max(0, (100 * (ms - a)) / (b - a)))}%`;
+    track.style.setProperty("--played", pct(at, [from, to]));
+    // Where what shows is in the whole.
+    track.style.setProperty("--view-from", pct(from, whole));
+    track.style.setProperty("--view-to", pct(to, whole));
   }
 
   /** Where playback is, from the map's start. */

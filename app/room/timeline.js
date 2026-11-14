@@ -62,7 +62,8 @@ class Timeline {
     this.spanTo = 1;
     this.heatFrom = 0;
     this.heatTo = 1;
-    this.at = { len: 0, width: 0 };
+    /** @type {{ len: number; width: number; view: [number, number] | null }} */
+    this.at = { len: 0, width: 0, view: null };
     this.drawn = 0;
     this.laid = "";
     this.heated = 0;
@@ -85,13 +86,20 @@ class Timeline {
     this.draw();
   }
 
-  /** @param {number} len @param {number} width */
-  placeNow(len, width) {
-    this.at = { len, width };
-    const all = Math.max(1, len - this.start),
-      px = (/** @type {number} */ ms) => ((ms - this.start) / all) * width;
-    for (const [e, ms] of this.placed) e.style.transform = `translate3d(${px(ms)}px, 0, 0)`;
-    this.span.style.transform = `scaleX(${(this.spanTo - this.start) / all})`;
+  // `view`: the stretch of time the track shows, zoomed in (room/zoom.js); none: all of it.
+  /** @param {number} len @param {number} width @param {[number, number] | null} [view] */
+  placeNow(len, width, view = this.at.view) {
+    this.at = { len, width, view };
+    const [from, to] = view ?? [this.start, len];
+    const all = Math.max(1, to - from),
+      px = (/** @type {number} */ ms) => ((ms - from) / all) * width;
+    for (const [e, ms] of this.placed) {
+      e.style.transform = `translate3d(${px(ms)}px, 0, 0)`;
+      // Past either end of a zoomed track: not shown beside it.
+      const out = ms < from || ms > to ? "none" : "";
+      if (e.style.display !== out) e.style.display = out;
+    }
+    this.span.style.transform = `translate3d(${px(this.start)}px, 0, 0) scaleX(${(this.spanTo - this.start) / all})`;
     this.heat.style.transform = `translate3d(${px(this.heatFrom)}px, 0, 0) scaleX(${(this.heatTo - this.heatFrom) / all})`;
   }
 
@@ -158,9 +166,14 @@ class Timeline {
     this.draw();
   }
 
-  /** Fit the timeline to its length and width (px) now. @param {number} len @param {number} width */
-  place(len, width) {
-    if (len !== this.at.len || width !== this.at.width) this.placeNow(len, width);
+  /**
+   * Fit the timeline to its length and width (px) now, showing `view` of it (none: all).
+   * @param {number} len @param {number} width @param {[number, number] | null} [view]
+   */
+  place(len, width, view = null) {
+    const was = this.at;
+    if (len !== was.len || width !== was.width || view?.[0] !== was.view?.[0] || view?.[1] !== was.view?.[1])
+      this.placeNow(len, width, view);
   }
 
   /**

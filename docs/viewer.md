@@ -208,6 +208,11 @@ at most 200, outside `--max-matches`); ● Live returns. A live match shows mark
 viewer watched, so nothing is spoiled; a demo shows all. Of a live match it is the newest map
 with play; a viewer's own rewind stays on its map ([maps](rooms.md#maps)).
 
+It zooms, for each viewer by themselves (a room's too): the wheel about the pointer (a pinch, on
+a touch screen), down to 20 s; a sideways scroll, shift and the wheel, or two fingers dragged pan
+it. A line under it shows where that is in the whole. Playback that leaves what it shows is
+followed, 4 s after the viewer last moved it.
+
 `?t=12:34` (from map start) opens a private playback there; the link button copies one.
 
 | route                      |                                                                                                                                                       |
