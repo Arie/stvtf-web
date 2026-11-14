@@ -175,9 +175,16 @@ impl Rooms {
         }
     }
 
-    /// A room on match `from`, owned by `owner` and counting against `by` (none: a streamer); one
-    /// on a live match starts at live.
-    pub(crate) fn open(&self, from: &Arc<Session>, recording: Arc<Recording>, owner: &str, by: Option<&str>) -> Result<Arc<Room>> {
+    /// A room on match `from`, owned by `owner` and counting against `by` (none: a streamer): from
+    /// where `start` says (its opener was watching there), else one on a live match starts at live.
+    pub(crate) fn open(
+        &self,
+        from: &Arc<Session>,
+        recording: Arc<Recording>,
+        owner: &str,
+        by: Option<&str>,
+        start: Option<StartAt>,
+    ) -> Result<Arc<Room>> {
         self.make_room_for(by, false)?;
         let id = crate::matches::sessions::random_id();
         let source = Self::source(from);
@@ -187,7 +194,10 @@ impl Rooms {
             let Some(output) = from.output() else { bail!("the demo is still being fetched") };
             store.put(&demo_output(*demo), &output)?;
         }
-        let room = Room::start(id, owner, recording);
+        let room = match start {
+            Some(start) => Room::start_at(id, owner, recording, start),
+            None => Room::start(id, owner, recording),
+        };
         self.give_maps(&room);
         self.offer(&room, from.demo_of(self.store.as_ref()));
         let entry = Entry { _viewer: watching(from, &source), ..Entry::new(&room, Some(source), by) };
@@ -471,11 +481,23 @@ mod tests {
     }
 
     #[test]
+    fn a_room_starts_where_its_opener_was_watching() {
+        let (sessions, dir) = demo();
+        let rooms = Rooms::new(Some(store(&dir)), None);
+        let m = sessions.get("demo").unwrap();
+        let there = StartAt { at: 600, speed: 1.0, paused: true };
+        let r = rooms.open(&m, m.recording().unwrap(), "me", None, Some(there)).unwrap();
+        let saved = serde_json::to_value(r.saved()).unwrap();
+        assert_eq!((saved["at"].as_u64(), saved["paused"].as_bool()), (Some(600), Some(true)), "{saved}");
+        r.stop();
+    }
+
+    #[test]
     fn an_unwatched_room_ends_and_is_forgotten() {
         let (sessions, dir) = demo();
         let rooms = Rooms::new(Some(store(&dir)), None);
         let m = sessions.get("demo").unwrap();
-        let r = rooms.open(&m, m.recording().unwrap(), "me", None).unwrap();
+        let r = rooms.open(&m, m.recording().unwrap(), "me", None, None).unwrap();
         let w = r.join("me", None, None, true);
         rooms.reap(Duration::ZERO);
         assert_eq!(rooms.count(), 1, "watched");
@@ -491,7 +513,7 @@ mod tests {
         let (sessions, dir) = demo();
         let rooms = Rooms::new(Some(store(&dir)), None);
         let m = sessions.get("demo").unwrap();
-        let r = rooms.open(&m, m.recording().unwrap(), "me", None).unwrap();
+        let r = rooms.open(&m, m.recording().unwrap(), "me", None, None).unwrap();
         let _w = r.join("me", Some("coach"), None, true);
         r.control(&crate::rooms::room::Control { paused: Some(true), speed: Some(2.0), seek: Some(600) }).unwrap();
         rooms.persist();
@@ -512,7 +534,7 @@ mod tests {
         let (sessions, dir) = demo();
         let rooms = Rooms::new(Some(store(&dir)), None);
         let m = sessions.get("demo").unwrap();
-        let r = rooms.open(&m, m.recording().unwrap(), "me", None).unwrap();
+        let r = rooms.open(&m, m.recording().unwrap(), "me", None, None).unwrap();
         r.control(&crate::rooms::room::Control { paused: Some(true), ..Default::default() }).unwrap();
         r.draw(&crate::rooms::room::Draw { stroke: 1, points: vec![[5.0, 5.0, 0.0]; 100], end: false }, "me").unwrap();
         rooms.persist();
@@ -548,7 +570,7 @@ mod tests {
         let rooms = Rooms::new(Some(store(&dir)), None);
         let m = sessions.get("demo").unwrap();
         let recording = m.recording().unwrap();
-        let r = rooms.open(&m, recording.clone(), "me", None).unwrap();
+        let r = rooms.open(&m, recording.clone(), "me", None, None).unwrap();
         rooms.persist();
         r.stop();
         let old = br#"[{"stroke":1,"by":1,"points":[[0.0,0.0,0.0]]}]"#;
@@ -566,8 +588,10 @@ mod tests {
         let (sessions, dir) = demo();
         let rooms = Rooms::new(Some(store(&dir)), None);
         let m = sessions.get("demo").unwrap();
-        let (relayed, plain) =
-            (rooms.open(&m, m.recording().unwrap(), "me", None).unwrap(), rooms.open(&m, m.recording().unwrap(), "me", None).unwrap());
+        let (relayed, plain) = (
+            rooms.open(&m, m.recording().unwrap(), "me", None, None).unwrap(),
+            rooms.open(&m, m.recording().unwrap(), "me", None, None).unwrap(),
+        );
         rooms.persist();
         let path = |id: &str| dir.join("store").join(file(id));
         let mut v: serde_json::Value = serde_json::from_slice(&std::fs::read(path(&relayed.id)).unwrap()).unwrap();
@@ -597,7 +621,7 @@ mod tests {
         let (sessions, dir) = demo();
         let rooms = Rooms::new(Some(store(&dir)), None);
         let m = sessions.get("demo").unwrap();
-        let open = |by| rooms.open(&m, m.recording().unwrap(), "me", Some(by));
+        let open = |by| rooms.open(&m, m.recording().unwrap(), "me", Some(by), None);
         let (a, b) = (open("ip:192.0.2.9").unwrap(), open("ip:192.0.2.9").unwrap());
         let _in_b = b.join("me", None, None, true);
         assert!(open("ip:192.0.2.9").err().unwrap().to_string().contains("close one first"), "both just opened");
@@ -637,7 +661,7 @@ mod tests {
             std::thread::sleep(Duration::from_millis(1));
         }
         let rooms = Rooms::default();
-        let room = rooms.open(&m, m.recording().unwrap(), "me", None).unwrap();
+        let room = rooms.open(&m, m.recording().unwrap(), "me", None, None).unwrap();
         assert!(saved_at(&room.saved()) > 0, "starts at live");
         assert!(m.watched(), "the room keeps the match watched");
         rooms.reap(Duration::ZERO);

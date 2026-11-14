@@ -9,7 +9,7 @@ use super::{
 };
 use crate::App;
 use crate::matches::sessions::{Session, Sessions, logged};
-use crate::rooms::room::{ArcDraw, CircleDraw, Control, Draw, LightDraw, MapChoice, NoteDraw, Room, ViewPost};
+use crate::rooms::room::{ArcDraw, CircleDraw, Control, Draw, LightDraw, MapChoice, NoteDraw, Room, StartAt, ViewPost};
 use anyhow::Result;
 use std::io::{BufReader, Take};
 use std::net::{IpAddr, TcpStream};
@@ -30,6 +30,7 @@ pub(super) fn open_room(
     s: &mut TcpStream,
     app: &App,
     sessions: &Sessions,
+    reader: &mut BufReader<Take<TcpStream>>,
     m: &Arc<Session>,
     request: &Request,
     client: IpAddr,
@@ -45,6 +46,11 @@ pub(super) fn open_room(
         m.prepare();
         return Ok(respond(s, "200 OK", JSON, b"{}")?);
     }
+    // Where its opener was watching, if they say: it starts there.
+    let start = match (request.length > 0).then(|| json_body::<Where>(reader, request)).transpose() {
+        Ok(w) => w.and_then(|w| Some(StartAt { at: w.at?, speed: 1.0, paused: w.paused })),
+        Err(e) => return Ok(refuse(s, "400 Bad Request", &e)?),
+    };
     let Who { key: guest, cookie, user } = who(app, request);
     // One's room on it already: back to that.
     if let Some(room) = app.rooms.owned(m, &guest) {
@@ -57,12 +63,20 @@ pub(super) fn open_room(
         Ok(r) => r,
         Err(e) => return Ok(refuse(s, "409 Conflict", &e)?),
     };
-    let room = match app.rooms.open(m, recording, &guest, counted(user.as_ref(), None, client).as_deref()) {
+    let room = match app.rooms.open(m, recording, &guest, counted(user.as_ref(), None, client).as_deref(), start) {
         Ok(r) => r,
         Err(e) => return Ok(refuse(s, "409 Conflict", &e)?),
     };
     log!("room {} opened on match {}", logged(&room.id), logged(&m.id));
     opened(s, app, &room.id, cookie.as_deref())
+}
+
+/// Where the one opening a room was watching the match.
+#[derive(serde::Deserialize, Default)]
+#[serde(deny_unknown_fields, default)]
+struct Where {
+    at: Option<u64>,
+    paused: bool,
 }
 
 #[derive(serde::Deserialize)]

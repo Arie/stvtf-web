@@ -47,6 +47,11 @@ export function initRoom() {
   }
 }
 
+// Where this viewer is watching the match, for the room they open to start there: none while they
+// are at a live match's live (it starts there by itself), or before the timeline is known.
+/** @type {() => { at: number; paused: boolean } | null} */
+let watchingAt = () => null;
+
 // How often the Watch together button asks again whether a room can open.
 const ASK_AGAIN_MS = 5000;
 // Offered once the match has a recording to play; greyed out, spinning, while a demo is fetched.
@@ -75,7 +80,8 @@ function roomButton() {
     button.disabled = true;
     button.classList.add("busy");
     button.textContent = "Opening…";
-    const r = await fetch(new URL("room", HOME), { method: "POST" }).catch(() => null);
+    const body = JSON.stringify(watchingAt() ?? {});
+    const r = await fetch(new URL("room", HOME), { method: "POST", body }).catch(() => null);
     if (r?.ok) {
       const page = new URL((await r.json()).page, location.origin);
       // Its link to send, if the browser still lets this click copy.
@@ -201,6 +207,8 @@ function watchBar() {
     replay: (behind, p) => own.active() && (behind || !p.live),
   });
   const own = ownPlayback(bar, () => shared());
+  watchingAt = () =>
+    bar.last && (own.active() || !bar.last.live) ? { at: Math.round(bar.at()), paused: bar.state().paused } : null;
   bar.allow(true);
   playbackListeners.add(m => own.active() && bar.heard(m));
   copyLink("Copy a link to this moment", () => momentLink(bar.since()));

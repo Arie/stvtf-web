@@ -73,6 +73,17 @@ fn a_demo_opens_a_room_for_its_owner() {
 }
 
 #[test]
+fn a_room_opened_from_a_moment_of_the_match_starts_there() {
+    let (app, _dir) = demo_app();
+    let opened = post(&app, "/w/demo/room", "", r#"{"at":600,"paused":true}"#);
+    assert!(opened.starts_with("HTTP/1.1 201"), "{opened}");
+    let room = app.rooms.get(page_of(&opened).trim_matches('/').trim_start_matches("r/"), sessions_of(&app)).unwrap();
+    let saved = serde_json::to_value(room.saved()).unwrap();
+    assert_eq!((saved["at"].as_u64(), saved["paused"].as_bool()), (Some(600), Some(true)), "{saved}");
+    assert!(post(&app, "/w/demo/room", "", r#"{"at":"x"}"#).starts_with("HTTP/1.1 400"));
+}
+
+#[test]
 fn only_admins_control_a_room() {
     let (app, _dir) = demo_app();
     let (page, cookie) = open_room(&app);

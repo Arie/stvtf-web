@@ -68,7 +68,7 @@ pub(super) fn serve_match(
             app.redirect(&mut s, "308 Permanent Redirect", &format!("{}/", request.path))?;
         }
         (Some(_), rest) if is_page(rest) => respond(&mut s, "200 OK", HTML, &app.page(INDEX))?,
-        (Some(m), "room") => open_room(&mut s, app, sessions, &m, request, client)?,
+        (Some(m), "room") => open_room(&mut s, app, sessions, reader, &m, request, client)?,
         (Some(m), part @ ("timeline" | "marks")) => match_timeline(&mut s, &m, request, part)?,
         (Some(m), "rewind") if request.method == "POST" => rewind(&mut s, reader, app, &m, request, client)?,
         (Some(m), rest) if rest.starts_with("voice") => {
