@@ -19,6 +19,11 @@
 //! - `{"op": "light", "room", "light"}`: the light they keep seeing, in place of the one before, a
 //!   [`stvtf::relay::Light`]; null puts it out.
 //! - `{"op": "stop", "room"}`: the room ended.
+//! - `{"op": "clients"}`: TF2 clients in, over all rooms.
+//!
+//! Told to stop (SIGTERM), it hands its TF2 clients to the process after it, in a file beside
+//! the socket ([`handed_at`]): that one takes them in on the same ports and they play on, with
+//! a pause of some seconds and no reconnect.
 //!
 //! A `want` is a [`stvtf::relay::Want`] with `age_ms` (how long ago `tick` was wanted) for its
 //! instant. A relay nobody asked about for [`LEASE`] (its room gone with an stv.tf that crashed)
@@ -38,9 +43,10 @@ use std::collections::{HashMap, VecDeque};
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex, PoisonError};
-use std::time::{Duration, Instant};
-use stvtf::relay::{Beam, Light, Note, VoiceIn, Want};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use stvtf::relay::{Beam, Handover, Light, Note, VoiceIn, Want};
 
 /// A relay not asked about for this long is stopped: longer than any deploy takes.
 pub(crate) const LEASE: Duration = Duration::from_mins(2);
@@ -52,9 +58,15 @@ const ANSWER: Duration = Duration::from_millis(500);
 const STATUS_EVERY: Duration = Duration::from_millis(500);
 /// How long a relay process that did not answer is left alone.
 const AWAY: Duration = Duration::from_secs(2);
+/// How long a relay gets to hand its clients over.
+const HAND_OVER: Duration = Duration::from_secs(3);
+/// Clients handed over longer ago are gone: TF2 gives a silent server 30 s.
+const HANDED_FOR: Duration = Duration::from_secs(25);
+/// How often the relay process looks whether it is told to stop.
+const STOP_POLL: Duration = Duration::from_millis(50);
 
 /// A [`Want`] on the wire.
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub(crate) struct WantLine {
     demo: PathBuf,
     tick: u32,
@@ -129,6 +141,7 @@ enum Request {
     Stop {
         room: String,
     },
+    Clients {},
 }
 
 /// A [`VoiceIn`] on the wire: its frames in base64.
@@ -180,17 +193,152 @@ fn beam(l: &BeamLine) -> Beam {
 struct Leased {
     relay: LocalRelay,
     seen: Instant,
+    /// What it was last told to play and show: handed over with its clients.
+    shows: Shows,
+}
+
+/// What a relay plays and its clients keep seeing.
+#[derive(Clone)]
+struct Shows {
+    want: Want,
+    beams: Vec<BeamLine>,
+    notes: Vec<Note>,
+    light: Option<Light>,
+}
+
+impl Shows {
+    fn of(want: Want) -> Shows {
+        Shows { want, beams: Vec::new(), notes: Vec::new(), light: None }
+    }
 }
 
 type Rooms = Arc<Mutex<HashMap<String, Leased>>>;
 
-/// Serves relays on `socket` until the process ends.
-pub(crate) fn serve(socket: &Path, relays: &Arc<Relays>, lease: Duration) -> Result<()> {
+/// A room's relay with TF2 clients in, handed to the next process.
+#[derive(Serialize, Deserialize)]
+struct HandedRoom {
+    room: String,
+    was: Was,
+    want: WantLine,
+    #[serde(default)]
+    beams: Vec<BeamLine>,
+    #[serde(default)]
+    notes: Vec<Note>,
+    #[serde(default)]
+    light: Option<Light>,
+    clients: Handover,
+}
+
+/// What a relay process told to stop leaves the next.
+#[derive(Serialize, Deserialize)]
+struct Handed {
+    /// When, in milliseconds since 1970.
+    at_ms: u64,
+    rooms: Vec<HandedRoom>,
+}
+
+/// Where the relay process on `socket` leaves its clients for the next.
+pub(crate) fn handed_at(socket: &Path) -> PathBuf {
+    socket.with_extension("handover")
+}
+
+fn now_ms() -> u64 {
+    SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_millis() as u64)
+}
+
+/// Stops every relay with TF2 clients in and writes them to `file`, each relay at once.
+fn hand_over(rooms: &Rooms, file: &Path) -> Result<usize> {
+    let all = std::mem::take(&mut *lock(rooms));
+    let handed: Vec<HandedRoom> = std::thread::scope(|s| {
+        let asked: Vec<_> = all
+            .iter()
+            .filter(|(_, l)| l.relay.clients() > 0 && !l.relay.stopped())
+            .map(|(room, l)| {
+                s.spawn(move || {
+                    let clients = l.relay.hand_over(HAND_OVER).filter(|h| h.clients() > 0)?;
+                    let Shows { want, beams, notes, light } = l.shows.clone();
+                    Some(HandedRoom { room: room.clone(), was: l.relay.was(), want: WantLine::of(&want), beams, notes, light, clients })
+                })
+            })
+            .collect();
+        asked.into_iter().filter_map(|t| t.join().ok().flatten()).collect()
+    });
+    let clients = handed.iter().map(|r| r.clients.clients()).sum();
+    let part = file.with_extension("handover.part");
+    // A want's age is as of now.
+    std::fs::write(&part, serde_json::to_vec(&Handed { at_ms: now_ms(), rooms: handed })?)?;
+    std::fs::rename(&part, file)?;
+    Ok(clients)
+}
+
+/// Takes in what the process before left in `file`, if it is not too long ago: each room's relay
+/// on its port again, its clients in.
+fn take_over(rooms: &Rooms, relays: &Arc<Relays>, file: &Path) {
+    let Ok(bytes) = std::fs::read(file) else { return };
+    let _ = std::fs::remove_file(file);
+    let handed: Handed = match serde_json::from_slice(&bytes) {
+        Ok(h) => h,
+        Err(e) => return log!("the clients handed over do not read: {e}"),
+    };
+    let ago = Duration::from_millis(now_ms().saturating_sub(handed.at_ms));
+    if ago > HANDED_FOR {
+        return log!("clients handed over {} s ago are gone", ago.as_secs());
+    }
+    for HandedRoom { room, was, mut want, beams, notes, light, clients } in handed.rooms {
+        want.age_ms += ago.as_millis() as u64;
+        let shows = Shows { want: want.want(), beams, notes, light };
+        let started = relays.start_with(shows.want.clone(), Some(&was), Some(&clients));
+        match started {
+            Ok(Some(relay)) if relay.was() == was => {
+                log!(
+                    "relay of room {} taken over on port {}, {} clients, after {} ms",
+                    logged(&room),
+                    was.port,
+                    clients.clients(),
+                    ago.as_millis()
+                );
+                relay.keep(shows.beams.iter().map(beam).collect());
+                relay.keep_notes(shows.notes.clone());
+                relay.keep_light(shows.light);
+                lock(rooms).insert(room, Leased { relay, seen: Instant::now(), shows });
+            }
+            Ok(_) => log!("relay of room {} not taken over: port {} is not free", logged(&room), was.port),
+            Err(e) => log!("relay of room {} not taken over: {e:#}", logged(&room)),
+        }
+    }
+}
+
+/// What the relay process on `socket` answers when asked for its TF2 clients: `{"clients": N}`,
+/// or an error from one that does not know the question (and hands none over).
+pub(crate) fn clients(socket: &Path) -> Result<Value> {
+    let mut conn = UnixStream::connect(socket).with_context(|| format!("the relays at {}", socket.display()))?;
+    conn.set_read_timeout(Some(ANSWER))?;
+    writeln!(conn, "{}", json!({ "op": "clients" }))?;
+    let mut line = String::new();
+    BufReader::new(conn).read_line(&mut line)?;
+    Ok(serde_json::from_str(&line)?)
+}
+
+/// Serves relays on `socket` until told to `stop`: then its TF2 clients are handed over (see
+/// [`handed_at`]) and the process ends.
+pub(crate) fn serve(socket: &Path, relays: &Arc<Relays>, lease: Duration, stop: &'static AtomicBool) -> Result<()> {
     // One left by a process before is in the way.
     let _ = std::fs::remove_file(socket);
+    let rooms: Rooms = Arc::default();
+    take_over(&rooms, relays, &handed_at(socket));
     let listener = UnixListener::bind(socket).with_context(|| format!("listening on {}", socket.display()))?;
     log!("relays at {}", socket.display());
-    let rooms: Rooms = Arc::default();
+    let (leaving, file) = (rooms.clone(), handed_at(socket));
+    std::thread::spawn(move || {
+        while !stop.load(Ordering::Relaxed) {
+            std::thread::sleep(STOP_POLL);
+        }
+        match hand_over(&leaving, &file) {
+            Ok(clients) => log!("relays stopping: {clients} clients handed over"),
+            Err(e) => log!("relays stopping: clients not handed over: {e:#}"),
+        }
+        std::process::exit(0);
+    });
     let reaped = rooms.clone();
     std::thread::spawn(move || {
         loop {
@@ -237,35 +385,41 @@ fn said_of(room: &str, started: &Result<Option<LocalRelay>>) {
     }
 }
 
+/// Room `room`'s relay, started if it has none or its own stopped; its page line.
+fn start(room: String, want: WantLine, mut was: Option<Was>, rooms: &Rooms, relays: &Arc<Relays>) -> Value {
+    let mut all = lock(rooms);
+    if let Some(l) = all.get_mut(&room) {
+        if !l.relay.stopped() {
+            l.seen = Instant::now();
+            l.shows.want = want.want();
+            l.relay.follow(l.shows.want.clone());
+            return json!({ "line": l.relay.line() });
+        }
+        // Stopped: a new one on its port.
+        was = was.or_else(|| Some(l.relay.was()));
+        all.remove(&room);
+    }
+    let want = want.want();
+    let started = relays.start(want.clone(), was.as_ref());
+    said_of(&room, &started);
+    match started {
+        Ok(Some(relay)) => {
+            let line = relay.line();
+            all.insert(room, Leased { relay, seen: Instant::now(), shows: Shows::of(want) });
+            json!({ "line": line })
+        }
+        Ok(None) => json!({ "line": null }),
+        Err(e) => json!({ "error": format!("{e:#}") }),
+    }
+}
+
 fn handle(r: Request, rooms: &Rooms, relays: &Arc<Relays>) -> Value {
     match r {
-        Request::Start { room, want, mut was } => {
-            let mut all = lock(rooms);
-            if let Some(l) = all.get_mut(&room) {
-                if !l.relay.stopped() {
-                    l.seen = Instant::now();
-                    l.relay.follow(want.want());
-                    return json!({ "line": l.relay.line() });
-                }
-                // Stopped: a new one on its port.
-                was = was.or_else(|| Some(l.relay.was()));
-                all.remove(&room);
-            }
-            let started = relays.start(want.want(), was.as_ref());
-            said_of(&room, &started);
-            match started {
-                Ok(Some(relay)) => {
-                    let line = relay.line();
-                    all.insert(room, Leased { relay, seen: Instant::now() });
-                    json!({ "line": line })
-                }
-                Ok(None) => json!({ "line": null }),
-                Err(e) => json!({ "error": format!("{e:#}") }),
-            }
-        }
+        Request::Start { room, want, was } => start(room, want, was, rooms, relays),
         Request::Follow { room, want } => in_room(rooms, &room, |l| {
             l.seen = Instant::now();
-            l.relay.follow(want.want());
+            l.shows.want = want.want();
+            l.relay.follow(l.shows.want.clone());
             json!({})
         }),
         Request::Status { room } => in_room(rooms, &room, |l| {
@@ -274,9 +428,11 @@ fn handle(r: Request, rooms: &Rooms, relays: &Arc<Relays>) -> Value {
         }),
         Request::Keep { room, beams } => in_room(rooms, &room, |l| {
             l.relay.keep(beams.iter().map(beam).collect());
+            l.shows.beams = beams;
             json!({})
         }),
         Request::Notes { room, notes } => in_room(rooms, &room, |l| {
+            l.shows.notes.clone_from(&notes);
             l.relay.keep_notes(notes);
             json!({})
         }),
@@ -287,6 +443,7 @@ fn handle(r: Request, rooms: &Rooms, relays: &Arc<Relays>) -> Value {
             json!({})
         }),
         Request::Light { room, light } => in_room(rooms, &room, |l| {
+            l.shows.light = light;
             l.relay.keep_light(light);
             json!({})
         }),
@@ -294,6 +451,7 @@ fn handle(r: Request, rooms: &Rooms, relays: &Arc<Relays>) -> Value {
             lock(rooms).remove(&room);
             json!({})
         }
+        Request::Clients {} => json!({ "clients": lock(rooms).values().map(|l| l.relay.clients()).sum::<usize>() }),
     }
 }
 
@@ -621,11 +779,12 @@ mod tests {
 
     /// A relay process with one port, serving on a socket in `dir` once this returns.
     fn serving(dir: &TempDir, lease: Duration) -> (PathBuf, u16) {
+        static NEVER: AtomicBool = AtomicBool::new(false);
         let socket = dir.join("relay.sock");
         let port = free_port();
         let relays = Relays::new("127.0.0.1", [port]);
         let s = socket.clone();
-        std::thread::spawn(move || serve(&s, &relays, lease));
+        std::thread::spawn(move || serve(&s, &relays, lease, &NEVER));
         let until = Instant::now() + Duration::from_secs(5);
         while !socket.exists() {
             assert!(Instant::now() < until, "no socket");
@@ -681,6 +840,63 @@ mod tests {
         assert!(t.elapsed() < Duration::from_millis(200), "{:?}", t.elapsed());
         drop(held);
         r.end();
+    }
+
+    #[test]
+    fn the_relay_process_says_how_many_tf2_clients_it_has() {
+        let dir = TempDir::new("stvtf-relay-clients");
+        let (socket, _) = serving(&dir, LEASE);
+        assert_eq!(clients(&socket).unwrap(), json!({ "clients": 0 }));
+        let _relay = start_when_free(&Remote::new(&socket), "r", None);
+        assert_eq!(clients(&socket).unwrap(), json!({ "clients": 0 }));
+    }
+
+    /// What a process told to stop left: a room's relay comes back on its port and password,
+    /// showing what it showed. Too long ago, or not readable, it is left.
+    #[test]
+    fn a_relay_handed_over_is_taken_in_on_its_port_by_the_next_process() {
+        let dir = TempDir::new("stvtf-relay-handed");
+        let port = free_port();
+        let was = Was { port, password: "abc123".into() };
+        let handed = |at_ms| Handed {
+            at_ms,
+            rooms: vec![HandedRoom {
+                room: "r".into(),
+                was: was.clone(),
+                want: WantLine::of(&want()),
+                beams: vec![[0.0; 12]],
+                notes: Vec::new(),
+                light: None,
+                clients: Handover::default(),
+            }],
+        };
+        let file = dir.join("relay.handover");
+        let relays = Relays::new("127.0.0.1", [port]);
+        for (left, taken) in [
+            (serde_json::to_vec(&handed(now_ms())).unwrap(), true),
+            (serde_json::to_vec(&handed(now_ms() - 60_000)).unwrap(), false),
+            (b"{".to_vec(), false),
+        ] {
+            std::fs::write(&file, left).unwrap();
+            let rooms: Rooms = Arc::default();
+            take_over(&rooms, &relays, &file);
+            assert!(!file.exists(), "read once");
+            let all = lock(&rooms);
+            assert_eq!(all.get("r").map(|l| (l.relay.was(), l.shows.beams.len())), taken.then(|| (was.clone(), 1)));
+        }
+    }
+
+    #[test]
+    fn a_relay_process_told_to_stop_leaves_nothing_of_rooms_without_tf2_clients() {
+        let dir = TempDir::new("stvtf-relay-none");
+        let relays = Relays::new("127.0.0.1", [free_port()]);
+        let rooms: Rooms = Arc::default();
+        let relay = relays.start(want(), None).unwrap().unwrap();
+        lock(&rooms).insert("r".into(), Leased { relay, seen: Instant::now(), shows: Shows::of(want()) });
+        let file = dir.join("relay.handover");
+        assert_eq!(hand_over(&rooms, &file).unwrap(), 0);
+        let left: Handed = serde_json::from_slice(&std::fs::read(&file).unwrap()).unwrap();
+        assert!(left.rooms.is_empty() && lock(&rooms).is_empty());
     }
 
     #[test]

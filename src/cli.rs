@@ -23,8 +23,9 @@ stvtf-web: live top-down viewer of a TF2 match in the browser
      HOST:PORT on a port of the range (needs --sessions, where live matches record their demos).
      --relay-socket SOCKET: the relays run in a process of their own instead (deploys leave them be):
   stvtf-web --relay-daemon SOCKET --relay-ports 27100-27199 --relay-host HOST   (that process)
+  stvtf-web --relay-clients SOCKET   (how many TF2 clients that process has)
   stvtf-web --replay FILE.jsonl [--listen 127.0.0.1:8080]   (stvtf output, at game speed)";
-const FLAGS: [&str; 17] = [
+const FLAGS: [&str; 18] = [
     "password",
     "listen",
     "hz",
@@ -42,6 +43,7 @@ const FLAGS: [&str; 17] = [
     "relay-host",
     "relay-socket",
     "relay-daemon",
+    "relay-clients",
 ];
 const SWITCHES: [&str; 2] = ["public", "no-warm"];
 const DEFAULT_LISTEN: &str = "127.0.0.1:8080";
@@ -77,6 +79,8 @@ pub(crate) struct Options {
     pub(crate) relay_socket: Option<PathBuf>,
     /// Be that process, on this socket.
     pub(crate) relay_daemon: Option<PathBuf>,
+    /// Ask the relay process on this socket how many TF2 clients it has, and say.
+    pub(crate) relay_clients: Option<PathBuf>,
 }
 
 impl Options {
@@ -123,6 +127,7 @@ impl Options {
             relays,
             relay_socket,
             relay_daemon,
+            relay_clients: take("relay-clients").map(PathBuf::from),
         }))
     }
 }
@@ -242,6 +247,7 @@ mod tests {
         assert!(defaults.relays.is_none());
         let daemon = options(&["--relay-daemon", "/data/r.sock", "--relay-ports", "28100-28101", "--relay-host", "h"]).unwrap().unwrap();
         assert_eq!(daemon.relay_daemon, Some(PathBuf::from("/data/r.sock")));
+        assert_eq!(options(&["--relay-clients", "/r.sock"]).unwrap().unwrap().relay_clients, Some(PathBuf::from("/r.sock")));
         assert_eq!(options(&["--relay-socket", "/data/r.sock"]).unwrap().unwrap().relay_socket, Some(PathBuf::from("/data/r.sock")));
     }
 

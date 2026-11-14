@@ -367,6 +367,17 @@ fn keep_log(options: &Options) {
     stvtf::relay::log_to(log::line);
 }
 
+/// The relay process, if `options` ask for it: only the relays (the rest are the image's for the
+/// web), until told to `stop`. Or a question for the one running.
+fn relay_process(options: &Options, stop: &'static AtomicBool) -> Option<Result<()>> {
+    if let Some(socket) = &options.relay_clients {
+        return Some(relays::daemon::clients(socket).map(|answer| println!("{answer}")));
+    }
+    let (Some(socket), Some((host, ports))) = (&options.relay_daemon, &options.relays) else { return None };
+    log!("relays on {host}, ports {}-{}", ports.start(), ports.end());
+    Some(relays::daemon::serve(socket, &relays::pool::Relays::new(host, ports.clone()), relays::daemon::LEASE, stop))
+}
+
 fn main() -> Result<()> {
     static STOP: AtomicBool = AtomicBool::new(false);
     static OPEN: AtomicUsize = AtomicUsize::new(0);
@@ -376,10 +387,8 @@ fn main() -> Result<()> {
     };
     watch::stop_on_ctrl_c(&STOP)?;
     keep_log(&options);
-    // The relay process: only the relays (the rest of the options are the image's for the web).
-    if let (Some(socket), Some((host, ports))) = (&options.relay_daemon, &options.relays) {
-        log!("relays on {host}, ports {}-{}", ports.start(), ports.end());
-        return relays::daemon::serve(socket, &relays::pool::Relays::new(host, ports.clone()), relays::daemon::LEASE);
+    if let Some(served) = relay_process(&options, &STOP) {
+        return served;
     }
     let keys = std::env::var("STVTF_TOKEN_KEY").ok().map(|k| web::token::Keys::from_hex(&k).map(Arc::new)).transpose()?;
     let console_prompt = keys.is_none() && std::io::IsTerminal::is_terminal(&std::io::stdin());

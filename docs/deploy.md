@@ -8,7 +8,7 @@
 | `bin/build` | builds and pushes the one image all regions run |
 | `bin/deploy [REGION...]` | deploys it, in parallel (default: all four) |
 | `kamal deploy -d eu\|na\|au\|sea` | builds and deploys one region |
-| `bin/relays [REGION...]` | restarts the relays at the version `bin/build` pushed (boots them the first time); for a change to them |
+| `bin/relays [--now] [REGION...]` | restarts the relays at the version `bin/build` pushed (boots them the first time); for a change to them |
 
 The registry is ghcr.io, with the classic token in `~/.config/stvtf/ghcr.token`, scope
 `write:packages` only, because Kamal leaves the login on every host.
@@ -62,7 +62,16 @@ The rooms' TF2 relays run apart from the app, as the Kamal accessory `relay`
 stay connected and the new app picks the relays up over `/data/relay.sock` (`--relay-socket`).
 A room watched only in TF2 survives a deploy too.
 
-Restarting the relays drops their TF2 clients; `retry` gets them back (same port and password).
+Restarting the relays (`bin/relays`) keeps their TF2 clients: told to stop, the relay process
+writes each room's clients to `/data/relay.handover` (their connections, and all they were sent
+since they signed on), and the next takes them in on the same ports within 25 s. They see a pause
+of some seconds and a full update, no reconnect; a room that moved to another demo meanwhile
+signs its clients on again, connected still. A client in its signon or a transfer at that moment
+is told to `retry` (same port and password), as all are when the next process does not come in
+time.
+
+`bin/relays` leaves a region whose relays run that code already, and one whose relays are of a
+version before handovers (their clients would drop): `--now` restarts those too.
 
 A change to how rooms move between maps needs both, and the relays go first (`bin/relays`, then
 `bin/deploy`): a new relay works with the old app, but a new app with an old relay shows TF2 the

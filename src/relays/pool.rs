@@ -12,7 +12,8 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
-use stvtf::relay::{Beam, Light, Note, Playback, Relay, RelayConfig, VoiceIn, Want};
+use std::time::Duration;
+use stvtf::relay::{Beam, Handover, Light, Note, Playback, Relay, RelayConfig, VoiceIn, Want};
 
 /// TF2 clients a room takes at once.
 const SLOTS: usize = 24;
@@ -82,6 +83,11 @@ impl Relays {
     /// A relay on a free port, playing as `want` says until dropped; None when every port is taken.
     /// On what it `was` on, if that port is free.
     pub(crate) fn start(self: &Arc<Self>, want: Want, was: Option<&Was>) -> Result<Option<LocalRelay>> {
+        self.start_with(want, was, None)
+    }
+
+    /// [`Relays::start`], taking in the clients the relay on that port before `handed` over.
+    pub(crate) fn start_with(self: &Arc<Self>, want: Want, was: Option<&Was>, handed: Option<&Handover>) -> Result<Option<LocalRelay>> {
         let port = {
             let mut free = lock(&self.free);
             match was.and_then(|w| free.iter().position(|&p| p == w.port)) {
@@ -100,6 +106,11 @@ impl Relays {
                 return Err(e).with_context(|| format!("relay port {port}"));
             }
         };
+        if let Some(h) = handed
+            && !relay.take_over(h)
+        {
+            log!("relay on port {port}: the clients handed over do not read");
+        }
         let bound = Arc::new(Bound { relay: Some(relay), port, pool: self.clone() });
         let (playback, stop) = (Arc::new(Playback::new(want)), Arc::new(AtomicBool::new(false)));
         let (b, p, s) = (bound.clone(), playback.clone(), stop.clone());
@@ -155,6 +166,12 @@ impl LocalRelay {
     /// The light the TF2 clients in keep seeing, in place of the one before.
     pub(crate) fn keep_light(&self, light: Option<Light>) {
         self.playback.keep_light(light);
+    }
+
+    /// Stops it and takes its clients for the next process; None if it does not give them in
+    /// `wait`.
+    pub(crate) fn hand_over(&self, wait: Duration) -> Option<Handover> {
+        self.playback.hand_over(wait)
     }
 
     /// Whether it stopped on its own (it could not even start), so the room should start another.
@@ -339,13 +356,13 @@ pub(super) mod tests {
         assert_eq!(a.line()["address"], format!("127.0.0.1:{}", ports[0]));
         assert_ne!(a.password, b.password);
         drop(a);
-        let until = Instant::now() + std::time::Duration::from_secs(5);
+        let until = Instant::now() + Duration::from_secs(5);
         let c = loop {
             if let Some(c) = relays.start(want(), None).unwrap() {
                 break c;
             }
             assert!(Instant::now() < until, "the port never came back");
-            std::thread::sleep(std::time::Duration::from_millis(10));
+            std::thread::sleep(Duration::from_millis(10));
         };
         assert_eq!(c.bound().port, ports[0]);
         drop(b);
