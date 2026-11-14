@@ -26,7 +26,7 @@ const TASKS = {
   eslint: { section: "checks", cmd: "npm run --silent lint", fix: "npm run --silent lint -- --fix", needs: [NPM] },
   prettier: { section: "checks", cmd: "npm run --silent format:check", fix: "npm run --silent format", needs: [NPM] },
   tsc: { section: "checks", cmd: "npm run --silent typecheck", needs: [NPM] },
-  shellcheck: { section: "checks", cmd: "shellcheck bin/build bin/deploy .githooks/pre-commit script/test" },
+  shellcheck: { section: "checks", cmd: "shellcheck bin/build bin/deploy bin/relays .githooks/pre-commit script/test" },
   actionlint: { section: "checks", cmd: "actionlint" },
   zizmor: { section: "checks", cmd: "zizmor --offline --quiet .github/workflows" },
   hadolint: { section: "checks", cmd: "hadolint Dockerfile" },

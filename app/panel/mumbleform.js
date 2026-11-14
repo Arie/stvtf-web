@@ -5,7 +5,7 @@ import { act, el, labelOf } from "./voicebits.js";
 // Mumble's own port.
 export const MUMBLE_PORT = 64738;
 
-/** @typedef {{ id: number; host: string; port: number; channel: string; delay: number; status: string }} InMumble */
+/** @typedef {{ id: number; host: string; port: number; channel: string; delay: number; status: string; state?: string }} InMumble */
 
 // A Mumble server as someone writes it: its name or address, with a port or without, or a
 // mumble:// link. None for what is no server.

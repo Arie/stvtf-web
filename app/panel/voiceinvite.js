@@ -45,7 +45,7 @@ export function joinCommand(page, invite, delay) {
 /** @type {{ invite: string; bot: string | null } | null} */
 let botInvite = null;
 // Where the bot is, as stv.tf last said.
-/** @type {{ discord: { status: string } | null; mumble: InMumble[] }} */
+/** @type {{ discord: { status: string; state?: string } | null; mumble: InMumble[] }} */
 let comms = { discord: null, mumble: [] };
 // What the view shows: none (the speakers list), the choice or what is connected (home), one of
 // the two set-ups, or the bot being moved; the Mumble channel being moved or taken out (none
@@ -60,6 +60,14 @@ const redraw = () => list.hidden || renderList(list);
 
 /** @param {string} status */
 const failed = status => /^(Could not join|Left)/.test(status);
+// Where the bot is in a channel is its `state` (in, connecting, failed, left); a site that says
+// none is gone by its status text.
+/** @param {{ status: string; state?: string }} c It would not join, or left. */
+const out = c => (c.state ? c.state === "failed" || c.state === "left" : failed(c.status));
+/** @param {{ status: string; state?: string }} c On its way in: also when the bot went silent. */
+const onItsWay = c => (c.state ? c.state === "connecting" : c.status === "connecting");
+/** @param {{ status: string; state?: string }} c What its line says. */
+const said = c => (onItsWay(c) ? "connecting" : c.status);
 
 // How it goes: green in a channel, yellow on the way, red when it would not do.
 /**
@@ -142,12 +150,12 @@ function connected() {
   const parts = [top("", "Comms")];
   if (comms.discord) {
     parts.push(
-      statusLine(comms.discord.status, "", "Discord"),
+      statusLine(said(comms.discord), "", "Discord", out(comms.discord)),
       el("div", { className: "vhint" }, "/stv delay · /stv leave"),
     );
   }
   for (const m of comms.mumble) {
-    const line = statusLine(m.status, `tv_delay ${m.delay} s`, "Mumble");
+    const line = statusLine(said(m), `tv_delay ${m.delay} s`, "Mumble", out(m));
     line.append(act("Reconnect", `go:reconnect:${m.id}`));
     parts.push(line);
   }
@@ -169,7 +177,7 @@ function commsView() {
   if (view.screen === "mumble") return mumbleSetup(null);
   // The only one, and it would not do: its form again, with why.
   const [only] = comms.mumble;
-  if (!comms.discord && comms.mumble.length === 1 && failed(only.status)) return mumbleSetup(only);
+  if (!comms.discord && comms.mumble.length === 1 && out(only)) return mumbleSetup(only);
   return comms.discord || comms.mumble.length ? connected() : choice();
 }
 
@@ -198,15 +206,14 @@ function pollComms() {
       now => {
         if (!now) return;
         const shape = (/** @type {typeof comms} */ c) =>
-          `${c.discord?.status ?? ""}/${c.mumble.map(m => `${m.id}/${m.host}/${m.channel}/${m.delay}/${m.status}`).join("/")}`;
+          `${c.discord?.status ?? ""}/${c.discord?.state ?? ""}/${c.mumble.map(m => `${m.id}/${m.host}/${m.channel}/${m.delay}/${m.status}/${m.state ?? ""}`).join("/")}`;
         const changed = shape(now) !== shape(comms);
         // The bot came into Discord while its set-up showed: on to where it is.
         if (view.screen === "discord" && now.discord && !comms.discord) view.screen = "home";
         comms = now;
         // On its way: asked again soon, so the dot turns as the bot gets there.
         clearTimeout(soon);
-        if (now.mumble.some((/** @type {InMumble} */ m) => m.status === "connecting"))
-          soon = window.setTimeout(pollComms, SOON_MS);
+        if (now.mumble.some((/** @type {InMumble} */ m) => onItsWay(m))) soon = window.setTimeout(pollComms, SOON_MS);
         if (changed) redraw();
       },
       () => {},
@@ -258,7 +265,7 @@ function showScreen(to, id = null) {
   // One to move: its own, or the only one when it would not do (its form shows by itself).
   const m =
     to === "reconnect" ? comms.mumble.find(j => j.id === id) : to === "home" && comms.mumble.length === 1 && only;
-  if (m && (to === "reconnect" || failed(m.status))) {
+  if (m && (to === "reconnect" || out(m))) {
     view.editing = m.id;
     fillFor(m);
     view.delay = m.delay;
