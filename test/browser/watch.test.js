@@ -282,7 +282,12 @@ test("the marker stays, for those who come later too, until an admin clears it",
   const later = await open();
   await later.page.goto(page.url());
   await until(later.page, m => document.getElementById("map").textContent === m, MAP);
-  const marked = await ink(later.page);
+  // Once it has drawn it.
+  let marked = await ink(later.page);
+  for (let i = 0; i < 50 && marked <= clean + 100; i++) {
+    await later.page.waitForTimeout(100);
+    marked = await ink(later.page);
+  }
   await page.click("#rb-clear");
   await later.page.waitForTimeout(500);
   assert.ok(marked > (await ink(later.page)) + 100, "one who came later saw it, until it was cleared");
