@@ -51,9 +51,9 @@ click). It opens the speakers list: voice off, mute all, ⇄ swap (hear the othe
 one), RED and BLU each with a team mute and everyone on it now, heard or not, and the rest heard;
 each with a mute and a volume.
 A team's mute covers its players to come too, for this page; one's own mutes are kept in the
-browser by SteamID, across matches. Everyone heard has a 🔊 on their HUD card (🔇 muted), faint
-while silent and lit while they talk. A talking player's dot has a waveform badge, taller, bigger
-and hotter (white to red) the louder they are; a muted player's has the speaker crossed out. A click
+browser by SteamID, across matches. Everyone heard has a faint 🔊 on their HUD card (🔇 muted). While they talk it is a waveform,
+taller, bigger and hotter (white to red) the louder they are, and their dot has one as a badge; a
+muted player's dot has the speaker crossed out. A click
 on the card's mark mutes or unmutes them (a muted team's player is then let through). Paused, sought or at
 another speed than 1×, voice is silent. It needs WebCodecs, so a secure page (https, or
 localhost); the overlay has none.

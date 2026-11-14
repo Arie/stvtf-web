@@ -1,7 +1,7 @@
 // A voice badge on a player's dot: while they talk, a waveform that is taller, wider and hotter the
-// louder they are (a shout stands out in a fight); while muted, a speaker crossed out, as on their
-// HUD card (where a click mutes them: the badge is too small, on a dot that moves). See
-// core/voice.js.
+// louder they are (a shout stands out in a fight), as on their HUD card (panel/speakers.js); while
+// muted, a speaker crossed out (a click on the card's mutes them: the badge is too small, on a dot
+// that moves). See core/voice.js.
 import { ctx } from "../core/core.js";
 import { isMuted, isTalking, loudnessOf, voiceOn } from "../core/voice.js";
 /** @typedef {import("../../types/stream").Player} Player */
@@ -9,21 +9,22 @@ import { isMuted, isTalking, loudnessOf, voiceOn } from "../core/voice.js";
 // The badge's size against the dot's, and the least it is in pixels. It sits on the dot's right,
 // a little low (half past three): clear of the vaccinator's resist (upper right), a carried
 // building (upper left), marked for death and stun stars (above), and the name (below).
-const SIZE = 0.5,
-  MIN_PX = 6,
+const SIZE = 0.62,
+  MIN_PX = 8,
   RIGHT = 0.95,
   LOW = 0.35,
   // How faint a muted player's badge is while they are silent.
   QUIET = 0.4,
-  // How much bigger the badge of someone at their loudest is, and how loud someone is taken to be
-  // before anything of them played.
-  GROW = 0.45,
-  UNKNOWN = 0.35,
+  // How much bigger the badge of someone at their loudest is: about the dot's own size then.
+  GROW = 0.7,
   // The waveform's bars: how tall each gets against the others, and how fast they move.
   BARS = [0.5, 0.85, 1, 0.7, 0.45],
   BEAT = 0.011;
 
-// How loud each player's badge shows them, eased: up at once, down slowly.
+// How loud someone is taken to be before anything of them played.
+export const UNKNOWN = 0.35;
+
+// How loud each player's badge shows them, eased.
 /** @type {Map<number, number>} */
 const eased = new Map();
 
@@ -35,7 +36,7 @@ export function drawVoiceBadges(dots) {
     const muted = Boolean(p.steamid) && isMuted(p.steamid),
       talking = isTalking(p.id);
     if (!muted && !talking) continue;
-    const level = talking ? ease(p.id, loudnessOf(p.id) ?? UNKNOWN) : 0;
+    const level = talking ? ease(eased, p.id, loudnessOf(p.id) ?? UNKNOWN) : 0;
     if (!talking) eased.delete(p.id);
     const r = Math.max(MIN_PX, rad * SIZE) * (muted ? 1 : 1 + GROW * level),
       bx = x + rad * RIGHT,
@@ -49,11 +50,12 @@ export function drawVoiceBadges(dots) {
   }
 }
 
-/** @param {number} id @param {number} level */
-function ease(id, level) {
-  const was = eased.get(id) ?? 0;
+// `level` as shown for `id`, after what `shown` has of them last: up at once, down slowly.
+/** @param {Map<number, number>} shown @param {number} id @param {number} level */
+export function ease(shown, id, level) {
+  const was = shown.get(id) ?? 0;
   const now = level > was ? level : was + (level - was) * 0.12;
-  eased.set(id, now);
+  shown.set(id, now);
   return now;
 }
 

@@ -160,4 +160,11 @@ test("a badge's waveform is taller and hotter the louder its speaker is", async 
   }
   assert.notDeepEqual(bars(0.5, 0), bars(0.5, 200), "it moves");
   assert.deepEqual([heat(0), heat(0.5), heat(1)], ["rgb(255 255 255)", "rgb(255 214 74)", "rgb(255 86 54)"]);
+  // Shown up at once and down slowly, each player by themselves.
+  const { ease } = await import("../../app/map/voicebadge.js");
+  const eased = new Map();
+  assert.equal(ease(eased, 1, 0.9), 0.9);
+  const after = ease(eased, 1, 0.1);
+  assert.ok(after < 0.9 && after > 0.7, `${after}`);
+  assert.equal(ease(eased, 2, 0.2), 0.2);
 });
