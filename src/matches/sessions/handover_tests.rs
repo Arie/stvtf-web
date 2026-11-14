@@ -59,6 +59,9 @@ fn a_recording_goes_to_the_next_release_at_a_tick_with_every_line_once() {
     until("its own lines", || ticks_of(&rec).last() == Some(&2000));
     assert_eq!(ticks_of(&rec), every_100(1000..=2000), "none missing, none twice");
     assert_eq!(rec.parts().len(), 1);
+    let servers =
+        |r: &Recording| (0..r.chunks()).flat_map(|i| r.chunk(i).unwrap_or_default()).filter(|(_, l)| matches!(l, Line::Server(_))).count();
+    assert_eq!(servers(&rec), 1, "the next release's server line is not the match's");
     old.stop_all();
     new.stop_all();
     let read = in_file(&dir, &m.id);

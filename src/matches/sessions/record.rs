@@ -262,7 +262,8 @@ impl Taking {
         let last =
             recording.last_tick().filter(|last| since && of_the_stream(self.held.iter().map(|(s, _)| s.line.tick()), *last, interval));
         if let Some(last) = last {
-            self.held.retain(|(s, _)| !s.line.tick().is_some_and(|t| t > 0 && t <= last));
+            // Nor is its server line the match's: the map did not load again.
+            self.held.retain(|(s, _)| !matches!(s.line, Line::Server(_)) && !s.line.tick().is_some_and(|t| t > 0 && t <= last));
         }
         for (stamped, json) in self.held.drain(..) {
             let _ = recording.push(&stamped, &json);

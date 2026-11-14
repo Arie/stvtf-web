@@ -93,12 +93,12 @@ it, and on as it grows (the old one closes its open chunk into it every second f
 the folder is the new one's, which rooms on the new one play meanwhile), and connects to the
 SourceTV itself; once its stream has a tick it asks for the file at that tick
 (`live-<match>.take`). A new connection's first frame can be ahead of the stream (11 s seen), so
-the old one, which looks every 250 ms, writes on until its own stream is at that tick, for 20 s
-at most, saying so at every look (`live-<match>.beat`) and closing a chunk every second. Then it
+the old one, which looks every 250 ms, writes on until its own stream is 3 s past that tick, for
+20 s at most, saying so at every look (`live-<match>.beat`) and closing a chunk every second. Then it
 closes the last, writes no more and says so (`live-<match>.given`), and the new one goes on from
 the tick after the file's last: nothing missing, nothing twice, none of its own signon. Told to
-stop meanwhile, the old one records on until it has given, for 15 s at most: its demo gets to
-that tick too.
+stop before it is asked (the new one still in its signon), the old one waits to be, 12 s at most;
+told meanwhile, it records on until it has given, 15 s at most: its demo gets to that tick too.
 
 The old one gives its files as it stops too, and writes one again, whole, when the container
 that took it is stopped first (a deploy that failed) or is gone without a word: the writer
