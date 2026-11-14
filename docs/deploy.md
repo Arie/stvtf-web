@@ -42,10 +42,10 @@ word on who is who stands over a link; a match starter's does in their own match
 suggestion elsewhere.
 
 Voice held for a match's delay goes over a deploy: the old container saves what it holds
-(`/data/sessions/held-<match>-<process>`) every 5 s and as it stops, and the new one plays it at
-its tick. After a crash what came in since the last save is gone, as is what was due in the 7 s
-after it; the rest plays, late by no more than 30 s. A version that does not know these files
-leaves them be.
+(`/data/sessions/held-<match>-<process>`) every 5 s while it changes and as it stops, and the new
+one plays it at its tick. After a crash what came in since the last save is gone, as is what was
+due in the 7 s after it; the rest plays, late by no more than 30 s. A version that does not know
+these files leaves them be.
 
 ## Logs
 
@@ -94,11 +94,12 @@ the folder is the new one's, which rooms on the new one play meanwhile), and con
 SourceTV itself; once its stream has a tick it asks for the file at that tick
 (`live-<match>.take`). A new connection's first frame can be ahead of the stream (11 s seen), so
 the old one, which looks every 250 ms, writes on until its own stream is 3 s past that tick, for
-20 s at most, saying so at every look (`live-<match>.beat`) and closing a chunk every second. Then it
-closes the last, writes no more and says so (`live-<match>.given`), and the new one goes on from
-the tick after the file's last: nothing missing, nothing twice, none of its own signon. Told to
-stop before it is asked (the new one still in its signon), the old one waits to be, 12 s at most;
-told meanwhile, it records on until it has given, 15 s at most: its demo gets to that tick too.
+20 s at most, saying so at every look (`live-<match>.beat`) and closing a chunk every second. Then
+it closes the last, writes no more and says so (`live-<match>.given`), and the new one goes on
+from the tick after the file's last: nothing missing, nothing twice, none of its own signon. Told
+to stop before it is asked (the new one still in its signon), the old one waits to be, 12 s at
+most; told meanwhile, it records on until it has given, 15 s at most: its demo gets to that tick
+too.
 
 The old one gives its files as it stops too, and writes one again, whole, when the container
 that took it is stopped first (a deploy that failed) or is gone without a word: the writer

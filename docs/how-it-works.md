@@ -108,7 +108,8 @@ One connection takes one slot, whoever watches. See stvtf's README, "Output".
 A room is also a SourceTV address. TF2 connects to it as to any SourceTV, and sees the room's moment:
 paused, seeking, at its speed. A relay serves it, playing a `.dem`:
 
-- **demos.tf**: the demo's own file, kept for the next to play it (see docs/site.md).
+- **demos.tf**: the demo's own file, kept for the next to play it (see
+  [site](site.md#demostf-demos)).
 - **Live**: stvtf records the stream it gets as a `.dem` as it goes: the build's data tables, the
   signon of the connection, one frame per datagram with every message as the server sent it, the
   header rewritten every 100 ms so it plays while it grows. One file per connection. Its frames
@@ -133,8 +134,9 @@ before the target without sending, then gives every client:
 3. The last round start, win panel or game over event, so the HUD shows the round as it was.
 4. The demo's own frames from there.
 
-The client stays connected; only another demo file signs it on again. Jumps measured 54 to 122 ms, from the moment set to
-the client having it.
+The client stays connected; only a demo of another map load signs it on again. The demo the next
+process records of the same load (a deploy) is gone on into with a full update. Jumps measured 54
+to 122 ms, from the moment set to the client having it.
 
 ### Other fixes
 
@@ -166,4 +168,5 @@ On 2026-11-09, with a probe built on stvtf and tf-demo-parser:
 - **Code**: the constants named here, in stvtf (`relay/play`, `decode/world.rs`, `session.rs`,
   `net/messages.rs`, `demo/`) and stv.tf (`matches/`, `rooms/room/relay.rs`).
 
-Not checked, as it needs a TF2 client: the client behaviour the relay works around (refusing another spawn count, following director cues).
+Not checked, as it needs a TF2 client: the client behaviour the relay works around (refusing
+another spawn count, following director cues).

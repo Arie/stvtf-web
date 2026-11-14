@@ -68,7 +68,8 @@ npm run test:browser    # after cargo build and `npx playwright-core install --o
 
 ## Layout
 
-- `src/main.rs`: start-up, match housekeeping, connections; `src/cli.rs`: the command line.
+- `src/main.rs`: start-up, match housekeeping, connections; `src/cli.rs`: the command line;
+  `src/log.rs`: what the server says of itself (`--logs`).
 - `src/web.rs`: HTTP: page, overlay, `/events`, `/start`, connect form, `/up`.
   `web/assets.rs`: served files (`/map/NAME`, `/overview/`, `/backpack/`, icons, fonts).
   `web/token.rs`: the site's tokens.
@@ -78,6 +79,9 @@ npm run test:browser    # after cargo build and `npx playwright-core install --o
 - `src/rooms/`: `room` (playback, people, drawing, relay), `registry` (open rooms, saved),
   `people`.
 - `src/relays/`: `pool` (rooms as SourceTV addresses) and `daemon` (relays in their own process).
+- `src/voice/`: voice from outside a match: `feed` and `hold` (held to its tick), `mumble`
+  (channels the bot is wanted in), `who` (who is who, between regions), `links` (Discord to
+  Steam), `ids`. Its routes: `web/voice_*.rs`.
 - `src/maps/`: `cache` (geometry and overviews in `--cache`) and `bsp` (top-down geometry, on
   `/map/NAME`): `format` (lumps, LZMA), `entities` (bounds, packs, capture areas, spawns),
   `material` (floor kind from texture), `displacement`, `track` (payload), `reach` (flood fill),
@@ -92,12 +96,14 @@ npm run test:browser    # after cargo build and `npx playwright-core install --o
     `players.js`, `status.js`, `projectiles.js`, `effects.js`, `buildings.js`, `spawns.js`,
     `overkill.js` draw; `events.js` turns events into effects. `map/objectives/`: `objectives.js`
     → `points.js`, `payload.js`, `modes.js`, `flags.js`.
-  - `panel/`: `hud.js` (cards, scoreboard), `feed.js` (events, chat).
+  - `panel/`: `hud.js` (cards, scoreboard), `feed.js` (events, chat), `speakers.js` and `voice*.js`
+    (the speakers list, comms).
   - `room/`: `room.js` (bar, people, drawing), `roomview.js` (shared view), `playbar.js`,
     `timeline.js`, `telestrator.js` (strokes).
   - `embed/embed.js`: talks to an embedding page.
 - `types/`: stream lines and page state as `.d.ts`, for tsc only.
-- `script/test`: every check. `bin/build`, `bin/deploy`: the image, see [deploy](deploy.md).
+- `script/test`: every check. `bin/build`, `bin/deploy`, `bin/relays`: the image and the relays,
+  see [deploy](deploy.md).
 
 ## Map backgrounds
 

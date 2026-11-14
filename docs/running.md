@@ -3,8 +3,11 @@
 ```
 stvtf-web [--public] [--max-matches 20] [--base-path /live] [--home URL] [--sessions DIR]
           [--demo MATCH.jsonl[.gz]] [--demos DIR] [--listen 127.0.0.1:8080] [--hz 20]
-          [--cache DIR] [--backpack DIR] [--no-warm]
+          [--cache DIR] [--backpack DIR] [--no-warm] [--logs DIR]
           [--relay-ports 27100-27199 --relay-host HOST]          (rooms in TF2, see rooms.md)
+          [--relay-socket SOCKET]                  (their relays in another process, see deploy.md)
+stvtf-web --relay-daemon SOCKET --relay-ports 27100-27199 --relay-host HOST   (that process)
+stvtf-web --relay-clients SOCKET                           (how many TF2 clients that process has)
 stvtf-web HOST:TVPORT [--password tv] [--listen …] [--hz 20] [--cache DIR] [--backpack DIR]
 stvtf-web --replay FILE.jsonl [--listen …]
 ```
@@ -43,6 +46,9 @@ too, see [rooms](rooms.md#across-restarts).
 
 SIGTERM or Ctrl-C disconnects every match cleanly (otherwise the server holds the slot for 300 s);
 a second Ctrl-C exits at once. `--replay` has nothing to disconnect and takes the second.
+
+`--logs DIR` keeps what the server says of itself in `DIR/web.log` too (a relay process's in
+`relay.log`), see [deploy](deploy.md#logs).
 
 ## Maps
 

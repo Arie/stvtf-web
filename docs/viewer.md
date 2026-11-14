@@ -58,24 +58,22 @@ another speed than 1×, voice is silent. It needs WebCodecs, so a secure page (h
 localhost); the overlay has none.
 
 Voice from outside the match (a team's Discord, through the voice bot): `POST /w/<id>/voice` with
-`Authorization: Bearer <STVTF_VOICE_KEY>` and `{"invite": "<the match's>", "steamid": "[U:1:N]", "frames": ["<base64 Opus>",
-…], "delay": <seconds>}` (up to 32 frames of 20 ms; `delay` is how far the stream is behind the
-game where it was said, 90 unless said: each post its own, so a team's channel and others can
-feed one match). It is held until the stream reaches the tick it was said at (the tick now plus
-the delay in ticks), an utterance starting at its tick and running on by the clock, and then
-comes out as `voice` lines with `injected`, for a live match only. What is said while the game is
-paused is kept in the recording (`pause`), and played to no one. With `"delay": 0` it is
-commentary on the stream itself (casters watching it): straight out, paused or not. 401 without
-the key, 403 without the match's invite, 404 with no key set or no live match, 409 before the
-stream has a tick, 503 as the server stops (the next one takes it).
+`Authorization: Bearer <STVTF_VOICE_KEY>` and `{"invite": "<the match's>", "steamid": "[U:1:N]",
+"frames": ["<base64 Opus>", …], "delay": <seconds>}` (up to 32 frames of 20 ms; `delay` is how far
+the stream is behind the game where it was said, 90 unless said, 300 at most: each post its own,
+so a team's channel and others can feed one match). It is held until the stream reaches the tick
+it was said at (the tick now plus the delay in ticks), an utterance starting at its tick and
+running on by the clock, and then comes out as `voice` lines with `injected`, for a live match
+only. What is said while the game is paused is kept in the recording (`pause`), and played to no
+one. With `"delay": 0` it is commentary on the stream itself (casters watching it): straight out,
+paused or not. 401 without the key, 403 without the match's invite, 404 with no key set or no live
+match, 409 before the stream has a tick, 503 as the server stops (the next one takes it).
 
 A post that waited says how long, `"late": <seconds>`: that much comes off its delay, so it is
 held to the tick of when it was said.
 
-What is held goes on to the next process: each saves what it holds of a match in the store
-(`held-<match>-<process>`, every 5 s while it changes and as it stops), and the one the store
-belongs to takes the others' and plays it at its tick. What fell due with no process there goes
-out at once, unless over 30 s late.
+What is held goes on to the next process, which plays it at its tick: see
+[deploy](deploy.md#voice-from-discord).
 
 The invite is what lets a Discord channel into a match: the key only says it is our bot, which
 anyone can have in their server. `GET /w/<id>/voice-invite` (a room's too) gives `{"invite",
@@ -96,27 +94,29 @@ and the match's invite to copy, for their own Discord or to pass on to a team, w
 when it is not 90 s. Mumble: a server (its name, with a port if not 64738), its password and a
 channel, and the bot joins at once. Once the bot is in a channel, those it is in show: how each
 goes, a way to add another (the other team's), for Mumble a way to move the bot (the same form,
-filled in; no password typed is the one given before) or take it out, and who is who: everyone in the channel, heard yet or not, each
-with the player they are. Someone is put on a player by whoever has a say (a player of the match,
-a Steam ID as people write them, or nobody), by what was said of them in an earlier match, or
-by their name, when just one player's looks like it: that last is a guess, shown as one until
-confirmed.
+filled in; no password typed is the one given before) or take it out, and who is who: everyone in
+the channel, heard yet or not, each with the player they are. Someone is put on a player by
+whoever has a say (a player of the match, a Steam ID as people write them, or nobody), by what was
+said of them in an earlier match, or by their name, when just one player's looks like it: that
+last is a guess, shown as one until confirmed.
 
 | | |
 |---|---|
 | `GET <page>voice-invite` | `{"invite", "bot"}`: the match's invite, and where the bot is added to a Discord server (`STVTF_VOICE_BOT`) |
-| `GET <page>voice-comms` | `{"discord": {"status"} or null, "mumble": [{"id", "host", "port", "channel", "delay", "status"}]}`: each Mumble channel the bot is wanted in (at most four) |
+| `GET <page>voice-comms` | `{"discord": {"status", "state"} or null, "mumble": [{"id", "host", "port", "channel", "delay", "status", "state"}]}`: each Mumble channel the bot is wanted in (at most four). `state`: where the bot is, `connecting`, `in`, `failed` or `left`. It is in a channel only while it keeps saying so: 45 s without, a Mumble channel is `connecting` and a Discord one gone |
 | `POST <page>voice-mumble` | `{"host", "port", "password", "channel", "delay"}` asks the bot into one more channel (each team's, on one server or several; no password: the one given for that server); with the `id` of one it is in, moves that; `{"leave": true}` takes it out of all, with an `id` out of that one |
 | `GET <page>voices` | everyone in the channel or heard: `id` (who they are there), `name`, `steamid` (whom they are put on), `linked` (their own Discord link), `heard`, `confirmed` |
 | `POST <page>voice-match` | `{"discord", "player": <id>}`, `{"discord", "steamid": "<any form>"}`, or `{"discord"}` alone for nobody |
 
 `<page>` is a match's (`/w/<id>/`) or a room's on it. Those with no say get no content from the
 `GET`s (every page asks) and 403 from the `POST`s. The bot's own, with its key: `POST
-<page>voice-status` with the invite, `{"kind": "discord" or "mumble", "status", "people": [{"id",
-"name"}]}` or `{"kind", "left": true}`; and `GET /voice/mumble?since=<version>`, kept open, which
-answers the moment a Mumble channel is asked for (`{"jobs": [...], "version"}`). What is asked
-for is kept with the match, so a restart does not send the bot away; who was said to be whom is
-kept in `voice-who.json`, and holds the next time the same person is in a channel.
+<page>voice-status` with the invite, `{"kind": "discord" or "mumble", "status", "state": "in",
+"failed" or "left", "people": [{"id", "name"}]}` or `{"kind", "left": true}`, with the `"channel"`
+it is of and for Mumble its `"job"` and `"asked"` as the jobs give them; and `GET
+/voice/mumble?since=<version>`, kept open (25 s at most), which answers the moment a Mumble
+channel is asked for (`{"jobs": [...], "version"}`). What is asked for is kept with the match, so
+a restart does not send the bot away; who was said to be whom is kept in `voice-who.json`, and
+holds the next time the same person is in a channel.
 
 Linking, so that it need not be done by hand: `GET /voice/link` signs a visitor in with Discord
 (`identify connections`) and keeps the Steam account Discord verified as theirs
@@ -212,6 +212,6 @@ with play; a viewer's own rewind stays on its map ([maps](rooms.md#maps)).
 
 | route | |
 |---|---|
-| `GET /w/<id>/timeline` | `{"at", "length", "live", "rounds", "marks"}`; `202 {}` while a demo is being read |
+| `GET /w/<id>/timeline` | `{"at", "length", "start", "origin", "live", "rounds", "marks"}` of the newest map with play (`marks`: how many); `202 {}` while a demo is being read |
 | `GET /w/<id>/marks?from=N` | `{"marks", "all"}`: marks from the Nth |
 | `POST /w/<id>/rewind` | `{"at", "speed", "paused"}` → `{"page": "/r/<id>/"}`; events at `events?overlay=1`, controls at `control`, as its owner |
