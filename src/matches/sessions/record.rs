@@ -2,12 +2,14 @@
 //!
 //! The recording's file has one writer at a time. A process that picks a match up reads the file
 //! and writes nothing: once its own stream has a tick it asks for the file (`live-<id>.take`,
-//! its mark). The process that writes it then closes its open chunk into it, writes no more and
-//! says so (`live-<id>.given`); it does the same as it stops, asked or not. The new one reads what
-//! was added, goes on with its own lines from the tick after the file's last, and writes from
-//! there. A file not given within [`GIVE_WAIT`] of the asking (its writer is gone) is taken as it
-//! is. A process that gave its file and still runs when the one that took it stops (a deploy
-//! that failed) writes it again, whole.
+//! its mark and that tick). The process that writes it writes on until its own stream is at that
+//! tick (a new connection's first frame is ahead of the stream), for [`GIVE_BY`] at most, saying
+//! every [`RECORD_POLL`] that it does (`live-<id>.beat`); then it closes its open chunk into the
+//! file, writes no more and says so (`live-<id>.given`). It does the same as it stops, asked or
+//! not. The new one reads what was added, goes on with its own lines from the tick after the
+//! file's last, and writes from there. A file whose writer says nothing for [`GIVE_WAIT`] after
+//! the asking (it is gone, or of a version that gives at once) is taken as it is. A process that
+//! gave its file and still runs when the one that took it vanishes writes it again, whole.
 
 use super::session::Session;
 use super::store::{LIVE_PREFIX, Store, live_file, to_file};
@@ -22,11 +24,17 @@ use stvtf::output::Stamped;
 /// How long the recorder waits for a line before it looks whether to stop, and how often it looks
 /// whether its file is asked for.
 pub(super) const RECORD_POLL: Duration = Duration::from_millis(if cfg!(test) { 20 } else { 250 });
-/// How long a process that asked for a file waits for it to be given.
+/// How long a process that asked for a file waits for its writer's word: that it is given, or
+/// that it writes it still.
 pub(super) const GIVE_WAIT: Duration = Duration::from_millis(if cfg!(test) { 300 } else { 3000 });
-/// A file asked for longer ago than this is not written to, even to close it: the one that asked
-/// may have taken it.
+/// A file asked for longer ago than this, its writer not having said since that it writes it, is
+/// not written to, even to close it: the one that asked may have taken it.
 const GIVE_WITHIN: Duration = Duration::from_millis(GIVE_WAIT.as_millis() as u64 / 2);
+/// How long a file asked for is written on at most, its stream not yet at the tick asked at: a new
+/// connection's first frame was seen some 11 s ahead of the stream.
+pub(super) const GIVE_BY: Duration = Duration::from_millis(if cfg!(test) { 1500 } else { 20_000 });
+/// How long after asking a file is taken, whatever its writer says.
+const TAKE_BY: Duration = Duration::from_millis((GIVE_BY.as_millis() + GIVE_WAIT.as_millis()) as u64);
 /// How often the process that writes a file says it still does, and how long after it last said
 /// so it is gone: another that has the recording writes it again.
 const BEAT: Duration = Duration::from_millis(if cfg!(test) { 40 } else { 1000 });
@@ -51,6 +59,20 @@ pub(super) fn beat_file(id: &str) -> String {
     format!("{}.beat", live_file(id).trim_end_matches(".gz"))
 }
 
+/// What a `.take` says after its mark once the file is taken: no tick to write on to.
+const TAKEN: &str = "taken";
+
+/// Another process's word in a `.take`.
+struct Asked {
+    /// When it was written, and how long ago.
+    at: SystemTime,
+    ago: Duration,
+    /// The tick its stream began at; none from a version before.
+    tick: Option<u32>,
+    /// It has the file already.
+    taken: bool,
+}
+
 /// A live match's file in the store, for the process with `mark`.
 pub(super) struct LiveFile {
     store: Store,
@@ -63,22 +85,31 @@ impl LiveFile {
         LiveFile { store: store.clone(), id: id.to_string(), mark: mark.to_string() }
     }
 
-    /// The file is this process's, to write.
-    fn ask(&self) {
-        if let Err(e) = self.store.replace(&take_file(&self.id), self.mark.as_bytes()) {
+    /// The file is this process's, to write: asked for with its stream at `tick`, or taken.
+    fn ask(&self, tick: Option<u32>) {
+        let word = tick.map_or_else(|| TAKEN.to_string(), |t| t.to_string());
+        if let Err(e) = self.store.replace(&take_file(&self.id), format!("{} {word}", self.mark).as_bytes()) {
             log!("asking for match {}'s recording: {e:#}", self.id);
         }
     }
 
-    /// How long ago another process asked for the file, if one did.
-    fn asked(&self) -> Option<Duration> {
+    /// What another process said in the `.take`, if one did.
+    fn asked(&self) -> Option<Asked> {
         let name = take_file(&self.id);
-        let by = self.store.read(&name).ok()?;
-        if by == self.mark.as_bytes() {
+        let said = String::from_utf8(self.store.read(&name).ok()?).ok()?;
+        let mut words = said.split_whitespace();
+        if words.next()? == self.mark {
             return None;
         }
+        let word = words.next();
         let at = self.store.written(&name)?;
-        Some(SystemTime::now().duration_since(at).unwrap_or_default())
+        let ago = SystemTime::now().duration_since(at).unwrap_or_default();
+        Some(Asked { at, ago, tick: word.and_then(|w| w.parse().ok()), taken: word == Some(TAKEN) })
+    }
+
+    /// When the process that writes the file last said so, if not before `since`.
+    fn beat_since(&self, since: SystemTime) -> Option<SystemTime> {
+        self.store.written(&beat_file(&self.id)).filter(|at| *at >= since)
     }
 
     /// Whether another process closed the file and this one is the one to have it: the first
@@ -102,7 +133,7 @@ impl LiveFile {
     /// Whether the process that took the file is gone without a word: it is named as its writer,
     /// and has not said so for [`GONE_AFTER`].
     fn writer_gone(&self) -> bool {
-        let theirs = self.store.read(&take_file(&self.id)).is_ok_and(|by| by != self.mark.as_bytes());
+        let theirs = self.asked().is_some();
         let said = self.store.written(&beat_file(&self.id)).or_else(|| self.store.written(&take_file(&self.id)));
         theirs && said.is_some_and(|at| SystemTime::now().duration_since(at).unwrap_or_default() > GONE_AFTER)
     }
@@ -131,7 +162,7 @@ struct Taking {
     read: Option<(usize, Vec<u8>)>,
     /// This process's own stream meanwhile.
     held: Vec<(Stamped, Arc<str>)>,
-    /// When it asked for the file, by both clocks.
+    /// When it asked for the file, and when its `.take` says it was written.
     asked: Option<(Instant, SystemTime)>,
     /// When it last looked whether the file was given.
     looked: Option<Instant>,
@@ -159,24 +190,28 @@ impl Taking {
 
     /// A line of this process's own stream: held, and the first with a tick asks for the file.
     fn hold(&mut self, file: &LiveFile, stamped: Stamped, json: Arc<str>) {
-        if self.asked.is_none() && stamped.line.tick().is_some_and(|t| t > 0) {
-            file.ask();
-            self.asked = Some((Instant::now(), SystemTime::now()));
+        if let (None, Some(tick)) = (self.asked, stamped.line.tick().filter(|t| *t > 0)) {
+            file.ask(Some(tick));
+            let at = file.store.written(&take_file(&file.id)).unwrap_or_else(SystemTime::now);
+            self.asked = Some((Instant::now(), at));
         }
         self.held.push((stamped, json));
     }
 
-    /// Whether the file can be taken: given, or asked for long enough ago.
+    /// Whether the file can be taken: given, or asked for and its writer silent for long enough
+    /// since, or asked for too long ago.
     fn may_take(&mut self, file: &LiveFile) -> bool {
-        if self.asked.is_some_and(|(t, _)| t.elapsed() >= GIVE_WAIT) {
-            return true;
-        }
-        // Until it asked, the file is given only as its writer stops.
-        if self.asked.is_none() && self.looked.is_some_and(|t| t.elapsed() < RECORD_POLL) {
+        if self.looked.is_some_and(|t| t.elapsed() < RECORD_POLL) {
             return false;
         }
         self.looked = Some(Instant::now());
-        file.take_given()
+        if file.take_given() {
+            return true;
+        }
+        // Until it asked, the file is given only as its writer stops.
+        let Some((asked, at)) = self.asked else { return false };
+        let silent = file.beat_since(at).map_or_else(|| asked.elapsed(), |beat| SystemTime::now().duration_since(beat).unwrap_or_default());
+        silent >= GIVE_WAIT || asked.elapsed() >= TAKE_BY
     }
 
     /// Takes the file: what was added to it since it was read, then this process's own lines,
@@ -185,9 +220,10 @@ impl Taking {
     /// those behind it count again.
     fn take(mut self, file: &LiveFile, recording: &Recording, interval: f64) -> Option<u32> {
         let name = live_file(&file.id);
-        file.ask();
+        // Said first: its writer, late, writes no more to it.
+        file.ask(None);
         let written = file.store.written(&name);
-        let since = self.asked.is_some_and(|(_, asked)| written.is_some_and(|at| at > asked));
+        let since = self.asked.is_some_and(|(_, asked)| written.is_some_and(|at| at >= asked));
         let data = file.store.read(&name).unwrap_or_default();
         let whole = self.read.take().is_some_and(|(read, head)| {
             // Written anew meanwhile: read from its start, what is known skipped.
@@ -252,8 +288,18 @@ pub(super) fn record(s: &Arc<Session>, store: Option<&Store>, mark: &str, resume
     // Everything: detail, voice, and what is only kept.
     let (lines, s) = (subscribe_all(&s.hub), s.clone());
     std::thread::spawn(move || {
-        Pump { file, taking, behind: None, fresh, looked: Instant::now(), beat: Instant::now() }.run(&s, &lines, &recording);
+        Pump { file, taking, giving: None, behind: None, fresh, looked: Instant::now(), beat: Instant::now() }.run(&s, &lines, &recording);
     });
+}
+
+/// A file asked for, written on until its stream is at the tick asked at.
+struct Giving {
+    tick: u32,
+    /// When the `.take` that asked was written: another since is the file taken.
+    asked: SystemTime,
+    since: Instant,
+    /// When it last said it writes the file still.
+    beat: Instant,
 }
 
 /// What takes a match's lines into its recording.
@@ -261,6 +307,8 @@ struct Pump {
     file: Option<LiveFile>,
     /// While the file is another process's.
     taking: Option<Taking>,
+    /// While the file is asked for and not given yet.
+    giving: Option<Giving>,
     /// The file's last tick when it was taken, and when that was, until this process's stream
     /// is past it: lines before it are in the file.
     behind: Option<(u32, Instant)>,
@@ -310,11 +358,12 @@ impl Pump {
                 demos.keep_from(recording.parts().first().map_or(0, |p| p.load));
             }
         }
+        s.giving.store(false, Ordering::Relaxed);
         recording.end();
     }
 
-    /// Takes the file once it may, gives it once another process asks for it, or takes it back
-    /// once that one stops.
+    /// Takes the file once it may, gives it once another process asks for it and its stream is at
+    /// the tick asked at, or takes it back once that one stops.
     fn hand_over(&mut self, s: &Session, recording: &Recording) {
         let Some(file) = &self.file else { return };
         if let Some(taking) = &mut self.taking {
@@ -333,14 +382,40 @@ impl Pump {
             // The process that took the file stopped, or is gone: this one has it all, and writes
             // it again.
             if file.take_given() || file.writer_gone() {
-                file.ask();
+                file.ask(None);
                 recording.rewrite();
                 recording.write_to(to_file(&file.store, &live_file(&file.id)));
             }
             return;
         }
-        match file.asked() {
-            Some(ago) if ago < GIVE_WITHIN => file.give(recording),
+        let asked = file.asked();
+        let there = |tick| recording.last_tick().is_none_or(|last| last >= tick);
+        if let Some(giving) = &mut self.giving {
+            let still = asked.is_some_and(|a| a.at == giving.asked) && giving.beat.elapsed() < GIVE_WITHIN;
+            if still && !there(giving.tick) && giving.since.elapsed() < GIVE_BY {
+                giving.beat = Instant::now();
+                file.beat();
+                return;
+            }
+            // Taken meanwhile, or it may be: not written to.
+            if still {
+                file.give(recording);
+            } else {
+                recording.let_go();
+            }
+            self.giving = None;
+            s.giving.store(false, Ordering::Relaxed);
+            return;
+        }
+        match asked {
+            Some(Asked { at, ago, tick, taken: false }) if ago < GIVE_WITHIN => match tick.filter(|t| !there(*t)) {
+                Some(tick) => {
+                    file.beat();
+                    self.giving = Some(Giving { tick, asked: at, since: Instant::now(), beat: Instant::now() });
+                    s.giving.store(true, Ordering::Relaxed);
+                }
+                None => file.give(recording),
+            },
             Some(_) => recording.let_go(),
             None if self.beat.elapsed() >= BEAT => {
                 self.beat = Instant::now();

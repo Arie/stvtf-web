@@ -1,7 +1,7 @@
 //! A live match's recording from one process to the next: its file has one writer, and the next
 //! goes on at a tick.
 
-use super::record::{GIVE_WAIT, given_file, take_file};
+use super::record::{GIVE_BY, GIVE_WAIT, given_file, take_file};
 use super::tests::start_on;
 use super::*;
 use crate::matches::hub::tests::snapshot;
@@ -180,11 +180,81 @@ fn a_release_writes_its_recording_again_when_the_one_that_took_it_is_gone_withou
     for s in new.lock().values() {
         s.stop.store(true, Ordering::Relaxed);
     }
-    for tick in every_100(1800..=2200) {
-        crate::matches::hub::publish(&m.hub, &snapshot(tick, None, Vec::new()));
-    }
+    goes_on(&m.hub, 1800..=2200);
     until("the file to be the old release's again", || before.is_written());
     until("its lines", || ticks_of(&before).last() == Some(&2200));
     old.stop_all();
     assert_eq!(ticks_of(&in_file(&dir, &m.id)), every_100(1000..=2200), "all it has, once");
+}
+
+/// Snapshots at `ticks`, every 100, as `hub`'s stream goes on.
+fn goes_on(hub: &SharedHub, ticks: std::ops::RangeInclusive<u32>) {
+    for tick in every_100(ticks) {
+        crate::matches::hub::publish(hub, &snapshot(tick, None, Vec::new()));
+    }
+}
+
+/// A match on `target` an old release records up to tick 1700, and a new release whose stream
+/// begins with a frame at `first`: a real `SourceTV` sends one who just connected a frame some
+/// 11 s ahead of its stream, then nothing until the stream is there.
+fn asked_for_at(dir: &TempDir, target: &str, first: u32) -> (Sessions, Arc<Session>, Sessions, Arc<Session>) {
+    script(target, stream("cp_a", 1000..=1700), None);
+    let (old, _) = start_on(dir);
+    let m = old.open(&format!("{target} tv"), None, None).unwrap();
+    until("the old release's lines", || ticks_of(&m.ready().unwrap()).last() == Some(&1700));
+    script(target, stream("cp_a", first..=first), None);
+    let (new, _) = start_on(dir);
+    let n = new.get(&m.id).unwrap();
+    (old, m, new, n)
+}
+
+#[test]
+fn a_recording_asked_for_ahead_of_its_stream_is_written_on_to_the_tick_asked_at() {
+    let dir = TempDir::new("handover");
+    let (old, m, new, n) = asked_for_at(&dir, "192.0.2.47:27020", 2500);
+    let (before, rec) = (m.ready().unwrap(), n.ready().unwrap());
+    std::thread::sleep(GIVE_WAIT * 2);
+    assert!(before.is_written() && !rec.is_written(), "the old release writes on: its stream is not there yet");
+    assert!(rec.is_catching_up());
+    goes_on(&m.hub, 1800..=2500);
+    until("the file to be the new release's", || rec.is_written());
+    assert!(!before.is_written(), "one writer");
+    goes_on(&n.hub, 2600..=2800);
+    until("its own lines", || ticks_of(&rec).last() == Some(&2800));
+    assert_eq!(ticks_of(&rec), every_100(1000..=2800), "no hole, none twice");
+    old.stop_all();
+    new.stop_all();
+    assert_eq!(ticks_of(&in_file(&dir, &m.id)), every_100(1000..=2800), "and so the file");
+}
+
+#[test]
+fn a_recording_whose_stream_does_not_get_to_the_tick_asked_at_is_given_as_it_is() {
+    let dir = TempDir::new("handover");
+    let (old, m, new, n) = asked_for_at(&dir, "192.0.2.48:27020", 9000);
+    let (before, rec) = (m.ready().unwrap(), n.ready().unwrap());
+    let asked = Instant::now();
+    goes_on(&m.hub, 1800..=2000);
+    until("the file to be the new release's", || rec.is_written());
+    assert!(asked.elapsed() >= GIVE_BY / 2 && !before.is_written(), "written on for a while, not for ever");
+    until("its own line", || ticks_of(&rec).last() == Some(&9000));
+    assert_eq!(ticks_of(&rec), [every_100(1000..=2000), vec![9000]].concat(), "all the old one had, a hole, none twice");
+    old.stop_all();
+    new.stop_all();
+}
+
+#[test]
+fn a_recording_asked_for_at_no_tick_is_given_at_once() {
+    let dir = TempDir::new("handover");
+    let target = "192.0.2.49:27020";
+    script(target, stream("cp_a", 1000..=1700), None);
+    let (old, _) = start_on(&dir);
+    let m = old.open(&format!("{target} tv"), None, None).unwrap();
+    let before = m.ready().unwrap();
+    until("the old release's lines", || ticks_of(&before).last() == Some(&1700));
+    // As a version before asked: its mark, and no more.
+    std::fs::write(dir.join(take_file(&m.id)), random_id()).unwrap();
+    until("the file given", || dir.join(given_file(&m.id)).exists());
+    assert!(!before.is_written());
+    assert_eq!(ticks_of(&in_file(&dir, &m.id)), every_100(1000..=1700));
+    old.stop_all();
 }

@@ -58,6 +58,8 @@ pub struct Session {
     pub(super) live: OnceLock<Arc<Recording>>,
     /// Whether `prepare` started.
     preparing: AtomicBool,
+    /// Its recording's file is asked for, and written on until its stream is at the tick asked at.
+    pub(super) giving: AtomicBool,
     /// A live match's demos, when there is a store to keep them in.
     pub(super) demos: OnceLock<Arc<LiveDemos>>,
     /// Who started it, for the limit per person: a Steam id or an address.
@@ -100,6 +102,7 @@ impl Session {
             recording: OnceLock::new(),
             live: OnceLock::new(),
             preparing: AtomicBool::new(false),
+            giving: AtomicBool::new(false),
             demos: OnceLock::new(),
             by: OnceLock::new(),
             comms: MatchComms::default(),
