@@ -94,7 +94,8 @@ it and connects to the SourceTV itself; once its stream has a tick it asks for t
 writes no more and says so (`live-<match>.given`). The new one then goes on from the tick after
 the file's last: nothing missing, nothing twice. The old one gives its files as it stops too,
 and writes one again, whole, when the container that took it is stopped first (a deploy that
-failed). A file not given within 3 s of the asking (a crash, a version before this) is taken as
+failed) or is gone without a word: the writer touches `live-<match>.beat` every second, and 10 s
+without is gone. A file not given within 3 s of the asking (a crash, a version before this) is taken as
 it is: what the old one had not written (10 s at most) and the time nobody was connected are a
 hole. A stretch an older version wrote twice is read once.
 

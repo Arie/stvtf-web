@@ -160,3 +160,31 @@ fn a_release_writes_its_recording_again_when_the_one_that_took_it_stops() {
     old.stop_all();
     assert_eq!(ticks_of(&in_file(&dir, &m.id)), every_100(1000..=2200), "all it has, once");
 }
+
+#[test]
+fn a_release_writes_its_recording_again_when_the_one_that_took_it_is_gone_without_a_word() {
+    let dir = TempDir::new("handover");
+    let target = "192.0.2.46:27020";
+    script(target, stream("cp_a", 1000..=1700), None);
+    let (old, _) = start_on(&dir);
+    let m = old.open(&format!("{target} tv"), None, None).unwrap();
+    let before = m.ready().unwrap();
+    until("the old release's lines", || ticks_of(&before).last() == Some(&1700));
+    script(target, stream("cp_a", 1500..=2000), None);
+    let (new, _) = start_on(&dir);
+    let rec = new.get(&m.id).unwrap().ready().unwrap();
+    until("the file to be the new release's", || rec.is_written());
+    std::thread::sleep(GIVE_WAIT / 4);
+    assert!(!before.is_written(), "while the new one says it writes it");
+    // The new release crashes: its recorders stop, and nothing is said.
+    for s in new.lock().values() {
+        s.stop.store(true, Ordering::Relaxed);
+    }
+    for tick in every_100(1800..=2200) {
+        crate::matches::hub::publish(&m.hub, &snapshot(tick, None, Vec::new()));
+    }
+    until("the file to be the old release's again", || before.is_written());
+    until("its lines", || ticks_of(&before).last() == Some(&2200));
+    old.stop_all();
+    assert_eq!(ticks_of(&in_file(&dir, &m.id)), every_100(1000..=2200), "all it has, once");
+}

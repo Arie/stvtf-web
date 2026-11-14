@@ -27,6 +27,10 @@ pub(super) const GIVE_WAIT: Duration = Duration::from_millis(if cfg!(test) { 300
 /// A file asked for longer ago than this is not written to, even to close it: the one that asked
 /// may have taken it.
 const GIVE_WITHIN: Duration = Duration::from_millis(GIVE_WAIT.as_millis() as u64 / 2);
+/// How often the process that writes a file says it still does, and how long after it last said
+/// so it is gone: another that has the recording writes it again.
+const BEAT: Duration = Duration::from_millis(if cfg!(test) { 40 } else { 1000 });
+const GONE_AFTER: Duration = Duration::from_millis(if cfg!(test) { 400 } else { 10_000 });
 /// Seconds of ticks the file's last tick may be past the stream held and still be of it.
 const AHEAD_S: f64 = 5.0;
 
@@ -40,6 +44,11 @@ pub(super) fn take_file(id: &str) -> String {
 /// closed it.
 pub(super) fn given_file(id: &str) -> String {
     format!("{LIVE_PREFIX}{id}.given")
+}
+
+/// Touched by the process that writes match `id`'s file, every [`BEAT`].
+pub(super) fn beat_file(id: &str) -> String {
+    format!("{}.beat", live_file(id).trim_end_matches(".gz"))
 }
 
 /// A live match's file in the store, for the process with `mark`.
@@ -85,6 +94,19 @@ impl LiveFile {
         got
     }
 
+    /// Says this process writes the file still.
+    fn beat(&self) {
+        let _ = self.store.replace(&beat_file(&self.id), self.mark.as_bytes());
+    }
+
+    /// Whether the process that took the file is gone without a word: it is named as its writer,
+    /// and has not said so for [`GONE_AFTER`].
+    fn writer_gone(&self) -> bool {
+        let theirs = self.store.read(&take_file(&self.id)).is_ok_and(|by| by != self.mark.as_bytes());
+        let said = self.store.written(&beat_file(&self.id)).or_else(|| self.store.written(&take_file(&self.id)));
+        theirs && said.is_some_and(|at| SystemTime::now().duration_since(at).unwrap_or_default() > GONE_AFTER)
+    }
+
     /// Closes `recording` into the file, if this process writes it, and says nobody does now.
     pub(super) fn give(&self, recording: &Recording) {
         if recording.give()
@@ -96,7 +118,7 @@ impl LiveFile {
 
     /// Forgets the file and what was said of it.
     pub(super) fn forget(&self) {
-        for name in [live_file(&self.id), take_file(&self.id), given_file(&self.id)] {
+        for name in [live_file(&self.id), take_file(&self.id), given_file(&self.id), beat_file(&self.id)] {
             self.store.forget(&name);
         }
     }
@@ -225,7 +247,9 @@ pub(super) fn record(s: &Arc<Session>, store: Option<&Store>, mark: &str, resume
     let _ = s.live.set(recording.clone());
     // Everything: detail, voice, and what is only kept.
     let (lines, s) = (subscribe_all(&s.hub), s.clone());
-    std::thread::spawn(move || Pump { file, taking, behind: None, fresh, looked: Instant::now() }.run(&s, &lines, &recording));
+    std::thread::spawn(move || {
+        Pump { file, taking, behind: None, fresh, looked: Instant::now(), beat: Instant::now() }.run(&s, &lines, &recording);
+    });
 }
 
 /// What takes a match's lines into its recording.
@@ -240,6 +264,8 @@ struct Pump {
     fresh: bool,
     /// When it last looked whether its file is asked for.
     looked: Instant,
+    /// When it last said it writes its file.
+    beat: Instant,
 }
 
 impl Pump {
@@ -300,8 +326,9 @@ impl Pump {
         }
         self.looked = Instant::now();
         if !recording.is_written() {
-            // The process that took the file stopped: this one has it all, and writes it again.
-            if file.take_given() {
+            // The process that took the file stopped, or is gone: this one has it all, and writes
+            // it again.
+            if file.take_given() || file.writer_gone() {
                 file.ask();
                 recording.rewrite();
                 recording.write_to(to_file(&file.store, &live_file(&file.id)));
@@ -311,6 +338,10 @@ impl Pump {
         match file.asked() {
             Some(ago) if ago < GIVE_WITHIN => file.give(recording),
             Some(_) => recording.let_go(),
+            None if self.beat.elapsed() >= BEAT => {
+                self.beat = Instant::now();
+                file.beat();
+            }
             None => {}
         }
     }
