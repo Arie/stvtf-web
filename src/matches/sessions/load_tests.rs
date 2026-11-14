@@ -46,7 +46,7 @@ fn a_recording_made_after_two_loads_starts_at_part_2() {
         demos.note_line(&snapshot(50, None, Vec::new()));
         demos.note_line(&snapshot(9000, None, Vec::new()));
     }
-    record(&s, Some(&store), false);
+    record(&s, Some(&store), "mark", false);
     connect(&s, "cp_c", 10);
     let rec = s.ready().unwrap();
     until("its first snapshot", || rec.latest().first_tick.is_some());
@@ -88,7 +88,7 @@ fn after_a_restart_the_next_load_has_the_next_number_on_both_sides() {
     let id = random_id();
     before_a_restart(&store, &id);
     let s = live_match(&store, &id);
-    record(&s, Some(&store), true);
+    record(&s, Some(&store), "mark", true);
     let rec = s.ready().unwrap();
     // `cp_b` again, its first tick below the last the recording has (not below its demo's first).
     connect(&s, "cp_b", 1000);

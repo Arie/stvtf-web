@@ -257,7 +257,7 @@ fn a_match_saved_by_the_running_release_is_picked_up() {
 }
 
 /// A process starting on `dir`, as a deploy's new release does, and how many matches it took over.
-fn start_on(dir: &TempDir) -> (Sessions, usize) {
+pub(super) fn start_on(dir: &TempDir) -> (Sessions, usize) {
     let mut s = Sessions::new(false, 4, 20.0);
     s.store = Some(Store { dir: dir.to_path_buf(), keys: None });
     let restored = s.restore();

@@ -156,7 +156,7 @@ fn a_stopped_server_exits_cleanly_and_the_next_one_has_its_matches() {
     assert!(!dir.join("demostf").exists(), "--no-warm fetches no overviews");
 
     let saved: Vec<_> = std::fs::read_dir(&store).unwrap().flatten().map(|e| e.file_name()).collect();
-    assert_eq!(saved.len(), 2, "the match, and which process owns the folder: {saved:?}");
+    assert_eq!(saved.len(), 4, "the match, its recording, given, and which process owns the folder: {saved:?}");
 
     // Its files stay for the next one.
     std::mem::forget(first);

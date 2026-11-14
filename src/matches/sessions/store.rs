@@ -126,6 +126,11 @@ impl Store {
         Ok(std::fs::read(self.path(name))?)
     }
 
+    /// When `name` was last written or touched.
+    pub(crate) fn written(&self, name: &str) -> Option<SystemTime> {
+        std::fs::metadata(self.path(name)).and_then(|m| m.modified()).ok()
+    }
+
     /// Whether there is a `name`.
     pub(crate) fn has(&self, name: &str) -> bool {
         self.path(name).exists()

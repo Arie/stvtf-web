@@ -8,7 +8,7 @@ use crate::matches::demostf;
 use crate::matches::hub::{SharedHub, watch_into};
 use crate::matches::live_demos::LiveDemos;
 use anyhow::{Result, anyhow, bail};
-use record::record;
+use record::{LiveFile, record};
 use session::{Source, join};
 use std::collections::HashMap;
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
@@ -215,7 +215,7 @@ impl Sessions {
         if let Some(d) = &demos {
             let _ = s.demos.set(d.clone());
         }
-        record(&s, self.store.as_ref(), resume);
+        record(&s, self.store.as_ref(), &self.claim, resume);
         let (watcher, hz) = (s.clone(), self.hz);
         let thread = std::thread::spawn(move || {
             let demos = demos.map(|d| d as Arc<dyn stvtf::demo::Files>);
@@ -332,7 +332,7 @@ impl Sessions {
         s.ended(why);
         if let Some(store) = &self.store {
             store.forget(&s.id);
-            store.forget(&live_file(&s.id));
+            LiveFile::new(store, &s.id, &self.claim).forget();
             self.forget_voice(store, &s.id);
         }
         if let Some(d) = s.demos.get() {
@@ -341,11 +341,15 @@ impl Sessions {
     }
 
     /// Disconnects every watcher cleanly, so the servers free their `SourceTV` slots. Their saved
-    /// files stay for the process that takes over.
+    /// files stay for the process that takes over, the recordings this one writes closed into
+    /// theirs.
     pub fn stop_all(&self) {
         let all: Vec<Arc<Session>> = self.lock().drain().map(|(_, s)| s).collect();
         for s in &all {
             s.stop.store(true, Ordering::Relaxed);
+            if let (Some(store), Some(recording)) = (&self.store, s.live.get()) {
+                LiveFile::new(store, &s.id, &self.claim).give(recording);
+            }
         }
         for s in all {
             if let Some(t) = lock(&s.thread).take() {
@@ -365,10 +369,14 @@ fn longest_unwatched<'a>(sessions: impl IntoIterator<Item = &'a Arc<Session>>) -
 }
 
 #[cfg(test)]
+mod handover_tests;
+#[cfg(test)]
+use store::live_file;
+#[cfg(test)]
 mod load_tests;
 #[cfg(test)]
 mod tests;
 pub(crate) use address::is_public;
 pub(crate) use ids::{demo_id, id_demo, is_id, logged, random_id};
 pub(crate) use session::{Listed, Session, Viewer};
-pub(crate) use store::{DEMO_PREFIX, LIVE_PREFIX, Store, age, demo_dem, demo_output, is_kept_demo, live_file, sweep_demos};
+pub(crate) use store::{DEMO_PREFIX, LIVE_PREFIX, Store, age, demo_dem, demo_output, is_kept_demo, sweep_demos};

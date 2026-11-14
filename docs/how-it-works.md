@@ -98,7 +98,9 @@ One connection takes one slot, whoever watches. See stvtf's README, "Output".
 - The hub keeps a match's latest state and the current map's feed (1000 events), and fans the lines
   out to every page over Server-Sent Events.
 - A match is recorded in gzipped chunks of 10 s, each starting from a state a page can join with, so
-  a seek replays at most one chunk. A live match keeps its last 3 hours, across its maps.
+  a seek replays at most one chunk. A live match keeps its last 3 hours, across its maps, in a
+  file the next process goes on from, at the tick the one before stopped writing it (see
+  [deploy](deploy.md)).
 - The timeline, private playbacks and rooms play from that recording. See [rooms](rooms.md).
 
 ## stv.tf: TF2 clients in a room

@@ -79,6 +79,8 @@ struct Inner {
     rewrite: bool,
     /// The header of the file it is read from, until that file's first line.
     header: Option<parts::Header>,
+    /// The tick of the latest line that has one.
+    last_tick: Option<u32>,
 }
 
 /// A score and a round won this close (ms) belong together, either first.
@@ -255,6 +257,7 @@ impl Inner {
         }
         self.open.push(format!("{at}\t{text}"));
         self.count += 1;
+        self.last_tick = stamped.line.tick().filter(|t| *t > 0).or(self.last_tick);
         self.mark(at, &stamped.line);
         publish(&self.scratch, &stamped.line);
         Ok(save)
@@ -295,7 +298,9 @@ impl Recording {
         r
     }
 
-    /// A live recording going on from the chunks `saved` (as a sink got them), to `sink`.
+    /// A live recording going on from the chunks `saved` (as a sink got them), to `sink`: what a
+    /// process alone on the file makes of it.
+    #[cfg(test)]
     pub(crate) fn resume(mut saved: impl Read, mut sink: Sink) -> Result<Recording> {
         let r = Recording::live();
         let mut file = Vec::new();
@@ -340,6 +345,45 @@ impl Recording {
         inner.start = inner.chunks.first().map_or(inner.start, |c| c.start);
         inner.fresh = true;
         Ok(taken)
+    }
+
+    /// Its chunks go to `sink` from now on.
+    pub(crate) fn write_to(&self, sink: Sink) {
+        *lock(&self.sink) = Some(sink);
+    }
+
+    /// Whether its chunks go to a file.
+    pub(crate) fn is_written(&self) -> bool {
+        lock(&self.sink).is_some()
+    }
+
+    /// The file is written whole at the next chunk closed: it holds what this does not.
+    pub(crate) fn rewrite(&self) {
+        lock(&self.inner).rewrite = true;
+    }
+
+    /// Closes the open chunk into the file, which gets no more: another process goes on from
+    /// it. False if nothing wrote it.
+    pub(crate) fn give(&self) -> bool {
+        let mut sink = lock(&self.sink);
+        let Some(mut write) = sink.take() else { return false };
+        let mut inner = lock(&self.inner);
+        if let Ok(Some(save)) = inner.closed() {
+            write(&save);
+        }
+        // What comes after is a chunk of its own: this one is in the file.
+        inner.fresh = true;
+        true
+    }
+
+    /// Writes its file no more, as it is: another process took it.
+    pub(crate) fn let_go(&self) {
+        *lock(&self.sink) = None;
+    }
+
+    /// The tick of its latest line that has one.
+    pub(crate) fn last_tick(&self) -> Option<u32> {
+        lock(&self.inner).last_tick
     }
 
     /// The next line, `text` as read into `stamped`.
