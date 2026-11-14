@@ -200,3 +200,42 @@ fn a_recording_begun_after_loads_of_its_match_resumes_with_their_numbers() {
     assert_eq!(again.parts().iter().map(|p| p.load).collect::<Vec<_>>(), [2]);
     numbers_go_on(&again);
 }
+
+/// The ticks of `r`'s snapshots, in the order it plays them.
+fn snapshot_ticks(r: &Recording) -> Vec<u32> {
+    let lines = (0..r.chunks()).flat_map(|i| r.chunk(i).unwrap_or_default());
+    lines.filter_map(|(_, line)| matches!(line, Line::Snapshot(_)).then(|| line.tick()).flatten()).collect()
+}
+
+/// A release that goes on closing chunks into the file after the next one resumed from it, as
+/// both did at a deploy before a match was handed over: the file, and the tick it reaches.
+fn written_by_two_at_once() -> (Vec<u8>, u32) {
+    let saved = Arc::new(Mutex::new(Vec::new()));
+    let old = Recording::live_to(to(&saved));
+    let mut o = Stream { r: &old, s: 0.0 };
+    o.server(0.0, "cp_a");
+    o.play(1000, 25);
+    let file = lock(&saved).clone();
+    let new = Recording::resume(file.as_slice(), to(&saved)).unwrap();
+    // The old one's next chunk goes in first, 30 s of the match; the new one's begin at 25 s.
+    o.play(1000 + 25 * 67, 10);
+    let mut n = Stream { r: &new, s: 22.0 };
+    n.push(0.0, &line(r#"{"type":"status","state":"connecting","server":"tv","build":"1"}"#));
+    n.signon(0.5, "cp_a");
+    n.play(1000 + 25 * 67, 25);
+    let file = lock(&saved).clone();
+    (file, 1000 + 44 * 67)
+}
+
+#[test]
+fn a_stretch_two_releases_both_wrote_resumes_as_one_load_its_ticks_going_on() {
+    let (file, reached) = written_by_two_at_once();
+    let saved = Arc::new(Mutex::new(Vec::new()));
+    let again = Recording::resume(file.as_slice(), to(&saved)).unwrap();
+    assert_eq!(again.parts().iter().map(|p| (p.load, p.map.as_str())).collect::<Vec<_>>(), [(0, "cp_a")]);
+    let ticks = snapshot_ticks(&again);
+    assert!(ticks.is_sorted(), "{ticks:?}");
+    assert!(ticks.last().is_some_and(|t| *t >= reached - 10 * 67), "{ticks:?}");
+    let clean = lock(&saved).clone();
+    assert_eq!(snapshot_ticks(&resumed(&clean)), ticks, "the file is written anew without what was skipped");
+}

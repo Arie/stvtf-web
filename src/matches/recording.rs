@@ -266,7 +266,14 @@ impl Recording {
                     "hub" => publish(&inner.scratch, &serde_json::from_str(value)?),
                     _ if header.as_mut().map(|h| h.read(key, value)).transpose()?.unwrap_or(false) => {}
                     _ => {
-                        at = key.parse()?;
+                        // Play time only goes on in a file: a line before the latest is of a
+                        // stretch another process wrote too.
+                        let line_at = key.parse()?;
+                        if line_at < at {
+                            cut = true;
+                            continue;
+                        }
+                        at = line_at;
                         if let Some(header) = header.take() {
                             inner.start = at;
                             let scratch = inner.scratch.clone();
@@ -281,7 +288,7 @@ impl Recording {
             inner.drop_parts();
             inner.start = inner.chunks.first().map_or(inner.start, |c| c.start);
             inner.fresh = true;
-            // A file trimmed as it was read: its remains are the file.
+            // A file trimmed as it was read, or with lines skipped: its remains are the file.
             if cut {
                 sink(&Save::All(inner.file()?));
             }
