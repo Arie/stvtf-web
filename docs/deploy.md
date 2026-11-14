@@ -49,7 +49,7 @@ What the app and the relays say of themselves is on the containers' own logs (`k
 with its time: set aside at 8 MB as `web.1.log` up to `.5`, so some 48 MB a process at most.
 They say when a match, a room or a relay starts and ends, who joined a room (by Steam id when
 signed in), and of each relay (by its port) the TF2 clients that came and went (by name, their
-address without its end), why they left, and every jump.
+address without its end), why they left, and every jump and pause.
 
 ```
 kamal app exec -d na --reuse 'tail -200 /data/logs/relay.log'
