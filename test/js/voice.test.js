@@ -128,3 +128,12 @@ test("a switch of stream (back to live) plays voice again", async () => {
   v.streamSwitched();
   assert.equal(v.voicePlaying(), true);
 });
+
+test("sound still queued plays on without a gap: only a queue run dry gets the lead again", async () => {
+  const { startAt } = await import("../../app/core/voice.js");
+  // A line that came 30 ms late: the 100 ms queued ahead is what it is for.
+  assert.equal(startAt(10.07, 10), 10.07);
+  // Run dry (a pause, or a stall): ahead of now again.
+  assert.equal(startAt(9.99, 10), 10.1);
+  assert.equal(startAt(0, 10), 10.1, "a speaker's first");
+});

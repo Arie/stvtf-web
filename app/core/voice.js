@@ -172,6 +172,11 @@ function level(s) {
   if (s.gain) s.gain.gain.value = isMuted(s.steamid) ? 0 : volumeOf(s.steamid);
 }
 
+// When sound goes after what is queued until `queued`, at `now`: right after it while any is left
+// (a line late by less than the lead leaves no gap), else the lead ahead of now.
+/** @param {number} queued @param {number} now */
+export const startAt = (queued, now) => (queued > now ? queued : now + LEAD);
+
 /** @param {Speaker} s @param {AudioData} data */
 function play(s, data) {
   // Not playing, or so far behind (a stall, a burst) that it would run late: dropped.
@@ -182,7 +187,7 @@ function play(s, data) {
   const source = audio.createBufferSource();
   source.buffer = buffer;
   source.connect(s.gain);
-  const at = Math.max(s.at, audio.currentTime + LEAD);
+  const at = startAt(s.at, audio.currentTime);
   source.start(at);
   source.onended = () => s.queued.delete(source);
   s.queued.add(source);
