@@ -111,6 +111,18 @@ fn serve_backpack(s: &mut TcpStream, app: &App, file: &str) -> std::io::Result<(
 
 /// Changes whenever a page file does, so browsers holding `/app/` files for a day fetch new ones
 /// after a deploy; the modules' relative imports carry it along.
+/// A `modulepreload` link for each of the page's modules: a browser fetches them at once, where
+/// it would find them import by import (a chain 15 deep).
+pub(crate) fn module_preloads() -> &'static str {
+    static LINKS: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    LINKS.get_or_init(|| {
+        // Not the embed's entry, which a page does not load.
+        let modules = APP.iter().filter(|(name, ctype, _)| *ctype == JS && *name != "stv-map.js");
+        modules
+            .fold(String::new(), |links, (name, ..)| format!("{links}<link rel=\"modulepreload\" href=\"app/{}/{name}\">\n", app_version()))
+    })
+}
+
 pub(crate) fn app_version() -> &'static str {
     static VERSION: std::sync::OnceLock<String> = std::sync::OnceLock::new();
     VERSION.get_or_init(|| format!("{:016x}", fnv1a(APP.iter().flat_map(|(.., body)| body.iter().copied()))))

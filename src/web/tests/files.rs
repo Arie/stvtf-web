@@ -249,3 +249,17 @@ fn pages_leave_styling_to_the_stylesheet() {
         assert!(!page.contains(" style=") && !page.contains("<style"), "styling in a page: put it in app/css/");
     }
 }
+
+/// A browser told of every module at once need not find them import by import.
+#[test]
+fn the_viewer_s_page_names_every_module_it_loads() {
+    let a = app(Matches::One(SharedHub::default()));
+    let page = get(&a, "/", "");
+    let preloads = page.matches("<link rel=\"modulepreload\"").count();
+    assert!(preloads > 40, "{preloads}");
+    for module in ["main.js", "core/core.js", "panel/feed.js"] {
+        assert!(page.contains(&format!("<link rel=\"modulepreload\" href=\"app/{}/{module}\">", app_version())), "{module}");
+    }
+    assert!(!page.contains("stv-map.js\">"), "the embed's entry is not the page's");
+    assert!(page.find("modulepreload").unwrap() < page.find("</head>").unwrap());
+}

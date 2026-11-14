@@ -24,8 +24,8 @@ pub(crate) mod voice_routes;
 pub(crate) mod voice_who;
 pub(crate) mod voice_who_sync;
 
-pub(crate) use assets::app_version;
 use assets::serve_file;
+pub(crate) use assets::{app_version, module_preloads};
 use client::{client_of, counted};
 use events::{stream, too_many_streams, wants_detail, wants_voice};
 use matches::{is_page, list_matches, serve_match, start, start_view};
