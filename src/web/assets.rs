@@ -1,6 +1,6 @@
 //! The files served: page modules, fonts, icons, backpacks, maps, overviews.
 
-use super::{CSS, HTML, JS, JSON, SVG, TEXT, TTF, WEBP, not_found, respond, respond_cached, respond_with};
+use super::{CSS, HTML, JS, JSON, SVG, TEXT, WEBP, WOFF2, not_found, respond, respond_cached, respond_with};
 use crate::maps::cache::{map_geometry, map_geometry_gzip, overview};
 use crate::{App, is_name, lock};
 use std::net::TcpStream;
@@ -29,18 +29,17 @@ const LOADER_CACHE_FOR: std::time::Duration = std::time::Duration::from_mins(5);
 /// The page's files, pictures and maps.
 pub(super) fn serve_file(s: &mut TcpStream, app: &App, path: &str, gzip: bool) -> std::io::Result<()> {
     match path {
-        "/fonts/RobotoCondensed-Regular.ttf" => respond_cached(s, TTF, include_bytes!("../../fonts/RobotoCondensed-Regular.ttf")),
-        "/fonts/RobotoCondensed-Bold.ttf" => respond_cached(s, TTF, include_bytes!("../../fonts/RobotoCondensed-Bold.ttf")),
+        "/fonts/RobotoCondensed-Regular.woff2" => respond_cached(s, WOFF2, include_bytes!("../../fonts/RobotoCondensed-Regular.woff2")),
+        "/fonts/RobotoCondensed-Bold.woff2" => respond_cached(s, WOFF2, include_bytes!("../../fonts/RobotoCondensed-Bold.woff2")),
         // The site's mark: stv over tf, between a RED and a BLU dot (the voice bot's avatar is
         // icons/brand/bot-avatar-512.png, set in Discord by hand).
         "/favicon.svg" => respond_cached(s, SVG, include_bytes!("../../icons/brand/favicon.svg")),
         "/favicon.ico" => respond_cached(s, "image/x-icon", include_bytes!("../../icons/brand/favicon.ico")),
         "/apple-touch-icon.png" => respond_cached(s, "image/png", include_bytes!("../../icons/brand/apple-touch-icon.png")),
-        "/killicons.css" => respond(s, "200 OK", CSS, include_bytes!("../../killicons/killicons.css")),
-        "/killicons.webp" => respond(s, "200 OK", WEBP, include_bytes!("../../killicons/killicons.webp")),
+        "/killicons.css" => respond_cached(s, CSS, include_bytes!("../../killicons/killicons.css")),
         // For other sites: the class names stay as they are within a version.
         "/killicons/v1/killicons.css" => respond_cached(s, CSS, KILLICONS_V1_CSS.as_bytes()),
-        "/killicons/v1/killicons.webp" => respond_cached(s, WEBP, include_bytes!("../../killicons/killicons.webp")),
+        "/killicons.webp" | "/killicons/v1/killicons.webp" => respond_cached(s, WEBP, include_bytes!("../../killicons/killicons.webp")),
         p if let Some(file) = p.strip_prefix("/icons/") => match ICONS.iter().find(|(name, _)| file.strip_suffix(".svg") == Some(name)) {
             Some((_, svg)) => respond(s, "200 OK", SVG, svg),
             None => not_found(s),

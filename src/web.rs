@@ -41,7 +41,7 @@ const TEXT: &str = "text/plain";
 const JSON: &str = "application/json";
 const WEBP: &str = "image/webp";
 const SVG: &str = "image/svg+xml";
-const TTF: &str = "font/ttf";
+const WOFF2: &str = "font/woff2";
 
 /// Who the browser is, to the rooms; and who signed in with the site, still sealed.
 const GUEST_COOKIE: &str = "stvtf_guest";

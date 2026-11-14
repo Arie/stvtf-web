@@ -1,12 +1,12 @@
 /* Bundled, so the HUD looks the same everywhere instead of whatever the viewer has installed. */
 @font-face {
   font-family: "HUD Condensed";
-  src: url("../../fonts/RobotoCondensed-Regular.ttf") format("truetype");
+  src: url("../../fonts/RobotoCondensed-Regular.woff2") format("woff2");
   font-weight: 400;
 }
 @font-face {
   font-family: "HUD Condensed";
-  src: url("../../fonts/RobotoCondensed-Bold.ttf") format("truetype");
+  src: url("../../fonts/RobotoCondensed-Bold.woff2") format("woff2");
   font-weight: 700;
 }
 .stvtf {

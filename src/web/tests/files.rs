@@ -210,9 +210,15 @@ fn the_fixed_files_are_served_as_what_they_are() {
         ("/favicon.svg", SVG),
         ("/favicon.ico", "image/x-icon"),
         ("/apple-touch-icon.png", "image/png"),
+        ("/fonts/RobotoCondensed-Regular.woff2", "font/woff2"),
+        ("/fonts/RobotoCondensed-Bold.woff2", "font/woff2"),
     ] {
         let head = head_of(&a, path);
         assert!(head.starts_with("HTTP/1.1 200") && head.contains(&format!("Content-Type: {ctype}")), "{path}: {head}");
+    }
+    // The big ones a browser keeps a day.
+    for path in ["/killicons.css", "/killicons.webp", "/fonts/RobotoCondensed-Bold.woff2"] {
+        assert!(head_of(&a, path).contains("max-age=86400"), "{path}");
     }
     for path in ["/icons/nope.svg", "/icons/scout", "/nothing"] {
         assert!(head_of(&a, path).starts_with("HTTP/1.1 404"), "{path}");

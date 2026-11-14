@@ -1,2 +1,3 @@
 Roboto Condensed by Christian Robertson (Google), Apache License 2.0 (LICENSE),
 from the Debian fonts-roboto-unhinted package.
+As WOFF2, made from the package's TTF files with fontTools.

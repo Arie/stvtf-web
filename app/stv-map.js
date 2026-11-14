@@ -53,7 +53,7 @@ function addFonts() {
   ]
     .map(
       ([w, n]) =>
-        `@font-face { font-family: "HUD Condensed"; src: url("${cors(new URL(`fonts/RobotoCondensed-${w}.ttf`, BASE))}") format("truetype"); font-weight: ${n}; }`,
+        `@font-face { font-family: "HUD Condensed"; src: url("${cors(new URL(`fonts/RobotoCondensed-${w}.woff2`, BASE))}") format("woff2"); font-weight: ${n}; }`,
     )
     .join("\n");
   document.head.append(style);
