@@ -413,3 +413,32 @@ fn a_release_stopped_before_it_is_asked_waits_for_the_next_one_s_stream() {
     assert_eq!(ticks_of(&rec), every_100(1000..=2000), "none missing, none twice");
     new.stop_all();
 }
+
+/// The process before is gone without a word and the server never answers again: no stream asks
+/// for the file, which is this process's all the same, its recording the match's latest.
+#[test]
+fn a_recording_left_by_a_crash_is_taken_though_its_server_never_answers() {
+    let dir = TempDir::new("handover");
+    let id = left_by_a_crash(&dir, "192.0.2.58:27020");
+    let had = ticks_of(&in_file(&dir, &id));
+    let (new, _) = start_on(&dir);
+    let rec = new.get(&id).unwrap().ready().unwrap();
+    assert!(rec.is_catching_up() && !rec.is_written(), "its writer may write it still");
+    until("the file to be the new process's", || rec.is_written());
+    assert!(!rec.is_catching_up());
+    assert_eq!(ticks_of(&rec), had);
+    new.stop_all();
+}
+
+/// Its watcher gives up at once (the server's password changed): the recording has all it will.
+#[test]
+fn a_recording_picked_up_whose_watcher_gives_up_is_not_catching_up_for_good() {
+    let dir = TempDir::new("handover");
+    let target = "192.0.2.59:27020";
+    let id = left_by_a_crash(&dir, target);
+    script(target, Vec::new(), Some("Bad spectator password"));
+    let (new, _) = start_on(&dir);
+    let rec = new.get(&id).unwrap().ready().unwrap();
+    until("its recording to have all it will", || !rec.is_catching_up());
+    new.stop_all();
+}

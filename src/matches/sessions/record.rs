@@ -131,6 +131,13 @@ impl LiveFile {
         got
     }
 
+    /// How long ago its writer last said it writes the file, or else wrote it; none when neither
+    /// is there yet.
+    fn writer_silent(&self) -> Option<Duration> {
+        let said = self.store.written(&beat_file(&self.id)).or_else(|| self.store.written(&live_file(&self.id)))?;
+        Some(SystemTime::now().duration_since(said).unwrap_or_default())
+    }
+
     /// Says this process writes the file still.
     fn beat(&self) {
         let _ = self.store.replace(&beat_file(&self.id), self.mark.as_bytes());
@@ -174,6 +181,8 @@ struct Taking {
     looked: Option<Instant>,
     /// Its writer gave it: closed, and current as far as that one had the stream.
     given: bool,
+    /// When it first looked whether to take a file not asked for.
+    began: Option<Instant>,
 }
 
 /// How much of a file's start is kept, to tell whether it was written anew.
@@ -221,14 +230,18 @@ impl Taking {
     }
 
     /// Whether the file can be taken: given, or asked for and its writer silent for long enough
-    /// since, or asked for too long ago.
+    /// since, or asked for too long ago; or, with no stream of its own to ask at (the server gone
+    /// too), once its writer is gone without a word.
     fn may_take(&mut self, file: &LiveFile) -> bool {
         if file.take_given() {
             self.given = true;
             return true;
         }
-        // Until it asked, the file is given only as its writer stops.
-        let Some((asked, at)) = self.asked else { return false };
+        // Until it asked, the file is given only as its writer stops, or is gone.
+        let Some((asked, at)) = self.asked else {
+            let began = *self.began.get_or_insert_with(Instant::now);
+            return file.writer_silent().unwrap_or_else(|| began.elapsed()) >= GONE_AFTER;
+        };
         let silent = file.beat_since(at).map_or_else(|| asked.elapsed(), |beat| SystemTime::now().duration_since(beat).unwrap_or_default());
         silent >= GIVE_WAIT || asked.elapsed() >= TAKE_BY
     }
@@ -414,6 +427,11 @@ impl Pump {
             }
         }
         s.giving.store(false, Ordering::Relaxed);
+        // The match is over with its file never taken (its watcher gave up first): what the
+        // recording has is all there will be.
+        if self.taking.is_some() && !s.stop.load(Ordering::Relaxed) {
+            recording.set_catching_up(false);
+        }
         recording.end();
     }
 
