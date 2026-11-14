@@ -9,7 +9,7 @@ use crate::rooms::people::People;
 use anyhow::Result;
 use drawing::kept_line;
 use markers::Markers;
-use play::State;
+use play::{Pace, State};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -150,6 +150,9 @@ pub(crate) struct Saved {
     /// Its map was over, and whether it follows live decided (see `State::over`).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     decided: bool,
+    /// Whether it played the match as it came.
+    #[serde(default, skip_serializing_if = "Pace::is_own")]
+    pace: Pace,
 }
 
 /// A page in the room, by its guest cookie if it is listed, until dropped.
@@ -174,7 +177,8 @@ impl Room {
         let at = if recording.is_live() { recording.length() } else { 0 };
         let load = recording.watchable().load;
         let seek = (at > 0).then_some(at);
-        let state = State { paused: false, speed: 1.0, at, seek, stop: false, tick: None, load, follows_live: false, over: None };
+        let (follows_live, over, pace) = (false, None, Pace::Own);
+        let state = State { paused: false, speed: 1.0, at, seek, stop: false, tick: None, load, follows_live, over, pace };
         Room::run(id, People::new(owner), None, None, state, recording)
     }
 
@@ -184,19 +188,22 @@ impl Room {
         let at = at.clamp(recording.start(), recording.length());
         let speed = if SPEEDS.contains(&speed) { speed } else { 1.0 };
         let load = recording.watchable().load;
-        let state = State { paused, speed, at, seek: Some(at), stop: false, tick: None, load, follows_live: false, over: None };
+        let (follows_live, over, pace) = (false, None, Pace::Own);
+        let state = State { paused, speed, at, seek: Some(at), stop: false, tick: None, load, follows_live, over, pace };
         Room::run(id, People::new(owner), None, None, state, recording)
     }
 
     /// The room `saved` was, back where it was.
     pub(crate) fn restore(id: String, saved: Saved, recording: Arc<Recording>) -> Arc<Room> {
-        let at = saved.at.clamp(recording.start(), recording.length());
+        // At live it is at live here too: the match went on since it was saved.
+        let pace = if recording.is_live() { saved.pace } else { Pace::Own };
+        let at = if pace == Pace::Live { recording.length() } else { saved.at.clamp(recording.start(), recording.length()) };
         let watchable = recording.watchable().load;
         let load = saved.load.filter(|n| *n <= recording.latest().load).unwrap_or(watchable);
         // Whether it follows live was decided on its map before: it is not again.
         let over = saved.decided.then_some(load);
         let (paused, speed, follows_live) = (saved.paused, saved.speed, saved.follows_live);
-        let state = State { paused, speed, at, seek: Some(at), stop: false, tick: None, load, follows_live, over };
+        let state = State { paused, speed, at, seek: Some(at), stop: false, tick: None, load, follows_live, over, pace };
         let room = Room::run(id, saved.people, saved.leader, saved.view.map(Into::into), state, recording);
         if let Some(view) = lock(&room.view).clone() {
             announce(&room.hub, "view", &view);
@@ -263,6 +270,7 @@ impl Room {
             load: Some(st.load),
             follows_live: st.follows_live,
             decided: st.over == Some(st.load),
+            pace: st.pace,
         }
     }
 
@@ -350,6 +358,8 @@ impl Room {
 mod follow_tests;
 #[cfg(test)]
 mod gap_tests;
+#[cfg(test)]
+mod live_tests;
 #[cfg(test)]
 mod move_tests;
 #[cfg(test)]

@@ -5,7 +5,7 @@ use crate::lock;
 use crate::matches::hub::{announce, publish, restore};
 use crate::matches::recording::Recording;
 use anyhow::{Result, bail};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 use std::sync::MutexGuard;
 use std::sync::atomic::Ordering;
@@ -17,6 +17,10 @@ pub(super) const ANNOUNCE_EVERY: Duration = Duration::from_secs(1);
 /// How often a room nobody watches looks again, and one at a live match's end for more of it.
 pub(super) const IDLE_POLL: Duration = Duration::from_millis(250);
 pub(super) const LIVE_POLL: Duration = Duration::from_millis(20);
+/// A room at live more than this far (ms of play) behind its recording's end goes there: more
+/// came at once than plays in time (a file read on while another process writes it, a second or
+/// so at a time, or what came while nobody watched).
+pub(super) const LIVE_SLACK: u64 = 3000;
 
 /// Where playback is in the recording: the chunk, how many of its lines are played, and the lines
 /// after, as far as the recording had them when last looked at (`looked`: how many it had then).
@@ -65,6 +69,24 @@ pub(super) struct State {
     pub(super) follows_live: bool,
     /// The map it last saw over: whether it follows live was decided there.
     pub(super) over: Option<usize>,
+    pub(super) pace: Pace,
+}
+
+/// How a room goes through a live match: from where it was put, or at live, as the match comes
+/// (it got to the end of what is recorded, playing, and nobody moved it since).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum Pace {
+    #[default]
+    Own,
+    Live,
+}
+
+impl Pace {
+    #[expect(clippy::trivially_copy_pass_by_ref, reason = "as serde asks whether to skip it")]
+    pub(crate) fn is_own(&self) -> bool {
+        *self == Pace::Own
+    }
 }
 
 impl State {
@@ -93,6 +115,7 @@ impl State {
     /// itself, decided.
     pub(super) fn wait_on(&mut self, load: usize, at: u64) {
         (self.load, self.seek, self.follows_live, self.over) = (load, Some(at), false, Some(load));
+        self.pace = Pace::Own;
     }
 }
 
@@ -144,7 +167,7 @@ impl Room {
             bail!("speed {speed} is not one of {SPEEDS:?}");
         }
         let mut st = lock(&self.state);
-        st.follows_live = false;
+        (st.follows_live, st.pace) = (false, Pace::Own);
         if let Some(speed) = c.speed {
             st.speed = speed;
         }
@@ -198,10 +221,14 @@ impl Room {
         // The clock playing goes by, while it plays on undisturbed: a seek, a pause, the end of
         // what is recorded or another speed sets it down anew.
         let mut clock: Option<Clock> = None;
+        // The recording was catching up with its file, and when last looked at is not: it has
+        // the match's latest again.
+        let (mut catching_up, mut caught_up) = (rec.is_catching_up(), false);
         loop {
             if st.stop {
                 return;
             }
+            caught_up |= std::mem::replace(&mut catching_up, rec.is_catching_up()) && !catching_up;
             // A live match goes on, paused or not: pages hear how long it is now.
             if rec.is_live() && announced.elapsed() >= ANNOUNCE_EVERY {
                 self.announce_now(&st, &mut announced);
@@ -226,12 +253,15 @@ impl Room {
             let (_, end) = self.reach(&st);
             let Some(t) = cur.lines.front().map(|l| l.0).filter(|t| end.is_none_or(|end| *t <= end)) else {
                 st = self.at_end(st, end, &mut cur);
-                clock = None;
+                (clock, caught_up) = (None, false);
                 continue;
             };
             if st.paused || (self.viewers.load(Ordering::Relaxed) == 0 && self.relay_clients() == 0) {
                 st = self.sleep(st, IDLE_POLL);
                 clock = None;
+                continue;
+            }
+            if self.keeps_up(&mut st, std::mem::take(&mut caught_up)) {
                 continue;
             }
             if t > st.at {
@@ -250,6 +280,21 @@ impl Room {
                 self.steer_relay(&st);
             }
         }
+    }
+
+    /// A room at live that lags goes to its recording's end, to be there again: when that is
+    /// more than [`LIVE_SLACK`] ahead, or ahead at all as the recording has the match's latest
+    /// again (`caught_up`). True when it does (the seek there is due).
+    fn keeps_up(&self, st: &mut State, caught_up: bool) -> bool {
+        if st.pace != Pace::Live || !self.recording.is_live() {
+            return false;
+        }
+        let end = self.held(st, self.recording.length());
+        let behind = end.saturating_sub(st.at);
+        if behind > LIVE_SLACK || (caught_up && behind > 0) {
+            st.seek = Some(end);
+        }
+        st.seek.is_some()
     }
 
     /// Pages and the relay hear where playback is, now.
@@ -295,7 +340,7 @@ impl Room {
         }
         if rec.is_live() {
             if !st.paused {
-                st.at = st.at.max(rec.length());
+                (st.at, st.pace) = (st.at.max(rec.length()), Pace::Live);
             }
             if !st.at_normal_speed() {
                 st.speed = 1.0;
