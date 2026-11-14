@@ -22,9 +22,12 @@ const UNWATCHED_PLAY: Duration = Duration::from_hours(6);
 pub(crate) const MAKES_ROOM: Duration = Duration::from_mins(3);
 /// Matches one person may have started at once (see [`Sessions::open_as`]).
 pub(crate) const MATCHES_PER_PERSON: usize = 4;
+/// How long a process told to stop, and taken over, waits for its files to be asked for: the next
+/// one's streams need their signon first.
+const ASK_WAIT: Duration = Duration::from_millis(if cfg!(test) { 600 } else { 12_000 });
 /// How long a process told to stop records on for the recordings asked for and not yet at the
 /// tick asked at: some more than a new connection's first frame is ahead of the stream (11 s
-/// seen), and well within the 30 s Kamal gives a container to stop.
+/// seen). With [`ASK_WAIT`], within the 30 s Kamal gives a container to stop.
 pub(crate) const STOP_WAIT: Duration = Duration::from_millis(if cfg!(test) { 500 } else { 15_000 });
 /// The server of a match that watches none: the demo, a demos.tf demo.
 const NOWHERE: SocketAddr = SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, 0));
@@ -347,6 +350,14 @@ impl Sessions {
     /// Waits while a recording is asked for and written on to the tick asked at, for
     /// [`STOP_WAIT`] at most: its match is not cut short of that tick, nor is its demo.
     pub fn finish_giving(&self) {
+        let told = std::time::Instant::now();
+        // Taken over by a release whose streams have no tick yet: it has asked for nothing so
+        // far, and what is given now would end short of where it begins.
+        let taken_over = self.store.as_ref().is_some_and(|store| store.taken_over(&self.claim));
+        let unasked = |s: &Arc<Session>| !s.giving.load(Ordering::Relaxed) && s.live.get().is_some_and(|r| r.is_written());
+        while taken_over && told.elapsed() < ASK_WAIT && self.lock().values().any(unasked) {
+            std::thread::sleep(record::RECORD_POLL);
+        }
         let told = std::time::Instant::now();
         while told.elapsed() < STOP_WAIT && self.lock().values().any(|s| s.giving.load(Ordering::Relaxed)) {
             std::thread::sleep(record::RECORD_POLL);

@@ -383,3 +383,30 @@ fn a_release_gone_while_it_writes_a_file_on_is_not_waited_for() {
     old.stop_all();
     new.stop_all();
 }
+
+/// A deploy stops the old release before the new one's stream has a tick: it waits to be asked.
+#[test]
+fn a_release_stopped_before_it_is_asked_waits_for_the_next_one_s_stream() {
+    let dir = TempDir::new("handover");
+    let target = "192.0.2.47:27020";
+    script(target, stream("cp_a", 1000..=1700), None);
+    let (old, _) = start_on(&dir);
+    let m = old.open(&format!("{target} tv"), None, None).unwrap();
+    let before = m.ready().unwrap();
+    until("the old release's lines", || ticks_of(&before).last() == Some(&1700));
+    // The new release is still in its signon when the old one is told to stop.
+    let (new, _) = start_on(&dir);
+    let picked = new.get(&m.id).unwrap();
+    let rec = picked.ready().unwrap();
+    let stopping = std::thread::spawn(move || old.stop_all());
+    std::thread::sleep(Duration::from_millis(100));
+    assert!(before.is_written() && !stopping.is_finished(), "not given yet: nobody asked");
+    for line in stream("cp_a", 1500..=2000) {
+        crate::matches::hub::publish(&picked.hub, &line);
+    }
+    until("the file to be the new release's", || rec.is_written());
+    stopping.join().unwrap();
+    until("its own lines", || ticks_of(&rec).last() == Some(&2000));
+    assert_eq!(ticks_of(&rec), every_100(1000..=2000), "none missing, none twice");
+    new.stop_all();
+}

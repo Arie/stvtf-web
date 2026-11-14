@@ -172,6 +172,8 @@ struct Taking {
     asked: Option<(Instant, SystemTime)>,
     /// When it last looked whether the file was given.
     looked: Option<Instant>,
+    /// Its writer gave it: closed, and current as far as that one had the stream.
+    given: bool,
 }
 
 /// How much of a file's start is kept, to tell whether it was written anew.
@@ -220,8 +222,9 @@ impl Taking {
 
     /// Whether the file can be taken: given, or asked for and its writer silent for long enough
     /// since, or asked for too long ago.
-    fn may_take(&self, file: &LiveFile) -> bool {
+    fn may_take(&mut self, file: &LiveFile) -> bool {
         if file.take_given() {
+            self.given = true;
             return true;
         }
         // Until it asked, the file is given only as its writer stops.
@@ -239,8 +242,10 @@ impl Taking {
         let name = live_file(&file.id);
         // Said first: its writer, late, writes no more to it.
         file.ask(None);
+        // Given, or written since this process asked: the file is of the stream held. (Given with
+        // nothing more written: a paused game.)
         let written = file.store.written(&name);
-        let since = self.asked.is_some_and(|(_, asked)| written.is_some_and(|at| at >= asked));
+        let since = self.given || self.asked.is_some_and(|(_, asked)| written.is_some_and(|at| at >= asked));
         // Torn, or not read: this process's is the file.
         if !self.read_on(file, recording) {
             recording.rewrite();
