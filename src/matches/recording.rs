@@ -374,8 +374,16 @@ impl Recording {
     /// Closes the open chunk into the file, which gets no more: another process goes on from
     /// it. False if nothing wrote it.
     pub(crate) fn give(&self) -> bool {
+        let written = self.flush();
+        *lock(&self.sink) = None;
+        written
+    }
+
+    /// Closes the open chunk into the file, for another process to read on from. False if
+    /// nothing writes it.
+    pub(crate) fn flush(&self) -> bool {
         let mut sink = lock(&self.sink);
-        let Some(mut write) = sink.take() else { return false };
+        let Some(write) = sink.as_mut() else { return false };
         let mut inner = lock(&self.inner);
         if let Ok(Some(save)) = inner.closed() {
             write(&save);

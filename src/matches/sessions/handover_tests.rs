@@ -258,3 +258,21 @@ fn a_recording_asked_for_at_no_tick_is_given_at_once() {
     assert_eq!(ticks_of(&in_file(&dir, &m.id)), every_100(1000..=1700));
     old.stop_all();
 }
+
+#[test]
+fn a_recording_picked_up_goes_on_with_its_file_while_it_waits_for_it() {
+    let dir = TempDir::new("handover");
+    let (old, m, new, n) = asked_for_at(&dir, "192.0.2.50:27020", 2500);
+    let rec = n.ready().unwrap();
+    for upto in [2000, 2300] {
+        goes_on(&m.hub, upto - 200..=upto);
+        until("what the old release wrote meanwhile", || ticks_of(&rec).last() == Some(&upto));
+        assert!(rec.is_catching_up() && !rec.is_written(), "the file is the old release's still");
+    }
+    goes_on(&m.hub, 2400..=2500);
+    until("the file to be the new release's", || rec.is_written());
+    assert!(!rec.is_catching_up());
+    assert_eq!(ticks_of(&rec), every_100(1000..=2500), "none missing, none twice");
+    old.stop_all();
+    new.stop_all();
+}

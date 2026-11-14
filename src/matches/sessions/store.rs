@@ -126,6 +126,20 @@ impl Store {
         Ok(std::fs::read(self.path(name))?)
     }
 
+    /// What was added to `name` after its first `read` bytes, and from where: all of it, from 0, if
+    /// it no longer begins with `head` (written anew).
+    pub(crate) fn read_on(&self, name: &str, read: usize, head: &[u8]) -> Result<(usize, Vec<u8>)> {
+        use std::io::{Read as _, Seek as _};
+        let mut file = std::fs::File::open(self.path(name))?;
+        let mut start = vec![0; head.len()];
+        let same = file.metadata()?.len() >= read as u64 && file.read_exact(&mut start).is_ok() && start == head;
+        let from = if same { read } else { 0 };
+        file.seek(std::io::SeekFrom::Start(from as u64))?;
+        let mut data = Vec::new();
+        file.read_to_end(&mut data)?;
+        Ok((from, data))
+    }
+
     /// When `name` was last written or touched.
     pub(crate) fn written(&self, name: &str) -> Option<SystemTime> {
         std::fs::metadata(self.path(name)).and_then(|m| m.modified()).ok()

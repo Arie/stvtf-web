@@ -4,10 +4,10 @@
 //! and writes nothing: once its own stream has a tick it asks for the file (`live-<id>.take`,
 //! its mark and that tick). The process that writes it writes on until its own stream is at that
 //! tick (a new connection's first frame is ahead of the stream), for [`GIVE_BY`] at most, saying
-//! every [`RECORD_POLL`] that it does (`live-<id>.beat`); then it closes its open chunk into the
-//! file, writes no more and says so (`live-<id>.given`). It does the same as it stops, asked or
-//! not. The new one reads what was added, goes on with its own lines from the tick after the
-//! file's last, and writes from there. A file whose writer says nothing for [`GIVE_WAIT`] after
+//! every [`RECORD_POLL`] that it does (`live-<id>.beat`) and closing its open chunk into the file
+//! every [`BEAT`]; then it closes the last, writes no more and says so (`live-<id>.given`). It
+//! does the same as it stops, asked or not. The new one reads the file on as it grows, goes on
+//! with its own lines from the tick after the file's last, and writes from there. A file whose writer says nothing for [`GIVE_WAIT`] after
 //! the asking (it is gone, or of a version that gives at once) is taken as it is. A process that
 //! gave its file and still runs when the one that took it vanishes writes it again, whole.
 
@@ -198,13 +198,23 @@ impl Taking {
         self.held.push((stamped, json));
     }
 
+    /// Takes in what was added to the file since it was last read. False if it does not read to
+    /// its end.
+    fn read_on(&mut self, file: &LiveFile, recording: &Recording) -> bool {
+        let Some((read, head)) = &mut self.read else { return false };
+        let Ok((from, data)) = file.store.read_on(&live_file(&file.id), *read, head) else { return false };
+        // Written anew meanwhile: read from its start, what is known skipped.
+        if from == 0 {
+            *head = data[..data.len().min(HEAD)].to_vec();
+        }
+        let more = if data.is_empty() { Ok(0) } else { recording.read_on(&data) };
+        *read = from + more.as_ref().map_or(0, |more| *more);
+        more.is_ok_and(|more| more == data.len())
+    }
+
     /// Whether the file can be taken: given, or asked for and its writer silent for long enough
     /// since, or asked for too long ago.
-    fn may_take(&mut self, file: &LiveFile) -> bool {
-        if self.looked.is_some_and(|t| t.elapsed() < RECORD_POLL) {
-            return false;
-        }
-        self.looked = Some(Instant::now());
+    fn may_take(&self, file: &LiveFile) -> bool {
         if file.take_given() {
             return true;
         }
@@ -224,14 +234,8 @@ impl Taking {
         file.ask(None);
         let written = file.store.written(&name);
         let since = self.asked.is_some_and(|(_, asked)| written.is_some_and(|at| at >= asked));
-        let data = file.store.read(&name).unwrap_or_default();
-        let whole = self.read.take().is_some_and(|(read, head)| {
-            // Written anew meanwhile: read from its start, what is known skipped.
-            let from = if data.len() >= read && data.starts_with(&head) { read } else { 0 };
-            recording.read_on(&data[from..]).is_ok_and(|more| from + more == data.len())
-        });
         // Torn, or not read: this process's is the file.
-        if !whole {
+        if !self.read_on(file, recording) {
             recording.rewrite();
         }
         recording.write_to(to_file(&file.store, &name));
@@ -292,14 +296,39 @@ pub(super) fn record(s: &Arc<Session>, store: Option<&Store>, mark: &str, resume
     });
 }
 
-/// A file asked for, written on until its stream is at the tick asked at.
+/// A file asked for, written on until its stream is at the tick asked at (none: at once).
 struct Giving {
-    tick: u32,
+    tick: Option<u32>,
     /// When the `.take` that asked was written: another since is the file taken.
     asked: SystemTime,
     since: Instant,
-    /// When it last said it writes the file still.
+    /// When it last said it writes the file still, and when it last closed a chunk into it.
     beat: Instant,
+    flushed: Option<Instant>,
+}
+
+impl Giving {
+    /// Writes the file on: says so, and closes the open chunk into it every [`BEAT`]. False once
+    /// it does no more: given, its stream at the tick or [`GIVE_BY`] up, or let go, taken
+    /// meanwhile (or it may be).
+    fn writes_on(&mut self, file: &LiveFile, recording: &Recording, asked: Option<&Asked>) -> bool {
+        if asked.is_none_or(|a| a.at != self.asked) || self.beat.elapsed() >= GIVE_WITHIN {
+            recording.let_go();
+            return false;
+        }
+        let there = self.tick.is_none_or(|tick| recording.last_tick().is_none_or(|last| last >= tick));
+        if there || self.since.elapsed() >= GIVE_BY {
+            file.give(recording);
+            return false;
+        }
+        self.beat = Instant::now();
+        file.beat();
+        if self.flushed.is_none_or(|t| t.elapsed() >= BEAT) {
+            self.flushed = Some(Instant::now());
+            recording.flush();
+        }
+        true
+    }
 }
 
 /// What takes a match's lines into its recording.
@@ -367,10 +396,17 @@ impl Pump {
     fn hand_over(&mut self, s: &Session, recording: &Recording) {
         let Some(file) = &self.file else { return };
         if let Some(taking) = &mut self.taking {
+            if taking.looked.is_some_and(|t| t.elapsed() < RECORD_POLL) {
+                return;
+            }
+            taking.looked = Some(Instant::now());
+            // What its writer added meanwhile plays here too.
             if taking.may_take(file) {
                 let interval = lock(&s.hub).tick_interval();
                 let last = self.taking.take().and_then(|taking| taking.take(file, recording, interval));
                 self.behind = last.map(|tick| (tick, Instant::now()));
+            } else {
+                taking.read_on(file, recording);
             }
             return;
         }
@@ -389,33 +425,22 @@ impl Pump {
             return;
         }
         let asked = file.asked();
-        let there = |tick| recording.last_tick().is_none_or(|last| last >= tick);
         if let Some(giving) = &mut self.giving {
-            let still = asked.is_some_and(|a| a.at == giving.asked) && giving.beat.elapsed() < GIVE_WITHIN;
-            if still && !there(giving.tick) && giving.since.elapsed() < GIVE_BY {
-                giving.beat = Instant::now();
-                file.beat();
-                return;
+            if !giving.writes_on(file, recording, asked.as_ref()) {
+                self.giving = None;
+                s.giving.store(false, Ordering::Relaxed);
             }
-            // Taken meanwhile, or it may be: not written to.
-            if still {
-                file.give(recording);
-            } else {
-                recording.let_go();
-            }
-            self.giving = None;
-            s.giving.store(false, Ordering::Relaxed);
             return;
         }
         match asked {
-            Some(Asked { at, ago, tick, taken: false }) if ago < GIVE_WITHIN => match tick.filter(|t| !there(*t)) {
-                Some(tick) => {
-                    file.beat();
-                    self.giving = Some(Giving { tick, asked: at, since: Instant::now(), beat: Instant::now() });
+            Some(Asked { at, ago, tick, taken: false }) if ago < GIVE_WITHIN => {
+                let now = Instant::now();
+                let mut giving = Giving { tick, asked: at, since: now, beat: now, flushed: None };
+                if giving.writes_on(file, recording, asked.as_ref()) {
+                    self.giving = Some(giving);
                     s.giving.store(true, Ordering::Relaxed);
                 }
-                None => file.give(recording),
-            },
+            }
             Some(_) => recording.let_go(),
             None if self.beat.elapsed() >= BEAT => {
                 self.beat = Instant::now();
