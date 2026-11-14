@@ -81,6 +81,8 @@ struct Request {
     user: Option<String>,
     /// The cookie of a Discord sign-in begun ([`voice_link::STATE_COOKIE`]).
     voice_link: Option<String>,
+    /// `User-Agent`.
+    agent: String,
 }
 
 /// The request line and headers.
@@ -102,6 +104,7 @@ fn read_request(reader: &mut impl BufRead) -> Result<Request> {
         guest: None,
         user: None,
         voice_link: None,
+        agent: String::new(),
     };
     loop {
         let mut header = String::new();
@@ -122,6 +125,8 @@ fn read_request(reader: &mut impl BufRead) -> Result<Request> {
             request.guest = cookie(value, GUEST_COOKIE).filter(|g| sessions::is_id(g)).map(str::to_string);
             request.user = cookie(value, USER_COOKIE).map(str::to_string);
             request.voice_link = cookie(value, voice_link::STATE_COOKIE).filter(|g| sessions::is_id(g)).map(str::to_string);
+        } else if name.eq_ignore_ascii_case("user-agent") {
+            request.agent = value.trim().to_string();
         } else if name.eq_ignore_ascii_case("accept-encoding") {
             request.gzip = value.split(',').any(|e| e.split(';').next().is_some_and(|e| e.trim().eq_ignore_ascii_case("gzip")));
         }
@@ -257,6 +262,11 @@ fn serve_many(
             Err(e) => refuse(&mut s, "400 Bad Request", &e)?,
         },
         ("/", "GET") => respond(&mut s, "200 OK", HTML, &app.page(&landing("")))?,
+        // What a page says went wrong in it (see `report`): taken or not, it is not told.
+        ("/fault", "POST") => {
+            crate::report::page_fault(&read_body(reader, request)?, &request.agent);
+            respond(&mut s, "204 No Content", TEXT, b"")?;
+        }
         ("/watch", "POST") if request.length as u64 > MAX_REQUEST => {
             respond(&mut s, "413 Content Too Large", TEXT, format!("over {MAX_REQUEST} bytes").as_bytes())?;
         }

@@ -60,7 +60,7 @@ impl Links {
         if let Some(file) = &self.file
             && let Err(e) = write_atomic(file, serde_json::json!(*known).to_string().as_bytes())
         {
-            log!("voice links not kept: {e}");
+            fault!("voice links not kept: {e}");
         }
     }
 }

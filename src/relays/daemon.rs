@@ -285,7 +285,7 @@ fn take_over(rooms: &Rooms, relays: &Arc<Relays>, file: &Path) {
     let _ = std::fs::remove_file(file);
     let handed: Handed = match serde_json::from_slice(&bytes) {
         Ok(h) => h,
-        Err(e) => return log!("the clients handed over do not read: {e}"),
+        Err(e) => return fault!("the clients handed over do not read: {e}"),
     };
     let ago = Duration::from_millis(now_ms().saturating_sub(handed.at_ms));
     if ago > HANDED_FOR {
@@ -309,8 +309,8 @@ fn take_over(rooms: &Rooms, relays: &Arc<Relays>, file: &Path) {
                 relay.keep_light(shows.light);
                 lock(rooms).insert(room, Leased { relay, seen: Instant::now(), shows });
             }
-            Ok(_) => log!("relay of room {} not taken over: port {} is not free", logged(&room), was.port),
-            Err(e) => log!("relay of room {} not taken over: {e:#}", logged(&room)),
+            Ok(_) => fault!("relay of room {} not taken over: port {} is not free", logged(&room), was.port),
+            Err(e) => fault!("relay of room {} not taken over: {e:#}", logged(&room)),
         }
     }
 }
@@ -342,7 +342,7 @@ pub(crate) fn serve(socket: &Path, relays: &Arc<Relays>, lease: Duration, stop: 
         }
         match hand_over(&leaving, &file) {
             Ok(clients) => log!("relays stopping: {clients} clients handed over"),
-            Err(e) => log!("relays stopping: clients not handed over: {e:#}"),
+            Err(e) => fault!("relays stopping: clients not handed over: {e:#}"),
         }
         std::process::exit(0);
     });
@@ -387,8 +387,8 @@ fn answer(conn: UnixStream, rooms: &Rooms, relays: &Arc<Relays>) -> Result<()> {
 fn said_of(room: &str, started: &Result<Option<LocalRelay>>) {
     match started {
         Ok(Some(relay)) => log!("relay of room {} started on port {}", logged(room), relay.was().port),
-        Ok(None) => log!("no relay for room {}: every port is taken", logged(room)),
-        Err(e) => log!("no relay for room {}: {e:#}", logged(room)),
+        Ok(None) => fault!("no relay for room {}: every port is taken", logged(room)),
+        Err(e) => fault!("no relay for room {}: {e:#}", logged(room)),
     }
 }
 

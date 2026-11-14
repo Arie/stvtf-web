@@ -245,7 +245,7 @@ impl WhoIsWho {
         if let Some(file) = &self.0.file
             && let Err(e) = write_atomic(file, serde_json::json!(kept).to_string().as_bytes())
         {
-            log!("who is who not kept: {e}");
+            fault!("who is who not kept: {e}");
         }
     }
 

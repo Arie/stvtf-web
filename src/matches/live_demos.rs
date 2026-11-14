@@ -382,7 +382,7 @@ impl LiveDemos {
             .map_err(std::io::Error::other)
             .and_then(|line| writeln!(File::options().create(true).append(true).open(voice_of(&demo.path))?, "{line}"));
         if let Err(e) = written {
-            log!("keeping voice for a demo: {e}");
+            fault!("keeping voice for a demo: {e}");
         }
     }
 }

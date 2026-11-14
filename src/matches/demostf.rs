@@ -176,7 +176,7 @@ fn decode_and_keep(id: u64, demo: &[u8], snapshot_hz: f32, kept: Option<(&DemoFi
         if let Ok(output) = &output
             && let Err(e) = k.store.put(&demo_output(id), output)
         {
-            log!("keeping demo {id}: {e:#}");
+            fault!("keeping demo {id}: {e:#}");
         }
     }
     output

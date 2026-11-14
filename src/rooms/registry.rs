@@ -333,7 +333,7 @@ impl Rooms {
             .and_then(|plain| self.put_changed(store, &room.id, &file(&room.id), &plain))
             .and_then(|()| self.put_changed(store, &room.id, &marker_file(&room.id), &serde_json::to_vec(&marker)?));
         if let Err(e) = written {
-            log!("saving room {}: {e:#}", logged(&room.id));
+            fault!("saving room {}: {e:#}", logged(&room.id));
         }
     }
 

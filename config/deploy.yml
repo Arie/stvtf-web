@@ -41,9 +41,13 @@ env:
     STVTF_VOICE_BOT: https://discord.com/oauth2/authorize?client_id=1569859416897888426&scope=bot+applications.commands&permissions=68160512
     # The sites asked who a Discord user is (their Steam account linked there), by every region.
     STVTF_LINK_SITES: https://serveme.tf/stv,https://na.serveme.tf/stv,https://au.serveme.tf/stv,https://sea.serveme.tf/stv
+    # Faults are told to Sentry (SENTRY_DSN) as this version's; each region says which it is.
+    SENTRY_RELEASE: <%= ENV["VERSION"] %>
+    SENTRY_ENVIRONMENT: production
   secret:
     - STVTF_TOKEN_KEY
     - STVTF_VOICE_KEY
+    - SENTRY_DSN
 
 # The map cache (BSPs from fastdl, extracted geometry) survives deploys. The volume also holds
 # demo.jsonl.gz, the recorded match each region plays at /w/demo/ (`stvtf demo FILE.dem | gzip`,

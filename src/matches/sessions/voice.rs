@@ -57,7 +57,7 @@ impl Sessions {
             return;
         }
         if let Err(e) = serde_json::to_vec(&saved).map_err(Into::into).and_then(|json| store.put(&name, &json)) {
-            log!("saving match {}'s held voice: {e:#}", s.id);
+            fault!("saving match {}'s held voice: {e:#}", s.id);
         }
     }
 
@@ -107,7 +107,7 @@ impl Sessions {
                     self.save_voice_of(store, &s, false);
                 }
             }
-            Err(e) => log!("dropping match {}'s unreadable held voice: {e:#}", s.id),
+            Err(e) => fault!("dropping match {}'s unreadable held voice: {e:#}", s.id),
         }
         store.forget(&taking);
     }

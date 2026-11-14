@@ -15,12 +15,14 @@ proxy:
 # (A list here replaces deploy.yml's, so it names those too.)
 env:
   clear:
+    STVTF_REGION: eu
     STVTF_DISCORD_REDIRECT: https://stv.tf/voice/linked
   secret:
     - STVTF_TOKEN_KEY
     - STVTF_VOICE_KEY
     - STVTF_DISCORD_CLIENT_ID
     - STVTF_DISCORD_CLIENT_SECRET
+    - SENTRY_DSN
 
 # The rooms' SourceTV relays, a process of their own that deploys leave be, so TF2 clients in a
 # room stay connected (`bin/relays` restarts it, at the version just built). On the host's own
@@ -30,6 +32,13 @@ accessories:
     image: ghcr.io/arie/stvtf:<%= ENV["VERSION"] %>
     host: new.fakkelbrigade.eu
     cmd: "--logs /data/logs --relay-daemon /data/relay.sock --relay-ports 28100-28119 --relay-host new.fakkelbrigade.eu"
+    env:
+      clear:
+        STVTF_REGION: eu
+        SENTRY_RELEASE: <%= ENV["VERSION"] %>
+        SENTRY_ENVIRONMENT: production
+      secret:
+        - SENTRY_DSN
     volumes:
       - stvtf-cache:/data
     options:

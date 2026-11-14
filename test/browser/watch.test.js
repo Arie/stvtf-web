@@ -123,6 +123,23 @@ test("the page shows the match: map, players, kills", async () => {
   await page.close();
 });
 
+test("what goes wrong on the page is told to the server", async () => {
+  const page = await browser.newPage();
+  try {
+    await page.goto(base);
+    await until(page, m => document.getElementById("map").textContent === m, MAP);
+    const told = page.waitForRequest(r => r.url() === `${root}fault`);
+    await page.evaluate(() => void setTimeout(() => void Promise.reject(new RangeError("out of it"))));
+    const fault = JSON.parse((await told).postData() ?? "");
+    assert.equal(fault.kind, "RangeError");
+    assert.equal(fault.message, "out of it");
+    assert.equal(fault.page, "/w/demo/");
+    assert.match(fault.build, /^[0-9a-f]{16}$/);
+  } finally {
+    await page.close();
+  }
+});
+
 test("the overlay draws the match", async () => {
   const { page, errors } = await open();
   await page.goto(`${base}overlay?names=1&score=1`);

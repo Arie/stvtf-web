@@ -6,6 +6,8 @@
 
 #[macro_use]
 mod log;
+#[macro_use]
+mod report;
 mod cli;
 mod maps;
 mod matches;
@@ -400,6 +402,7 @@ fn main() -> Result<()> {
         println!("{USAGE}");
         return Ok(());
     };
+    let _told = report::start(if options.relay_daemon.is_some() { "relay" } else { "web" });
     watch::stop_on_ctrl_c(&STOP)?;
     keep_log(&options);
     if let Some(served) = relay_process(&options, &STOP) {

@@ -63,7 +63,12 @@ fn serves_the_page_and_its_modules_under_the_version() {
     let get = |path: &str| request_to(&a, format!("GET {path} HTTP/1.1\r\nHost: x\r\n\r\n").as_bytes()).1;
     let page = get("/");
     let v = app_version();
-    assert!(page.contains(&format!("\"app/{v}/style.css\"")) && page.contains(&format!("\"app/{v}/main.js\"")), "{page}");
+    assert!(
+        page.contains(&format!("\"app/{v}/style.css\""))
+            && page.contains(&format!("\"app/{v}/core/faults.js\""))
+            && page.contains(&format!("\"app/{v}/main.js\"")),
+        "{page}"
+    );
     let mut imported = std::collections::HashSet::new();
     for (name, ctype, _) in APP {
         let file = get(&format!("/app/{v}/{name}"));
@@ -72,8 +77,8 @@ fn serves_the_page_and_its_modules_under_the_version() {
         imported.extend(imports(name, &file));
     }
     for (name, ctype, _) in APP {
-        // The page's entry, and the one /embed/v1/stv-map.js loads for other sites.
-        let entry = name == "main.js" || name == "stv-map.js";
+        // The page's entries, and the one /embed/v1/stv-map.js loads for other sites.
+        let entry = name == "main.js" || name == "core/faults.js" || name == "stv-map.js";
         assert!(ctype != JS || entry || imported.contains(name), "nothing imports {name}");
     }
     // And everything imported is served: a module missing from APP would 404 in the browser.

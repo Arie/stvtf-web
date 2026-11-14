@@ -181,7 +181,7 @@ impl Session {
         let s = self.clone();
         std::thread::spawn(move || {
             if let Err(e) = s.recording() {
-                log!("match {}: preparing a room: {e:#}", s.label());
+                fault!("match {}: preparing a room: {e:#}", s.label());
             }
         });
     }

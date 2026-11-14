@@ -109,14 +109,14 @@ impl Relays {
         if let Some(h) = handed
             && !relay.take_over(h)
         {
-            log!("relay on port {port}: the clients handed over do not read");
+            fault!("relay on port {port}: the clients handed over do not read");
         }
         let bound = Arc::new(Bound { relay: Some(relay), port, pool: self.clone() });
         let (playback, stop) = (Arc::new(Playback::new(want)), Arc::new(AtomicBool::new(false)));
         let (b, p, s) = (bound.clone(), playback.clone(), stop.clone());
         let thread = std::thread::spawn(move || {
             if let Err(e) = b.relay().play(&p, &s, &mut |_| {}) {
-                log!("relay on port {port}: {e:#}");
+                fault!("relay on port {port}: {e:#}");
             }
         });
         Ok(Some(LocalRelay { bound: Some(bound), password: config.password, playback, stop, thread }))

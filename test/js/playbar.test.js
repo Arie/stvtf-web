@@ -124,3 +124,27 @@ test("the clock reads 0:00 at a later map's origin", () => {
   assert.equal(bar.since(), 0);
   assert.equal(bar.shown.textContent, "0:00 / 0:04");
 });
+
+test("a drag the browser never ends with a change ends when the pointer lets go", async () => {
+  /** @type {import("../../app/room/playbar.js").Control[]} */
+  const sent = [];
+  const bar = playbar({ home: new URL("http://stv.test/r/"), send: c => sent.push(c), live() {}, room: true });
+  bar.allow(true);
+  bar.heard(line({ live: true, at: 9000, length: 9000 }));
+  const time = /** @type {any} */ (bar.time);
+  time.value = "4000";
+  time.oninput();
+  assert.equal(bar.dragging, true);
+  time.onpointerup();
+  await new Promise(r => setTimeout(r));
+  assert.equal(bar.dragging, false);
+  assert.deepEqual(sent, [{ seek: 4000 }]);
+  time.oninput();
+  time.onpointerup();
+  time.onchange();
+  await new Promise(r => setTimeout(r));
+  assert.equal(sent.length, 2, "a change after it seeks once");
+  time.oninput();
+  /** @type {any} */ (bar.live).onclick();
+  assert.equal(bar.dragging, false, "Live lets go of it too");
+});

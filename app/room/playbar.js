@@ -97,6 +97,7 @@ class Playbar {
     const { play, live, speed, time, o } = this;
     play.onclick = () => this.last && this.control({ paused: !this.last.paused });
     live.onclick = () => {
+      this.dragging = false;
       const l = this.last;
       // A bar with no map to go to (a viewer's own playback) goes back to the shared one.
       if (!l?.over || !o.moveToMap) return o.live(Math.round(this.length()));
@@ -113,10 +114,13 @@ class Playbar {
       this.dragging = true;
       this.show();
     };
-    time.onchange = () => {
+    const seek = () => {
       this.dragging = false;
       this.control({ seek: Math.round(Number(time.value)) });
     };
+    time.onchange = seek;
+    // A drag back to where it began ends with no change: letting go ends it, once a change would have.
+    time.onpointerup = time.onpointercancel = time.onblur = () => setTimeout(() => this.dragging && seek());
     const at = () => this.at(),
       control = (/** @type {Control} */ c) => this.control(c);
     shortcuts(() => (this.allowed ? this.last : null), control, at);

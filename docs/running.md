@@ -50,6 +50,8 @@ a second Ctrl-C exits at once. `--replay` has nothing to disconnect and takes th
 `--logs DIR` keeps what the server says of itself in `DIR/web.log` too (a relay process's in
 `relay.log`), see [deploy](deploy.md#logs).
 
+`SENTRY_DSN` has what goes wrong told to Sentry, see [deploy](deploy.md#faults).
+
 ## Maps
 
 On start it fetches the demos.tf overviews and builds geometry for the maps in `maps.txt` (the

@@ -132,7 +132,7 @@ impl Sessions {
         if let Some(store) = &self.store
             && let Err(e) = store.save(&s)
         {
-            log!("saving match {}: {e:#}", s.id);
+            fault!("saving match {}: {e:#}", s.id);
         }
         Ok(s)
     }
@@ -241,7 +241,7 @@ impl Sessions {
     pub fn restore(&self) -> usize {
         let Some(store) = &self.store else { return 0 };
         if let Err(e) = store.claim(&self.claim) {
-            log!("taking over {}: {e:#}", store.dir.display());
+            fault!("taking over {}: {e:#}", store.dir.display());
         }
         let Ok(entries) = std::fs::read_dir(&store.dir) else { return 0 };
         let mut map = self.lock();
@@ -258,7 +258,7 @@ impl Sessions {
     /// Watches the match saved as `id` again, or drops its file if it cannot be read.
     fn pick_up(&self, map: &mut HashMap<String, Arc<Session>>, store: &Store, id: &str) -> Option<Arc<Session>> {
         let Ok(saved) = store.load(id) else {
-            log!("dropping unreadable saved match {id}");
+            fault!("dropping unreadable saved match {id}");
             store.forget(id);
             return None;
         };
@@ -290,7 +290,7 @@ impl Sessions {
         let running: Vec<Arc<Session>> = self.lock().values().filter(|s| !s.pinned).cloned().collect();
         for s in running {
             if let Err(e) = store.save(&s) {
-                log!("saving match {}: {e:#}", s.id);
+                fault!("saving match {}: {e:#}", s.id);
             }
         }
     }

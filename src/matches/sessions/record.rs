@@ -95,7 +95,7 @@ impl LiveFile {
     fn ask(&self, tick: Option<u32>) {
         let word = tick.map_or_else(|| TAKEN.to_string(), |t| t.to_string());
         if let Err(e) = self.store.replace(&take_file(&self.id), format!("{} {word}", self.mark).as_bytes()) {
-            log!("asking for match {}'s recording: {e:#}", self.id);
+            fault!("asking for match {}'s recording: {e:#}", self.id);
         }
     }
 
@@ -149,7 +149,7 @@ impl LiveFile {
         if recording.give()
             && let Err(e) = self.store.replace(&given_file(&self.id), self.mark.as_bytes())
         {
-            log!("giving match {}'s recording: {e:#}", self.id);
+            fault!("giving match {}'s recording: {e:#}", self.id);
         }
     }
 
@@ -190,7 +190,7 @@ impl Taking {
                 (recording, Taking { read: Some((read, data[..read.min(HEAD)].to_vec())), ..Taking::default() })
             }
             Err(e) => {
-                log!("match {}'s recording does not read, and starts anew: {e:#}", file.id);
+                fault!("match {}'s recording does not read, and starts anew: {e:#}", file.id);
                 (Recording::live(), Taking::default())
             }
         }
