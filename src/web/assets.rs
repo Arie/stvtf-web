@@ -1,7 +1,7 @@
 //! The files served: page modules, fonts, icons, backpacks, maps, overviews.
 
 use super::{CACHE_FOR, JS, JSON, WEBP};
-use crate::maps::cache::{map_geometry, map_geometry_gzip, overview};
+use crate::maps::cache::{map_geometry, map_geometry_gzip, overview, overview_kept};
 use crate::{App, lock};
 use axum::http::{StatusCode, header};
 use axum::response::{IntoResponse, Response};
@@ -121,8 +121,13 @@ pub(super) fn embed_loader() -> Response {
 
 /// `/overview/<file>`: an overview or the maps' boundaries, cached, fetched on a miss.
 pub(super) fn cached_overview(app: &App, file: &str) -> Response {
-    let _one_at_a_time = lock(&app.overviews);
-    match overview(&app.cache, file) {
+    // One fetch at a time; what is cached waits for none.
+    let kept = overview_kept(&app.cache, file).map(Ok);
+    let fetched = kept.unwrap_or_else(|| {
+        let _one_at_a_time = lock(&app.overviews);
+        overview(&app.cache, file)
+    });
+    match fetched {
         Ok(body) => {
             let ctype = if file == "boundaries.json" { JSON } else { WEBP };
             ([(header::CONTENT_TYPE, ctype.to_string()), (header::CACHE_CONTROL, format!("max-age={}", CACHE_FOR.as_secs()))], body)

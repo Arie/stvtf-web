@@ -48,7 +48,7 @@ fn map_geometry_from(fastdl: &str, cache: &Path, name: &str, fetch: bool) -> Res
     } else {
         let mut d = Vec::new();
         // One byte over the limit tells a map that is too big from one that just fits.
-        ureq::get(&format!("{fastdl}{name}.bsp")).call()?.into_reader().take(MAX_BSP + 1).read_to_end(&mut d)?;
+        ureq::get(&format!("{fastdl}{name}.bsp")).timeout(MAP_WITHIN).call()?.into_reader().take(MAX_BSP + 1).read_to_end(&mut d)?;
         if d.len() as u64 > MAX_BSP {
             bail!("{name}.bsp is over {} MiB", MAX_BSP >> 20);
         }
@@ -102,26 +102,43 @@ pub(crate) fn overview(cache: &Path, file: &str) -> Result<Vec<u8>> {
     overview_from(DEMOSTF, cache, file)
 }
 
-fn overview_from(demostf: &str, cache: &Path, file: &str) -> Result<Vec<u8>> {
-    let image = match file.strip_suffix(".webp") {
-        _ if file == "boundaries.json" => None,
-        Some(map) if is_name(map, b"_") => Some(map),
+/// How long a map's file and an overview may take to fetch.
+const MAP_WITHIN: Duration = Duration::from_mins(2);
+const OVERVIEW_WITHIN: Duration = Duration::from_secs(20);
+
+/// The overview's map (none for the list), if `file` is one.
+fn overview_map(file: &str) -> Result<Option<&str>> {
+    match file.strip_suffix(".webp") {
+        _ if file == "boundaries.json" => Ok(None),
+        Some(map) if is_name(map, b"_") => Ok(Some(map)),
         _ => bail!("no such overview"),
-    };
+    }
+}
+
+/// `file` from the cache, if it is there and need not be fetched again.
+pub(crate) fn overview_kept(cache: &Path, file: &str) -> Option<Vec<u8>> {
+    let image = overview_map(file).ok()?;
+    let path = cache.join("demostf").join(file);
+    let age = std::fs::metadata(&path).and_then(|m| m.modified()).ok()?.elapsed().unwrap_or_default();
+    (image.is_some() || age < DAY).then(|| std::fs::read(&path).ok())?
+}
+
+fn overview_from(demostf: &str, cache: &Path, file: &str) -> Result<Vec<u8>> {
+    let image = overview_map(file)?;
+    if let Some(kept) = overview_kept(cache, file) {
+        return Ok(kept);
+    }
     let remote = if image.is_some() { format!("images/{file}") } else { file.to_string() };
     let dir = cache.join("demostf");
     std::fs::create_dir_all(&dir)?;
     let path = dir.join(file);
-    let age = std::fs::metadata(&path).and_then(|m| m.modified()).ok().map(|t| t.elapsed().unwrap_or_default());
-    if age.is_some_and(|a| image.is_some() || a < DAY) {
-        return Ok(std::fs::read(&path)?);
-    }
     // Only the maps demos.tf has: any other name would be a request to demos.tf every time.
     if image.is_some_and(|map| !demostf_maps_from(demostf, cache).iter().any(|m| m == map)) {
         bail!("no such overview");
     }
     let mut body = Vec::new();
     let fetched = ureq::get(&format!("{demostf}{remote}"))
+        .timeout(OVERVIEW_WITHIN)
         .call()
         .map_err(anyhow::Error::from)
         .and_then(|r| Ok(r.into_reader().take(MAX_OVERVIEW + 1).read_to_end(&mut body)?));
