@@ -1,6 +1,6 @@
 //! Demos uploaded here, to watch with a team: a `SourceTV` demo, or a player's own (which has
-//! only what that player's game was sent, and is not relayed to TF2). Sent in parts, a proxy in
-//! front taking only so much in one request:
+//! only what that player's game was sent, and is not relayed to TF2), as it is or packed (see
+//! [`super::unpack`]). Sent in parts, a proxy in front taking only so much in one request:
 //!
 //! - `GET /upload`: the page.
 //! - `POST /upload` `{"size"}`: begins one; `{"id", "part"}`, the most bytes a part may be.
@@ -10,7 +10,7 @@
 //!   `/w/demo/<its id>/`, or a player's own at `/w/pov/<its id>/`.
 //!
 //! By whoever is signed in (where nobody signs in, anyone). Kept as a demos.tf demo is, and of
-//! one person only so many: their longest unplayed goes for another.
+//! one person only one: another takes its place.
 
 use super::client::counted;
 use super::visitor::who;
@@ -20,16 +20,11 @@ use crate::matches::sessions::{self, DEMO_PREFIX, Sessions, Store, demo_dem, dem
 use anyhow::{Context, Result, bail};
 use std::io::{BufReader, Read, Take, Write};
 use std::net::{IpAddr, TcpStream};
-use std::time::Duration;
 
 const PAGE: &str = include_str!("../../app/pages/upload.html");
-/// The biggest demo taken, and the biggest part of one: under what Cloudflare lets through.
+/// The biggest demo (sent, and unpacked), and part of one: under what Cloudflare lets through.
 const MAX_DEMO: u64 = 512 << 20;
 const MAX_PART: usize = 32 << 20;
-/// How many of one person's are kept.
-const KEPT_EACH: usize = 5;
-/// One played this lately may have a room on it: it does not go for another.
-const IN_USE: Duration = Duration::from_hours(1);
 /// What a `SourceTV` demo's header names as its client.
 const STV_CLIENT: &str = "SourceTV Demo";
 
@@ -140,10 +135,9 @@ fn number_of(path: &std::path::Path, kind: sessions::Own) -> Result<u64> {
     Ok(sessions::own_demo(kind, &format!("up-{hash:016x}-{len}")))
 }
 
-/// What is kept of `by`'s uploads, the longest unplayed first: each one's number and how long ago
-/// it was played.
-fn kept_of(store: &Store, by: &str) -> Vec<(u64, Duration)> {
-    let mut theirs: Vec<(u64, Duration)> = std::fs::read_dir(&store.dir)
+/// What is kept of `by`'s uploads: each one's number.
+fn kept_of(store: &Store, by: &str) -> Vec<u64> {
+    std::fs::read_dir(&store.dir)
         .into_iter()
         .flatten()
         .flatten()
@@ -151,11 +145,9 @@ fn kept_of(store: &Store, by: &str) -> Vec<(u64, Duration)> {
             let name = e.file_name().to_string_lossy().into_owned();
             let demo: u64 = name.strip_prefix(DEMO_PREFIX)?.strip_suffix(".up")?.parse().ok()?;
             let info: serde_json::Value = serde_json::from_slice(&std::fs::read(e.path()).ok()?).ok()?;
-            (info["by"].as_str() == Some(by)).then_some((demo, sessions::age(&e).ok()?))
+            (info["by"].as_str() == Some(by)).then_some(demo)
         })
-        .collect();
-    theirs.sort_by_key(|(_, age)| std::cmp::Reverse(*age));
-    theirs
+        .collect()
 }
 
 fn forget(store: &Store, demo: u64) {
@@ -187,7 +179,8 @@ fn finish(
 }
 
 /// The upload at `part` kept as a demo of its own, `by`'s: its number.
-fn keep(store: &Store, part: &std::path::Path, name: &str, by: Option<&str>) -> Result<u64> {
+pub(super) fn keep(store: &Store, part: &std::path::Path, name: &str, by: Option<&str>) -> Result<u64> {
+    super::unpack::unpack(part, MAX_DEMO)?;
     let mut head = vec![0u8; stvtf::demo::HEADER_LEN];
     std::fs::File::open(part).context("No such upload")?.read_exact(&mut head).context("Not a demo")?;
     let header = stvtf::demo::Header::parse(&head).ok().filter(|h| h.game == "tf").context("Not a TF2 demo")?;
@@ -199,12 +192,9 @@ fn keep(store: &Store, part: &std::path::Path, name: &str, by: Option<&str>) -> 
         std::fs::remove_file(part)?;
         return Ok(demo);
     }
-    if let Some(by) = by {
-        let theirs = kept_of(store, by);
-        if theirs.len() >= KEPT_EACH {
-            let (oldest, _) = theirs.iter().find(|(_, age)| *age > IN_USE).context("Your demos here are all in use")?;
-            forget(store, *oldest);
-        }
+    // Their last goes.
+    for old in by.map_or_default(|by| kept_of(store, by)) {
+        forget(store, old);
     }
     std::fs::rename(part, store.dir.join(demo_dem(demo)))?;
     let name: String = name.chars().filter(|c| !c.is_control()).take(100).collect();

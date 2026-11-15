@@ -71,6 +71,31 @@ fn a_demo_uploaded_in_parts_plays_as_a_match_and_again_while_it_is_kept() {
 }
 
 #[test]
+fn a_demo_sent_zipped_is_the_demo_and_someones_next_takes_the_place_of_their_last() {
+    let (app, dir) = upload_app();
+    let demo = std::fs::read(concat!(env!("CARGO_MANIFEST_DIR"), "/../stvtf/tests/fixtures/tc_hydro.dem")).unwrap();
+    let plain = send(&app, &demo, "match.dem");
+    let zipped = send(&app, &unpack::tests::zip_of(&[("match.dem", &demo, 8)]), "match.zip");
+    assert!(zipped.starts_with("HTTP/1.1 200"), "{zipped}");
+    assert_eq!(plain.split("\r\n\r\n").nth(1), zipped.split("\r\n\r\n").nth(1), "the same demo, the same link");
+    let refused = send(&app, &unpack::tests::zip_of(&[("notes.txt", &[7; 2000], 0)]), "x.zip");
+    assert!(refused.starts_with("HTTP/1.1 400") && refused.contains("No demo in it"), "{refused}");
+    // One of each person is kept.
+    let store = sessions::Store { dir: dir.to_path_buf(), keys: None };
+    let keep = |bytes: &[u8], by| {
+        let part = dir.join("demo-up-x.part");
+        std::fs::write(&part, bytes).unwrap();
+        upload::keep(&store, &part, "x.dem", Some(by)).unwrap()
+    };
+    let other = [&demo[..], &[0]].concat();
+    let (first, theirs) = (keep(&[&demo[..], &[9]].concat(), "steam:1"), keep(&other, "steam:2"));
+    let kept = |demo| store.has(&sessions::demo_info(demo));
+    assert!(kept(first) && kept(theirs));
+    let second = keep(&[&demo[..], &[0, 0]].concat(), "steam:1");
+    assert!(!kept(first) && kept(second) && kept(theirs), "their last went, another's stays");
+}
+
+#[test]
 fn what_is_no_tf2_demo_or_too_big_or_from_nobody_signed_in_is_refused() {
     let (mut app, dir) = upload_app();
     let junk = vec![7u8; 2000];

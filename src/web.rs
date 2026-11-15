@@ -16,6 +16,7 @@ mod events;
 mod matches;
 mod rooms;
 pub(crate) mod token;
+mod unpack;
 mod upload;
 mod visitor;
 mod voice_in;
