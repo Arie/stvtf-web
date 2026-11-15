@@ -43,12 +43,13 @@ pub(super) fn serve_match(
     if let Some(file) = rest.strip_prefix("watch/") {
         return watch_comms_demo(&mut s, app, sessions, request, id, file, client);
     }
-    // A demo uploaded here, not playing (now): it plays again while it is kept.
-    let uploaded = || {
-        let demo = sessions::id_demo(id).filter(|d| sessions::is_own_demo(*d) && is_page(rest))?;
-        sessions.open_upload_as(counted(who(app, request).user.as_ref(), None, client).as_deref(), demo)?.ok()
-    };
+    let uploaded = || kept_demo(app, sessions, request, id, rest, client);
     let session = sessions.get(id).or_else(uploaded);
+    // A demo with comms of which more is known since is another demo: its page is elsewhere.
+    if let Some(m) = session.as_ref().filter(|m| m.id != id) {
+        let at = moment(&request.query, "t").map_or_default(|t| format!("?t={t}"));
+        return Ok(redirect(&mut s, "303 See Other", &format!("{}/w/{}/{at}", app.base, m.id))?);
+    }
     // Looked for only when a page of a match that is gone is asked for: it reads the store.
     let kept = if session.is_none() && is_page(rest) { comms_demos(app, sessions, id) } else { Vec::new() };
     match (session, rest) {
@@ -93,6 +94,17 @@ pub(super) fn serve_match(
         _ => not_found(&mut s)?,
     }
     Ok(())
+}
+
+/// A demo of ours by id `id`, not playing (now), played again while it is kept: one uploaded
+/// here, or a match's demo with its comms.
+fn kept_demo(app: &App, sessions: &Sessions, request: &Request, id: &str, rest: &str, client: IpAddr) -> Option<Arc<Session>> {
+    let demo = sessions::id_demo(id).filter(|d| sessions::is_own_demo(*d) && is_page(rest))?;
+    let by = counted(who(app, request).user.as_ref(), None, client);
+    match sessions.open_upload_as(by.as_deref(), demo) {
+        Some(opened) => opened.ok(),
+        None => sessions.open_kept_comms_as(by.as_deref(), demo, app.voice.who.clone()),
+    }
 }
 
 /// Where a viewer of a match page goes back to, and how.

@@ -138,7 +138,17 @@ fn a_matchs_demo_with_comms_plays_as_a_demo_made_here() {
     // More said in it since, it is another demo.
     std::fs::write(dir.join(format!("kept-{id}-0-1.dem.voice")), "{\"tick\":40,\"slot\":1,\"account\":5,\"frames\":[\"aA==\",\"aA==\"]}\n")
         .unwrap();
-    assert_ne!(s.open_comms_demo_as(None, &id, "0-1", WhoIsWho::default()).unwrap().id, a.id);
+    let b = s.open_comms_demo_as(None, &id, "0-1", WhoIsWho::default()).unwrap();
+    assert_ne!(b.id, a.id);
+    s.stop_all();
+    // No longer playing, its link plays it again; the older one's, what it is now.
+    let mut s = Sessions::new(false, 3, 20.0);
+    s.store = Some(Store { dir: dir.to_path_buf(), keys: None });
+    let again = |demo| s.open_kept_comms_as(None, demo, WhoIsWho::default()).map(|m| m.id.clone());
+    assert_eq!(again(b.demo_id().unwrap()), Some(b.id.clone()));
+    assert_eq!(again(demo), Some(b.id.clone()));
+    assert_eq!(again(demo + 1), None);
+    assert!(s.open_upload_as(None, demo).is_none(), "not an upload");
     s.stop_all();
 }
 

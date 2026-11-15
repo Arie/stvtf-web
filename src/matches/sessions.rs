@@ -154,7 +154,7 @@ impl Sessions {
     pub fn open_upload_as(&self, by: Option<&str>, demo: u64) -> Option<Result<Arc<Session>>> {
         let store = self.store.as_ref()?;
         let info: serde_json::Value = serde_json::from_slice(&store.read(&demo_info(demo)).ok()?).ok()?;
-        if !store.has(&demo_output(demo)) && !store.has(&demo_dem(demo)) {
+        if !info["of"].is_null() || (!store.has(&demo_output(demo)) && !store.has(&demo_dem(demo))) {
             return None;
         }
         let pov = info["pov"].as_bool().unwrap_or(false);
@@ -174,7 +174,21 @@ impl Sessions {
             let built = live_demos::build(&dir, &id, &file, &|key| who.account_now(key))?;
             Ok((built.demo, built.nobodys))
         };
-        self.play_demo(by, own_demo(Own::Comms, &key), None, Some((of, Box::new(made))), true)
+        let demo = own_demo(Own::Comms, &key);
+        let s = self.play_demo(by, demo, None, Some((of.clone(), Box::new(made))), true)?;
+        // What it is of, for its link once it no longer plays.
+        if let Some(store) = &self.store {
+            let _ = std::fs::write(store.dir.join(demo_info(demo)), serde_json::json!({ "of": [of.0, of.1] }).to_string());
+        }
+        Ok(s)
+    }
+
+    /// The session playing what demo `demo` was of, a match's demo with its comms (see
+    /// [`Sessions::open_comms_demo_as`]): another demo than `demo` if more is known of it since.
+    /// None when it was no such demo, or its match's demo is no longer kept.
+    pub fn open_kept_comms_as(&self, by: Option<&str>, demo: u64, who: WhoIsWho) -> Option<Arc<Session>> {
+        let info: serde_json::Value = serde_json::from_slice(&self.store.as_ref()?.read(&demo_info(demo)).ok()?).ok()?;
+        self.open_comms_demo_as(by, info["of"][0].as_str()?, info["of"][1].as_str()?, who).ok()
     }
 
     /// Plays demo `demo`: demos.tf's, or the one `made`, of a match's demo with its comms. Its
