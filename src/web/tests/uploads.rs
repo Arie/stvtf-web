@@ -39,7 +39,7 @@ fn a_demo_uploaded_in_parts_plays_as_a_match_and_again_while_it_is_kept() {
     assert!(done.starts_with("HTTP/1.1 200"), "{done}");
     let page = page_of(&done);
     let number = sessions::id_demo(page.trim_matches('/').trim_start_matches("w/")).unwrap();
-    assert!(sessions::is_own_demo(number), "{page}");
+    assert!(sessions::is_own_demo(number) && page.starts_with("/w/demo/") && page.len() == "/w/demo/".len() + 14, "{page}");
     assert!(get(&app, &page, "").starts_with("HTTP/1.1 200"));
     let info = std::fs::read_to_string(dir.join(sessions::demo_info(number))).unwrap();
     assert!(info.contains(r#""pov":false"#) && info.contains(r#""map":"tc_hydro""#) && info.contains(r#""name":"match.dem""#), "{info}");

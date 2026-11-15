@@ -448,6 +448,19 @@ fn a_match_id_is_exactly_as_long_as_they_are_made_and_hex() {
     assert!(is_id(&random_id()));
     assert_eq!(id_demo(&demo_id(1_531_482)), Some(1_531_482));
     assert_eq!(id_demo("d"), None);
+    // One of ours says what it is, and is told from a fixed match called demo.
+    for kind in [Own::Demo, Own::Pov, Own::Comms] {
+        let own = own_demo(kind, "a file");
+        assert_eq!(id_demo(&demo_id(own)), Some(own), "{}", demo_id(own));
+    }
+    let pov = demo_id(own_demo(Own::Pov, "a file"));
+    assert!(pov.starts_with("pov/") && pov.len() == 17, "{pov}");
+    assert_eq!(split_id(&format!("{pov}/events")), (pov.as_str(), "events"));
+    assert_eq!(split_id(&pov), (pov.as_str(), ""));
+    assert_eq!(split_id("demo/room"), ("demo", "room"));
+    assert_eq!(split_id("demo/"), ("demo", ""));
+    assert_eq!(split_id("abc"), ("abc", ""));
+    assert_eq!(id_demo(&format!("d{}", own_demo(Own::Pov, "a file"))), None, "not by its number");
     for bad in ["", "abc", &"a".repeat(31), &"a".repeat(33), &"g".repeat(32), &format!("../{}", "a".repeat(29))] {
         assert!(!is_id(bad), "{bad}");
     }

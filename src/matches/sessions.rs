@@ -174,7 +174,7 @@ impl Sessions {
             let built = live_demos::build(&dir, &id, &file, &|key| who.account_now(key))?;
             Ok((built.demo, built.nobodys))
         };
-        self.play_demo(by, own_demo(&key), None, Some((of, Box::new(made))), true)
+        self.play_demo(by, own_demo(Own::Comms, &key), None, Some((of, Box::new(made))), true)
     }
 
     /// Plays demo `demo`: demos.tf's, or the one `made`, of a match's demo with its comms. Its
@@ -451,6 +451,6 @@ mod load_tests;
 #[cfg(test)]
 mod tests;
 pub(crate) use address::is_public;
-pub(crate) use ids::{demo_id, id_demo, is_id, is_own_demo, logged, own_demo, random_id};
+pub(crate) use ids::{Own, demo_id, id_demo, is_id, is_own_demo, logged, own_demo, random_id, split_id};
 pub(crate) use session::{Listed, Session, Viewer};
 pub(crate) use store::{DEMO_PREFIX, LIVE_PREFIX, Store, age, demo_dem, demo_info, demo_output, is_kept_demo, sweep_demos};

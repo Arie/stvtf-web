@@ -337,7 +337,8 @@ fn a_matchs_demo_with_comms_is_watched_as_a_demo_of_its_own() {
     assert!(get(&app, &format!("/w/{id}/watch/101"), "").starts_with("HTTP/1.1 404"));
     // Not playing any more, it is not one the site can play again.
     let (site, _key, _site_dir) = site_app();
-    let gone = get(&site, &format!("/w/d{}/", demo.unwrap()), "");
+    assert!(page.starts_with("/w/comms/"), "{page}");
+    let gone = get(&site, &page, "");
     assert!(gone.starts_with("HTTP/1.1 404"), "{gone}");
     sessions_of(&app).stop_all();
 }
@@ -358,7 +359,7 @@ fn a_demo_with_comms_watched_here_has_its_voices_put_on_players_after_the_match(
         watched.split("Location: ").nth(1).and_then(|l| l.split("\r\n").next()).unwrap_or_default().to_string()
     };
     let page = watch(&app);
-    assert!(page.starts_with("/w/d") && page.ends_with("/?t=1:02"), "the moment goes along: {page}");
+    assert!(page.starts_with("/w/comms/") && page.ends_with("/?t=1:02"), "the moment goes along: {page}");
     let page = page.trim_end_matches("?t=1:02").to_string();
     // Where nobody signs in, anyone says who is who.
     assert!(get(&app, &format!("{page}voice-invite"), "").ends_with(r#"{"review":true}"#));

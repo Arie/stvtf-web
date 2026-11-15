@@ -69,7 +69,7 @@ async function matchPage(src) {
     if (!r.ok) throw new Error((await r.text()) || `start link: HTTP ${r.status}`);
     return (await r.json()).page;
   }
-  const page = url.pathname.match(/^.*?\/w\/[^/]+\//)?.[0];
+  const page = url.pathname.match(/^.*?\/w\/(?:(?:demo|pov|comms)\/[0-9a-f]{13}|[^/]+)\//)?.[0];
   if (!page) throw new Error(`${src} is not a start link or a match page`);
   return page;
 }

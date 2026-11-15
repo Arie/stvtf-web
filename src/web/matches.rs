@@ -32,7 +32,7 @@ pub(super) fn serve_match(
     path: &str,
     client: IpAddr,
 ) -> Result<()> {
-    let (id, rest) = path.split_once('/').unwrap_or((path, ""));
+    let (id, rest) = sessions::split_id(path);
     // A match's demos with its comms in them, kept after it too.
     if rest == "demos" {
         return Ok(respond(&mut s, "200 OK", JSON, serde_json::json!(comms_demos(app, sessions, id)).to_string().as_bytes())?);

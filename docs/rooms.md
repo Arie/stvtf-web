@@ -128,7 +128,7 @@ speed with it.
     The speakers list, and the page of a match that is gone, list them: each to download
     (`GET /w/<match>/demos/<load>-<tick>.dem`) and to watch here (`GET /w/<match>/watch/<load>-<tick>`),
     played with its comms as a demo of its own (as a [demos.tf demo](site.md#demostf-demos) is,
-    at `/w/d<number>/`, where a room can be opened on it).
+    at `/w/comms/<id>/`, where a room can be opened on it).
   - Swept every 5 minutes.
 - Demos of an older TF2 build (other class tables) cannot be played to a client; the sidebar
   says so, as it says any reason the relay cannot play.

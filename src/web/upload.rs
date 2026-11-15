@@ -6,7 +6,8 @@
 //! - `POST /upload` `{"size"}`: begins one; `{"id", "part"}`, the most bytes a part may be.
 //! - `PUT /upload/<id>?at=<bytes so far>`: the next part; `409` with how many bytes there are
 //!   when that is not where it goes on.
-//! - `POST /upload/<id>` `{"name"}`: all of it is there; `{"page"}`, where it plays.
+//! - `POST /upload/<id>` `{"name"}`: all of it is there; `{"page"}`, where it plays:
+//!   `/w/demo/<its id>/`, or a player's own at `/w/pov/<its id>/`.
 //!
 //! By whoever is signed in (where nobody signs in, anyone). Kept as a demos.tf demo is, and of
 //! one person only so many: their longest unplayed goes for another.
@@ -125,7 +126,7 @@ struct Finish {
 }
 
 /// The number an uploaded demo plays under: the same for the same file, whoever sends it.
-fn number_of(path: &std::path::Path) -> Result<u64> {
+fn number_of(path: &std::path::Path, kind: sessions::Own) -> Result<u64> {
     let mut file = std::fs::File::open(path)?;
     let (mut hash, mut len, mut chunk) = (0xcbf2_9ce4_8422_2325_u64, 0u64, vec![0u8; 1 << 20]);
     loop {
@@ -136,7 +137,7 @@ fn number_of(path: &std::path::Path) -> Result<u64> {
         len += n as u64;
         hash = chunk[..n].iter().fold(hash, |h, b| (h ^ u64::from(*b)).wrapping_mul(0x0100_0000_01b3));
     }
-    Ok(sessions::own_demo(&format!("up-{hash:016x}-{len}")))
+    Ok(sessions::own_demo(kind, &format!("up-{hash:016x}-{len}")))
 }
 
 /// What is kept of `by`'s uploads, the longest unplayed first: each one's number and how long ago
@@ -190,7 +191,8 @@ fn keep(store: &Store, part: &std::path::Path, name: &str, by: Option<&str>) -> 
     let mut head = vec![0u8; stvtf::demo::HEADER_LEN];
     std::fs::File::open(part).context("No such upload")?.read_exact(&mut head).context("Not a demo")?;
     let header = stvtf::demo::Header::parse(&head).ok().filter(|h| h.game == "tf").context("Not a TF2 demo")?;
-    let demo = number_of(part)?;
+    let pov = header.client != STV_CLIENT;
+    let demo = number_of(part, if pov { sessions::Own::Pov } else { sessions::Own::Demo })?;
     let known = store.has(&demo_info(demo)) && (store.has(&demo_output(demo)) || store.has(&demo_dem(demo)));
     if known {
         // Sent before, by them or another: the one kept plays.
@@ -206,7 +208,7 @@ fn keep(store: &Store, part: &std::path::Path, name: &str, by: Option<&str>) -> 
     }
     std::fs::rename(part, store.dir.join(demo_dem(demo)))?;
     let name: String = name.chars().filter(|c| !c.is_control()).take(100).collect();
-    let info = serde_json::json!({ "by": by, "pov": header.client != STV_CLIENT, "name": name, "map": header.map });
+    let info = serde_json::json!({ "by": by, "pov": pov, "name": name, "map": header.map });
     std::fs::write(store.dir.join(demo_info(demo)), info.to_string())?;
     Ok(demo)
 }
