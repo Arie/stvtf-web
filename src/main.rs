@@ -143,8 +143,8 @@ impl App {
     }
 
     /// A redirect to `path` under `base`.
-    fn redirect(&self, s: &mut web::Out, status: &str, path: &str) -> std::io::Result<()> {
-        web::redirect(s, status, &format!("{}{path}", self.base))
+    fn redirect(&self, status: axum::http::StatusCode, path: &str) -> axum::response::Response {
+        web::redirect(status, &format!("{}{path}", self.base))
     }
 }
 

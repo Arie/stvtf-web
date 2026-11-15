@@ -81,7 +81,8 @@ function roomButton() {
     button.classList.add("busy");
     button.textContent = "Opening…";
     const body = JSON.stringify(watchingAt() ?? {});
-    const r = await fetch(new URL("room", HOME), { method: "POST", body }).catch(() => null);
+    const headers = { "Content-Type": "application/json" };
+    const r = await fetch(new URL("room", HOME), { method: "POST", headers, body }).catch(() => null);
     if (r?.ok) {
       const page = new URL((await r.json()).page, location.origin);
       // Its link to send, if the browser still lets this click copy.

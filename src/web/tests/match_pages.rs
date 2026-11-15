@@ -17,9 +17,9 @@ fn a_start_counts_against_a_steam_id_else_an_address() {
 fn start_links_carry_every_display_toggle() {
     let toggles = "names=0&score=1&panel=0.5&rotate=auto&dot=14&ui=1.5&zoom=map&side=0&bg=geometry&bgopacity=0.4&health=0&projectiles=0&beams=0&buildings=0&shots=0&deaths=0\
                    &caps=0&heals=1&hits=1&marks=1&jumps=1&pickups=1&points=0&flow=1&loadout=0&effects=0";
-    assert_eq!(start_view(&format!("view=overlay&{toggles}&x=y")), format!("overlay?{toggles}"));
-    assert_eq!(start_view("at=1:02:03"), "?t=1:02:03", "a moment, as the page's t");
-    assert_eq!(start_view("at=1:2:3:4"), "");
+    assert_eq!(start_view(&asks(&format!("view=overlay&{toggles}&x=y"))), format!("overlay?{toggles}"));
+    assert_eq!(start_view(&asks("at=1:02:03")), "?t=1:02:03", "a moment, as the page's t");
+    assert_eq!(start_view(&asks("at=1:2:3:4")), "");
 }
 
 #[test]
@@ -27,9 +27,9 @@ fn a_demo_not_playing_plays_again_for_whoever_is_signed_in() {
     let (app, key, _dir) = site_app();
     // Signed out: sign in, then back.
     let out = get(&app, "/w/d1531482/", "");
-    assert!(out.starts_with("HTTP/1.1 303") && out.contains("Location: /signin?return=/w/d1531482/\r\n"), "{out}");
+    assert!(out.starts_with("HTTP/1.1 303") && out.contains("Location: /signin?return=%2Fw%2Fd1531482%2F\r\n"), "{out}");
     let at = get(&app, "/w/d1531482/?t=12:34", "");
-    assert!(at.contains("Location: /signin?return=/w/d1531482/%3Ft%3D12%3A34\r\n"), "the moment goes along: {at}");
+    assert!(at.contains("Location: /signin?return=%2Fw%2Fd1531482%2F%3Ft%3D12%3A34\r\n"), "the moment goes along: {at}");
     assert!(!get(&app, "/w/d1531482/?t=x%0d", "").contains("%3Ft"));
     let cookie = signed_in(&app, &key, r#"{"uid":"u7","name":"n","streamer":false}"#);
     let page = get(&app, "/w/d1531482/?t=12:34", &cookie);
@@ -74,7 +74,7 @@ fn a_viewer_goes_back_on_their_own() {
     let cookie = cookie_of(&back);
     assert!(get(&app, &format!("{page}me"), &cookie).contains(r#""admin":true"#), "theirs to control");
     assert_eq!(app.rooms.shared_count(), 0, "not counted as a room");
-    assert!(post(&app, "/w/demo/rewind", "", r#"{"at":"soon"}"#).starts_with("HTTP/1.1 400"));
+    assert!(post(&app, "/w/demo/rewind", "", r#"{"at":"soon"}"#).starts_with("HTTP/1.1 422"));
 }
 
 #[test]
@@ -161,13 +161,18 @@ fn a_form_after_long_headers_still_starts_a_match() {
     let app = app(Matches::Many(Sessions::new(false, 4, 20.0)));
     let body = "connect=192.0.2.1%3A27020+tv";
     // Headers ending just short of MAX_REQUEST, so the body takes it over.
-    let head = |cookie: &str| format!("POST /watch HTTP/1.1\r\nCookie: {cookie}\r\nContent-Length: {}\r\n\r\n", body.len());
+    let head = |cookie: &str| {
+        format!(
+            "POST /watch HTTP/1.1\r\nCookie: {cookie}\r\nContent-Type: application/x-www-form-urlencoded\r\nContent-Length: {}\r\n\r\n",
+            body.len()
+        )
+    };
     let cookie = "c".repeat(MAX_REQUEST as usize - head("").len() - 10);
     let send = head(&cookie) + body;
     assert!(send.len() as u64 > MAX_REQUEST && (head(&cookie).len() as u64) < MAX_REQUEST);
     let response = request_to(&app, send.as_bytes()).1;
     assert!(response.starts_with("HTTP/1.1 303"), "{response}");
-    let huge = format!("POST /watch HTTP/1.1\r\nContent-Length: {}\r\n\r\n", 17 << 10);
+    let huge = format!("POST /watch HTTP/1.1\r\nContent-Type: application/x-www-form-urlencoded\r\nContent-Length: {}\r\n\r\n", 17 << 10);
     assert!(request_to(&app, huge.as_bytes()).1.starts_with("HTTP/1.1 413"));
     sessions_of(&app).stop_all();
 }
@@ -245,12 +250,6 @@ fn a_public_server_refuses_internal_addresses() {
 }
 
 #[test]
-fn form_values_are_decoded() {
-    assert_eq!(form_decode("connect+a%3A1%3B+password+%22p%26w%22"), "connect a:1; password \"p&w\"");
-    assert_eq!(form_decode("bad%zz"), "badzz");
-}
-
-#[test]
 fn a_match_no_longer_watched_says_where_to_start_it_again() {
     let mut a = app(Matches::Many(Sessions::new(false, 1, 20.0)));
     let gone = |a: &TestApp| get(a, "/w/nope/", "");
@@ -269,7 +268,12 @@ fn a_form_may_be_as_long_as_the_limit_and_no_longer() {
     let a = app(Matches::Many(Sessions::new(false, 1, 20.0)));
     let post = |len: u64| {
         let body = format!("connect={}", "+".repeat(len as usize - "connect=".len()));
-        request_to(&a, format!("POST /watch HTTP/1.1\r\nContent-Length: {len}\r\n\r\n{body}").as_bytes()).1
+        request_to(
+            &a,
+            format!("POST /watch HTTP/1.1\r\nContent-Type: application/x-www-form-urlencoded\r\nContent-Length: {len}\r\n\r\n{body}")
+                .as_bytes(),
+        )
+        .1
     };
     let fits = post(MAX_REQUEST);
     assert!(fits.starts_with("HTTP/1.1 400") && fits.contains("no server address"), "{fits}");

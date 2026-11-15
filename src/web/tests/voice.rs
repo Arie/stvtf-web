@@ -8,7 +8,8 @@ fn post_voice(app: &TestApp, id: &str, key: Option<&str>, body: &str) -> String 
 
 fn post_voice_as_is(app: &TestApp, id: &str, key: Option<&str>, body: &str) -> String {
     let auth = key.map_or_default(|k| format!("Authorization: Bearer {k}\r\n"));
-    let send = format!("POST /w/{id}/voice HTTP/1.1\r\n{auth}Content-Length: {}\r\n\r\n{body}", body.len());
+    let send =
+        format!("POST /w/{id}/voice HTTP/1.1\r\n{auth}Content-Type: application/json\r\nContent-Length: {}\r\n\r\n{body}", body.len());
     request_to(app, send.as_bytes()).1
 }
 
@@ -88,10 +89,13 @@ fn a_room_takes_voice_for_its_live_match_and_its_admins_match_who_is_who() {
     let (cookie, room) = (cookie_of(&opened), page_of(&opened));
     // The bot posts to the room's link as to the match's.
     let said = invited(&app, &id, r#"{"discord":"77","name":"coach","channel":"9","frames":["aA=="]}"#);
-    let send = format!("POST {room}voice HTTP/1.1\r\nAuthorization: Bearer k\r\nContent-Length: {}\r\n\r\n{said}", said.len());
+    let send = format!(
+        "POST {room}voice HTTP/1.1\r\nAuthorization: Bearer k\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{said}",
+        said.len()
+    );
     let held = request_to(&app, send.as_bytes()).1;
     assert!(held.starts_with("HTTP/1.1 200") && held.ends_with("held until tick 7000"), "{held}");
-    let keyless = format!("POST {room}voice HTTP/1.1\r\nContent-Length: {}\r\n\r\n{said}", said.len());
+    let keyless = format!("POST {room}voice HTTP/1.1\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{said}", said.len());
     assert!(request_to(&app, keyless.as_bytes()).1.starts_with("HTTP/1.1 401"));
     // Its admins see who is not matched, and match them to a player.
     let voices = get(&app, &format!("{room}voices"), &cookie);
@@ -142,7 +146,7 @@ fn a_discord_user_links_the_steam_account_discord_verified_and_the_bot_asks_who_
     assert!(sent.starts_with("HTTP/1.1 302"), "{sent}");
     let location = sent.lines().find_map(|l| l.strip_prefix("Location: ")).unwrap();
     assert!(location.contains("/oauth2/authorize?response_type=code&client_id=id1&scope=identify+connections"), "{location}");
-    assert!(location.contains("&redirect_uri=https%3A//stv.example/voice/linked"), "{location}");
+    assert!(location.contains("&redirect_uri=https%3A%2F%2Fstv.example%2Fvoice%2Flinked"), "{location}");
     let cookie = cookie_of(&sent);
     let state = cookie.strip_prefix("voice_link=").unwrap();
     assert!(location.ends_with(&format!("&state={state}")), "{location}");
@@ -235,8 +239,10 @@ fn behind_a_site_the_invite_is_for_who_started_the_match_and_for_streamers() {
 fn who_is_who_is_told_to_and_asked_of_the_stv_tf_that_holds_it_with_the_bots_key() {
     let (app, _id) = voice_app();
     let known = |key: &str, method: &str, query: &str, body: &str| {
-        let send =
-            format!("{method} /voice/known{query} HTTP/1.1\r\nAuthorization: Bearer {key}\r\nContent-Length: {}\r\n\r\n{body}", body.len());
+        let send = format!(
+            "{method} /voice/known{query} HTTP/1.1\r\nAuthorization: Bearer {key}\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{body}",
+            body.len()
+        );
         request_to(&app, send.as_bytes()).1
     };
     let said = r#"{"id":"mumble:cert:abc","steamid":"76561197960265737","name":"arie"}"#;
@@ -252,9 +258,10 @@ fn who_is_who_is_told_to_and_asked_of_the_stv_tf_that_holds_it_with_the_bots_key
     assert!(known("k", "GET", "?since=1", "").contains(r#""known":[]"#));
     assert!(known("k", "POST", "", r#"{"id":"mumble:cert:abc","steamid":null,"name":"arie"}"#).starts_with("HTTP/1.1 204"));
     assert!(known("k", "GET", "?since=1", "").contains(r#""steamid":null,"v":2"#));
-    for bad in [r#"{"id":"a b","steamid":"[U:1:9]"}"#, r#"{"id":"77","steamid":"gaben"}"#, "{}"] {
+    for bad in [r#"{"id":"a b","steamid":"[U:1:9]"}"#, r#"{"id":"77","steamid":"gaben"}"#] {
         assert!(known("k", "POST", "", bad).starts_with("HTTP/1.1 400"), "{bad}");
     }
+    assert!(known("k", "POST", "", "{}").starts_with("HTTP/1.1 422"), "what is not one at all");
 }
 
 #[test]
@@ -307,7 +314,9 @@ fn who_is_who_is_said_before_anyone_speaks_by_player_or_by_steam_id() {
     let voices = get(&app, &format!("{page}voices"), "");
     assert!(voices.contains("coach") && !voices.contains("sub"), "{voices}");
     // Not without the invite.
-    let uninvited =
-        format!("POST /w/{id}/voice-status HTTP/1.1\r\nAuthorization: Bearer k\r\nContent-Length: {}\r\n\r\n{there}", there.len());
+    let uninvited = format!(
+        "POST /w/{id}/voice-status HTTP/1.1\r\nAuthorization: Bearer k\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{there}",
+        there.len()
+    );
     assert!(request_to(&app, uninvited.as_bytes()).1.starts_with("HTTP/1.1 403"));
 }

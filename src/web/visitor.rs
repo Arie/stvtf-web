@@ -1,6 +1,6 @@
 //! The visitor: signed in with the site, or a guest by cookie, and where they go back to.
 
-use super::{GUEST_COOKIE, Request, form_decode, param, token, unix_now};
+use super::{GUEST_COOKIE, Request, token, unix_now};
 use crate::App;
 use crate::matches::sessions;
 use crate::rooms::people::steam_key;
@@ -52,17 +52,7 @@ pub(super) fn origin(home: &str) -> Option<&str> {
 
 /// A page of ours to go back to: `?return=` if it is one (a path, not another site), else our home.
 pub(super) fn return_to(app: &App, request: &Request) -> String {
-    let path = param(&request.query, "return").map_or_default(form_decode);
+    let path = request.query.get("return").map_or_default(str::to_string);
     let ours = path.starts_with(&format!("{}/", app.base)) && !path.starts_with("//") && !path.contains(['\\', '\r', '\n']);
     if ours { path } else { format!("{}/", app.base) }
-}
-
-/// `v` for a query string.
-pub(super) fn url_encode(v: &str) -> String {
-    v.bytes()
-        .map(|b| match b {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' | b'/' => char::from(b).to_string(),
-            _ => format!("%{b:02X}"),
-        })
-        .collect()
 }

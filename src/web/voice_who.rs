@@ -16,16 +16,17 @@
 //! its voices that were no player's: whose each is said to be holds for that demo (built anew
 //! with it), by its players (signed in, playing in it at the moment shown) and the streamers.
 
-use super::Out;
 use super::visitor::Who;
 use super::voice_in::{has_say, is_key};
-use super::{JSON, Request, TEXT, json_body, respond};
+use super::{JSON, Request, TEXT, respond};
 use crate::matches::sessions::Session;
 use crate::voice::feed::Put;
 use crate::voice::ids::{is_voice_id, parse_steamid};
 use crate::voice::who::Recalled;
 use crate::voice::{ChannelState, DiscordGoing};
 use crate::{App, lock};
+use axum::http::StatusCode;
+use axum::response::Response;
 use serde::Deserialize;
 use std::time::{Duration, Instant};
 
@@ -43,7 +44,7 @@ struct Member {
 }
 
 #[derive(Deserialize)]
-struct Report {
+pub(super) struct Report {
     #[serde(default)]
     invite: Option<String>,
     kind: String,
@@ -72,15 +73,14 @@ struct Report {
 const MAX_CHANNELS: usize = 8;
 
 /// `POST <page>voice-status`, the bot's.
-pub(super) fn post_voice_status(s: &mut Out, app: &App, m: Option<&Session>, request: &Request) -> std::io::Result<()> {
-    let Some(key) = &app.voice.key else { return respond(s, "404 Not Found", TEXT, b"") };
+pub(super) fn post_voice_status(app: &App, m: Option<&Session>, request: &Request, said: Report) -> Response {
+    let Some(key) = &app.voice.key else { return respond(StatusCode::NOT_FOUND, TEXT, b"") };
     if !is_key(key, request.bearer.as_deref()) {
-        return respond(s, "401 Unauthorized", TEXT, b"");
+        return respond(StatusCode::UNAUTHORIZED, TEXT, b"");
     }
-    let Some(m) = m.filter(|m| m.is_live()) else { return respond(s, "404 Not Found", TEXT, b"not a live match") };
-    let Ok(said) = json_body::<Report>(request) else { return respond(s, "400 Bad Request", TEXT, b"how it goes") };
+    let Some(m) = m.filter(|m| m.is_live()) else { return respond(StatusCode::NOT_FOUND, TEXT, b"not a live match") };
     if !is_key(m.voice_invite(), said.invite.as_deref()) {
-        return respond(s, "403 Forbidden", TEXT, b"not invited");
+        return respond(StatusCode::FORBIDDEN, TEXT, b"not invited");
     }
     let text: String = said.status.chars().filter(|c| !c.is_control()).take(MAX_TEXT).collect();
     // Which channel: the bot's own name for it, else the one of its kind.
@@ -89,15 +89,15 @@ pub(super) fn post_voice_status(s: &mut Out, app: &App, m: Option<&Session>, req
         "discord" => discord_status(m, &said, &channel, text),
         "mumble" => {
             if !mumble_status(m, &said, &channel, text) {
-                return respond(s, "204 No Content", TEXT, b"");
+                return respond(StatusCode::NO_CONTENT, TEXT, b"");
             }
         }
-        _ => return respond(s, "400 Bad Request", TEXT, b"Discord or Mumble"),
+        _ => return respond(StatusCode::BAD_REQUEST, TEXT, b"Discord or Mumble"),
     }
     if said.left || said.people.is_some() {
         take_roster(app, m, &channel, said.people.unwrap_or_default());
     }
-    respond(s, "204 No Content", TEXT, b"")
+    respond(StatusCode::NO_CONTENT, TEXT, b"")
 }
 
 /// How it goes in a Discord `channel` the bot is in for match `m`, or that it left.
@@ -159,8 +159,8 @@ fn theirs<'a>(app: &App, m: Option<&'a Session>, who: &Who) -> Option<&'a Sessio
 
 /// `GET <page>voice-comms`: where the bot is, in Discord or Mumble, and how it goes. No content
 /// for someone with no say.
-pub(super) fn get_voice_comms(s: &mut Out, app: &App, m: Option<&Session>, who: &Who) -> std::io::Result<()> {
-    let Some(m) = theirs(app, m, who) else { return respond(s, "204 No Content", TEXT, b"") };
+pub(super) fn get_voice_comms(app: &App, m: Option<&Session>, who: &Who) -> Response {
+    let Some(m) = theirs(app, m, who) else { return respond(StatusCode::NO_CONTENT, TEXT, b"") };
     // Each Discord channel's going, one after the other; in, unless one is not.
     let going: Vec<DiscordGoing> = lock(&m.comms.discord).values().filter(|g| g.at.elapsed() < DISCORD_SAID_FOR).cloned().collect();
     let state = going.iter().map(|g| g.state).find(|s| *s != ChannelState::In).unwrap_or(ChannelState::In);
@@ -173,7 +173,7 @@ pub(super) fn get_voice_comms(s: &mut Out, app: &App, m: Option<&Session>, who: 
             serde_json::json!({ "id": j.id, "host": j.host, "port": j.port, "channel": j.channel, "delay": j.delay, "status": j.status, "state": state })
         })
         .collect();
-    respond(s, "200 OK", JSON, serde_json::json!({ "discord": discord, "mumble": mumble }).to_string().as_bytes())
+    respond(StatusCode::OK, JSON, serde_json::json!({ "discord": discord, "mumble": mumble }).to_string().as_bytes())
 }
 
 /// Where the demos are kept.
@@ -219,19 +219,19 @@ fn review_voices(app: &App, dir: &std::path::Path, id: &str, file: &str) -> Vec<
 }
 
 /// `GET <page>voices`: those in the channel and those heard, and whom each is put on.
-pub(super) fn get_voices(s: &mut Out, app: &App, m: Option<&Session>, who: &Who) -> std::io::Result<()> {
+pub(super) fn get_voices(app: &App, m: Option<&Session>, who: &Who) -> Response {
     if let Some((dir, id, file)) = reviewed(app, m, who) {
-        return respond(s, "200 OK", JSON, serde_json::json!(review_voices(app, dir, id, file)).to_string().as_bytes());
+        return respond(StatusCode::OK, JSON, serde_json::json!(review_voices(app, dir, id, file)).to_string().as_bytes());
     }
-    let Some(m) = theirs(app, m, who) else { return respond(s, "204 No Content", TEXT, b"") };
+    let Some(m) = theirs(app, m, who) else { return respond(StatusCode::NO_CONTENT, TEXT, b"") };
     // What the sites said since of those in the channel shows at once.
     recall(app, m);
-    respond(s, "200 OK", JSON, serde_json::json!(m.comms.feed.voices(&m.hub)).to_string().as_bytes())
+    respond(StatusCode::OK, JSON, serde_json::json!(m.comms.feed.voices(&m.hub)).to_string().as_bytes())
 }
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-struct Match {
+pub(super) struct Match {
     #[serde(rename = "discord")]
     voice_id: String,
     #[serde(default)]
@@ -242,69 +242,65 @@ struct Match {
 
 /// `POST <page>voice-match`: `discord` is the match's `player`, or `steamid` (as people write
 /// them), or with neither nobody.
-pub(super) fn post_voice_match(s: &mut Out, app: &App, m: Option<&Session>, request: &Request, who: &Who) -> std::io::Result<()> {
+pub(super) fn post_voice_match(app: &App, m: Option<&Session>, v: &Match, who: &Who) -> Response {
     if m.is_some_and(|m| m.comms_of().is_some()) {
-        return post_review_match(s, app, m, request, who);
+        return post_review_match(app, m, v, who);
     }
     let Some(m) = m.filter(|m| m.is_live() && app.voice.key.is_some()) else {
-        return respond(s, "409 Conflict", TEXT, b"No voice here");
+        return respond(StatusCode::CONFLICT, TEXT, b"No voice here");
     };
     if !has_say(app, m, who) {
-        return respond(s, "403 Forbidden", TEXT, b"Not allowed");
+        return respond(StatusCode::FORBIDDEN, TEXT, b"Not allowed");
     }
-    let Ok(v) = json_body::<Match>(request) else {
-        return respond(s, "400 Bad Request", TEXT, b"Invalid");
-    };
     // Looked up before anything is answered: the match is not held meanwhile.
     let player = v.player.and_then(|p| lock(&m.hub).steamid_of_player(stvtf::output::PlayerId(p)).map(str::to_owned));
     let steamid = match (v.player, v.steamid.as_deref()) {
         (Some(_), _) => match player {
             Some(steamid) => Some(steamid),
-            None => return respond(s, "400 Bad Request", TEXT, b"No such player"),
+            None => return respond(StatusCode::BAD_REQUEST, TEXT, b"No such player"),
         },
         (None, Some(text)) => match parse_steamid(text) {
             Some(steamid) => Some(steamid),
             None => {
-                return respond(s, "400 Bad Request", TEXT, b"Invalid Steam ID");
+                return respond(StatusCode::BAD_REQUEST, TEXT, b"Invalid Steam ID");
             }
         },
         (None, None) => None,
     };
     if !m.comms.feed.put_on(&v.voice_id, steamid.clone()) {
-        return respond(s, "400 Bad Request", TEXT, b"Not found");
+        return respond(StatusCode::BAD_REQUEST, TEXT, b"Not found");
     }
     let caster = who.user.as_ref().is_some_and(|u| u.streamer);
     app.voice.who.remember(&v.voice_id, steamid.as_deref(), &m.comms.feed.name_of(&v.voice_id).unwrap_or_default(), caster);
-    respond(s, "204 No Content", TEXT, b"")
+    respond(StatusCode::NO_CONTENT, TEXT, b"")
 }
 
 /// `POST <page>voice-match` on a demo with comms watched here: one of its voices that was no
 /// player's is a player of it, a `SteamID`, or nobody, for this demo. The answer says where it
 /// plays with that (`watch`): built anew.
-fn post_review_match(s: &mut Out, app: &App, m: Option<&Session>, request: &Request, who: &Who) -> std::io::Result<()> {
-    let Some((dir, id, file)) = reviewed(app, m, who) else { return respond(s, "403 Forbidden", TEXT, b"Not allowed") };
-    let Ok(v) = json_body::<Match>(request) else { return respond(s, "400 Bad Request", TEXT, b"Invalid") };
+fn post_review_match(app: &App, m: Option<&Session>, v: &Match, who: &Who) -> Response {
+    let Some((dir, id, file)) = reviewed(app, m, who) else { return respond(StatusCode::FORBIDDEN, TEXT, b"Not allowed") };
     let player = v.player.and_then(|p| lock(&m?.hub).steamid_of_player(stvtf::output::PlayerId(p)).map(str::to_owned));
     let steamid = match (v.player, v.steamid.as_deref()) {
-        (Some(_), _) if player.is_none() => return respond(s, "400 Bad Request", TEXT, b"No such player"),
+        (Some(_), _) if player.is_none() => return respond(StatusCode::BAD_REQUEST, TEXT, b"No such player"),
         (Some(_), _) => player,
         (None, Some(text)) => match parse_steamid(text) {
             Some(steamid) => Some(steamid),
-            None => return respond(s, "400 Bad Request", TEXT, b"Invalid Steam ID"),
+            None => return respond(StatusCode::BAD_REQUEST, TEXT, b"Invalid Steam ID"),
         },
         (None, None) => None,
     };
     let key = format!("{}{}", crate::voice::feed::UNLINKED, v.voice_id);
     let Some((_, name)) = crate::matches::live_demos::voices_in(dir, id, file).into_iter().find(|(k, _)| *k == key) else {
-        return respond(s, "400 Bad Request", TEXT, b"Not found");
+        return respond(StatusCode::BAD_REQUEST, TEXT, b"Not found");
     };
     if crate::matches::live_demos::pick(dir, id, file, &key, steamid.as_deref()).is_err() {
-        return respond(s, "500 Internal Server Error", TEXT, b"Not kept");
+        return respond(StatusCode::INTERNAL_SERVER_ERROR, TEXT, b"Not kept");
     }
     // For the next match they talk in too: a streamer's word for sure, a player's a suggestion.
     let caster = who.user.as_ref().is_some_and(|u| u.streamer);
     app.voice.who.remember(&v.voice_id, steamid.as_deref(), &name, caster);
     log!("demo {id} {file}: {} said to be {}", v.voice_id, steamid.as_deref().unwrap_or("nobody"));
     let watch = format!("{}/w/{id}/watch/{file}", app.base);
-    respond(s, "200 OK", JSON, serde_json::json!({ "watch": watch }).to_string().as_bytes())
+    respond(StatusCode::OK, JSON, serde_json::json!({ "watch": watch }).to_string().as_bytes())
 }

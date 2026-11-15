@@ -59,6 +59,11 @@ fn head_and_body(response: &[u8]) -> (String, &[u8]) {
     (String::from_utf8_lossy(&response[..end]).into_owned(), &response[end + 4..])
 }
 
+/// A query string's values, as a request's.
+fn asks(query: &str) -> Asks {
+    Asks(serde_urlencoded::from_str(query).unwrap())
+}
+
 fn sessions_of(app: &TestApp) -> &Sessions {
     let Matches::Many(sessions) = &app.matches else { panic!("one match, not many") };
     sessions
@@ -107,7 +112,13 @@ fn cookie_of(response: &str) -> String {
 }
 
 fn post(app: &TestApp, path: &str, cookie: &str, body: &str) -> String {
-    let send = format!("POST {path} HTTP/1.1\r\nCookie: {cookie}\r\nContent-Length: {}\r\n\r\n{body}", body.len());
+    // As a page sends it: JSON, a form, or nothing.
+    let ctype = match body {
+        "" => String::new(),
+        form if path == "/watch" && !form.starts_with('{') => "Content-Type: application/x-www-form-urlencoded\r\n".into(),
+        _ => "Content-Type: application/json\r\n".into(),
+    };
+    let send = format!("POST {path} HTTP/1.1\r\nCookie: {cookie}\r\n{ctype}Content-Length: {}\r\n\r\n{body}", body.len());
     request_to(app, send.as_bytes()).1
 }
 
@@ -129,7 +140,10 @@ fn open_room(app: &TestApp) -> (String, String) {
 
 fn post_watch(app: &TestApp, connect: &str) -> String {
     let body = format!("connect={connect}");
-    let send = format!("POST /watch HTTP/1.1\r\nHost: x\r\nContent-Length: {}\r\n\r\n{body}", body.len());
+    let send = format!(
+        "POST /watch HTTP/1.1\r\nHost: x\r\nContent-Type: application/x-www-form-urlencoded\r\nContent-Length: {}\r\n\r\n{body}",
+        body.len()
+    );
     request_to(app, send.as_bytes()).1
 }
 
@@ -157,6 +171,9 @@ fn invited(app: &TestApp, id: &str, body: &str) -> String {
 /// The bot says how it goes in a channel brought into match `id`, and who is in it.
 fn status(app: &TestApp, id: &str, key: &str, body: &str) -> String {
     let body = invited(app, id, body);
-    let send = format!("POST /w/{id}/voice-status HTTP/1.1\r\nAuthorization: Bearer {key}\r\nContent-Length: {}\r\n\r\n{body}", body.len());
+    let send = format!(
+        "POST /w/{id}/voice-status HTTP/1.1\r\nAuthorization: Bearer {key}\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{body}",
+        body.len()
+    );
     request_to(app, send.as_bytes()).1
 }

@@ -2,30 +2,30 @@
 //! layers; each is answered on a blocking thread (see [`super::routes`]), and an event stream is
 //! written by a thread of its own.
 
-use super::routes::{Answer, Asked};
-use super::{Body as Whole, Events, Out, Reply, Request, client_of, voice_link};
-use super::{GUEST_COOKIE, USER_COOKIE};
+use super::routes::Asked;
+use super::{Answered, Asks, GUEST_COOKIE, Request, USER_COOKIE, client_of, voice_link};
 use crate::App;
 use crate::matches::sessions;
 use anyhow::Result;
 use axum::Router;
-use axum::body::{Body, Bytes};
-use axum::extract::{ConnectInfo, State};
+use axum::body::Bytes;
+use axum::extract::{ConnectInfo, DefaultBodyLimit, FromRequestParts, Query};
 use axum::http::header::{self, HeaderName, HeaderValue};
+use axum::http::request::Parts;
 use axum::http::{HeaderMap, Method, StatusCode};
 use axum::response::{IntoResponse, Response};
+use axum::{Form, Json};
 use axum_extra::extract::CookieJar;
 use hyper::server::conn::http1;
 use hyper_util::rt::{TokioIo, TokioTimer};
 use hyper_util::service::TowerToHyperService;
+use serde::de::DeserializeOwned;
+use std::collections::HashMap;
 use std::future::Future;
-use std::io::Write;
 use std::net::{IpAddr, SocketAddr};
 use std::pin::Pin;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::time::{Duration, Instant};
-use tokio::sync::mpsc::error::TrySendError;
+use std::time::Duration;
 use tower_http::cors::{self, CorsLayer};
 use tower_http::csrf::CsrfLayer;
 use tower_http::set_header::SetResponseHeaderLayer;
@@ -33,14 +33,8 @@ use tower_http::timeout::TimeoutLayer;
 
 type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
-/// Event streams open at once; more are refused.
-pub(crate) const MAX_STREAMS: usize = 512;
-/// Flushes of events that may wait for a slow client, and how long one waits before it is gone.
-const QUEUED: usize = 64;
-const SLOW_FOR: Duration = Duration::from_secs(30);
-const SLOW_STEP: Duration = Duration::from_millis(20);
-
-/// A request's line and headers arrive in this time, and are no more than [`super::MAX_REQUEST`].
+/// A request's line and headers arrive in this time, and are no more than twice
+/// [`super::MAX_REQUEST`] (what is read at once: them, and the start of a body).
 const HEAD_WITHIN: Duration = Duration::from_secs(10);
 
 /// Serves `app` on `listen` until the process ends.
@@ -68,7 +62,7 @@ pub(crate) fn run(listen: &str, app: Arc<App>) -> Result<()> {
 /// and time.
 pub(crate) fn http() -> http1::Builder {
     let mut http = http1::Builder::new();
-    http.timer(TokioTimer::new()).header_read_timeout(HEAD_WITHIN).max_buf_size(super::MAX_REQUEST as usize);
+    http.timer(TokioTimer::new()).header_read_timeout(HEAD_WITHIN).max_buf_size(2 * super::MAX_REQUEST as usize);
     http
 }
 
@@ -94,67 +88,82 @@ pub(crate) fn router(app: Arc<App>) -> Router {
     let unframed = SetResponseHeaderLayer::overriding(header::X_FRAME_OPTIONS, HeaderValue::from_static("DENY"));
     all.merge(acting.layer(unframed))
         .with_state(app)
+        .layer(DefaultBodyLimit::max(super::MAX_REQUEST as usize))
         .layer(CsrfLayer::new())
         .layer(SetResponseHeaderLayer::overriding(header::X_CONTENT_TYPE_OPTIONS, HeaderValue::from_static("nosniff")))
         .layer(CorsLayer::new().allow_origin(cors::Any).allow_methods([Method::GET]))
         .layer(TimeoutLayer::with_status_code(StatusCode::REQUEST_TIMEOUT, ANSWER_WITHIN))
 }
 
-/// A route's handler: `answer`, on a blocking thread, with the request read.
-pub(super) fn to(
-    answer: Answer,
-) -> impl Fn(State<Arc<App>>, ConnectInfo<SocketAddr>, axum::extract::Request) -> BoxFuture<'static, Response> + Clone + Send + Sync + 'static
-{
-    move |State(app), ConnectInfo(peer), request| {
-        Box::pin(async move {
-            let (request, client) = match request_of(peer.ip(), request).await {
-                Ok(asked) => asked,
-                Err(refused) => return refused.into_response(),
-            };
-            let answered = tokio::task::spawn_blocking(move || {
-                let mut out = Out::default();
-                answer(&mut out, &Asked { app: &app, request: &request, client }).ok().and_then(|()| out.take())
-            });
-            response_of(answered.await.ok().flatten())
-        })
+/// `work`, which may block, on a thread where it may; a fault if it does not end well.
+async fn off_thread(work: impl FnOnce() -> Answered + Send + 'static) -> Response {
+    match tokio::task::spawn_blocking(work).await {
+        Ok(answered) => answered.unwrap_or_else(|early| *early.0),
+        Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     }
 }
 
-/// What the handlers need of a request, its body read; and who asks. Refused: a body over the
-/// most it may be that does not say so itself.
-async fn request_of(peer: IpAddr, request: axum::extract::Request) -> Result<(Request, IpAddr), StatusCode> {
-    let (parts, body) = request.into_parts();
-    let all = |name: HeaderName| -> String {
-        let values: Vec<&str> = parts.headers.get_all(name).iter().filter_map(|v| v.to_str().ok()).collect();
-        values.join(", ")
-    };
-    let jar = CookieJar::from_headers(&parts.headers);
-    let cookie = |name: &str| jar.get(name).map(|c| c.value().to_string());
-    let mut asked = Request {
-        method: parts.method.as_str().to_string(),
-        path: parts.uri.path().to_string(),
-        query: parts.uri.query().unwrap_or_default().to_string(),
-        length: one(&parts.headers, header::CONTENT_LENGTH).and_then(|l| l.trim().parse().ok()).unwrap_or(0),
-        gzip: all(header::ACCEPT_ENCODING).split(',').any(|e| e.split(';').next().is_some_and(|e| e.trim().eq_ignore_ascii_case("gzip"))),
-        forwarded: forwarded(&all(HeaderName::from_static("x-forwarded-for"))),
-        bearer: one(&parts.headers, header::AUTHORIZATION).and_then(|a| a.trim().strip_prefix("Bearer ")).map(|t| t.trim().to_string()),
-        guest: cookie(GUEST_COOKIE).filter(|g| sessions::is_id(g)),
-        user: cookie(USER_COOKIE),
-        voice_link: cookie(voice_link::STATE_COOKIE).filter(|g| sessions::is_id(g)),
-        agent: one(&parts.headers, header::USER_AGENT).unwrap_or_default().trim().to_string(),
-        body: Vec::new(),
-    };
-    let limit = super::body_limit(&asked);
-    // One that says it is over the most: its handler says so, the body unread.
-    if asked.length <= limit {
-        let Ok(read) = axum::body::to_bytes(body, limit).await else {
-            return Err(StatusCode::PAYLOAD_TOO_LARGE);
+type Answering = BoxFuture<'static, Response>;
+
+/// A route's handler: `answer` to a request without a body.
+pub(super) fn to(answer: fn(&Asked) -> Answered) -> impl Fn(Asked) -> Answering + Clone + Send + Sync + 'static {
+    move |asked| Box::pin(off_thread(move || answer(&asked)))
+}
+
+/// To a request with a JSON body, read as `T`.
+pub(super) fn json<T: DeserializeOwned + Send + 'static>(
+    answer: fn(&Asked, T) -> Answered,
+) -> impl Fn(Asked, Json<T>) -> Answering + Clone + Send + Sync + 'static {
+    move |asked, Json(body)| Box::pin(off_thread(move || answer(&asked, body)))
+}
+
+/// To a request that may have a JSON body.
+pub(super) fn json_if_any<T: DeserializeOwned + Send + 'static>(
+    answer: fn(&Asked, Option<T>) -> Answered,
+) -> impl Fn(Asked, Option<Json<T>>) -> Answering + Clone + Send + Sync + 'static {
+    move |asked, body| Box::pin(off_thread(move || answer(&asked, body.map(|Json(body)| body))))
+}
+
+/// To a form.
+pub(super) fn form<T: DeserializeOwned + Send + 'static>(
+    answer: fn(&Asked, T) -> Answered,
+) -> impl Fn(Asked, Form<T>) -> Answering + Clone + Send + Sync + 'static {
+    move |asked, Form(body)| Box::pin(off_thread(move || answer(&asked, body)))
+}
+
+/// To a request whose body is taken as it is.
+pub(super) fn bytes(answer: fn(&Asked, Bytes) -> Answered) -> impl Fn(Asked, Bytes) -> Answering + Clone + Send + Sync + 'static {
+    move |asked, body| Box::pin(off_thread(move || answer(&asked, body)))
+}
+
+impl FromRequestParts<Arc<App>> for Asked {
+    type Rejection = StatusCode;
+
+    /// What the handlers need of a request, and who asks. A query that is none is taken as empty.
+    async fn from_request_parts(parts: &mut Parts, app: &Arc<App>) -> Result<Self, StatusCode> {
+        let peer = parts.extensions.get::<ConnectInfo<SocketAddr>>().ok_or(StatusCode::INTERNAL_SERVER_ERROR)?.0.ip();
+        let query = Query::<HashMap<String, String>>::from_request_parts(parts, app).await.map_or_else(|_| HashMap::new(), |Query(q)| q);
+        let all = |name: HeaderName| -> String {
+            let values: Vec<&str> = parts.headers.get_all(name).iter().filter_map(|v| v.to_str().ok()).collect();
+            values.join(", ")
         };
-        asked.length = read.len();
-        asked.body = read.to_vec();
+        let jar = CookieJar::from_headers(&parts.headers);
+        let cookie = |name: &str| jar.get(name).map(|c| c.value().to_string());
+        let request = Request {
+            path: parts.uri.path().to_string(),
+            query: Asks(query),
+            gzip: all(header::ACCEPT_ENCODING)
+                .split(',')
+                .any(|e| e.split(';').next().is_some_and(|e| e.trim().eq_ignore_ascii_case("gzip"))),
+            bearer: one(&parts.headers, header::AUTHORIZATION).and_then(|a| a.trim().strip_prefix("Bearer ")).map(|t| t.trim().to_string()),
+            guest: cookie(GUEST_COOKIE).filter(|g| sessions::is_id(g)),
+            user: cookie(USER_COOKIE),
+            voice_link: cookie(voice_link::STATE_COOKIE).filter(|g| sessions::is_id(g)),
+            agent: one(&parts.headers, header::USER_AGENT).unwrap_or_default().trim().to_string(),
+        };
+        let client = client_of(&forwarded(&all(HeaderName::from_static("x-forwarded-for"))), peer);
+        Ok(Asked { app: app.clone(), request, client })
     }
-    let client = client_of(&asked.forwarded, peer);
-    Ok((asked, client))
 }
 
 /// `X-Forwarded-For`'s addresses, nearest hop last; none if any of it is not an address.
@@ -164,89 +173,4 @@ pub(super) fn forwarded(value: &str) -> Vec<IpAddr> {
 
 fn one(headers: &HeaderMap, name: HeaderName) -> Option<&str> {
     headers.get(name).and_then(|v| v.to_str().ok())
-}
-
-/// A handler's reply as the framework sends it: none is a fault.
-fn response_of(reply: Option<Reply>) -> Response {
-    let Some(reply) = reply else { return StatusCode::INTERNAL_SERVER_ERROR.into_response() };
-    let body = match reply.body {
-        Whole::Whole(body) => Body::from(body),
-        Whole::Events(events) => match events_body(events) {
-            Some(body) => body,
-            None => return StatusCode::SERVICE_UNAVAILABLE.into_response(),
-        },
-    };
-    let mut response = Response::new(body);
-    let status = reply.status.get(..3).and_then(|code| code.parse::<u16>().ok()).and_then(|code| StatusCode::from_u16(code).ok());
-    *response.status_mut() = status.unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
-    for (name, value) in reply.headers {
-        if let (Ok(name), Ok(value)) = (HeaderName::try_from(name), HeaderValue::try_from(value)) {
-            response.headers_mut().append(name, value);
-        }
-    }
-    response
-}
-
-static STREAMS: AtomicUsize = AtomicUsize::new(0);
-
-/// Counts an event stream until dropped.
-struct Streaming;
-
-impl Streaming {
-    fn open() -> Option<Self> {
-        if STREAMS.fetch_add(1, Ordering::Relaxed) >= MAX_STREAMS {
-            STREAMS.fetch_sub(1, Ordering::Relaxed);
-            return None;
-        }
-        Some(Streaming)
-    }
-}
-
-impl Drop for Streaming {
-    fn drop(&mut self) {
-        STREAMS.fetch_sub(1, Ordering::Relaxed);
-    }
-}
-
-/// A body of what `events` writes, each flush a chunk, on a thread of its own until the client
-/// is gone. None when too many are open.
-fn events_body(events: Events) -> Option<Body> {
-    let open = Streaming::open()?;
-    let (tx, rx) = tokio::sync::mpsc::channel(QUEUED);
-    std::thread::spawn(move || {
-        let _open = open;
-        let _ = events(&mut Chunks { tx, held: Vec::new() });
-    });
-    Some(Body::from_stream(tokio_stream::wrappers::ReceiverStream::new(rx)))
-}
-
-/// What is written, sent on as a chunk at each flush.
-struct Chunks {
-    tx: tokio::sync::mpsc::Sender<std::io::Result<Bytes>>,
-    held: Vec<u8>,
-}
-
-impl Write for Chunks {
-    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
-        self.held.extend_from_slice(bytes);
-        Ok(bytes.len())
-    }
-
-    /// Fails once the client is gone, or has taken nothing for [`SLOW_FOR`].
-    fn flush(&mut self) -> std::io::Result<()> {
-        if self.held.is_empty() {
-            return Ok(());
-        }
-        let mut chunk = Ok(Bytes::from(std::mem::take(&mut self.held)));
-        let since = Instant::now();
-        loop {
-            match self.tx.try_send(chunk) {
-                Ok(()) => return Ok(()),
-                Err(TrySendError::Closed(_)) => return Err(std::io::ErrorKind::BrokenPipe.into()),
-                Err(TrySendError::Full(_)) if since.elapsed() > SLOW_FOR => return Err(std::io::ErrorKind::TimedOut.into()),
-                Err(TrySendError::Full(back)) => chunk = back,
-            }
-            std::thread::sleep(SLOW_STEP);
-        }
-    }
 }

@@ -12,14 +12,20 @@
 //! By whoever is signed in (where nobody signs in, anyone). Kept as a demos.tf demo is, and of
 //! one person only one: another takes its place.
 
-use super::Out;
+// Handlers have the shape the routes' adapters take (`server::to` and the like), whether or not
+// one can fail or needs to own what was posted.
+#![allow(clippy::unnecessary_wraps, clippy::needless_pass_by_value)]
+
 use super::client::counted;
 use super::routes::Asked;
 use super::visitor::who;
-use super::{JSON, Request, TEXT, json_body, param, refuse, respond};
+use super::{Answered, Early};
+use super::{JSON, Request, TEXT, refuse, respond};
 use crate::App;
 use crate::matches::sessions::{self, DEMO_PREFIX, Sessions, Store, demo_dem, demo_info, demo_output};
 use anyhow::{Context, Result, bail};
+use axum::body::Bytes;
+use axum::http::StatusCode;
 use std::io::{Read, Write};
 use std::net::IpAddr;
 
@@ -45,22 +51,18 @@ fn uploader(app: &App, request: &Request, client: IpAddr) -> Result<Option<Strin
 }
 
 /// `GET /upload`: the form is on the front page.
-pub(super) fn form(s: &mut Out, a: &Asked) -> Result<()> {
-    Ok(a.app.redirect(s, "302 Found", "/")?)
+pub(super) fn form(a: &Asked) -> Answered {
+    Ok(a.app.redirect(StatusCode::FOUND, "/"))
 }
 
-/// Where uploads are kept, and who uploads. None once answered that there is none.
-fn uploading<'a>(s: &mut Out, a: &'a Asked) -> Result<Option<(&'a Store, Option<String>)>> {
+/// Where uploads are kept, and who uploads. Answered early when nothing is, or they may not.
+fn uploading(a: &Asked) -> Result<(&Store, Option<String>), Early> {
     let Some(store) = &a.sessions()?.store else {
-        respond(s, "404 Not Found", TEXT, b"No demos are kept here")?;
-        return Ok(None);
+        return Err(respond(StatusCode::NOT_FOUND, TEXT, b"No demos are kept here").into());
     };
-    match uploader(a.app, a.request, a.client) {
-        Ok(by) => Ok(Some((store, by))),
-        Err(e) => {
-            refuse(s, "403 Forbidden", &e)?;
-            Ok(None)
-        }
+    match uploader(&a.app, &a.request, a.client) {
+        Ok(by) => Ok((store, by)),
+        Err(e) => Err(refuse(StatusCode::FORBIDDEN, &e).into()),
     }
 }
 
@@ -69,41 +71,40 @@ fn upload_id(a: &Asked) -> Option<String> {
     a.request.path.strip_prefix("/upload/").filter(|id| sessions::is_id(id)).map(str::to_string)
 }
 
-fn said(s: &mut Out, done: Result<serde_json::Value>) -> Result<()> {
-    match done {
-        Ok(said) => respond(s, "200 OK", JSON, said.to_string().as_bytes())?,
-        Err(e) => refuse(s, "400 Bad Request", &e)?,
-    }
-    Ok(())
+fn said(done: Result<serde_json::Value>) -> Answered {
+    Ok(match done {
+        Ok(said) => respond(StatusCode::OK, JSON, said.to_string().as_bytes()),
+        Err(e) => refuse(StatusCode::BAD_REQUEST, &e),
+    })
 }
 
 /// `POST /upload`.
-pub(super) fn begun(s: &mut Out, a: &Asked) -> Result<()> {
-    let Some((store, _)) = uploading(s, a)? else { return Ok(()) };
-    said(s, begin(a.request, store))
+pub(super) fn begun(a: &Asked, upload: Begin) -> Answered {
+    let (store, _) = uploading(a)?;
+    said(begin(&upload, store))
 }
 
 /// `PUT /upload/<id>`.
-pub(super) fn part(s: &mut Out, a: &Asked) -> Result<()> {
-    let Some((store, _)) = uploading(s, a)? else { return Ok(()) };
-    let Some(id) = upload_id(a) else { return Ok(respond(s, "404 Not Found", TEXT, b"not found")?) };
-    Ok(put_part(s, a.request, store, &id)?)
+pub(super) fn part(a: &Asked, body: Bytes) -> Answered {
+    let (store, _) = uploading(a)?;
+    let Some(id) = upload_id(a) else { return Ok(respond(StatusCode::NOT_FOUND, TEXT, b"not found")) };
+    put_part(&a.request, &body, store, &id)
 }
 
 /// `POST /upload/<id>`.
-pub(super) fn finished(s: &mut Out, a: &Asked) -> Result<()> {
-    let Some((store, by)) = uploading(s, a)? else { return Ok(()) };
-    let Some(id) = upload_id(a) else { return Ok(respond(s, "404 Not Found", TEXT, b"not found")?) };
-    said(s, finish(a.app, a.sessions()?, a.request, store, &id, by.as_deref()))
+pub(super) fn finished(a: &Asked, said_of_it: Option<Finish>) -> Answered {
+    let (store, by) = uploading(a)?;
+    let Some(id) = upload_id(a) else { return Ok(respond(StatusCode::NOT_FOUND, TEXT, b"not found")) };
+    said(finish(&a.app, a.sessions()?, &a.request, store, &id, by.as_deref(), &said_of_it.unwrap_or_default()))
 }
 
 #[derive(serde::Deserialize)]
-struct Begin {
+pub(super) struct Begin {
     size: u64,
 }
 
-fn begin(request: &Request, store: &Store) -> Result<serde_json::Value> {
-    let Begin { size } = json_body(request)?;
+fn begin(upload: &Begin, store: &Store) -> Result<serde_json::Value> {
+    let size = upload.size;
     if size > MAX_DEMO {
         bail!("Over {} MB", MAX_DEMO >> 20);
     }
@@ -117,23 +118,23 @@ fn begin(request: &Request, store: &Store) -> Result<serde_json::Value> {
 }
 
 /// `PUT /upload/<id>?at=`: the body goes on the end of what is there, if `at` is where that is.
-fn put_part(s: &mut Out, request: &Request, store: &Store, id: &str) -> std::io::Result<()> {
+fn put_part(request: &Request, body: &[u8], store: &Store, id: &str) -> Answered {
     let path = store.dir.join(part_name(id));
-    let Ok(had) = std::fs::metadata(&path).map(|m| m.len()) else { return respond(s, "404 Not Found", TEXT, b"No such upload") };
-    let at = param(&request.query, "at").and_then(|a| a.parse::<u64>().ok());
-    if request.length > MAX_PART || had + request.length as u64 > MAX_DEMO {
-        return respond(s, "413 Content Too Large", TEXT, b"Too big");
+    let Ok(had) = std::fs::metadata(&path).map(|m| m.len()) else { return Ok(respond(StatusCode::NOT_FOUND, TEXT, b"No such upload")) };
+    let at = request.query.get("at").and_then(|a| a.parse::<u64>().ok());
+    if had + body.len() as u64 > MAX_DEMO {
+        return Ok(respond(StatusCode::PAYLOAD_TOO_LARGE, TEXT, b"Too big"));
     }
     if at != Some(had) {
-        return respond(s, "409 Conflict", TEXT, had.to_string().as_bytes());
+        return Ok(respond(StatusCode::CONFLICT, TEXT, had.to_string().as_bytes()));
     }
-    std::fs::File::options().append(true).open(&path)?.write_all(&request.body)?;
-    respond(s, "200 OK", TEXT, (had + request.length as u64).to_string().as_bytes())
+    std::fs::File::options().append(true).open(&path)?.write_all(body)?;
+    Ok(respond(StatusCode::OK, TEXT, (had + body.len() as u64).to_string().as_bytes()))
 }
 
 #[derive(serde::Deserialize, Default)]
 #[serde(default)]
-struct Finish {
+pub(super) struct Finish {
     name: String,
 }
 
@@ -185,8 +186,15 @@ fn forget(store: &Store, demo: u64) {
 }
 
 /// `POST /upload/<id>`: the demo is whole. It is kept, and plays.
-fn finish(app: &App, sessions: &Sessions, request: &Request, store: &Store, id: &str, by: Option<&str>) -> Result<serde_json::Value> {
-    let said: Finish = if request.length > 0 { json_body(request)? } else { Finish::default() };
+fn finish(
+    app: &App,
+    sessions: &Sessions,
+    request: &Request,
+    store: &Store,
+    id: &str,
+    by: Option<&str>,
+    said: &Finish,
+) -> Result<serde_json::Value> {
     let part = store.dir.join(part_name(id));
     let user = who(app, request).user;
     let kept = keep(store, &part, &said.name, by, user.as_ref().map(|u| u.uid.as_str()));

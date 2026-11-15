@@ -3,7 +3,10 @@
 use super::*;
 
 fn bot(app: &TestApp, method: &str, key: &str, body: &str) -> String {
-    let send = format!("{method} /voice/mumble HTTP/1.1\r\nAuthorization: Bearer {key}\r\nContent-Length: {}\r\n\r\n{body}", body.len());
+    let send = format!(
+        "{method} /voice/mumble HTTP/1.1\r\nAuthorization: Bearer {key}\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{body}",
+        body.len()
+    );
     request_to(app, send.as_bytes()).1
 }
 
@@ -279,10 +282,14 @@ fn a_refusal_is_answered_with_the_match_not_held() {
     let m = sessions_of(&app).get(&id).unwrap();
     let free = || m.comms.mumble.try_lock().is_ok();
     let bad = r#"{"host":"","channel":"a"}"#;
-    let send = format!("POST /w/{id}/voice-mumble HTTP/1.1\r\nContent-Length: {}\r\n\r\n{bad}", bad.len());
+    let send =
+        format!("POST /w/{id}/voice-mumble HTTP/1.1\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{bad}", bad.len());
     assert!(free_while_answering(&app, send.as_bytes(), free), "a channel refused");
     let said = invited(&app, &id, r#"{"kind":"mumble","job":9,"status":"x"}"#);
-    let send = format!("POST /w/{id}/voice-status HTTP/1.1\r\nAuthorization: Bearer k\r\nContent-Length: {}\r\n\r\n{said}", said.len());
+    let send = format!(
+        "POST /w/{id}/voice-status HTTP/1.1\r\nAuthorization: Bearer k\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{said}",
+        said.len()
+    );
     assert!(free_while_answering(&app, send.as_bytes(), free), "a channel's status not taken");
 }
 

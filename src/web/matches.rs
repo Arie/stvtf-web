@@ -1,15 +1,21 @@
 //! A match's page, timeline and private playbacks, and starting one from a site's link.
 
-use super::Out;
+// Handlers have the shape the routes' adapters take (`server::to` and the like), whether or not
+// one can fail or needs to own what was posted.
+#![allow(clippy::unnecessary_wraps, clippy::needless_pass_by_value)]
+
+use super::Asks;
 use super::client::counted;
 use super::events::{stream, too_many_streams, wants_detail, wants_voice};
-use super::rooms::{open_room, opened};
+use super::query_of;
+use super::rooms::{Open, Where, open_room, opened};
 use super::routes::Asked;
 use super::token::Source;
 use super::visitor::{Who, who};
+use super::{Answered, Early};
 use super::{
-    HTML, INDEX, JSON, MAX_DELAY_S, Request, TEXT, json_body, landing, not_found, param, redirect, refuse, respond, respond_marks,
-    respond_with, token, unix_now,
+    HTML, INDEX, JSON, MAX_DELAY_S, Request, TEXT, landing, not_found, redirect, refuse, respond, respond_marks, respond_with, token,
+    unix_now,
 };
 use crate::matches::sessions;
 use crate::matches::sessions::{Session, Sessions, Viewer};
@@ -17,6 +23,8 @@ use crate::rooms::room::StartAt;
 use crate::voice::who::WhoIsWho;
 use crate::{App, is_name, lock};
 use anyhow::{Result, anyhow};
+use axum::http::StatusCode;
+use axum::response::Response;
 use cookie::{Cookie, SameSite};
 use std::fmt::Write as _;
 use std::net::IpAddr;
@@ -32,119 +40,111 @@ fn asked(a: &Asked) -> (String, String) {
     (id.to_string(), rest.to_string())
 }
 
-/// The match asked for, a demo kept played again. None once answered otherwise: gone, or its
-/// page elsewhere.
-fn found(s: &mut Out, a: &Asked) -> Result<Option<Arc<Session>>> {
-    let (app, sessions, request, client) = (a.app, a.sessions()?, a.request, a.client);
+/// The match asked for, a demo kept played again. Answered early otherwise: gone, or its page
+/// elsewhere.
+pub(super) fn found(a: &Asked) -> Result<Arc<Session>, Early> {
+    let (app, sessions, request, client) = (&a.app, a.sessions()?, &a.request, a.client);
     let (id, rest) = asked(a);
     let (id, rest) = (id.as_str(), rest.as_str());
     let session = sessions.get(id).or_else(|| kept_demo(app, sessions, request, id, rest, client));
     if let Some(to) = moved_on(app, sessions, request, id, rest, session.as_ref()) {
-        redirect(s, "303 See Other", &to)?;
-        return Ok(None);
+        return Err(redirect(StatusCode::SEE_OTHER, &to).into());
     }
     // A demo with comms of which more is known since is another demo: its page is elsewhere.
     if let Some(m) = session.as_ref().filter(|m| m.id != id) {
         let at = moment(&request.query, "t").map_or_default(|t| format!("?t={t}"));
-        redirect(s, "303 See Other", &format!("{}/w/{}/{at}", app.base, m.id))?;
-        return Ok(None);
+        return Err(redirect(StatusCode::SEE_OTHER, &format!("{}/w/{}/{at}", app.base, m.id)).into());
     }
-    if session.is_some() {
-        return Ok(session);
+    if let Some(m) = session {
+        return Ok(m);
     }
     // Looked for only when a page of a match that is gone is asked for: it reads the store.
     let kept = if is_page(rest) { comms_demos(app, sessions, id) } else { Vec::new() };
     let ended_demo = is_page(rest) && app.home.is_some() && sessions::id_demo(id).is_some_and(|d| !sessions::is_own_demo(d));
-    if !kept.is_empty() {
+    let gone = if !kept.is_empty() {
         // Gone, but with comms kept: what there is to download.
-        respond(s, "404 Not Found", HTML, gone_with_demos(&kept).as_bytes())?;
+        respond(StatusCode::NOT_FOUND, HTML, gone_with_demos(&kept).as_bytes())
     } else if ended_demo && who(app, request).user.is_none() {
         // An ended demos.tf demo, nobody signed in: sign in, then back.
         let at = moment(&request.query, "t").map_or_default(|t| format!("?t={t}"));
-        let back = super::visitor::url_encode(&format!("{}{}{at}", app.base, request.path));
-        app.redirect(s, "303 See Other", &format!("/signin?return={back}"))?;
+        let back = format!("{}{}{at}", app.base, request.path);
+        app.redirect(StatusCode::SEE_OTHER, &format!("/signin?{}", query_of(&[("return", &back)])))
     } else {
-        respond(s, "404 Not Found", HTML, &app.page(&landing(app, sessions, request, client, GONE)))?;
-    }
-    Ok(None)
+        respond(StatusCode::NOT_FOUND, HTML, &app.page(&landing(app, sessions, request, client, GONE)))
+    };
+    Err(gone.into())
 }
 
 /// `/w/<id>/`, with a delay or as an overlay: the page.
-pub(super) fn page(s: &mut Out, a: &Asked) -> Result<()> {
+pub(super) fn page(a: &Asked) -> Answered {
     let (_, rest) = asked(a);
-    let Some(_playing) = found(s, a)? else { return Ok(()) };
-    if rest.is_empty() && !a.request.path.ends_with('/') {
-        a.app.redirect(s, "308 Permanent Redirect", &format!("{}/", a.request.path))?;
+    let _playing = found(a)?;
+    Ok(if rest.is_empty() && !a.request.path.ends_with('/') {
+        a.app.redirect(StatusCode::PERMANENT_REDIRECT, &format!("{}/", a.request.path))
     } else if is_page(&rest) {
-        respond(s, "200 OK", HTML, &a.app.page(INDEX))?;
+        respond(StatusCode::OK, HTML, &a.app.page(INDEX))
     } else {
-        not_found(s)?;
-    }
-    Ok(())
+        not_found()
+    })
 }
 
 /// `/w/<id>/demos`: its demos with its comms in them, kept after it too.
-pub(super) fn demos(s: &mut Out, a: &Asked) -> Result<()> {
-    let listed = serde_json::json!(comms_demos(a.app, a.sessions()?, &asked(a).0));
-    Ok(respond(s, "200 OK", JSON, listed.to_string().as_bytes())?)
+pub(super) fn demos(a: &Asked) -> Answered {
+    let listed = serde_json::json!(comms_demos(&a.app, a.sessions()?, &asked(a).0));
+    Ok(respond(StatusCode::OK, JSON, listed.to_string().as_bytes()))
 }
 
 /// `/w/<id>/demos/<file>`: one of them.
-pub(super) fn demo(s: &mut Out, a: &Asked) -> Result<()> {
+pub(super) fn demo(a: &Asked) -> Answered {
     let (id, rest) = asked(a);
-    Ok(comms_demo(s, a.app, a.sessions()?, a.request, &id, rest.strip_prefix("demos/").unwrap_or_default())?)
+    Ok(comms_demo(&a.app, a.sessions()?, &a.request, &id, rest.strip_prefix("demos/").unwrap_or_default()))
 }
 
 /// `/w/<id>/watch/<file>`.
-pub(super) fn watch(s: &mut Out, a: &Asked) -> Result<()> {
+pub(super) fn watch(a: &Asked) -> Answered {
     let (id, rest) = asked(a);
-    watch_comms_demo(s, a.app, a.sessions()?, a.request, &id, rest.strip_prefix("watch/").unwrap_or_default(), a.client)
+    watch_comms_demo(&a.app, a.sessions()?, &a.request, &id, rest.strip_prefix("watch/").unwrap_or_default(), a.client)
 }
 
-/// `/w/<id>/room`.
-pub(super) fn room(s: &mut Out, a: &Asked) -> Result<()> {
-    let Some(m) = found(s, a)? else { return Ok(()) };
-    open_room(s, a.app, a.sessions()?, &m, a.request, a.client)
+/// `GET /w/<id>/room`: whether a room can be opened on it.
+pub(super) fn room(a: &Asked) -> Answered {
+    let m = found(a)?;
+    open_room(&a.app, a.sessions()?, &m, &a.request, a.client, Open::Asked)
+}
+
+/// `POST /w/<id>/room`: one is, from where its opener says they were watching.
+pub(super) fn room_opened(a: &Asked, from: Option<Where>) -> Answered {
+    let m = found(a)?;
+    open_room(&a.app, a.sessions()?, &m, &a.request, a.client, Open::From(from))
 }
 
 /// `/w/<id>/timeline` and `/marks`.
-pub(super) fn timeline(s: &mut Out, a: &Asked) -> Result<()> {
-    let Some(m) = found(s, a)? else { return Ok(()) };
-    Ok(match_timeline(s, &m, a.request, &asked(a).1)?)
+pub(super) fn timeline(a: &Asked) -> Answered {
+    let m = found(a)?;
+    Ok(match_timeline(&m, &a.request, &asked(a).1))
 }
 
 /// `POST /w/<id>/rewind`.
-pub(super) fn rewound(s: &mut Out, a: &Asked) -> Result<()> {
-    let Some(m) = found(s, a)? else { return Ok(()) };
-    rewind(s, a.app, &m, a.request, a.client)
-}
-
-/// `/w/<id>/voice…`: its voice from outside.
-pub(super) fn voice(s: &mut Out, a: &Asked) -> Result<()> {
-    let Some(m) = found(s, a)? else { return Ok(()) };
-    match super::voice_routes::voice_route(s, a.app, Some(&m), a.request, &asked(a).1, &who(a.app, a.request)) {
-        Some(answered) => answered?,
-        None => not_found(s)?,
-    }
-    Ok(())
+pub(super) fn rewound(a: &Asked, to: Rewind) -> Answered {
+    let m = found(a)?;
+    rewind(&a.app, &m, &a.request, a.client, &to)
 }
 
 /// `/w/<id>/events`.
-pub(super) fn events(s: &mut Out, a: &Asked) -> Result<()> {
-    let Some(m) = found(s, a)? else { return Ok(()) };
-    match a.app.stream_slot(a.client) {
+pub(super) fn events(a: &Asked) -> Answered {
+    let m = found(a)?;
+    Ok(match a.app.stream_slot(a.client) {
         Some(slot) => {
             let held = (slot, Viewer::new(m.clone()));
-            stream(s, &m.hub, a.request.gzip, wants_detail(&a.request.query), wants_voice(&a.request.query), held)?;
+            stream(&m.hub, a.request.gzip, wants_detail(&a.request.query), wants_voice(&a.request.query), held)
         }
-        None => too_many_streams(s)?,
-    }
-    Ok(())
+        None => too_many_streams(),
+    })
 }
 
 /// Where `?map=<load>&t=` leads once match `id` is on another map, or gone: that map's comms demo.
 fn moved_on(app: &App, sessions: &Sessions, request: &Request, id: &str, rest: &str, session: Option<&Arc<Session>>) -> Option<String> {
-    let load: usize = param(&request.query, "map").filter(|_| is_page(rest))?.parse().ok()?;
+    let load: usize = request.query.get("map").filter(|_| is_page(rest))?.parse().ok()?;
     let at = moment(&request.query, "t")?;
     if session.is_some_and(|m| m.demo_id().is_some() || m.ready().is_none_or(|r| r.watchable().load == load)) {
         return None;
@@ -181,31 +181,27 @@ pub(super) struct Rewind {
 }
 
 /// A viewer of match `m` goes back in time: a private playback, theirs alone, from where they say.
-pub(super) fn rewind(s: &mut Out, app: &App, m: &Arc<Session>, request: &Request, client: IpAddr) -> Result<()> {
-    let Some(recording) = m.ready() else { return Ok(respond(s, "409 Conflict", TEXT, b"No timeline yet.")?) };
-    let r = match json_body::<Rewind>(request) {
-        Ok(r) => r,
-        Err(e) => return Ok(refuse(s, "400 Bad Request", &e)?),
-    };
+pub(super) fn rewind(app: &App, m: &Arc<Session>, request: &Request, client: IpAddr, r: &Rewind) -> Answered {
+    let Some(recording) = m.ready() else { return Ok(respond(StatusCode::CONFLICT, TEXT, b"No timeline yet.")) };
     let Who { key: guest, cookie, user } = who(app, request);
     let by = counted(user.as_ref(), None, client);
     match app.rooms.open_private(m, recording, &guest, StartAt { at: r.at, speed: r.speed.unwrap_or(1.0), paused: r.paused }, by.as_deref())
     {
-        Ok(room) => opened(s, app, &room.id, cookie.as_deref()),
-        Err(e) => Ok(refuse(s, "503 Service Unavailable", &e)?),
+        Ok(room) => opened(app, &room.id, cookie.as_deref()),
+        Err(e) => Ok(refuse(StatusCode::SERVICE_UNAVAILABLE, &e)),
     }
 }
 
 /// A match page's timeline, of the map a room opened now is on: where its shared playback is (a
 /// live match at live, or at its end), how long it is, its rounds and how many marks; or the
 /// marks from `?from=` on. While a demo is read, `202 {}`.
-pub(super) fn match_timeline(s: &mut Out, m: &Arc<Session>, request: &Request, part: &str) -> std::io::Result<()> {
+pub(super) fn match_timeline(m: &Arc<Session>, request: &Request, part: &str) -> Response {
     let Some(r) = m.ready() else {
         m.prepare();
-        return respond(s, "202 Accepted", JSON, b"{}");
+        return respond(StatusCode::ACCEPTED, JSON, b"{}");
     };
     if part == "marks" {
-        return respond_marks(s, &request.query, |from| r.marks_in(r.watchable().load, from));
+        return respond_marks(&request.query, |from| r.marks_in(r.watchable().load, from));
     }
     let part = r.watchable();
     // While the server changes map, the one just played, at its end; the match is live all the
@@ -221,24 +217,26 @@ pub(super) fn match_timeline(s: &mut Out, m: &Arc<Session>, request: &Request, p
     if m.demo_id().is_none() {
         body["load"] = part.load.into();
     }
-    respond(s, "200 OK", JSON, body.to_string().as_bytes())
+    respond(StatusCode::OK, JSON, body.to_string().as_bytes())
 }
 
 /// Every match, for the site in front, with a list token.
-pub(super) fn list_matches(s: &mut Out, keys: &token::Keys, sessions: &Sessions, request: &Request) -> Result<()> {
+pub(super) fn list_matches(keys: &token::Keys, sessions: &Sessions, request: &Request) -> Answered {
     if request.bearer.as_deref().is_none_or(|t| keys.open_list(t, unix_now()).is_err()) {
-        respond_with(s, "401 Unauthorized", &[("Content-Type", TEXT), ("WWW-Authenticate", "Bearer")], b"needs a list token")?;
-        return Ok(());
+        return Ok(respond_with(
+            StatusCode::UNAUTHORIZED,
+            &[("Content-Type", TEXT), ("WWW-Authenticate", "Bearer")],
+            b"needs a list token",
+        ));
     }
-    let body = serde_json::to_vec(&serde_json::json!({ "matches": sessions.list() }))?;
-    respond_with(s, "200 OK", &[("Content-Type", JSON), ("Cache-Control", "no-store")], &body)?;
-    Ok(())
+    let body = serde_json::to_vec(&serde_json::json!({ "matches": sessions.list() })).map_err(anyhow::Error::from)?;
+    Ok(respond_with(StatusCode::OK, &[("Content-Type", JSON), ("Cache-Control", "no-store")], &body))
 }
 
 /// The match a site's `/start?t=` token asks for.
 pub(super) fn start(app: &App, sessions: &Sessions, request: &Request, client: IpAddr) -> Result<Arc<Session>> {
     let keys = app.keys.as_ref().ok_or_else(|| anyhow!("this server starts matches from its own page"))?;
-    let token = param(&request.query, "t").unwrap_or_default();
+    let token = request.query.get("t").unwrap_or_default();
     let t = keys.open(token, unix_now())?;
     let user = request.user.as_deref().and_then(|c| keys.kept(c, unix_now()));
     let by = counted(user.as_ref(), t.owner.as_deref(), client);
@@ -280,9 +278,9 @@ pub(super) const VIEW_OPTIONS: [&str; 26] = [
 
 /// Where a start link lands below `/w/<id>/`: `view=overlay`, `delay=<s>` and the display options
 /// become `overlay/4.5?names=1`. Anything else, or a delay out of range, is left out.
-pub(super) fn start_view(query: &str) -> String {
-    let overlay = param(query, "view") == Some("overlay");
-    let delay = param(query, "delay").unwrap_or_default();
+pub(super) fn start_view(query: &Asks) -> String {
+    let overlay = query.get("view") == Some("overlay");
+    let delay = query.get("delay").unwrap_or_default();
     let mut path = match (overlay, delay) {
         (true, "") => "overlay".to_string(),
         (true, d) => format!("overlay/{d}"),
@@ -294,7 +292,8 @@ pub(super) fn start_view(query: &str) -> String {
     let mut options: Vec<String> = VIEW_OPTIONS
         .iter()
         .filter_map(|k| {
-            param(query, k)
+            query
+                .get(k)
                 .filter(|v| !v.is_empty() && v.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'.' || b == b'-'))
                 .map(|v| format!("{k}={v}"))
         })
@@ -308,8 +307,8 @@ pub(super) fn start_view(query: &str) -> String {
 }
 
 /// Query parameter `key` if it is a moment, as a page's clock writes it: `12:34`, `1:02:03`, `90`.
-pub(super) fn moment<'a>(query: &'a str, key: &str) -> Option<&'a str> {
-    let v = param(query, key)?;
+pub(super) fn moment<'a>(query: &'a Asks, key: &str) -> Option<&'a str> {
+    let v = query.get(key)?;
     let parts: Vec<&str> = v.split(':').collect();
     let digits = |p: &str| !p.is_empty() && p.len() <= 6 && p.bytes().all(|b| b.is_ascii_digit());
     (parts.len() <= 3 && parts.iter().all(|p| digits(p))).then_some(v)
@@ -359,17 +358,16 @@ pub(super) fn comms_demos(app: &App, sessions: &Sessions, id: &str) -> Vec<serde
 
 /// `GET /w/<id>/watch/<file>`: plays that demo with its comms as a match of its own, and sends
 /// the visitor to its page.
-fn watch_comms_demo(s: &mut Out, app: &App, sessions: &Sessions, request: &Request, id: &str, file: &str, client: IpAddr) -> Result<()> {
+fn watch_comms_demo(app: &App, sessions: &Sessions, request: &Request, id: &str, file: &str, client: IpAddr) -> Answered {
     let by = counted(who(app, request).user.as_ref(), None, client);
-    match sessions.open_comms_demo_as(by.as_deref(), id, file, app.voice.who.clone()) {
+    Ok(match sessions.open_comms_demo_as(by.as_deref(), id, file, app.voice.who.clone()) {
         Ok(m) => {
             // The moment asked for goes along: whoever said whose voice is whose watches on there.
             let at = moment(&request.query, "t").map_or_default(|t| format!("?t={t}"));
-            redirect(s, "303 See Other", &format!("{}/w/{}/{at}", app.base, m.id))?;
+            redirect(StatusCode::SEE_OTHER, &format!("{}/w/{}/{at}", app.base, m.id))
         }
-        Err(e) => refuse(s, "404 Not Found", &e)?,
-    }
-    Ok(())
+        Err(e) => refuse(StatusCode::NOT_FOUND, &e),
+    })
 }
 
 /// How long a demo built stays at hand for the next to ask for it.
@@ -419,21 +417,21 @@ pub(super) fn build_comms_demo(dir: &Path, id: &str, file: &str, who: &WhoIsWho)
 /// `GET /w/<id>/demos/<file>.dem`: that demo as TF2 plays it, the comms written into it. Asked
 /// with `?built=<mark>`, the answer sets that mark as a cookie: the page that waits for it then
 /// knows the demo is built and on its way.
-fn comms_demo(s: &mut Out, app: &App, sessions: &Sessions, request: &Request, id: &str, file: &str) -> std::io::Result<()> {
+fn comms_demo(app: &App, sessions: &Sessions, request: &Request, id: &str, file: &str) -> Response {
     let built = sessions
         .store
         .as_ref()
         .filter(|_| sessions::is_id(id))
         .zip(file.strip_suffix(".dem"))
         .and_then(|(store, file)| build_comms_demo(&store.dir, id, file, &app.voice.who));
-    let Some(built) = built else { return respond(s, "404 Not Found", TEXT, b"No such demo.") };
+    let Some(built) = built else { return respond(StatusCode::NOT_FOUND, TEXT, b"No such demo.") };
     let attachment = format!(r#"attachment; filename="{}""#, built.name);
     let mut headers = vec![("Content-Type", "application/octet-stream"), ("Content-Disposition", attachment.as_str())];
-    let mark = param(&request.query, "built").filter(|m| m.len() <= 16 && m.bytes().all(|b| b.is_ascii_alphanumeric()));
+    let mark = request.query.get("built").filter(|m| m.len() <= 16 && m.bytes().all(|b| b.is_ascii_alphanumeric()));
     let marked = |m| Cookie::build(("built", m)).path("/").max_age(cookie::time::Duration::seconds(60)).same_site(SameSite::Lax);
     let cookie = mark.map(|m| marked(m).build().to_string());
     if let Some(cookie) = &cookie {
         headers.push(("Set-Cookie", cookie));
     }
-    respond_with(s, "200 OK", &headers, &built.bytes)
+    respond_with(StatusCode::OK, &headers, &built.bytes)
 }

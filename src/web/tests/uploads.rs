@@ -11,7 +11,7 @@ fn upload_app() -> (TestApp, TempDir) {
 }
 
 fn put(app: &TestApp, path: &str, body: &[u8]) -> String {
-    let mut send = format!("PUT {path} HTTP/1.1\r\nContent-Length: {}\r\n\r\n", body.len()).into_bytes();
+    let mut send = format!("PUT {path} HTTP/1.1\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n", body.len()).into_bytes();
     send.extend_from_slice(body);
     request_to(app, &send).1
 }

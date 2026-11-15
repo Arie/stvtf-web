@@ -49,7 +49,10 @@ fn nothing_is_changed_at_another_sites_asking() {
     let many = app(Matches::Many(Sessions::new(false, 1, 20.0)));
     let body = "connect=192.0.2.1%3A27020+tv";
     let post = |from: &str| {
-        let send = format!("POST /watch HTTP/1.1\r\nHost: stv.test\r\n{from}Content-Length: {}\r\n\r\n{body}", body.len());
+        let send = format!(
+            "POST /watch HTTP/1.1\r\nHost: stv.test\r\n{from}Content-Type: application/x-www-form-urlencoded\r\nContent-Length: {}\r\n\r\n{body}",
+            body.len()
+        );
         request_to(&many, send.as_bytes()).1
     };
     for from in ["Sec-Fetch-Site: cross-site\r\n", "Sec-Fetch-Site: same-site\r\n", "Origin: https://other.example\r\n"] {
@@ -179,7 +182,12 @@ fn map_geometry_is_gzipped_for_browsers_that_take_it() {
         head.starts_with("HTTP/1.1 200") && head.contains("\r\nContent-Encoding: gzip") && head.contains("\r\nVary: Accept-Encoding"),
         "{head}"
     );
-    assert!(head.contains(&format!("\r\nContent-Length: {}\r\n", body.len())) && body.len() < json.len() / 4, "{head}");
+    assert!(
+        head.contains("\r\nContent-Type: application/json\r\n")
+            && head.contains(&format!("\r\nContent-Length: {}\r\n", body.len()))
+            && body.len() < json.len() / 4,
+        "{head}"
+    );
     let mut unzipped = String::new();
     GzDecoder::new(&body[..]).read_to_string(&mut unzipped).unwrap();
     assert_eq!(unzipped, json);

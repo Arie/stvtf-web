@@ -5,15 +5,16 @@
 //! voice (`voice_in::has_say`). The bot asks all that is wanted (`GET /voice/mumble`, with its
 //! key); how each goes it says to `voice_who`.
 
-use super::Out;
 use super::visitor::Who;
 use super::voice_in::{has_say, is_key};
-use super::{JSON, Request, TEXT, json_body, respond};
+use super::{JSON, Request, TEXT, respond};
 use crate::matches::sessions::{Session, Sessions};
 use crate::voice::ChannelState;
 use crate::voice::feed::{DEFAULT_DELAY, MAX_DELAY};
 use crate::voice::mumble::{DEFAULT_PORT, MumbleJob, is_host, place};
 use crate::{App, lock};
+use axum::http::StatusCode;
+use axum::response::Response;
 use serde::Deserialize;
 
 /// The longest a channel's name, a password or a status is, in characters.
@@ -21,7 +22,7 @@ const MAX_TEXT: usize = 100;
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-struct Ask {
+pub(super) struct Ask {
     #[serde(default)]
     host: String,
     #[serde(default)]
@@ -41,25 +42,24 @@ struct Ask {
 }
 
 /// `POST /w/<id>/voice-mumble`.
-pub(super) fn post_mumble(s: &mut Out, app: &App, m: Option<&Session>, request: &Request, who: &Who) -> std::io::Result<()> {
+pub(super) fn post_mumble(app: &App, m: Option<&Session>, ask: Ask, who: &Who) -> Response {
     let Some(m) = m.filter(|m| m.is_live() && app.voice.key.is_some()) else {
-        return respond(s, "404 Not Found", TEXT, b"No voice here");
+        return respond(StatusCode::NOT_FOUND, TEXT, b"No voice here");
     };
     if !has_say(app, m, who) {
-        return respond(s, "403 Forbidden", TEXT, b"Not allowed");
+        return respond(StatusCode::FORBIDDEN, TEXT, b"Not allowed");
     }
-    let Ok(ask) = json_body::<Ask>(request) else { return respond(s, "400 Bad Request", TEXT, b"Invalid") };
     if ask.leave {
         leave_mumble(m, ask.id);
         app.voice.mumble_changes.changed();
-        return respond(s, "204 No Content", TEXT, b"");
+        return respond(StatusCode::NO_CONTENT, TEXT, b"");
     }
     // Decided with the match held, answered once it is not.
     if let Err(why) = want(app, m, ask) {
-        return respond(s, "400 Bad Request", TEXT, why.as_bytes());
+        return respond(StatusCode::BAD_REQUEST, TEXT, why.as_bytes());
     }
     app.voice.mumble_changes.changed();
-    respond(s, "204 No Content", TEXT, b"")
+    respond(StatusCode::NO_CONTENT, TEXT, b"")
 }
 
 /// The bot leaves match `m`'s Mumble channel `id`, or with none all of them.
@@ -122,12 +122,12 @@ fn want(app: &App, m: &Session, ask: Ask) -> Result<(), &'static str> {
 /// `GET /voice/mumble`, the bot's: every channel wanted, with what it takes to sit in it and to
 /// post its voice, and the `version` of that. Asked with `?since=<version>` it waits (a while)
 /// until something changed since.
-pub(super) fn get_mumble_jobs(s: &mut Out, app: &App, sessions: &Sessions, request: &Request) -> std::io::Result<()> {
-    let Some(key) = &app.voice.key else { return respond(s, "404 Not Found", TEXT, b"") };
+pub(super) fn get_mumble_jobs(app: &App, sessions: &Sessions, request: &Request) -> Response {
+    let Some(key) = &app.voice.key else { return respond(StatusCode::NOT_FOUND, TEXT, b"") };
     if !is_key(key, request.bearer.as_deref()) {
-        return respond(s, "401 Unauthorized", TEXT, b"");
+        return respond(StatusCode::UNAUTHORIZED, TEXT, b"");
     }
-    let since = super::param(&request.query, "since").and_then(|v| v.parse::<u64>().ok());
+    let since = request.query.get("since").and_then(|v| v.parse::<u64>().ok());
     let version = app.voice.mumble_changes.wait(since);
     let jobs: Vec<serde_json::Value> = sessions
         .live()
@@ -144,5 +144,5 @@ pub(super) fn get_mumble_jobs(s: &mut Out, app: &App, sessions: &Sessions, reque
                 .collect::<Vec<_>>()
         })
         .collect();
-    respond(s, "200 OK", JSON, serde_json::json!({ "jobs": jobs, "version": version }).to_string().as_bytes())
+    respond(StatusCode::OK, JSON, serde_json::json!({ "jobs": jobs, "version": version }).to_string().as_bytes())
 }

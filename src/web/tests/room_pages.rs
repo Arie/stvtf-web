@@ -6,10 +6,10 @@ use super::*;
 fn signing_in_goes_by_the_site_and_back_only_to_our_own_pages() {
     let (app, key, _dir) = site_app();
     let out = get(&app, "/signin?return=/r/abc/", "");
-    assert!(out.contains("Location: https://serveme.tf/stv/sign_in?return=/r/abc/"), "{out}");
+    assert!(out.contains("Location: https://serveme.tf/stv/sign_in?return=%2Fr%2Fabc%2F"), "{out}");
     for elsewhere in ["https://evil.example/", "//evil.example/", "/\\evil.example"] {
         let out = get(&app, &format!("/signin?return={elsewhere}"), "");
-        assert!(out.contains("sign_in?return=/\r\n"), "{elsewhere}: {out}");
+        assert!(out.contains("sign_in?return=%2F\r\n"), "{elsewhere}: {out}");
     }
     signed_in(&app, &key, r#"{"uid":"7656","name":"Arie","streamer":false}"#);
     let stale = token::seal(&key, r#"{"signin":{"uid":"1","name":"x"},"exp":5}"#, [6; 12]);
@@ -82,7 +82,7 @@ fn a_room_opened_from_a_moment_of_the_match_starts_there() {
     let room = app.rooms.get(page_of(&opened).trim_matches('/').trim_start_matches("r/"), sessions_of(&app)).unwrap();
     let saved = serde_json::to_value(room.saved()).unwrap();
     assert_eq!((saved["at"].as_u64(), saved["paused"].as_bool()), (Some(600), Some(true)), "{saved}");
-    assert!(post(&app, "/w/demo/room", "", r#"{"at":"x"}"#).starts_with("HTTP/1.1 400"));
+    assert!(post(&app, "/w/demo/room", "", r#"{"at":"x"}"#).starts_with("HTTP/1.1 422"));
 }
 
 #[test]
@@ -95,7 +95,7 @@ fn only_admins_control_a_room() {
     assert!(post(&app, &control, &format!("stvtf_guest={}", "0".repeat(32)), pause).starts_with("HTTP/1.1 403"));
     assert!(post(&app, &control, &cookie, pause).starts_with("HTTP/1.1 204"));
     assert!(post(&app, &control, &cookie, r#"{"speed":3}"#).starts_with("HTTP/1.1 400"));
-    assert!(post(&app, &control, &cookie, r#"{"rewind":1}"#).starts_with("HTTP/1.1 400"));
+    assert!(post(&app, &control, &cookie, r#"{"rewind":1}"#).starts_with("HTTP/1.1 422"));
     let draw = format!("{page}draw");
     let stroke = r#"{"stroke":1,"points":[[0,0,0],[10,10,16]]}"#;
     assert!(post(&app, &draw, "", stroke).starts_with("HTTP/1.1 403"));
@@ -143,7 +143,7 @@ fn admins_make_others_admin() {
     assert!(post(&app, &format!("{page}admin"), &owner, promote).starts_with("HTTP/1.1 204"));
     assert!(post(&app, &format!("{page}control"), &viewer, pause).starts_with("HTTP/1.1 204"));
     assert!(post(&app, &format!("{page}view"), &viewer, r#"{"mode":"auto","take":true}"#).starts_with("HTTP/1.1 204"));
-    assert!(post(&app, &format!("{page}view"), &viewer, r#"{"mode":"spin"}"#).starts_with("HTTP/1.1 400"));
+    assert!(post(&app, &format!("{page}view"), &viewer, r#"{"mode":"spin"}"#).starts_with("HTTP/1.1 422"));
     assert!(post(&app, &format!("{page}ink"), &viewer, r##"{"ink":"#123abc"}"##).starts_with("HTTP/1.1 204"));
     let demote_owner = r#"{"person":1,"admin":false}"#;
     assert!(post(&app, &format!("{page}admin"), &viewer, demote_owner).starts_with("HTTP/1.1 400"));

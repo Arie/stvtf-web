@@ -1,9 +1,10 @@
 //! The files served: page modules, fonts, icons, backpacks, maps, overviews.
 
-use super::Out;
 use super::{CSS, HTML, JS, JSON, SVG, TEXT, WEBP, WOFF2, not_found, respond, respond_cached, respond_with};
 use crate::maps::cache::{map_geometry, map_geometry_gzip, overview};
 use crate::{App, is_name, lock};
+use axum::http::StatusCode;
+use axum::response::Response;
 
 include!(concat!(env!("OUT_DIR"), "/app_files.rs"));
 const ICONS: [(&str, &[u8]); 9] = [
@@ -27,47 +28,47 @@ const FNV_PRIME: u64 = 0x0100_0000_01b3;
 const LOADER_CACHE_FOR: std::time::Duration = std::time::Duration::from_mins(5);
 
 /// The page's files, pictures and maps.
-pub(super) fn serve_file(s: &mut Out, app: &App, path: &str, gzip: bool) -> std::io::Result<()> {
+pub(super) fn serve_file(app: &App, path: &str, gzip: bool) -> Response {
     match path {
-        "/fonts/RobotoCondensed-Regular.woff2" => respond_cached(s, WOFF2, include_bytes!("../../fonts/RobotoCondensed-Regular.woff2")),
-        "/fonts/RobotoCondensed-Bold.woff2" => respond_cached(s, WOFF2, include_bytes!("../../fonts/RobotoCondensed-Bold.woff2")),
+        "/fonts/RobotoCondensed-Regular.woff2" => respond_cached(WOFF2, include_bytes!("../../fonts/RobotoCondensed-Regular.woff2")),
+        "/fonts/RobotoCondensed-Bold.woff2" => respond_cached(WOFF2, include_bytes!("../../fonts/RobotoCondensed-Bold.woff2")),
         // The site's mark: stv over tf, between a RED and a BLU dot (the voice bot's avatar is
         // icons/brand/bot-avatar-512.png, set in Discord by hand).
-        "/favicon.svg" => respond_cached(s, SVG, include_bytes!("../../icons/brand/favicon.svg")),
-        "/favicon.ico" => respond_cached(s, "image/x-icon", include_bytes!("../../icons/brand/favicon.ico")),
-        "/apple-touch-icon.png" => respond_cached(s, "image/png", include_bytes!("../../icons/brand/apple-touch-icon.png")),
-        "/killicons.css" => respond_cached(s, CSS, include_bytes!("../../killicons/killicons.css")),
+        "/favicon.svg" => respond_cached(SVG, include_bytes!("../../icons/brand/favicon.svg")),
+        "/favicon.ico" => respond_cached("image/x-icon", include_bytes!("../../icons/brand/favicon.ico")),
+        "/apple-touch-icon.png" => respond_cached("image/png", include_bytes!("../../icons/brand/apple-touch-icon.png")),
+        "/killicons.css" => respond_cached(CSS, include_bytes!("../../killicons/killicons.css")),
         // For other sites: the class names stay as they are within a version.
-        "/killicons/v1/killicons.css" => respond_cached(s, CSS, KILLICONS_V1_CSS.as_bytes()),
-        "/killicons.webp" | "/killicons/v1/killicons.webp" => respond_cached(s, WEBP, include_bytes!("../../killicons/killicons.webp")),
+        "/killicons/v1/killicons.css" => respond_cached(CSS, KILLICONS_V1_CSS.as_bytes()),
+        "/killicons.webp" | "/killicons/v1/killicons.webp" => respond_cached(WEBP, include_bytes!("../../killicons/killicons.webp")),
         p if let Some(file) = p.strip_prefix("/icons/") => match ICONS.iter().find(|(name, _)| file.strip_suffix(".svg") == Some(name)) {
-            Some((_, svg)) => respond(s, "200 OK", SVG, svg),
-            None => not_found(s),
+            Some((_, svg)) => respond(StatusCode::OK, SVG, svg),
+            None => not_found(),
         },
         p if let Some(file) = p.strip_prefix("/app/") => {
             match APP.iter().find(|(name, ..)| file.split_once('/').is_some_and(|(_, n)| n == *name)) {
-                Some((_, ctype, body)) => respond_cached(s, ctype, body),
-                None => not_found(s),
+                Some((_, ctype, body)) => respond_cached(ctype, body),
+                None => not_found(),
             }
         }
-        p if let Some(file) = p.strip_prefix("/backpack/") => serve_backpack(s, app, file),
-        p if p.starts_with("/overview/") || p.starts_with("/map/") => serve_cached(s, app, p, gzip),
+        p if let Some(file) = p.strip_prefix("/backpack/") => serve_backpack(app, file),
+        p if p.starts_with("/overview/") || p.starts_with("/map/") => serve_cached(app, p, gzip),
         // A fixed address for other sites, loading this build's viewer.
         "/embed/v1/stv-map.js" => {
             let loader = format!("export * from \"../../app/{}/stv-map.js\";\n", app_version());
             let max_age = format!("max-age={}", LOADER_CACHE_FOR.as_secs());
-            respond_with(s, "200 OK", &[("Content-Type", JS), ("Cache-Control", &max_age)], loader.as_bytes())
+            respond_with(StatusCode::OK, &[("Content-Type", JS), ("Cache-Control", &max_age)], loader.as_bytes())
         }
-        "/examples/embed.html" => respond(s, "200 OK", HTML, include_bytes!("../../examples/embed.html")),
-        "/examples/tf2pugs.html" => respond(s, "200 OK", HTML, include_bytes!("../../examples/tf2pugs.html")),
-        "/examples/tf2pugs-js.html" => respond(s, "200 OK", HTML, include_bytes!("../../examples/tf2pugs-js.html")),
-        _ => not_found(s),
+        "/examples/embed.html" => respond(StatusCode::OK, HTML, include_bytes!("../../examples/embed.html")),
+        "/examples/tf2pugs.html" => respond(StatusCode::OK, HTML, include_bytes!("../../examples/tf2pugs.html")),
+        "/examples/tf2pugs-js.html" => respond(StatusCode::OK, HTML, include_bytes!("../../examples/tf2pugs-js.html")),
+        _ => not_found(),
     }
 }
 
 /// A map's geometry (gzipped when the browser takes it), or a demos.tf overview, from the cache
 /// (fetched and made on a miss).
-fn serve_cached(s: &mut Out, app: &App, p: &str, gzip: bool) -> std::io::Result<()> {
+fn serve_cached(app: &App, p: &str, gzip: bool) -> Response {
     let result = if let Some(file) = p.strip_prefix("/overview/") {
         let _one_at_a_time = lock(&app.overviews);
         overview(&app.cache, file)
@@ -79,7 +80,7 @@ fn serve_cached(s: &mut Out, app: &App, p: &str, gzip: bool) -> std::io::Result<
         let _one_at_a_time = map_lock.as_deref().map(lock);
         if gzip { map_geometry_gzip(&app.cache, name, fetch) } else { map_geometry(&app.cache, name, fetch) }
     } else {
-        return not_found(s);
+        return not_found();
     };
     match result {
         // A map's JSON is 1.5 to 3.5 MB, and about a sixth of that gzipped.
@@ -88,24 +89,24 @@ fn serve_cached(s: &mut Out, app: &App, p: &str, gzip: bool) -> std::io::Result<
             if gzip {
                 headers.push(("Content-Encoding", "gzip"));
             }
-            respond_with(s, "200 OK", &headers, &body)
+            respond_with(StatusCode::OK, &headers, &body)
         }
-        Ok(body) if p == "/overview/boundaries.json" => respond_cached(s, JSON, &body),
-        Ok(body) => respond_cached(s, WEBP, &body),
-        Err(e) => respond(s, "404 Not Found", TEXT, e.to_string().as_bytes()),
+        Ok(body) if p == "/overview/boundaries.json" => respond_cached(JSON, &body),
+        Ok(body) => respond_cached(WEBP, &body),
+        Err(e) => respond(StatusCode::NOT_FOUND, TEXT, e.to_string().as_bytes()),
     }
 }
 
 /// A backpack picture or `items.json`; the name is checked so it cannot leave the directory.
-fn serve_backpack(s: &mut Out, app: &App, file: &str) -> std::io::Result<()> {
+fn serve_backpack(app: &App, file: &str) -> Response {
     let found = match file.rsplit_once('.') {
         Some((stem, "webp")) if is_name(stem, b"_") => Some(WEBP),
         Some(("items", "json")) => Some(JSON),
         _ => None,
     };
     match found.and_then(|ctype| Some((ctype, std::fs::read(app.backpack.join(file)).ok()?))) {
-        Some((ctype, body)) => respond_cached(s, ctype, &body),
-        None => not_found(s),
+        Some((ctype, body)) => respond_cached(ctype, &body),
+        None => not_found(),
     }
 }
 

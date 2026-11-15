@@ -1,13 +1,14 @@
 //! The list of who is who between regions (`voice::who`): its routes, and asking a site.
 
-use super::Out;
 use super::token::Keys;
 use super::voice_in::is_key;
-use super::{JSON, Request, TEXT, json_body, param, respond};
+use super::{JSON, Request, TEXT, respond};
 use crate::App;
 use crate::voice::ids::{is_voice_id, parse_steamid};
 use crate::voice::who::{CASTER, MAX_NAME, RegionEntry, Site, TIMEOUT};
 use anyhow::Context;
+use axum::http::StatusCode;
+use axum::response::Response;
 use std::sync::Arc;
 
 /// The site at `home` (as a stv.tf's `--home`), asked with tokens sealed with `keys`.
@@ -30,34 +31,33 @@ pub(crate) fn site(home: &str, keys: Arc<Keys>) -> Site {
 }
 
 /// `GET /voice/known?since=<version>`, another stv.tf's: what changed since.
-pub(super) fn get_known(s: &mut Out, app: &App, request: &Request) -> std::io::Result<()> {
-    let Some(key) = &app.voice.key else { return respond(s, "404 Not Found", TEXT, b"") };
+pub(super) fn get_known(app: &App, request: &Request) -> Response {
+    let Some(key) = &app.voice.key else { return respond(StatusCode::NOT_FOUND, TEXT, b"") };
     if !is_key(key, request.bearer.as_deref()) {
-        return respond(s, "401 Unauthorized", TEXT, b"");
+        return respond(StatusCode::UNAUTHORIZED, TEXT, b"");
     }
-    let since = param(&request.query, "since").and_then(|v| v.parse().ok()).unwrap_or(0);
+    let since = request.query.get("since").and_then(|v| v.parse().ok()).unwrap_or(0);
     let (version, known) = app.voice.who.since(since);
-    respond(s, "200 OK", JSON, serde_json::json!({ "version": version, "known": known }).to_string().as_bytes())
+    respond(StatusCode::OK, JSON, serde_json::json!({ "version": version, "known": known }).to_string().as_bytes())
 }
 
 /// `POST /voice/known`, another stv.tf's: what was said on a page there.
-pub(super) fn post_known(s: &mut Out, app: &App, request: &Request) -> std::io::Result<()> {
-    let Some(key) = &app.voice.key else { return respond(s, "404 Not Found", TEXT, b"") };
+pub(super) fn post_known(app: &App, request: &Request, said: &RegionEntry) -> Response {
+    let Some(key) = &app.voice.key else { return respond(StatusCode::NOT_FOUND, TEXT, b"") };
     if !is_key(key, request.bearer.as_deref()) {
-        return respond(s, "401 Unauthorized", TEXT, b"");
+        return respond(StatusCode::UNAUTHORIZED, TEXT, b"");
     }
-    let Ok(said) = json_body::<RegionEntry>(request) else { return respond(s, "400 Bad Request", TEXT, b"Invalid") };
     let steamid = said.steamid.as_deref().map(parse_steamid);
     if !is_voice_id(&said.id) || steamid == Some(None) {
-        return respond(s, "400 Bad Request", TEXT, b"Invalid");
+        return respond(StatusCode::BAD_REQUEST, TEXT, b"Invalid");
     }
     let name: String = said.name.chars().filter(|c| !c.is_control()).collect();
     if said.src.len() > MAX_NAME || !said.src.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'-' | b':')) {
-        return respond(s, "400 Bad Request", TEXT, b"Invalid");
+        return respond(StatusCode::BAD_REQUEST, TEXT, b"Invalid");
     }
     if !matches!(said.by.as_str(), "" | CASTER) {
-        return respond(s, "400 Bad Request", TEXT, b"Invalid");
+        return respond(StatusCode::BAD_REQUEST, TEXT, b"Invalid");
     }
     app.voice.who.take_from_region(&said.id, steamid.flatten().as_deref(), &name, &said.src, &said.by);
-    respond(s, "204 No Content", TEXT, b"")
+    respond(StatusCode::NO_CONTENT, TEXT, b"")
 }
