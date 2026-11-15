@@ -16,7 +16,9 @@ fn signing_in_goes_by_the_site_and_back_only_to_our_own_pages() {
     assert!(get(&app, &format!("/signed_in?t={stale}"), "").starts_with("HTTP/1.1 400"));
     let start = token::seal(&key, &format!(r#"{{"demo":1,"exp":{}}}"#, unix_now() + 60), [7; 12]);
     assert!(get(&app, &format!("/signed_in?t={start}"), "").starts_with("HTTP/1.1 400"), "a start token signs nobody in");
-    assert!(get(&app, "/signout?return=/r/x/", "").contains("Set-Cookie: stvtf_user=; Path=/; Max-Age=0"));
+    let out = get(&app, "/signout?return=/r/x/", "");
+    let gone = out.lines().find(|l| l.starts_with("Set-Cookie: stvtf_user=;")).unwrap_or_default();
+    assert!(gone.contains("; Path=/") && gone.contains("; Max-Age=0"), "{out}");
 }
 
 #[test]

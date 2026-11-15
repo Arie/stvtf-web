@@ -45,6 +45,26 @@ fn other_sites_read_what_is_public_and_frame_no_page_that_acts_for_someone() {
 }
 
 #[test]
+fn nothing_is_changed_at_another_sites_asking() {
+    let many = app(Matches::Many(Sessions::new(false, 1, 20.0)));
+    let body = "connect=192.0.2.1%3A27020+tv";
+    let post = |from: &str| {
+        let send = format!("POST /watch HTTP/1.1\r\nHost: stv.test\r\n{from}Content-Length: {}\r\n\r\n{body}", body.len());
+        request_to(&many, send.as_bytes()).1
+    };
+    for from in ["Sec-Fetch-Site: cross-site\r\n", "Sec-Fetch-Site: same-site\r\n", "Origin: https://other.example\r\n"] {
+        let refused = post(from);
+        assert!(refused.starts_with("HTTP/1.1 403") && refused.contains("X-Content-Type-Options: nosniff"), "{from}: {refused}");
+    }
+    assert!(sessions_of(&many).list().is_empty(), "no match was started");
+    // Our own pages, an old browser that only says where it is from, and what is no browser.
+    for from in ["Sec-Fetch-Site: same-origin\r\n", "Origin: http://stv.test\r\n", ""] {
+        assert!(post(from).starts_with("HTTP/1.1 303"), "{from}");
+    }
+    sessions_of(&many).stop_all();
+}
+
+#[test]
 fn endless_header_is_cut_off() {
     let mut send = b"GET / HTTP/1.1\r\nX-Long: ".to_vec();
     send.resize(64 << 10, b'a');

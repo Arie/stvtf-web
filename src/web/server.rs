@@ -3,7 +3,7 @@
 //! written by a thread of its own.
 
 use super::routes::{Answer, Asked};
-use super::{Body as Whole, Events, Out, Reply, Request, client_of, cookie, voice_link};
+use super::{Body as Whole, Events, Out, Reply, Request, client_of, voice_link};
 use super::{GUEST_COOKIE, USER_COOKIE};
 use crate::App;
 use crate::matches::sessions;
@@ -14,6 +14,7 @@ use axum::extract::{ConnectInfo, State};
 use axum::http::header::{self, HeaderName, HeaderValue};
 use axum::http::{HeaderMap, Method, StatusCode};
 use axum::response::{IntoResponse, Response};
+use axum_extra::extract::CookieJar;
 use hyper::server::conn::http1;
 use hyper_util::rt::{TokioIo, TokioTimer};
 use hyper_util::service::TowerToHyperService;
@@ -26,6 +27,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 use tokio::sync::mpsc::error::TrySendError;
 use tower_http::cors::{self, CorsLayer};
+use tower_http::csrf::CsrfLayer;
 use tower_http::set_header::SetResponseHeaderLayer;
 use tower_http::timeout::TimeoutLayer;
 
@@ -84,13 +86,15 @@ const ANSWER_WITHIN: Duration = Duration::from_mins(5);
 
 /// The app's routes (see [`super::routes`]). Every response says `nosniff`, and what is read
 /// with GET may be read by any site (it is public: `<stv-map>` on other sites reads it all,
-/// without cookies). The pages that act for whoever is signed in are not shown in another site's
+/// without cookies). Nothing is changed at another site's asking (a browser says where a request
+/// is from), and the pages that act for whoever is signed in are not shown in another site's
 /// frame.
 pub(crate) fn router(app: Arc<App>) -> Router {
     let (all, acting) = super::routes::routes(&app);
     let unframed = SetResponseHeaderLayer::overriding(header::X_FRAME_OPTIONS, HeaderValue::from_static("DENY"));
     all.merge(acting.layer(unframed))
         .with_state(app)
+        .layer(CsrfLayer::new())
         .layer(SetResponseHeaderLayer::overriding(header::X_CONTENT_TYPE_OPTIONS, HeaderValue::from_static("nosniff")))
         .layer(CorsLayer::new().allow_origin(cors::Any).allow_methods([Method::GET]))
         .layer(TimeoutLayer::with_status_code(StatusCode::REQUEST_TIMEOUT, ANSWER_WITHIN))
@@ -124,7 +128,8 @@ async fn request_of(peer: IpAddr, request: axum::extract::Request) -> Result<(Re
         let values: Vec<&str> = parts.headers.get_all(name).iter().filter_map(|v| v.to_str().ok()).collect();
         values.join(", ")
     };
-    let cookies = all(header::COOKIE).replace(", ", "; ");
+    let jar = CookieJar::from_headers(&parts.headers);
+    let cookie = |name: &str| jar.get(name).map(|c| c.value().to_string());
     let mut asked = Request {
         method: parts.method.as_str().to_string(),
         path: parts.uri.path().to_string(),
@@ -133,9 +138,9 @@ async fn request_of(peer: IpAddr, request: axum::extract::Request) -> Result<(Re
         gzip: all(header::ACCEPT_ENCODING).split(',').any(|e| e.split(';').next().is_some_and(|e| e.trim().eq_ignore_ascii_case("gzip"))),
         forwarded: forwarded(&all(HeaderName::from_static("x-forwarded-for"))),
         bearer: one(&parts.headers, header::AUTHORIZATION).and_then(|a| a.trim().strip_prefix("Bearer ")).map(|t| t.trim().to_string()),
-        guest: cookie(&cookies, GUEST_COOKIE).filter(|g| sessions::is_id(g)).map(str::to_string),
-        user: cookie(&cookies, USER_COOKIE).map(str::to_string),
-        voice_link: cookie(&cookies, voice_link::STATE_COOKIE).filter(|g| sessions::is_id(g)).map(str::to_string),
+        guest: cookie(GUEST_COOKIE).filter(|g| sessions::is_id(g)),
+        user: cookie(USER_COOKIE),
+        voice_link: cookie(voice_link::STATE_COOKIE).filter(|g| sessions::is_id(g)),
         agent: one(&parts.headers, header::USER_AGENT).unwrap_or_default().trim().to_string(),
         body: Vec::new(),
     };

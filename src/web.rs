@@ -122,11 +122,6 @@ struct Request {
     body: Vec<u8>,
 }
 
-/// Cookie `name`'s value in a `Cookie` header.
-fn cookie<'a>(header: &'a str, name: &str) -> Option<&'a str> {
-    header.split(';').find_map(|c| c.trim().strip_prefix(name)?.strip_prefix('='))
-}
-
 /// A query string's or form's value for `name`, undecoded.
 fn param<'a>(query: &'a str, name: &str) -> Option<&'a str> {
     query.split('&').find_map(|kv| kv.split_once('=').filter(|(k, _)| *k == name).map(|(_, v)| v))

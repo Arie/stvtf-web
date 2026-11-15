@@ -20,10 +20,12 @@ flate2 = "1"
 sentry = { version = "0.49.5", default-features = false, features = ["backtrace", "contexts", "panic", "ureq", "rustls"] }
 axum = { version = "0.8.9", default-features = false, features = ["query", "tokio"] }
 tokio = { version = "1.54.1", features = ["rt-multi-thread", "net", "sync", "time"] }
-tower-http = { version = "0.7.1", features = ["set-header", "limit", "cors", "timeout"] }
+tower-http = { version = "0.7.1", features = ["set-header", "limit", "cors", "timeout", "csrf"] }
 tokio-stream = "0.1.19"
 hyper = { version = "1.12.0", features = ["server", "http1"] }
 hyper-util = { version = "0.1.21", features = ["tokio", "service"] }
+axum-extra = { version = "0.12.6", default-features = false, features = ["cookie"] }
+cookie = "0.18"
 
 [profile.release]
 debug = 1

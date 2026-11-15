@@ -17,6 +17,7 @@ use crate::rooms::room::StartAt;
 use crate::voice::who::WhoIsWho;
 use crate::{App, is_name, lock};
 use anyhow::{Result, anyhow};
+use cookie::{Cookie, SameSite};
 use std::fmt::Write as _;
 use std::net::IpAddr;
 use std::path::Path;
@@ -429,7 +430,8 @@ fn comms_demo(s: &mut Out, app: &App, sessions: &Sessions, request: &Request, id
     let attachment = format!(r#"attachment; filename="{}""#, built.name);
     let mut headers = vec![("Content-Type", "application/octet-stream"), ("Content-Disposition", attachment.as_str())];
     let mark = param(&request.query, "built").filter(|m| m.len() <= 16 && m.bytes().all(|b| b.is_ascii_alphanumeric()));
-    let cookie = mark.map(|m| format!("built={m}; Path=/; Max-Age=60; SameSite=Lax"));
+    let marked = |m| Cookie::build(("built", m)).path("/").max_age(cookie::time::Duration::seconds(60)).same_site(SameSite::Lax);
+    let cookie = mark.map(|m| marked(m).build().to_string());
     if let Some(cookie) = &cookie {
         headers.push(("Set-Cookie", cookie));
     }

@@ -13,17 +13,17 @@ script/test -s checks              # a section (checks, tests, audit); -t clippy
 script/test --list                 # each check and its command
 ```
 
-| check | config |
-|---|---|
-| rustfmt | `rustfmt.toml` |
-| clippy | `[lints]` in `Cargo.toml`; functions ≤ 60 lines (`clippy.toml`) |
-| rustdoc | |
-| ESLint | `eslint.config.mjs`: functions ≤ 60 lines, complexity ≤ 15, files ≤ 400 lines; older code over the limits in `eslint-suppressions.json` (`npx eslint app test --prune-suppressions`) |
-| Prettier | `.prettierrc.json` |
-| tsc | `tsconfig.json`, strict, against `types/` |
-| shellcheck, actionlint, zizmor, hadolint | scripts, workflows (and their security), Dockerfile |
-| tests | page tests, `cargo test`, browser test |
-| cargo-deny | `deny.toml`: advisories, licences, sources (`cargo install cargo-deny`) |
+| check                                    | config                                                                                                                                                                               |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| rustfmt                                  | `rustfmt.toml`                                                                                                                                                                       |
+| clippy                                   | `[lints]` in `Cargo.toml`; functions ≤ 60 lines (`clippy.toml`)                                                                                                                      |
+| rustdoc                                  |                                                                                                                                                                                      |
+| ESLint                                   | `eslint.config.mjs`: functions ≤ 60 lines, complexity ≤ 15, files ≤ 400 lines; older code over the limits in `eslint-suppressions.json` (`npx eslint app test --prune-suppressions`) |
+| Prettier                                 | `.prettierrc.json`                                                                                                                                                                   |
+| tsc                                      | `tsconfig.json`, strict, against `types/`                                                                                                                                            |
+| shellcheck, actionlint, zizmor, hadolint | scripts, workflows (and their security), Dockerfile                                                                                                                                  |
+| tests                                    | page tests, `cargo test`, browser test                                                                                                                                               |
+| cargo-deny                               | `deny.toml`: advisories, licences, sources (`cargo install cargo-deny`)                                                                                                              |
 
 A missing program skips its check locally and fails it in CI. Warnings fail CI.
 
@@ -70,7 +70,9 @@ npm run test:browser    # after cargo build and `npx playwright-core install --o
 
 - `src/main.rs`: start-up, match housekeeping, connections; `src/cli.rs`: the command line;
   `src/log.rs`: what the server says of itself (`--logs`).
-- `src/web.rs`: HTTP: page, overlay, `/events`, `/start`, connect form, `/up`.
+- `src/web/`: HTTP, on hyper, axum and tower-http. `server.rs`: connections, the layers (CORS,
+  CSRF, frame and timeout) and the adapter that answers each request on a blocking thread;
+  `routes.rs`: the routes; the rest: one module per part of the site.
   `web/assets.rs`: served files (`/map/NAME`, `/overview/`, `/backpack/`, icons, fonts).
   `web/token.rs`: the site's tokens.
 - `src/matches/`: `hub` (a match's state, feed, per-page queues), `sessions` (many matches, saved

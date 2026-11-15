@@ -4,6 +4,8 @@ use super::{GUEST_COOKIE, Request, form_decode, param, token, unix_now};
 use crate::App;
 use crate::matches::sessions;
 use crate::rooms::people::steam_key;
+use cookie::time::Duration;
+use cookie::{Cookie, SameSite};
 
 /// How long a guest cookie lasts: who one is in rooms, kept across visits.
 const GUEST_FOR: std::time::Duration = std::time::Duration::from_hours(365 * 24);
@@ -11,8 +13,14 @@ const GUEST_FOR: std::time::Duration = std::time::Duration::from_hours(365 * 24)
 /// A `Set-Cookie` for `name`, lasting `seconds`: only for us, never to scripts, and over HTTPS
 /// when a site is in front.
 pub(super) fn set_cookie(app: &App, name: &str, value: &str, seconds: u64) -> String {
-    let secure = if app.keys.is_some() { "; Secure" } else { "" };
-    format!("{name}={value}; Path={}/; Max-Age={seconds}; HttpOnly; SameSite=Lax{secure}", app.base)
+    Cookie::build((name, value))
+        .path(format!("{}/", app.base))
+        .max_age(Duration::seconds(i64::try_from(seconds).unwrap_or(i64::MAX)))
+        .http_only(true)
+        .same_site(SameSite::Lax)
+        .secure(app.keys.is_some())
+        .build()
+        .to_string()
 }
 
 /// Who is asking, to the rooms: the user signed in with the site, by their Steam id, or the

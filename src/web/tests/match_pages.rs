@@ -323,7 +323,9 @@ fn a_matchs_demos_with_comms_are_listed_and_downloaded_the_match_gone_too() {
     // Asked for with a mark, the answer carries it back in a cookie: the page then knows the demo
     // is built.
     let marked = |mark: &str| get(&app, &format!("/w/{id}/demos/100.dem?built={mark}"), "");
-    assert!(marked("a1b2").contains("Set-Cookie: built=a1b2; Path=/; Max-Age=60; SameSite=Lax"), "{}", marked("a1b2"));
+    let said = marked("a1b2");
+    let cookie = said.lines().find(|l| l.starts_with("Set-Cookie: built=a1b2;")).unwrap_or_default();
+    assert!(["; Path=/", "; Max-Age=60", "; SameSite=Lax"].iter().all(|a| cookie.contains(a)), "{said}");
     assert!(!marked("a;b").contains("Set-Cookie") && !head.contains("Set-Cookie"));
     // Asked for again soon after, it is the one built already (unless another was built between).
     let Matches::Many(sessions) = &app.matches else { panic!() };
