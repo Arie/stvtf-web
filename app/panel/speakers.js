@@ -44,7 +44,10 @@ export function initVoice() {
       voice.setVoice(true);
       openStream();
     }
-    list.hidden = !list.hidden;
+    // Asked for: one team spoke, it is heard; both, the list to choose from.
+    const asked = voice.voiceAsked();
+    if (asked && !asked.both) for (const team of ["red", "blue"]) voice.setTeamMuted(team, false);
+    list.hidden = asked ? !asked.both : !list.hidden;
     show();
   };
   list.addEventListener("click", e => {

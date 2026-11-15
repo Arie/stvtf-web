@@ -114,14 +114,28 @@ function start() {
   if (audio.state === "suspended") audio.resume().catch(() => {});
 }
 for (const first of ["pointerdown", "keydown"])
-  env.root.addEventListener(first, () => voiceOn() && start(), { capture: true, passive: true });
+  env.root.addEventListener(
+    first,
+    () => {
+      asked = voiceMissed() ? { both: missed.has("red") && missed.has("blue") } : null;
+      if (voiceOn()) start();
+    },
+    { capture: true, passive: true },
+  );
 
 // Whether voice is on but nothing can be heard yet: the page waits for its first click.
 export const voiceWaiting = () => voiceOn() && audio?.state !== "running";
 
-// Whether someone spoke while it waited: only then does the page ask for the click.
-let missed = false;
-export const voiceMissed = () => voiceWaiting() && missed;
+// The teams that spoke while it waited ("" for none known): only then does the page ask for the
+// click.
+/** @type {Set<string>} */
+const missed = new Set();
+export const voiceMissed = () => voiceWaiting() && missed.size > 0;
+
+// Whether the page was asking at the click or key under way, and whether both teams had spoken.
+/** @type {{ both: boolean } | null} */
+let asked = null;
+export const voiceAsked = () => asked;
 
 /** @param {string} id */
 function forget(id) {
@@ -258,9 +272,12 @@ export function loudnessOf(id) {
 
 /** @param {VoiceLine} m */
 export function onVoice(m) {
-  if (!missed && voiceWaiting() && m.frames.length) {
-    missed = true;
-    voiceListeners.forEach(f => f());
+  if (voiceWaiting() && m.frames.length) {
+    const team = teamOf(m.steamid) ?? m.team ?? "";
+    if (!missed.has(team)) {
+      missed.add(team);
+      voiceListeners.forEach(f => f());
+    }
   }
   if (!voiceOn() || !audio || !playing || !(m.rate > 0)) return;
   const s = speaker(m);
