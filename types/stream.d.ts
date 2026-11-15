@@ -241,6 +241,9 @@ export type VoiceLine = {
   name?: string;
 };
 
+/** Someone talks: sent to pages without voice, at most five a second. */
+export type TalkingLine = { type: "talking"; player: number | null; steamid: string; team?: Team };
+
 /** An admin wiped the room's map. */
 export type ClearLine = { type: "clear"; by: number };
 
@@ -287,6 +290,7 @@ export type StreamMessage =
   | LightLine
   | NoteLine
   | VoiceLine
+  | TalkingLine
   | ClearLine
   | PeopleLine
   | ViewLine

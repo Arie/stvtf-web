@@ -31,9 +31,10 @@ const eased = new Map();
 // The badges of `dots`' players who talk or are muted.
 /** @param {{ p: Player; x: number; y: number; rad: number }[]} dots */
 export function drawVoiceBadges(dots) {
-  if (!voiceOn()) return;
+  // Without voice: talkers only, no mutes.
+  const on = voiceOn();
   for (const { p, x, y, rad } of dots) {
-    const muted = Boolean(p.steamid) && isMuted(p.steamid),
+    const muted = on && Boolean(p.steamid) && isMuted(p.steamid),
       talking = isTalking(p.id);
     if (!muted && !talking) continue;
     const level = talking ? ease(eased, p.id, loudnessOf(p.id) ?? UNKNOWN) : 0;

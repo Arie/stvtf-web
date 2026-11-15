@@ -25,7 +25,7 @@ import { onArc } from "../room/arcs.js";
 import { onCircle } from "../room/circles.js";
 import { onLight } from "../room/lights.js";
 import { onNote } from "../room/notes.js";
-import { dropAll, onVoice, streamSwitched, voiceOn, voicePlayback } from "./voice.js";
+import { dropAll, onTalking, onVoice, streamSwitched, voiceOn, voicePlayback } from "./voice.js";
 import { loadMap } from "../map/view.js";
 /** @typedef {import("../../types/stream").GameEvent} GameEvent */
 /** @typedef {import("../../types/stream").StreamMessage} StreamMessage */
@@ -168,6 +168,7 @@ const ON_LINE = {
   light: m => onLight(/** @type {import("../../types/stream").LightLine} */ (m)),
   note: m => onNote(/** @type {import("../../types/stream").NoteLine} */ (m)),
   voice: m => onVoice(/** @type {import("../../types/stream").VoiceLine} */ (m)),
+  talking: m => onTalking(/** @type {import("../../types/stream").TalkingLine} */ (m)),
   clear: () => onClear(),
   view: m => viewListeners.forEach(f => f(/** @type {import("../../types/stream").ViewLine} */ (m))),
   people: m => peopleListeners.forEach(f => f(/** @type {import("../../types/stream").PeopleLine} */ (m))),

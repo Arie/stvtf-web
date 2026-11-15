@@ -34,7 +34,7 @@ export function initVoice() {
     // On from an earlier visit, a browser still plays nothing before a click: shown as off, and asking for one.
     const waiting = voice.voiceWaiting();
     button.textContent = voice.voiceOn() && !waiting ? "🔊" : "🔇";
-    button.title = waiting ? "Click to hear" : "The players' voice";
+    button.title = waiting || voice.voiceMissed() ? "Click to hear" : "The players' voice";
     button.classList.toggle("on", voice.voiceOn() && !waiting);
     button.classList.toggle("wait", voice.voiceMissed());
     if (!list.hidden) renderList(list);
@@ -44,7 +44,7 @@ export function initVoice() {
       voice.setVoice(true);
       openStream();
     }
-    // Asked for: one team spoke, it is heard; both, the list to choose from.
+    // Asking: one team spoke, unmute; both, open the list.
     const asked = voice.voiceAsked();
     if (asked && !asked.both) for (const team of ["red", "blue"]) voice.setTeamMuted(team, false);
     list.hidden = asked ? !asked.both : !list.hidden;
@@ -88,7 +88,9 @@ function cards() {
 /** @param {number} id @returns {{ muted: boolean; talking: boolean } | null} */
 function voiceState(id) {
   const steamid = state.players.get(id)?.steamid;
-  if (!steamid || !voice.voiceOn()) return null;
+  if (!steamid) return null;
+  // Without voice: talking only.
+  if (!voice.voiceOn()) return voice.isTalking(id) ? { muted: false, talking: true } : null;
   const muted = voice.isMuted(steamid);
   if (!muted && !voice.hasSpoken(steamid)) return null;
   return { muted, talking: voice.isTalking(id) };
@@ -109,7 +111,8 @@ function cardMark(card) {
   mark.classList.toggle("muted", Boolean(now?.muted));
   // Faint while silent, lit while talking, muted or not.
   mark.classList.toggle("quiet", !now?.talking);
-  mark.title = now?.muted ? "Muted: click to unmute" : "Click to mute";
+  const act = now?.muted ? "Muted: click to unmute" : "Click to mute";
+  mark.title = voice.voiceOn() ? act : "";
 }
 
 /** @param {HTMLElement} mark @param {{ muted: boolean } | null} now */
@@ -160,7 +163,7 @@ function cardClicks(hud) {
     "click",
     e => {
       const mark = /** @type {Element} */ (e.target).closest?.(".vc");
-      if (!mark?.hasChildNodes()) return;
+      if (!mark?.hasChildNodes() || !voice.voiceOn()) return;
       e.stopPropagation();
       const steamid = state.players.get(Number(/** @type {HTMLElement} */ (mark.closest(".card")).dataset.id))?.steamid;
       if (steamid) voice.toggleMuted(steamid);

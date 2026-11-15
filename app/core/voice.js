@@ -36,6 +36,8 @@ const ON_KEY = "voice",
 /** @type {AudioContext | null} */
 let audio = null;
 let on = read(ON_KEY) === "1";
+// Whether the viewer ever chose voice on or off.
+let chosen = read(ON_KEY) != null;
 // Not paused, and at 1×.
 let playing = true;
 /** @type {Map<string, Speaker>} */
@@ -98,6 +100,7 @@ export const voiceOn = () => on && !voiceUnsupported();
 /** @param {boolean} want */
 export function setVoice(want) {
   on = want;
+  chosen = true;
   write(ON_KEY, want ? "1" : "0");
   if (want && !voiceUnsupported()) start();
   else for (const id of [...speakers.keys()]) forget(id);
@@ -126,13 +129,30 @@ for (const first of ["pointerdown", "keydown"])
 // Whether voice is on but nothing can be heard yet: the page waits for its first click.
 export const voiceWaiting = () => voiceOn() && audio?.state !== "running";
 
-// The teams that spoke while it waited ("" for none known): only then does the page ask for the
-// click.
+// Teams that spoke unheard ("" unknown): then the button asks for a click.
 /** @type {Set<string>} */
 const missed = new Set();
-export const voiceMissed = () => voiceWaiting() && missed.size > 0;
+const unheard = () => (voiceOn() ? voiceWaiting() : !chosen && !voiceUnsupported());
+export const voiceMissed = () => unheard() && missed.size > 0;
 
-// Whether the page was asking at the click or key under way, and whether both teams had spoken.
+/** @param {string} team */
+function spokeUnheard(team) {
+  if (!unheard() || missed.has(team)) return;
+  missed.add(team);
+  voiceListeners.forEach(f => f());
+}
+
+// Who talks per `talking` lines: player, and when.
+/** @type {Map<number, number>} */
+const said = new Map();
+
+/** @param {import("../../types/stream").TalkingLine} m */
+export function onTalking(m) {
+  spokeUnheard(m.team ?? "");
+  if (m.player != null) said.set(m.player, performance.now());
+}
+
+// Whether the button was asking at this click or key, and if both teams had spoken.
 /** @type {{ both: boolean } | null} */
 let asked = null;
 export const voiceAsked = () => asked;
@@ -272,13 +292,7 @@ export function loudnessOf(id) {
 
 /** @param {VoiceLine} m */
 export function onVoice(m) {
-  if (voiceWaiting() && m.frames.length) {
-    const team = teamOf(m.steamid) ?? m.team ?? "";
-    if (!missed.has(team)) {
-      missed.add(team);
-      voiceListeners.forEach(f => f());
-    }
-  }
+  if (m.frames.length) spokeUnheard(teamOf(m.steamid) ?? m.team ?? "");
   if (!voiceOn() || !audio || !playing || !(m.rate > 0)) return;
   const s = speaker(m);
   if (!s) return;
@@ -331,7 +345,7 @@ function talking(s) {
 /** @param {number} id */
 export function isTalking(id) {
   for (const s of speakers.values()) if (s.player === id && talking(s)) return true;
-  return false;
+  return !held && performance.now() - (said.get(id) ?? -Infinity) < TALK_MS;
 }
 
 // Everyone heard so far, for the speakers list. A voice of no player that fell silent is forgotten

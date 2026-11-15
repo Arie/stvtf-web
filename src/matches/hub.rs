@@ -48,6 +48,21 @@ pub(crate) struct Hub {
     epoch: u64,
     /// Who is in the latest snapshot, by `SteamID`, for voice from outside the match.
     steamids: Vec<(String, PlayerId, Team, u32)>,
+    /// When each speaker's last `talking` line went out.
+    talked: HashMap<String, Instant>,
+}
+
+/// The least time between a speaker's `talking` lines.
+const TALKING_EVERY: Duration = Duration::from_millis(200);
+
+/// A `talking` line: for pages without voice.
+#[derive(Serialize)]
+struct Talking<'a> {
+    r#type: &'static str,
+    player: Option<PlayerId>,
+    steamid: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    team: Option<Team>,
 }
 
 /// A match at a glance, read from the latest server line and snapshot when the list asks.
@@ -172,6 +187,7 @@ impl Hub {
             paused: self.paused,
             epoch: self.epoch,
             steamids: self.steamids.clone(),
+            talked: HashMap::new(),
         }
     }
 
@@ -404,6 +420,22 @@ impl Hub {
     }
 }
 
+impl Hub {
+    /// A `talking` line for `v`, unless one just went out.
+    fn talking(&mut self, v: &stvtf::output::Voice) -> Option<Arc<str>> {
+        let now = Instant::now();
+        if v.pause || v.frames.is_empty() || self.talked.get(&v.steamid).is_some_and(|at| now.duration_since(*at) < TALKING_EVERY) {
+            return None;
+        }
+        self.talked.retain(|_, at| now.duration_since(*at) < Duration::from_mins(1));
+        self.talked.insert(v.steamid.clone(), now);
+        let known = self.player_with(&v.steamid);
+        let (player, team) = (v.player.or(known.map(|k| k.0)), known.map(|k| k.1).or(v.team));
+        let said = Talking { r#type: "talking", player, steamid: &v.steamid, team };
+        Some(serde_json::to_string(&said).expect("a line serializes").into())
+    }
+}
+
 pub(crate) type SharedHub = Arc<Mutex<Hub>>;
 
 pub(crate) fn publish(hub: &SharedHub, line: &Line) {
@@ -422,6 +454,12 @@ pub(crate) fn publish(hub: &SharedHub, line: &Line) {
     // A browser that cannot keep up is dropped; it reconnects and resyncs from the latest state.
     let (detail, voice, kept) = (route == Route::Detail, route == Route::Voice, route == Route::Kept);
     h.clients.retain(|c| (detail && !c.detail) || (voice && !c.voice) || (kept && !c.kept) || c.tx.try_send(json.clone()).is_ok());
+    // Pages without voice get a `talking` line.
+    if let Line::Voice(v) = line
+        && let Some(talking) = h.talking(v)
+    {
+        h.clients.retain(|c| c.voice || c.kept || c.tx.try_send(talking.clone()).is_ok());
+    }
 }
 
 /// Watches a `SourceTV` server into `hub` until `stop`, recording it as `demos` if given; a watch
@@ -693,11 +731,13 @@ pub(crate) mod tests {
             team: None,
             name: None,
         };
+        // Twice at once: one `talking` line.
+        publish(&hub, &Line::Voice(said.clone()));
         publish(&hub, &Line::Voice(said));
         publish(&hub, &kill(2, 3, 4));
-        assert_eq!(types(&plain), ["kill"]);
-        assert_eq!(types(&detail), ["kill"], "detail is not voice");
-        assert_eq!(types(&voice), ["voice", "kill"]);
+        assert_eq!(types(&plain), ["talking", "kill"]);
+        assert_eq!(types(&detail), ["talking", "kill"], "detail is not voice");
+        assert_eq!(types(&voice), ["voice", "voice", "kill"]);
         assert_eq!(types(&subscribe_to(&hub, false, true)), ["kill"], "voice is not replayed");
     }
 

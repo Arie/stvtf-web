@@ -43,6 +43,10 @@ newest data. A map change clears everything from the old map.
 (`player`, `steamid`), its `rate` and its Opus `frames` in base64 (see stvtf's README). A page asks
 for them once its viewer turns voice on. They are not kept in history.
 
+Without it a page is told only that someone talks: a `talking` line (`player`, `steamid`,
+`team`) about five times a second while they do, so it shows who talks and asks its viewer to
+turn voice on.
+
 ## Voice
 
 When the match carries the players' voice (the server relays it to SourceTV), 🔇 by the map's
