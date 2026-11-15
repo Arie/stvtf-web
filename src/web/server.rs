@@ -71,7 +71,12 @@ pub(crate) async fn connection(tcp: tokio::net::TcpStream, peer: SocketAddr, rou
     // Every write is a whole response or a flushed batch of events: no waiting to fill a packet
     // (with delayed acks, up to 40 ms an event).
     tcp.set_nodelay(true)?;
-    let service = TowerToHyperService::new(router.layer(axum::Extension(ConnectInfo(peer))));
+    // The routes are shared by every connection: each request is told whose it is.
+    let shared = TowerToHyperService::new(router);
+    let service = hyper::service::service_fn(move |mut request: hyper::Request<hyper::body::Incoming>| {
+        request.extensions_mut().insert(ConnectInfo(peer));
+        hyper::service::Service::call(&shared, request)
+    });
     Ok(http.serve_connection(TokioIo::new(tcp), service).await?)
 }
 
