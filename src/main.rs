@@ -263,7 +263,7 @@ fn live_ids(matches: &Matches) -> std::collections::HashSet<String> {
 
 /// Stops idle matches and saves the running ones, and on Ctrl-C disconnects them all cleanly
 /// before exiting.
-fn keep_house(app: Arc<App>, stop: &'static AtomicBool) {
+fn keep_house(app: Arc<App>, stop: &'static AtomicBool) -> std::thread::JoinHandle<()> {
     std::thread::spawn(move || {
         let Matches::Many(sessions) = &app.matches else { return };
         for round in 0u64.. {
@@ -275,7 +275,7 @@ fn keep_house(app: Arc<App>, stop: &'static AtomicBool) {
                 sessions.save_voice(true);
                 app.rooms.persist();
                 sessions.stop_all();
-                std::process::exit(0);
+                return;
             }
             sessions.reap(LINGER);
             app.rooms.reap(ROOM_LINGER);
@@ -299,7 +299,7 @@ fn keep_house(app: Arc<App>, stop: &'static AtomicBool) {
             }
             std::thread::sleep(HOUSEKEEPING);
         }
-    });
+    })
 }
 
 /// Who is who in a team's voice channel: kept in the store, the same as the stv.tf that holds
@@ -386,8 +386,9 @@ fn main() -> Result<()> {
     });
     app.voice.who.keep_up();
     app.rooms.sweep(&live_ids(&app.matches));
+    let mut keeper = None;
     if let Matches::Many(_) = app.matches {
-        keep_house(app.clone(), &STOP);
+        keeper = Some(keep_house(app.clone(), &STOP));
         if !options.no_warm {
             let warming = app.clone();
             std::thread::spawn(move || warm(&warming));
@@ -397,7 +398,17 @@ fn main() -> Result<()> {
             std::thread::spawn(move || prompt(&console, &url));
         }
     }
-    web::server::run(&options.listen, app)
+    serve_until_stopped(&options.listen, app, keeper, &STOP)
+}
+
+/// Serves until told to stop; what the next process picks up is saved (by `keeper`) before this
+/// one ends.
+fn serve_until_stopped(listen: &str, app: Arc<App>, keeper: Option<std::thread::JoinHandle<()>>, stop: &'static AtomicBool) -> Result<()> {
+    web::server::run(listen, app, stop)?;
+    if let Some(keeper) = keeper {
+        let _ = keeper.join();
+    }
+    Ok(())
 }
 
 #[cfg(test)]

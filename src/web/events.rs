@@ -10,7 +10,7 @@ use flate2::Compression;
 use flate2::write::GzEncoder;
 use std::io::Write;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::mpsc::{Receiver, RecvTimeoutError};
 use std::time::{Duration, Instant};
 use tokio::sync::mpsc::error::TrySendError;
@@ -54,6 +54,9 @@ fn events(out: &mut dyn Write, rx: &Receiver<Arc<str>>) -> std::io::Result<()> {
     write!(out, "retry: {}\n\n", RECONNECT_AFTER.as_millis())?;
     out.flush()?;
     loop {
+        if ENDING.load(Ordering::Relaxed) {
+            return Ok(());
+        }
         match rx.recv_timeout(KEEPALIVE) {
             // Whatever else is already queued goes out in the same flush.
             Ok(line) => {
@@ -76,6 +79,14 @@ const SLOW_FOR: Duration = Duration::from_secs(30);
 const SLOW_STEP: Duration = Duration::from_millis(20);
 
 static STREAMS: AtomicUsize = AtomicUsize::new(0);
+
+/// Whether the server is stopping: streams end, so the connections they are on can.
+static ENDING: AtomicBool = AtomicBool::new(false);
+
+/// Ends every stream at its next batch or keepalive.
+pub(super) fn end_all() {
+    ENDING.store(true, Ordering::Relaxed);
+}
 
 /// Counts an event stream until dropped.
 struct Streaming;

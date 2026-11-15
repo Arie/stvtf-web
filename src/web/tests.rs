@@ -11,7 +11,7 @@ use std::net::TcpListener;
 use std::net::TcpStream;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use stvtf::Line;
 use stvtf::output::{self, PlayerId};
 
@@ -23,30 +23,74 @@ mod streams;
 mod uploads;
 mod voice;
 
-/// Serves one connection as the server does, the framework and its layers in between; the
-/// response's headers are written as they were named, and the connection closes after it.
-fn serve(conn: TcpStream, app: &Arc<App>) -> Result<()> {
-    let peer = conn.peer_addr()?;
-    conn.set_nonblocking(true)?;
-    let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build()?;
-    runtime.block_on(async {
-        let mut http = server::http();
-        http.keep_alive(false).title_case_headers(true);
-        server::connection(tokio::net::TcpStream::from_std(conn)?, peer, server::router(app.clone()), &http).await
-    })
+/// The app served as the server serves it (`axum::serve`, the routes and their layers), on a
+/// port of its own, until dropped.
+struct Served {
+    at: std::net::SocketAddr,
+    stop: Option<tokio::sync::oneshot::Sender<()>>,
+    server: Option<std::thread::JoinHandle<Result<()>>>,
 }
 
-/// Runs `serve` on one connection, with `send` written by the client; returns serve's result and
+impl Served {
+    fn start(app: Arc<App>) -> Served {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let at = listener.local_addr().unwrap();
+        let (stop, stopped) = tokio::sync::oneshot::channel::<()>();
+        let server = std::thread::spawn(move || {
+            let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build()?;
+            runtime.block_on(async {
+                let stopped = async {
+                    let _ = stopped.await;
+                };
+                server::serve(tokio::net::TcpListener::from_std(listener)?, app, stopped).await
+            })
+        });
+        Served { at, stop: Some(stop), server: Some(server) }
+    }
+
+    /// Stops it once what is under way is done: its result.
+    fn end(&mut self) -> Result<()> {
+        drop(self.stop.take());
+        self.server.take().map_or(Ok(()), |server| server.join().unwrap())
+    }
+}
+
+impl Drop for Served {
+    fn drop(&mut self) {
+        let _ = self.end();
+    }
+}
+
+/// A response as the tests read it: the header names as they are written out in the specs
+/// (`Content-Type`), where the server sends them in lower case.
+fn named(response: &[u8]) -> Vec<u8> {
+    let Some(end) = response.windows(4).position(|w| w == b"\r\n\r\n") else { return response.to_vec() };
+    let head = String::from_utf8_lossy(&response[..end]);
+    let title = |name: &str| {
+        let part = |p: &str| p.chars().take(1).flat_map(char::to_uppercase).chain(p.chars().skip(1)).collect::<String>();
+        name.split('-').map(part).collect::<Vec<_>>().join("-")
+    };
+    let lines = head.split("\r\n").enumerate().map(|(n, line)| match line.split_once(':') {
+        Some((name, value)) if n > 0 => format!("{}:{value}", title(name)),
+        _ => line.to_string(),
+    });
+    [lines.collect::<Vec<_>>().join("\r\n").as_bytes(), &response[end..]].concat()
+}
+
+/// Sends `send` to the app, as its one request on a connection; returns the server's result and
 /// the response.
 fn exchange(app: &TestApp, send: &[u8]) -> (Result<()>, Vec<u8>) {
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    let mut client = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
-    let (server, _) = listener.accept().unwrap();
-    client.write_all(send).unwrap();
-    let result = serve(server, &app.shared());
+    let mut served = Served::start(app.shared());
+    let mut client = TcpStream::connect(served.at).unwrap();
+    client.set_read_timeout(Some(Duration::from_secs(20))).unwrap();
+    // One request: the server closes the connection after its answer.
+    let line = send.windows(2).position(|w| w == b"\r\n").map_or(send.len(), |at| at + 2);
+    client.write_all(&[&send[..line], b"Connection: close\r\n", &send[line..]].concat()).unwrap();
     let mut response = Vec::new();
     let _ = client.read_to_end(&mut response);
-    (result, response)
+    drop(client);
+    (served.end(), named(&response))
 }
 
 fn request_to(app: &TestApp, send: &[u8]) -> (Result<()>, String) {

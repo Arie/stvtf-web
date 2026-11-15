@@ -12,21 +12,19 @@ fn clients_are_told_apart_by_address_or_ipv6_prefix() {
     assert_eq!(client_key(ip("::ffff:203.0.113.1")), ip("203.0.113.1"));
 }
 
-/// A client of `/events`, with the server's thread serving it.
+/// A client of `/events`, and the server it is on.
 struct EventStream {
     client: BufReader<TcpStream>,
-    server: std::thread::JoinHandle<Result<()>>,
+    served: Served,
 }
 
 impl EventStream {
     fn open(app: &Arc<App>, send: &str) -> Self {
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        let mut client = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+        let served = Served::start(app.clone());
+        let mut client = TcpStream::connect(served.at).unwrap();
         client.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
         client.write_all(send.as_bytes()).unwrap();
-        let (conn, _) = listener.accept().unwrap();
-        let app = app.clone();
-        EventStream { client: BufReader::new(client), server: std::thread::spawn(move || serve(conn, &app)) }
+        EventStream { client: BufReader::new(client), served }
     }
 
     /// What came in up to and including the first line with `needle`.
@@ -35,15 +33,17 @@ impl EventStream {
     }
 
     /// Hangs up and waits for the server to notice, which it does when writing the next lines.
-    fn close(self, hub: &SharedHub) {
+    fn close(mut self, hub: &SharedHub) {
         drop(self.client);
+        drop(self.served.stop.take());
+        let server = self.served.server.take().unwrap();
         let deadline = Instant::now() + Duration::from_secs(5);
-        while !self.server.is_finished() {
+        while !server.is_finished() {
             assert!(Instant::now() < deadline, "the stream outlived its client");
-            publish(hub, &server("cp_process_f12"));
+            publish(hub, &crate::testing::server("cp_process_f12"));
             std::thread::sleep(Duration::from_millis(1));
         }
-        let _ = self.server.join();
+        let _ = server.join();
     }
 }
 
@@ -102,8 +102,8 @@ fn an_event_stream_sends_what_happened_and_then_what_happens() {
     publish(&hub, &server("cp_process_f12"));
     let mut stream = EventStream::open(&app, "GET /events HTTP/1.1\r\n\r\n");
     let head = stream.read_to("retry: 1000");
-    assert!(head.starts_with("HTTP/1.1 200") && head.contains("Content-Type: text/event-stream"), "{head}");
-    assert!(!head.contains("Content-Encoding"), "{head}");
+    assert!(head.starts_with("HTTP/1.1 200") && head.contains("content-type: text/event-stream"), "{head}");
+    assert!(!head.contains("content-encoding"), "{head}");
     stream.read_to("cp_process_f12");
     publish(&hub, &server("cp_badlands"));
     let live = stream.read_to("cp_badlands");
@@ -116,8 +116,8 @@ fn a_gzipped_event_stream_can_be_read_after_every_batch() {
     let (app, hub) = one_match();
     publish(&hub, &server("cp_process_f12"));
     let mut stream = EventStream::open(&app, "GET /events HTTP/1.1\r\nAccept-Encoding: gzip\r\n\r\n");
-    let head = stream.read_to("Access-Control");
-    assert!(head.contains("Content-Encoding: gzip"), "{head}");
+    let head = stream.read_to("access-control");
+    assert!(head.contains("content-encoding: gzip"), "{head}");
     let mut line = String::new();
     while line != "\r\n" {
         line.clear();

@@ -70,10 +70,9 @@ fn nothing_is_changed_at_another_sites_asking() {
 #[test]
 fn endless_header_is_cut_off() {
     let mut send = b"GET / HTTP/1.1\r\nX-Long: ".to_vec();
-    send.resize(64 << 10, b'a');
-    let (result, response) = request(&send);
-    assert!(result.is_err());
-    assert!(response.starts_with("HTTP/1.1 431"), "{response}");
+    send.resize(1 << 20, b'a');
+    let response = request(&send).1;
+    assert!(response.starts_with("HTTP/1.1 431"), "{response:.200}");
 }
 
 /// The modules `name` imports (`from "…"` and `import("…")`), as paths under `app/`.

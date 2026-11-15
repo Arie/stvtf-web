@@ -1,17 +1,16 @@
-//! The server: hyper takes the connections and reads the requests, axum routes them with its
-//! layers; each is answered on a blocking thread (see [`super::routes`]), and an event stream is
-//! written by a thread of its own.
+//! The server: axum serves the routes with their layers; each request's work is done on a
+//! blocking thread (see `asked::answer`), and an event stream is written by a thread of its own.
 
 use super::Shared;
 use anyhow::Result;
 use axum::Router;
-use axum::extract::{ConnectInfo, DefaultBodyLimit};
+use axum::extract::DefaultBodyLimit;
 use axum::http::header::{self, HeaderValue};
 use axum::http::{Method, StatusCode};
-use hyper::server::conn::http1;
-use hyper_util::rt::{TokioIo, TokioTimer};
-use hyper_util::service::TowerToHyperService;
+use axum::serve::ListenerExt;
+use std::future::Future;
 use std::net::SocketAddr;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 use tower_http::compression::CompressionLayer;
 use tower_http::cors::{self, CorsLayer};
@@ -19,51 +18,54 @@ use tower_http::csrf::CsrfLayer;
 use tower_http::set_header::SetResponseHeaderLayer;
 use tower_http::timeout::TimeoutLayer;
 
-/// A request's line and headers arrive in this time, and are no more than twice
-/// [`super::MAX_REQUEST`] (what is read at once: them, and the start of a body).
-const HEAD_WITHIN: Duration = Duration::from_secs(10);
-
-/// Serves `app` on `listen` until the process ends.
-pub(crate) fn run(listen: &str, app: Shared) -> Result<()> {
+/// Serves `app` on `listen` until `stop`: requests under way are then finished, and event
+/// streams end (see `events::stream`).
+pub(crate) fn run(listen: &str, app: Shared, stop: &'static AtomicBool) -> Result<()> {
     let runtime = tokio::runtime::Builder::new_multi_thread().enable_all().build()?;
     runtime.block_on(async {
         let listener = tokio::net::TcpListener::bind(listen).await?;
         log!("http://{listen}/");
-        let (router, http) = (router(app), http());
-        loop {
-            let Ok((tcp, peer)) = listener.accept().await else {
-                // Out of file descriptors, say: not in a spin.
-                tokio::time::sleep(Duration::from_millis(50)).await;
-                continue;
-            };
-            let (router, http) = (router.clone(), http.clone());
-            tokio::spawn(async move {
-                let _ = connection(tcp, peer, router, &http).await;
-            });
+        let stopped = async move {
+            // The flag is the watchers' too, which are no tasks: looked at now and then.
+            while !stop.load(Ordering::Relaxed) {
+                tokio::time::sleep(Duration::from_millis(100)).await;
+            }
+            super::events::end_all();
+        };
+        // What is under way gets a while to finish: a client that will not let go does not hold
+        // the process up.
+        tokio::select! {
+            served = serve(listener, app, stopped) => served?,
+            () = stopped_for(stop, FINISH_WITHIN) => {}
         }
+        Ok(())
     })
 }
 
-/// How connections are served: HTTP/1 (a proxy is in front), the request's head bounded in size
-/// and time.
-pub(crate) fn http() -> http1::Builder {
-    let mut http = http1::Builder::new();
-    http.timer(TokioTimer::new()).header_read_timeout(HEAD_WITHIN).max_buf_size(2 * super::MAX_REQUEST as usize);
-    http
+/// How long requests under way have to finish once the server is told to stop.
+const FINISH_WITHIN: Duration = Duration::from_secs(5);
+
+/// Once `stop` has been set for `long`.
+async fn stopped_for(stop: &'static AtomicBool, long: Duration) {
+    while !stop.load(Ordering::Relaxed) {
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    tokio::time::sleep(long).await;
 }
 
-/// Serves the requests of one connection, from `peer`.
-pub(crate) async fn connection(tcp: tokio::net::TcpStream, peer: SocketAddr, router: Router, http: &http1::Builder) -> Result<()> {
+/// Serves `app` on `listener` until `stopped`, then finishes what is under way.
+pub(crate) async fn serve(
+    listener: tokio::net::TcpListener,
+    app: Shared,
+    stopped: impl Future<Output = ()> + Send + 'static,
+) -> Result<()> {
     // Every write is a whole response or a flushed batch of events: no waiting to fill a packet
     // (with delayed acks, up to 40 ms an event).
-    tcp.set_nodelay(true)?;
-    // The routes are shared by every connection: each request is told whose it is.
-    let shared = TowerToHyperService::new(router);
-    let service = hyper::service::service_fn(move |mut request: hyper::Request<hyper::body::Incoming>| {
-        request.extensions_mut().insert(ConnectInfo(peer));
-        hyper::service::Service::call(&shared, request)
+    let listener = listener.tap_io(|tcp| {
+        let _ = tcp.set_nodelay(true);
     });
-    Ok(http.serve_connection(TokioIo::new(tcp), service).await?)
+    let service = router(app).into_make_service_with_connect_info::<SocketAddr>();
+    Ok(axum::serve(listener, service).with_graceful_shutdown(stopped).await?)
 }
 
 /// A request is answered in this time, its body read: an upload's part on a slow line, at most.
