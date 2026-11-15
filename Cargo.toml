@@ -18,6 +18,12 @@ aes-gcm = "0.10"
 base64 = "0.22"
 flate2 = "1"
 sentry = { version = "0.49.5", default-features = false, features = ["backtrace", "contexts", "panic", "ureq", "rustls"] }
+axum = { version = "0.8.9", default-features = false, features = ["query", "tokio"] }
+tokio = { version = "1.54.1", features = ["rt-multi-thread", "net", "sync", "time"] }
+tower-http = { version = "0.7.1", features = ["set-header", "limit", "cors", "timeout"] }
+tokio-stream = "0.1.19"
+hyper = { version = "1.12.0", features = ["server", "http1"] }
+hyper-util = { version = "0.1.21", features = ["tokio", "service"] }
 
 [profile.release]
 debug = 1
@@ -41,6 +47,8 @@ must_use_candidate = "allow"
 dbg_macro = "warn"
 todo = "warn"
 unimplemented = "warn"
+
+[dev-dependencies]
 
 # The map tests are nearly all this crate's own code: this makes them about 7x faster, and debug
 # assertions and overflow checks stay on.

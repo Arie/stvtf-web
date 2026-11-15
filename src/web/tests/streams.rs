@@ -47,6 +47,35 @@ impl EventStream {
     }
 }
 
+/// A chunked body's bytes, without the chunks' sizes.
+struct Dechunked<R> {
+    from: R,
+    left: usize,
+}
+
+impl<R: BufRead> Read for Dechunked<R> {
+    fn read(&mut self, into: &mut [u8]) -> std::io::Result<usize> {
+        if self.left == 0 {
+            let mut size = String::new();
+            // The line that ends the chunk before, then this one's size.
+            while size.trim().is_empty() {
+                size.clear();
+                if self.from.read_line(&mut size)? == 0 {
+                    return Ok(0);
+                }
+            }
+            self.left = usize::from_str_radix(size.trim(), 16).map_err(std::io::Error::other)?;
+            if self.left == 0 {
+                return Ok(0);
+            }
+        }
+        let most = into.len().min(self.left);
+        let n = self.from.read(&mut into[..most])?;
+        self.left -= n;
+        Ok(n)
+    }
+}
+
 fn read_to(reader: &mut impl BufRead, needle: &str) -> String {
     let mut seen = String::new();
     while !seen.lines().last().is_some_and(|l| l.contains(needle)) {
@@ -60,7 +89,7 @@ fn read_to(reader: &mut impl BufRead, needle: &str) -> String {
 
 fn one_match() -> (Arc<App>, SharedHub) {
     let hub = SharedHub::default();
-    (Arc::new(app(Matches::One(hub.clone()))), hub)
+    (app(Matches::One(hub.clone())).shared(), hub)
 }
 
 fn heal() -> Line {
@@ -89,10 +118,12 @@ fn a_gzipped_event_stream_can_be_read_after_every_batch() {
     let mut stream = EventStream::open(&app, "GET /events HTTP/1.1\r\nAccept-Encoding: gzip\r\n\r\n");
     let head = stream.read_to("Access-Control");
     assert!(head.contains("Content-Encoding: gzip"), "{head}");
-    stream.read_to("X-Content-Type-Options");
-    let mut blank = String::new();
-    stream.client.read_line(&mut blank).unwrap();
-    let mut events = BufReader::new(GzDecoder::new(stream.client));
+    let mut line = String::new();
+    while line != "\r\n" {
+        line.clear();
+        stream.client.read_line(&mut line).unwrap();
+    }
+    let mut events = BufReader::new(GzDecoder::new(Dechunked { from: stream.client, left: 0 }));
     assert!(read_to(&mut events, "cp_process_f12").starts_with("retry: 1000"));
     // Only got here if the first batch was flushed; so must the next, with the stream still open.
     publish(&hub, &server("cp_badlands"));
@@ -123,14 +154,19 @@ fn closing_a_match_stream_frees_its_viewer_and_slot() {
     let sessions = Sessions::new(false, 1, 20.0);
     sessions.pin("demo", |_| {});
     let m = sessions.get("demo").unwrap();
-    let app = Arc::new(app(Matches::Many(sessions)));
+    let app = app(Matches::Many(sessions)).shared();
     let mut stream = EventStream::open(&app, "GET /w/demo/events HTTP/1.1\r\n\r\n");
     stream.read_to("retry:");
     assert!(m.watched());
     assert_eq!(app.streams.lock().unwrap().values().sum::<usize>(), 1);
     stream.close(&m.hub);
-    assert!(!m.watched());
-    assert!(app.streams.lock().unwrap().is_empty());
+    // Its writer notices a moment after the connection is gone.
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while m.watched() || !app.streams.lock().unwrap().is_empty() {
+        assert!(Instant::now() < deadline, "the stream outlived its client");
+        publish(&m.hub, &server("cp_process_f12"));
+        std::thread::sleep(Duration::from_millis(1));
+    }
 }
 
 #[test]
@@ -143,7 +179,7 @@ fn too_many_streams_are_refused_and_not_counted_as_viewers() {
     let sessions = Sessions::new(false, 1, 20.0);
     sessions.pin("demo", |_| {});
     let m = sessions.get("demo").unwrap();
-    let many = Arc::new(app(Matches::Many(sessions)));
+    let many = app(Matches::Many(sessions)).shared();
     let _open: Vec<_> = (0..MAX_STREAMS_PER_CLIENT).map(|_| many.stream_slot(loopback).unwrap()).collect();
     assert!(EventStream::open(&many, "GET /w/demo/events HTTP/1.1\r\n\r\n").read_to("HTTP/1.1").starts_with("HTTP/1.1 429"));
     assert!(!m.watched());
@@ -168,15 +204,12 @@ fn only_a_proxy_of_ours_is_believed_about_the_client() {
 
 #[test]
 fn forwarded_addresses_are_read_in_order() {
-    let forwarded = |header: &str| {
-        let send = format!("GET / HTTP/1.1\r\n{header}\r\n\r\n");
-        read_request(&mut send.as_bytes()).unwrap().forwarded.iter().map(ToString::to_string).collect::<Vec<_>>().join(" ")
-    };
-    assert_eq!(forwarded("X-Forwarded-For: 203.0.113.9"), "203.0.113.9");
-    assert_eq!(forwarded("x-forwarded-for: 198.51.100.7, 203.0.113.9"), "198.51.100.7 203.0.113.9");
-    assert_eq!(forwarded("X-Forwarded-For: 2001:db8::1"), "2001:db8::1");
-    assert_eq!(forwarded("X-Forwarded-For: 203.0.113.9, nonsense"), "");
-    assert_eq!(forwarded("Host: x"), "");
+    let forwarded = |value: &str| server::forwarded(value).iter().map(ToString::to_string).collect::<Vec<_>>().join(" ");
+    assert_eq!(forwarded("203.0.113.9"), "203.0.113.9");
+    assert_eq!(forwarded("198.51.100.7, 203.0.113.9"), "198.51.100.7 203.0.113.9");
+    assert_eq!(forwarded("2001:db8::1"), "2001:db8::1");
+    assert_eq!(forwarded("203.0.113.9, nonsense"), "");
+    assert_eq!(forwarded(""), "");
 }
 
 #[test]

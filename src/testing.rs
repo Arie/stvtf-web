@@ -1,6 +1,8 @@
 //! What the tests share: temporary folders, scripted `SourceTV` servers, an app to serve from.
 
 use super::*;
+use std::net::TcpListener;
+use std::sync::atomic::AtomicUsize;
 use stvtf::Line;
 use stvtf::output;
 
@@ -110,8 +112,31 @@ pub(crate) fn web_server(files: Vec<(&'static str, Vec<u8>)>) -> (String, Arc<Mu
     (base, asked)
 }
 
-pub(crate) fn app(matches: Matches) -> App {
-    App {
+/// An app for a test: changed as if it were the test's own, and shared with the server that
+/// serves it a request at a time.
+pub(crate) struct TestApp(Arc<App>);
+
+impl TestApp {
+    pub(crate) fn shared(&self) -> Arc<App> {
+        self.0.clone()
+    }
+}
+
+impl std::ops::Deref for TestApp {
+    type Target = App;
+    fn deref(&self) -> &App {
+        &self.0
+    }
+}
+
+impl std::ops::DerefMut for TestApp {
+    fn deref_mut(&mut self) -> &mut App {
+        Arc::get_mut(&mut self.0).expect("no request is being served")
+    }
+}
+
+pub(crate) fn app(matches: Matches) -> TestApp {
+    TestApp(Arc::new(App {
         matches,
         cache: PathBuf::from("unused"),
         backpack: PathBuf::from("unused"),
@@ -123,7 +148,7 @@ pub(crate) fn app(matches: Matches) -> App {
         streams: Arc::default(),
         rooms: rooms::registry::Rooms::default(),
         voice: voice::VoiceSetup::default(),
-    }
+    }))
 }
 
 pub(crate) fn server(map: &str) -> Line {

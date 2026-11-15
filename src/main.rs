@@ -21,12 +21,12 @@ use crate::maps::cache::{demostf_maps, map_geometry_gzip, overview, warm_maps};
 use crate::matches::hub::{SharedHub, watch_into};
 use crate::matches::replay::replay;
 use crate::matches::sessions::Sessions;
-use crate::web::{MAX_STREAMS_PER_CLIENT, app_version, module_preloads, serve};
+use crate::web::{MAX_STREAMS_PER_CLIENT, app_version, module_preloads};
 use anyhow::{Context, Result, bail};
 use std::collections::HashMap;
-use std::net::{IpAddr, TcpListener};
+use std::net::IpAddr;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 use stvtf::watch;
@@ -36,8 +36,6 @@ const LINGER: Duration = Duration::from_secs(180);
 /// A room ends this long after its last viewer left: a reload does not end it.
 const ROOM_LINGER: Duration = Duration::from_secs(60);
 
-/// Open connections, browsers on `/events` included; more are closed straight away.
-const MAX_CONNECTIONS: usize = 512;
 /// The exit status for a command line that does not say what to watch.
 const EXIT_USAGE: i32 = 2;
 
@@ -170,26 +168,6 @@ fn warm(app: &App) {
         if let Err(e) = map_geometry_gzip(&app.cache, name, true) {
             log!("{name}: {e}");
         }
-    }
-}
-
-/// Counts an open connection in `count` until dropped.
-struct Connection(&'static AtomicUsize);
-
-impl Connection {
-    fn open(count: &'static AtomicUsize) -> Option<Self> {
-        // fetch_update is deprecated and its replacement still unstable on our toolchain.
-        if count.fetch_add(1, Ordering::Relaxed) >= MAX_CONNECTIONS {
-            count.fetch_sub(1, Ordering::Relaxed);
-            return None;
-        }
-        Some(Connection(count))
-    }
-}
-
-impl Drop for Connection {
-    fn drop(&mut self) {
-        self.0.fetch_sub(1, Ordering::Relaxed);
     }
 }
 
@@ -341,22 +319,6 @@ fn keep_house(app: Arc<App>, stop: &'static AtomicBool) {
     });
 }
 
-/// Serves each connection on its own thread, up to `MAX_CONNECTIONS` at once.
-fn accept(listen: &str, app: &Arc<App>, open: &'static AtomicUsize) -> Result<()> {
-    let listener = TcpListener::bind(listen)?;
-    log!("http://{listen}/");
-    for conn in listener.incoming() {
-        let Ok(s) = conn else { continue };
-        let Some(open) = Connection::open(open) else { continue };
-        let app = app.clone();
-        std::thread::spawn(move || {
-            let _open = open;
-            let _ = serve(s, &app);
-        });
-    }
-    Ok(())
-}
-
 /// Who is who in a team's voice channel: kept in the store, the same as the stv.tf that holds
 /// it for all regions (`STVTF_VOICE_HOME`; none on that one itself), and with the sites asked
 /// who a Discord user is (`STVTF_LINK_SITES`, each as `--home`; else the one this belongs to),
@@ -397,7 +359,6 @@ fn relay_process(options: &Options, stop: &'static AtomicBool) -> Option<Result<
 
 fn main() -> Result<()> {
     static STOP: AtomicBool = AtomicBool::new(false);
-    static OPEN: AtomicUsize = AtomicUsize::new(0);
     let Some(options) = Options::parse(std::env::args().skip(1))? else {
         println!("{USAGE}");
         return Ok(());
@@ -453,7 +414,7 @@ fn main() -> Result<()> {
             std::thread::spawn(move || prompt(&console, &url));
         }
     }
-    accept(&options.listen, &app, &OPEN)
+    web::server::run(&options.listen, app)
 }
 
 #[cfg(test)]
@@ -464,15 +425,6 @@ mod tests {
     use super::*;
     use crate::matches::hub::publish;
     use crate::testing::{TempDir, app, server};
-
-    #[test]
-    fn connections_are_capped() {
-        static COUNT: AtomicUsize = AtomicUsize::new(0);
-        let open: Vec<_> = (0..MAX_CONNECTIONS).map(|_| Connection::open(&COUNT).unwrap()).collect();
-        assert!(Connection::open(&COUNT).is_none());
-        drop(open);
-        assert!(Connection::open(&COUNT).is_some());
-    }
 
     #[test]
     fn a_demo_folder_gives_one_match_per_recording() {

@@ -58,7 +58,7 @@ impl Server {
     fn connect(&self, path: &str) -> std::io::Result<TcpStream> {
         let mut s = TcpStream::connect(&self.address)?;
         s.set_read_timeout(Some(Duration::from_secs(10)))?;
-        write!(s, "GET {path} HTTP/1.1\r\nHost: test\r\n\r\n")?;
+        write!(s, "GET {path} HTTP/1.1\r\nHost: test\r\nConnection: close\r\n\r\n")?;
         Ok(s)
     }
 
@@ -135,11 +135,11 @@ fn a_stopped_server_exits_cleanly_and_the_next_one_has_its_matches() {
     });
     let body = format!("connect=127.0.0.1%3A{port}");
     let mut form = TcpStream::connect(&first.address).unwrap();
-    write!(form, "POST /watch HTTP/1.1\r\nContent-Length: {}\r\n\r\n{body}", body.len()).unwrap();
+    write!(form, "POST /watch HTTP/1.1\r\nConnection: close\r\nContent-Length: {}\r\n\r\n{body}", body.len()).unwrap();
     let mut started = String::new();
     form.read_to_string(&mut started).unwrap();
     assert!(started.starts_with("HTTP/1.1 303"), "{started}");
-    let page = started.lines().find_map(|l| l.strip_prefix("Location: ")).unwrap().to_string();
+    let page = started.lines().find_map(|l| l.strip_prefix("location: ")).unwrap().to_string();
     assert!(first.get(&page).starts_with("HTTP/1.1 200"));
 
     let interrupted = Command::new("kill").args(["-TERM", &first.child.id().to_string()]).status().unwrap();

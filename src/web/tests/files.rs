@@ -34,7 +34,7 @@ fn endless_header_is_cut_off() {
     send.resize(64 << 10, b'a');
     let (result, response) = request(&send);
     assert!(result.is_err());
-    assert_eq!(response, "");
+    assert!(response.starts_with("HTTP/1.1 431"), "{response}");
 }
 
 /// The modules `name` imports (`from "…"` and `import("…")`), as paths under `app/`.
@@ -196,7 +196,7 @@ fn a_backpack_name_cannot_leave_its_folder() {
 }
 
 /// The head of a response, which may have a binary body.
-fn head_of(app: &App, path: &str) -> String {
+fn head_of(app: &TestApp, path: &str) -> String {
     let (result, response) = exchange(app, format!("GET {path} HTTP/1.1\r\n\r\n").as_bytes());
     result.unwrap();
     head_and_body(&response).0

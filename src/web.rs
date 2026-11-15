@@ -6,7 +6,7 @@ use crate::matches::sessions;
 use crate::matches::sessions::Sessions;
 use crate::{App, Matches, lock};
 use anyhow::{Result, bail};
-use std::io::{BufRead, BufReader, Read, Write};
+use std::io::Write;
 use std::net::IpAddr;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -17,6 +17,7 @@ mod events;
 mod matches;
 mod mine;
 mod rooms;
+pub(crate) mod server;
 pub(crate) mod token;
 mod unpack;
 mod upload;
@@ -63,10 +64,6 @@ pub(crate) const MAX_STREAMS_PER_CLIENT: usize = 32;
 
 /// The longest delay a page can ask for after its last `/`, to line up with a stream of the match.
 const MAX_DELAY_S: f64 = 60.0;
-
-/// A request must arrive in this time, and a response (or an event) be taken in this time.
-const READ_TIMEOUT: Duration = Duration::from_secs(10);
-const WRITE_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// How long a browser keeps a file that does not change for a given build.
 const CACHE_FOR: Duration = Duration::from_hours(24);
@@ -128,55 +125,6 @@ struct Request {
     body: Vec<u8>,
 }
 
-/// The request line and headers.
-fn read_request(reader: &mut impl BufRead) -> Result<Request> {
-    let mut line = String::new();
-    reader.read_line(&mut line)?;
-    let mut words = line.split_whitespace();
-    let method = words.next().unwrap_or("GET").to_string();
-    let target = words.next().unwrap_or("/");
-    let (path, query) = target.split_once('?').unwrap_or((target, ""));
-    let mut request = Request {
-        method,
-        path: path.to_string(),
-        query: query.to_string(),
-        length: 0,
-        gzip: false,
-        forwarded: Vec::new(),
-        bearer: None,
-        guest: None,
-        user: None,
-        voice_link: None,
-        agent: String::new(),
-        body: Vec::new(),
-    };
-    loop {
-        let mut header = String::new();
-        if reader.read_line(&mut header)? == 0 {
-            bail!("request incomplete or over {MAX_REQUEST} bytes");
-        }
-        if header == "\r\n" {
-            return Ok(request);
-        }
-        let Some((name, value)) = header.split_once(':') else { continue };
-        if name.eq_ignore_ascii_case("content-length") {
-            request.length = value.trim().parse().unwrap_or(0);
-        } else if name.eq_ignore_ascii_case("x-forwarded-for") {
-            request.forwarded = value.split(',').map(|a| a.trim().parse::<IpAddr>()).collect::<Result<_, _>>().unwrap_or_default();
-        } else if name.eq_ignore_ascii_case("authorization") {
-            request.bearer = value.trim().strip_prefix("Bearer ").map(|t| t.trim().to_string());
-        } else if name.eq_ignore_ascii_case("cookie") {
-            request.guest = cookie(value, GUEST_COOKIE).filter(|g| sessions::is_id(g)).map(str::to_string);
-            request.user = cookie(value, USER_COOKIE).map(str::to_string);
-            request.voice_link = cookie(value, voice_link::STATE_COOKIE).filter(|g| sessions::is_id(g)).map(str::to_string);
-        } else if name.eq_ignore_ascii_case("user-agent") {
-            request.agent = value.trim().to_string();
-        } else if name.eq_ignore_ascii_case("accept-encoding") {
-            request.gzip = value.split(',').any(|e| e.split(';').next().is_some_and(|e| e.trim().eq_ignore_ascii_case("gzip")));
-        }
-    }
-}
-
 /// Cookie `name`'s value in a `Cookie` header.
 fn cookie<'a>(header: &'a str, name: &str) -> Option<&'a str> {
     header.split(';').find_map(|c| c.trim().strip_prefix(name)?.strip_prefix('='))
@@ -217,44 +165,6 @@ fn not_found(s: &mut Out) -> std::io::Result<()> {
 
 pub(crate) fn redirect(s: &mut Out, status: &str, location: &str) -> std::io::Result<()> {
     respond_with(s, status, &[("Location", location)], b"")
-}
-
-pub(crate) fn serve(mut s: std::net::TcpStream, app: &App) -> Result<()> {
-    // A client that sends nothing, or stops reading `/events`, does not keep its thread forever.
-    s.set_read_timeout(Some(READ_TIMEOUT))?;
-    s.set_write_timeout(Some(WRITE_TIMEOUT))?;
-    // Every write is a whole response or a flushed batch of events: no waiting to fill a packet
-    // (with delayed acks, up to 40 ms an event).
-    s.set_nodelay(true)?;
-    let mut reader = BufReader::new(s.try_clone()?.take(MAX_REQUEST));
-    let mut request = read_request(&mut reader)?;
-    if request.length <= body_limit(&request) {
-        // The body has an allowance of its own: the headers may have used up most of theirs.
-        let buffered = reader.buffer().len() as u64;
-        reader.get_mut().set_limit((request.length as u64).saturating_sub(buffered));
-        request.body = vec![0; request.length];
-        reader.read_exact(&mut request.body)?;
-    }
-    let peer = s.peer_addr()?.ip();
-    let out = Out::default();
-    answer(out.clone(), app, &request, client_of(&request.forwarded, peer))?;
-    let Some(reply) = out.take() else { bail!("no answer") };
-    write!(s, "HTTP/1.1 {}\r\n", reply.status)?;
-    for (name, value) in &reply.headers {
-        write!(s, "{name}: {value}\r\n")?;
-    }
-    match reply.body {
-        Body::Whole(body) => {
-            write!(s, "Content-Length: {}\r\nConnection: close\r\n", body.len())?;
-            write!(s, "Access-Control-Allow-Origin: *\r\nX-Content-Type-Options: nosniff\r\n\r\n")?;
-            s.write_all(&body)?;
-        }
-        Body::Events(events) => {
-            write!(s, "Access-Control-Allow-Origin: *\r\nX-Content-Type-Options: nosniff\r\n\r\n")?;
-            events(&mut s)?;
-        }
-    }
-    Ok(())
 }
 
 /// The most a request's body may be: a part of an upload, or little.

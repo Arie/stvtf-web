@@ -3,21 +3,21 @@
 use super::*;
 
 /// A server that keeps demos, and its folder.
-fn upload_app() -> (App, TempDir) {
+fn upload_app() -> (TestApp, TempDir) {
     let dir = TempDir::new("uploads");
     let mut sessions = Sessions::new(false, 8, 20.0);
     sessions.store = Some(sessions::Store { dir: dir.to_path_buf(), keys: None });
     (app(Matches::Many(sessions)), dir)
 }
 
-fn put(app: &App, path: &str, body: &[u8]) -> String {
+fn put(app: &TestApp, path: &str, body: &[u8]) -> String {
     let mut send = format!("PUT {path} HTTP/1.1\r\nContent-Length: {}\r\n\r\n", body.len()).into_bytes();
     send.extend_from_slice(body);
     request_to(app, &send).1
 }
 
 /// Sends `demo` in two parts; what the last request answers.
-fn send(app: &App, demo: &[u8], name: &str) -> String {
+fn send(app: &TestApp, demo: &[u8], name: &str) -> String {
     let begun = post(app, "/upload", "", &format!(r#"{{"size":{}}}"#, demo.len()));
     assert!(begun.starts_with("HTTP/1.1 200") && begun.contains(r#""part":33554432"#), "{begun}");
     let id = begun.split(r#""id":""#).nth(1).unwrap().split('"').next().unwrap().to_string();

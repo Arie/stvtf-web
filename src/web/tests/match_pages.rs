@@ -253,7 +253,7 @@ fn form_values_are_decoded() {
 #[test]
 fn a_match_no_longer_watched_says_where_to_start_it_again() {
     let mut a = app(Matches::Many(Sessions::new(false, 1, 20.0)));
-    let gone = |a: &App| get(a, "/w/nope/", "");
+    let gone = |a: &TestApp| get(a, "/w/nope/", "");
     let page = gone(&a);
     assert!(page.starts_with("HTTP/1.1 404") && page.contains(HTML) && page.contains("paste its connect string"), "{page}");
     a.keys = Some(Arc::new(token::Keys::from_hex(&"00".repeat(32)).unwrap()));
@@ -277,7 +277,7 @@ fn a_form_may_be_as_long_as_the_limit_and_no_longer() {
 }
 
 /// A server whose store has match `id`'s demo of `cp_a` kept with comms in it.
-fn kept_app(id: &str) -> (App, TempDir) {
+fn kept_app(id: &str) -> (TestApp, TempDir) {
     let dir = TempDir::new("kept-web");
     let header = stvtf::demo::Header {
         protocol: 24,
@@ -378,7 +378,7 @@ fn a_demo_with_comms_watched_here_has_its_voices_put_on_players_after_the_match(
     let mut sessions = Sessions::new(false, 4, 20.0);
     sessions.store = Some(sessions::Store { dir: dir.to_path_buf(), keys: None });
     let mut app = app(Matches::Many(sessions));
-    let watch = |app: &App| {
+    let watch = |app: &TestApp| {
         let watched = get(app, &format!("/w/{id}/watch/0-1?t=1:02"), "");
         watched.split("Location: ").nth(1).and_then(|l| l.split("\r\n").next()).unwrap_or_default().to_string()
     };

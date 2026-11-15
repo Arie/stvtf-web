@@ -2,11 +2,11 @@
 
 use super::*;
 
-fn post_voice(app: &App, id: &str, key: Option<&str>, body: &str) -> String {
+fn post_voice(app: &TestApp, id: &str, key: Option<&str>, body: &str) -> String {
     post_voice_as_is(app, id, key, &invited(app, id, body))
 }
 
-fn post_voice_as_is(app: &App, id: &str, key: Option<&str>, body: &str) -> String {
+fn post_voice_as_is(app: &TestApp, id: &str, key: Option<&str>, body: &str) -> String {
     let auth = key.map_or_default(|k| format!("Authorization: Bearer {k}\r\n"));
     let send = format!("POST /w/{id}/voice HTTP/1.1\r\n{auth}Content-Length: {}\r\n\r\n{body}", body.len());
     request_to(app, send.as_bytes()).1
@@ -116,7 +116,7 @@ fn a_room_takes_voice_for_its_live_match_and_its_admins_match_who_is_who() {
 }
 
 /// An app that links through a made-up Discord, whose user 77 has these connections.
-fn linking_app(connections: &str) -> App {
+fn linking_app(connections: &str) -> TestApp {
     let (discord, _) = web_server(vec![
         ("/oauth2/token", br#"{"access_token":"t","token_type":"Bearer"}"#.to_vec()),
         ("/users/@me", br#"{"id":"77","username":"gummy"}"#.to_vec()),
@@ -129,7 +129,7 @@ fn linking_app(connections: &str) -> App {
     app
 }
 
-fn who(app: &App, discord: &str, key: &str) -> String {
+fn who(app: &TestApp, discord: &str, key: &str) -> String {
     request_to(app, format!("GET /voice/who?discord={discord} HTTP/1.1\r\nAuthorization: Bearer {key}\r\n\r\n").as_bytes()).1
 }
 

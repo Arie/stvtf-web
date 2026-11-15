@@ -2,7 +2,7 @@
 
 use super::*;
 
-fn bot(app: &App, method: &str, key: &str, body: &str) -> String {
+fn bot(app: &TestApp, method: &str, key: &str, body: &str) -> String {
     let send = format!("{method} /voice/mumble HTTP/1.1\r\nAuthorization: Bearer {key}\r\nContent-Length: {}\r\n\r\n{body}", body.len());
     request_to(app, send.as_bytes()).1
 }
@@ -254,7 +254,7 @@ fn behind_a_site_only_who_has_a_say_brings_mumble_in() {
 
 /// Runs `serve` on `send` from a client that reads nothing until the answer is stuck on its way:
 /// whether `free` held then.
-fn free_while_answering(app: &App, send: &[u8], free: impl Fn() -> bool) -> bool {
+fn free_while_answering(app: &TestApp, send: &[u8], free: impl Fn() -> bool) -> bool {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let mut client = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
     let (mut server, _) = listener.accept().unwrap();
@@ -265,7 +265,7 @@ fn free_while_answering(app: &App, send: &[u8], free: impl Fn() -> bool) -> bool
     while server.write(&block).is_ok() {}
     server.set_nonblocking(false).unwrap();
     std::thread::scope(|scope| {
-        scope.spawn(|| serve(server, app));
+        scope.spawn(|| serve(server, &app.shared()));
         std::thread::sleep(Duration::from_millis(300));
         let was = free();
         let _ = std::io::copy(&mut client, &mut std::io::sink());
