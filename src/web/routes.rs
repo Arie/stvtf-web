@@ -13,6 +13,8 @@ use axum::http::{HeaderMap, HeaderValue, StatusCode, Uri, header};
 use axum::response::{IntoResponse, Redirect, Response};
 use axum::routing::{any, get, post, put};
 use axum::{Form, Json, Router};
+use axum_extra::extract::CookieJar;
+use cookie::Cookie;
 use serde::Deserialize;
 use std::collections::HashMap;
 use tower::ServiceBuilder;
@@ -110,7 +112,7 @@ pub(super) fn routes(app: &App) -> (Routes, Routes) {
         .route("/upload/{id}", post(upload::finished))
         .route("/signin", get(signin))
         .route("/signed_in", get(signed_in))
-        .route("/signout", get(signout))
+        .route("/signout", post(signout))
         .route("/voice/link", get(voice::link))
         .route("/voice/linked", get(voice::linked))
         .route("/voice/who", get(voice::who))
@@ -194,24 +196,47 @@ async fn mumble_json() -> Response {
 /// `/signin`: to the site in front, to come back to `?return=`.
 async fn signin(State(app): State<Shared>, Query(back): Query<Back>) -> Response {
     let Some(site) = app.home.as_deref().and_then(origin) else { return StatusCode::NOT_FOUND.into_response() };
+    // The site hands the return path back as it is: with it, what this browser set out with.
+    let state = crate::matches::sessions::random_id();
     let back = return_to(&app, back.to.as_deref());
-    Redirect::to(&format!("{site}/stv/sign_in?{}", query_of(&[("return", &back)]))).into_response()
+    let back = format!("{back}{}{SIGNIN_STATE}{state}", if back.contains('?') { '&' } else { '?' });
+    let began = set_cookie(&app, SIGNIN_COOKIE, &state, SIGNIN_FOR);
+    ([(header::SET_COOKIE, began)], Redirect::to(&format!("{site}/stv/sign_in?{}", query_of(&[("return", &back)])))).into_response()
 }
+
+/// A sign-in under way: its cookie, how long it has, and what ends its return path.
+const SIGNIN_COOKIE: &str = "stvtf_signin";
+const SIGNIN_FOR: u64 = 600;
+const SIGNIN_STATE: &str = "signin=";
 
 /// Back to the page `back` names, setting `cookie`.
 fn back_with(app: &App, back: &Back, cookie: String) -> Response {
     ([(header::SET_COOKIE, cookie)], Redirect::to(&return_to(app, back.to.as_deref()))).into_response()
 }
 
-/// `/signed_in`: back from the site, with who signed in.
-async fn signed_in(State(app): State<Shared>, Query(back): Query<Back>) -> Response {
+/// `/signed_in`: back from the site, with who signed in, in the browser that set out.
+async fn signed_in(State(app): State<Shared>, cookies: CookieJar, Query(mut back): Query<Back>) -> Response {
     let Some(keys) = &app.keys else { return StatusCode::NOT_FOUND.into_response() };
+    let to = back.to.take().unwrap_or_default();
+    let (to, state) = to.rsplit_once(SIGNIN_STATE).unwrap_or((&to, ""));
+    if state.is_empty() || cookies.get(SIGNIN_COOKIE).map(Cookie::value) != Some(state) {
+        return (StatusCode::BAD_REQUEST, "Sign in again").into_response();
+    }
+    back.to = Some(to.trim_end_matches(['?', '&']).to_string());
     match keys.open_signin(back.t.as_deref().unwrap_or_default(), unix_now()) {
-        Ok(user) => back_with(&app, &back, set_cookie(&app, USER_COOKIE, &keys.keep(&user, unix_now()), token::SIGNED_IN_FOR)),
+        Ok(user) => {
+            let user = set_cookie(&app, USER_COOKIE, &keys.keep(&user, unix_now()), token::SIGNED_IN_FOR);
+            let mut signed = back_with(&app, &back, user);
+            if let Ok(done) = HeaderValue::from_str(&set_cookie(&app, SIGNIN_COOKIE, "", 0)) {
+                signed.headers_mut().append(header::SET_COOKIE, done);
+            }
+            signed
+        }
         Err(e) => (StatusCode::BAD_REQUEST, format!("{e:#}")).into_response(),
     }
 }
 
+/// `POST /signout`.
 async fn signout(State(app): State<Shared>, Query(back): Query<Back>) -> Response {
     back_with(&app, &back, set_cookie(&app, USER_COOKIE, "", 0))
 }

@@ -171,7 +171,8 @@ export function signedIn(m) {
     signout = /** @type {HTMLAnchorElement} */ ($("signout")),
     claim = /** @type {HTMLButtonElement} */ ($("claim"));
   signin.href = new URL(`signin?return=${back}`, env.base).href;
-  signout.href = new URL(`signout?return=${back}`, env.base).href;
+  signout.onclick = () => fetch(new URL("signout", env.base), { method: "POST" }).then(() => location.reload());
+  signout.onkeydown = e => e.key === "Enter" && signout.click();
   signin.hidden = !m.signin || m.signed;
   signout.hidden = !m.signed;
   $("myname").hidden = m.signed;

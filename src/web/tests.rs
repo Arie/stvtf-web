@@ -146,9 +146,14 @@ fn site_app() -> (TestApp, String, TempDir) {
 /// `stvtf_user` as the site's sign-in leaves it, for `json` (`{"uid", "name", "streamer"}`).
 fn signed_in(app: &TestApp, key: &str, json: &str) -> String {
     let t = token::seal(key, &format!(r#"{{"signin":{json},"exp":{}}}"#, unix_now() + 60), [5; 12]);
-    let back = get(app, &format!("/signed_in?t={t}&return=/r/x/"), "");
-    assert!(back.starts_with("HTTP/1.1 303") && back.contains("Location: /r/x/"), "{back}");
-    let cookie = cookie_of(&back);
+    // As the browser that set out: its state comes back on the return path.
+    let began = get(app, "/signin?return=/r/x/", "");
+    let state = began.split("stvtf_signin=").nth(1).unwrap().split(';').next().unwrap();
+    let back = get(app, &format!("/signed_in?t={t}&return=/r/x/%3Fsignin%3D{state}"), &format!("stvtf_signin={state}"));
+    assert!(back.starts_with("HTTP/1.1 303") && back.contains("Location: /r/x/\r\n"), "{back}");
+    let another = get(app, &format!("/signed_in?t={t}&return=/r/x/%3Fsignin%3D{state}"), "");
+    assert!(another.starts_with("HTTP/1.1 400"), "not in a browser that did not set out: {another}");
+    let cookie = back.split("stvtf_user=").nth(1).map(|c| format!("stvtf_user={}", c.split(';').next().unwrap())).unwrap();
     assert!(back.contains("HttpOnly; SameSite=Lax; Secure"), "{back}");
     cookie
 }

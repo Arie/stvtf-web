@@ -9,14 +9,15 @@ fn signing_in_goes_by_the_site_and_back_only_to_our_own_pages() {
     assert!(out.contains("Location: https://serveme.tf/stv/sign_in?return=%2Fr%2Fabc%2F"), "{out}");
     for elsewhere in ["https://evil.example/", "//evil.example/", "/\\evil.example", "/%09/evil.example"] {
         let out = get(&app, &format!("/signin?return={elsewhere}"), "");
-        assert!(out.contains("sign_in?return=%2F\r\n"), "{elsewhere}: {out}");
+        assert!(out.contains("sign_in?return=%2F%3Fsignin%3D"), "{elsewhere}: {out}");
     }
     signed_in(&app, &key, r#"{"uid":"7656","name":"Arie","streamer":false}"#);
     let stale = token::seal(&key, r#"{"signin":{"uid":"1","name":"x"},"exp":5}"#, [6; 12]);
     assert!(get(&app, &format!("/signed_in?t={stale}"), "").starts_with("HTTP/1.1 400"));
     let start = token::seal(&key, &format!(r#"{{"demo":1,"exp":{}}}"#, unix_now() + 60), [7; 12]);
     assert!(get(&app, &format!("/signed_in?t={start}"), "").starts_with("HTTP/1.1 400"), "a start token signs nobody in");
-    let out = get(&app, "/signout?return=/r/x/", "");
+    assert!(get(&app, "/signout?return=/r/x/", "").starts_with("HTTP/1.1 405"), "no link signs anyone out");
+    let out = post(&app, "/signout", "", "");
     let gone = out.lines().find(|l| l.starts_with("Set-Cookie: stvtf_user=;")).unwrap_or_default();
     assert!(gone.contains("; Path=/") && gone.contains("; Max-Age=0"), "{out}");
 }
