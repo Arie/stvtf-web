@@ -1,9 +1,10 @@
 //! What goes wrong, told to Sentry too (`SENTRY_DSN`; without it nothing is sent): a panic of any
-//! thread, a line said with `fault!`, and what a viewer's page reports of itself (with the Steam id
-//! of one signed in). No addresses go with any of it.
+//! thread, a line said with `fault!`, and what a viewer's page reports of itself (with the viewer's
+//! address, and the Steam id of one signed in).
 
-use sentry::protocol::{Event, Exception, Frame, Level, Request, Stacktrace, User};
+use sentry::protocol::{Event, Exception, Frame, IpAddress, Level, Request, Stacktrace, User};
 use std::collections::HashMap;
+use std::net::IpAddr;
 use std::sync::{Arc, LazyLock, Mutex, OnceLock, PoisonError};
 use std::time::{Duration, Instant};
 
@@ -89,15 +90,15 @@ pub(crate) struct PageFault {
     build: String,
 }
 
-/// Tells Sentry what a page reported, with its browser (`agent`) and whose it is (`steam`, of one
-/// signed in). Whether it was taken: only so many are in a minute.
-pub(crate) fn page_fault(body: &[u8], agent: &str, steam: Option<&str>) -> bool {
+/// Tells Sentry what a page reported, with its browser (`agent`) and whose it is (`client`, and
+/// `steam` of one signed in). Whether it was taken: only so many are in a minute.
+pub(crate) fn page_fault(body: &[u8], agent: &str, client: IpAddr, steam: Option<&str>) -> bool {
     let Ok(fault) = serde_json::from_slice::<PageFault>(body) else { return false };
     if fault.message.is_empty() || !page_slot(Instant::now()) {
         return false;
     }
     if let Some(pages) = PAGE_HUB.get() {
-        pages.capture_event(page_event(&fault, agent, steam));
+        pages.capture_event(page_event(&fault, agent, client, steam));
     }
     true
 }
@@ -112,7 +113,7 @@ fn page_slot(now: Instant) -> bool {
     free
 }
 
-fn page_event(fault: &PageFault, agent: &str, steam: Option<&str>) -> Event<'static> {
+fn page_event(fault: &PageFault, agent: &str, client: IpAddr, steam: Option<&str>) -> Event<'static> {
     let frames = frames(&fault.stack);
     let mut event = Event {
         platform: "javascript".into(),
@@ -124,7 +125,7 @@ fn page_event(fault: &PageFault, agent: &str, steam: Option<&str>) -> Event<'sta
             ..Default::default()
         }]
         .into(),
-        user: steam.map(|id| User { id: Some(id.to_string()), ..Default::default() }),
+        user: Some(User { id: steam.map(str::to_string), ip_address: Some(IpAddress::Exact(client.to_canonical())), ..Default::default() }),
         request: Some(Request { headers: [("User-Agent".to_string(), cut(agent, 300))].into(), ..Default::default() }),
         ..Default::default()
     };
@@ -207,8 +208,9 @@ mod tests {
             r#"{"kind":"TypeError","message":"x is undefined","stack":"f@https://stv.tf/app/1/a.js:1:2","page":"/r/abc/","build":"1"}"#,
         )
         .unwrap();
-        let event = page_event(&fault, "Mozilla/5.0", Some("76561198000000001"));
+        let event = page_event(&fault, "Mozilla/5.0", "203.0.113.7".parse().unwrap(), Some("76561198000000001"));
         assert_eq!(event.user.as_ref().unwrap().id.as_deref(), Some("76561198000000001"));
+        assert_eq!(event.user.as_ref().unwrap().ip_address, Some(IpAddress::Exact("203.0.113.7".parse().unwrap())));
         assert_eq!(event.exception[0].ty, "TypeError");
         assert_eq!(event.exception[0].value.as_deref(), Some("x is undefined"));
         assert_eq!(event.tags["page"], "/r/abc/");

@@ -259,6 +259,6 @@ async fn started(v: Visit, Query(q): Query<HashMap<String, String>>) -> Answered
 /// `/fault`: what a page says went wrong in it (see `report`): taken or not, it is not told.
 async fn fault(v: Visit, headers: HeaderMap, said: Bytes) -> StatusCode {
     let agent = headers.get(header::USER_AGENT).and_then(|a| a.to_str().ok()).unwrap_or_default();
-    crate::report::page_fault(&said, agent.trim(), v.who.user.as_ref().map(|u| u.uid.as_str()));
+    crate::report::page_fault(&said, agent.trim(), v.client, v.who.user.as_ref().map(|u| u.uid.as_str()));
     StatusCode::NO_CONTENT
 }

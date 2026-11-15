@@ -77,7 +77,8 @@ nothing is sent):
   viewer who is signed in.
 
 Each says its region (`STVTF_REGION`), whether the app, a relay or a page said it, and its
-version (`SENTRY_RELEASE`, the image's). No addresses are sent, and no names.
+version (`SENTRY_RELEASE`, the image's). A page's report has its viewer's address; nothing else
+has an address, and no names are sent.
 
 ## Relays
 
