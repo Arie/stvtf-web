@@ -227,6 +227,26 @@ test("a room is driven by its owner and followed by everyone else", async () => 
   await viewer.page.goto(page.url());
   await until(viewer.page, () => document.getElementById("status").textContent === "paused");
   assert.ok(await viewer.page.$eval("#rb-play", el => el.disabled), "only the owner controls it");
+  // A linked moment moves the room for its owner only, once.
+  const room = page.url(),
+    clock = (/** @type {import("playwright-core").Page} */ p, /** @type {string} */ at) =>
+      until(p, a => document.getElementById("rb-clock").textContent.startsWith(`${a} /`), at);
+  await viewer.page.goto(`${room}?t=0:20`);
+  await until(viewer.page, () => document.getElementById("status").textContent === "paused");
+  await viewer.page.waitForTimeout(500);
+  await clock(viewer.page, "0:00");
+  await page.goto(`${room}?t=0:20`);
+  await clock(page, "0:20");
+  await clock(viewer.page, "0:20");
+  await page.$eval("#rb-time", el => {
+    el.value = "0";
+    el.dispatchEvent(new Event("change"));
+  });
+  await clock(viewer.page, "0:00");
+  await page.reload();
+  await until(page, () => !(/** @type {HTMLButtonElement} */ (document.getElementById("rb-play")).disabled));
+  await page.waitForTimeout(500);
+  await clock(viewer.page, "0:00");
   await page.click("#rb-play");
   // A demo plays as a replay.
   await until(viewer.page, () => document.getElementById("status").textContent === "replay");
@@ -617,11 +637,16 @@ test("a link to a moment watches from there", async () => {
   await page.goto(`${base}?t=0:10`);
   await until(page, () => /^0:1\d \//.test(document.getElementById("rb-clock").textContent ?? ""));
   await until(page, () => document.getElementById("status").textContent === "replay");
-  // The address follows playback.
-  await until(page, () => /[?]t=0:1[1-9]$/.test(location.href));
-  await page.click("#rb-play");
-  await page.click("#copylink");
-  await until(page, () => /[?]t=0:1\d$/.test(location.href));
+  // The address stays as it was opened.
+  await until(page, () => /^0:1[2-9] \//.test(document.getElementById("rb-clock").textContent ?? ""));
+  assert.match(page.url(), /[?]t=0:10$/);
+  // A reload watches on from where one was.
+  // Kept every so often: a little before, at most.
+  await until(page, () => /^0:(1[5-9]|[2-9]\d) \//.test(document.getElementById("rb-clock").textContent ?? ""));
+  await page.reload();
+  await until(page, () => document.getElementById("status").textContent === "replay");
+  const clock = await page.$eval("#rb-clock", e => e.textContent ?? "");
+  assert.match(clock, /^0:(1[3-9]|[2-9]\d) \//);
   assert.deepEqual(errors, []);
   await page.close();
 });

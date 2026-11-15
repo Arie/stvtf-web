@@ -31,7 +31,7 @@ import { focusOf, viewArea } from "../map/view.js";
 const MIN_STEP_PX = 3;
 // How often a match page looks where its shared playback is, in milliseconds.
 const SHARED_MS = 1000;
-// How often the address follows playback, in milliseconds.
+// How often where one watches is kept for a reload, in ms.
 const MOMENT_MS = 250;
 
 // The playback bar in a room, the Room button and a viewer's own timeline on a match's page;
@@ -112,13 +112,46 @@ function roomPlayback(send) {
     bar.heard(m);
     maps(m, me.admin);
   });
-  return { bar, maps };
+  return { bar, maps, moveToMap };
+}
+
+// A linked moment moves the room, for an admin, once.
+/** @param {Playbar} bar @param {(c: import("./playbar.js").Control) => unknown} control @param {(load: number) => unknown} moveToMap */
+function linkedRoomMoment(bar, control, moveToMap) {
+  const link = linkedMoment();
+  let open = link.at != null && !keptHere(TAKEN_KEY),
+    known = false,
+    moving = false;
+  const done = () => {
+    open = false;
+    keepHere(TAKEN_KEY, {});
+  };
+  const take = () => {
+    const p = bar.last;
+    if (!open || !known || !p || link.at == null) return;
+    if (!me.admin) return void (open = false);
+    if (link.map != null && p.load != null && link.map !== p.load) {
+      if (moving) return;
+      if (!p.maps?.some(m => m.load === link.map && m.ready)) return done();
+      moving = true;
+      return void moveToMap(link.map);
+    }
+    done();
+    control({ seek: (p.origin ?? 0) + link.at });
+  };
+  playbackListeners.add(take);
+  return () => {
+    known = true;
+    take();
+  };
 }
 
 function roomBar() {
   env.el.classList.add("room");
   // The room's link, to send, by its name.
-  copyLink("Copy the room's link, to send", () => new URL(location.pathname, location.origin));
+  copyLink("Copy the room's link, to send", () =>
+    momentLink(bar.last && !bar.atLive() ? bar.since() : null, bar.last?.load),
+  );
   const marker = /** @type {HTMLButtonElement} */ ($("rb-marker")),
     arc = /** @type {HTMLButtonElement} */ ($("rb-arc")),
     circle = /** @type {HTMLButtonElement} */ ($("rb-circle")),
@@ -126,7 +159,8 @@ function roomBar() {
     text = /** @type {HTMLButtonElement} */ ($("rb-text")),
     clear = /** @type {HTMLButtonElement} */ ($("rb-clear"));
   const control = (/** @type {import("./playbar.js").Control} */ c) => post("control", c);
-  const { bar, maps } = roomPlayback(control);
+  const { bar, maps, moveToMap } = roomPlayback(control);
+  const whoKnown = linkedRoomMoment(bar, control, moveToMap);
   /** @param {boolean} on */
   const allow = on => {
     me.admin = on;
@@ -147,6 +181,7 @@ function roomBar() {
       m => {
         me.id = m.id;
         allow(m.admin === true);
+        whoKnown();
         signedIn(m);
         showPeople();
       },
@@ -186,13 +221,43 @@ function toolKeys(tools) {
   });
 }
 
-// This page's address at `since` (?t=); null: live.
-/** @param {number | null} since */
-function momentLink(since) {
-  const url = new URL(location.href);
-  url.search = since == null ? "" : `?t=${clock(Math.max(0, since))}`;
+// This page's link at `since` on map `load` (?map=&t=); null: plain.
+/** @param {number | null} since @param {number} [load] */
+function momentLink(since, load) {
+  const url = new URL(location.pathname, location.origin);
+  if (since != null) url.search = `?${load == null ? "" : `map=${load}&`}t=${clock(Math.max(0, since))}`;
   return url;
 }
+
+// The moment the address links to.
+/** @returns {{ at: number | null; map: number | null }} */
+function linkedMoment() {
+  const q = new URLSearchParams(location.search),
+    map = q.get("map");
+  return { at: moment(q.get("t")), map: map && /^\d{1,9}$/.test(map) ? Number(map) : null };
+}
+
+// What this tab kept under `key` for this address.
+/** @param {string} key @returns {any} */
+function keptHere(key) {
+  try {
+    const kept = JSON.parse((env.storage && sessionStorage.getItem(key)) || "null");
+    return kept?.page === location.pathname + location.search ? kept : null;
+  } catch {
+    return null;
+  }
+}
+
+/** @param {string} key @param {object} what */
+function keepHere(key, what) {
+  try {
+    if (env.storage)
+      sessionStorage.setItem(key, JSON.stringify({ ...what, page: location.pathname + location.search }));
+  } catch {}
+}
+
+const WATCHING_KEY = "stv-watching",
+  TAKEN_KEY = "stv-linked-taken";
 
 // A match page's timeline: by default the shared playback (live, for a live match); moving it,
 // pausing or a speed gives this viewer a playback of their own, which a live match's Live leaves.
@@ -211,16 +276,22 @@ function watchBar() {
     bar.last && (own.active() || !bar.last.live) ? { at: Math.round(bar.at()), paused: bar.state().paused } : null;
   bar.allow(true);
   playbackListeners.add(m => own.active() && bar.heard(m));
-  copyLink("Copy a link to this moment", () => momentLink(bar.since()));
-  // A link to a moment (?t=12:34, from the map's start) watches from there.
-  const link = { wanted: moment(new URLSearchParams(location.search).get("t")) };
+  copyLink("Copy a link to this moment", () => momentLink(bar.since(), bar.last?.load));
+  // From the linked moment (?t=12:34, from the map's start); on a reload, from where one was.
+  const link = /** @type {Link} */ (keptHere(WATCHING_KEY) ?? linkedMoment());
   const shared = followShared(bar, own, link);
-  addressFollowsPlayback(bar, link);
+  setInterval(() => {
+    if (link.at != null || !bar.last) return;
+    keepHere(
+      WATCHING_KEY,
+      own.active() && !bar.atLive() ? { at: Math.round(bar.since()), map: bar.last.load ?? null } : { at: null },
+    );
+  }, MOMENT_MS);
 }
 
 /** @typedef {ReturnType<typeof playbar>} Playbar */
 /** @typedef {{ send: (c: import("./playbar.js").Control) => Promise<unknown>; back: () => void; active: () => boolean }} OwnPlayback */
-/** @typedef {{ wanted: number | null }} Link */
+/** @typedef {{ at: number | null; map: number | null }} Link A moment to watch from, until taken. */
 
 // A viewer's own playback of the match, started by their first control and theirs until they go
 // back to the shared one.
@@ -257,7 +328,8 @@ function ownPlayback(bar, toShared) {
 }
 
 // Where the shared playback is, while this viewer watches along: heard as at the moment `link`ed
-// to, if one was (a live match shows no more of itself), which then plays on their own.
+// to, if one was (a live match shows no more of itself), which then plays on their own; not one
+// on another map.
 /** @param {Playbar} bar @param {OwnPlayback} own @param {Link} link */
 function followShared(bar, own, link) {
   const shared = () =>
@@ -267,26 +339,17 @@ function followShared(bar, own, link) {
       .then(
         t => {
           if (!t || own.active()) return;
-          const at = link.wanted == null ? t.at : (t.origin ?? 0) + link.wanted;
+          if (link.map != null && t.load != null && link.map !== t.load) link.at = null;
+          const at = link.at == null ? t.at : (t.origin ?? 0) + link.at;
           bar.heard({ type: "playback", paused: false, speed: 1, ...t, at });
-          if (link.wanted != null) own.send({ seek: at });
-          link.wanted = null;
+          if (link.at != null) own.send({ seek: at });
+          link.at = null;
         },
         () => {},
       );
   shared();
   setInterval(shared, SHARED_MS);
   return shared;
-}
-
-// The address follows playback, once a moment linked to is taken.
-/** @param {Playbar} bar @param {Link} link */
-function addressFollowsPlayback(bar, link) {
-  setInterval(() => {
-    if (link.wanted != null || !bar.last) return;
-    const url = momentLink(bar.atLive() ? null : bar.since());
-    if (url.href !== location.href) history.replaceState(null, "", url);
-  }, MOMENT_MS);
 }
 
 // The marker: while it is on, dragging draws instead of panning; what it draws stays until cleared.

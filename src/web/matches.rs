@@ -45,6 +45,9 @@ pub(super) fn serve_match(
     }
     let uploaded = || kept_demo(app, sessions, request, id, rest, client);
     let session = sessions.get(id).or_else(uploaded);
+    if let Some(to) = moved_on(app, sessions, request, id, rest, session.as_ref()) {
+        return Ok(redirect(&mut s, "303 See Other", &to)?);
+    }
     // A demo with comms of which more is known since is another demo: its page is elsewhere.
     if let Some(m) = session.as_ref().filter(|m| m.id != id) {
         let at = moment(&request.query, "t").map_or_default(|t| format!("?t={t}"));
@@ -94,6 +97,18 @@ pub(super) fn serve_match(
         _ => not_found(&mut s)?,
     }
     Ok(())
+}
+
+/// Where `?map=<load>&t=` leads once match `id` is on another map, or gone: that map's comms demo.
+fn moved_on(app: &App, sessions: &Sessions, request: &Request, id: &str, rest: &str, session: Option<&Arc<Session>>) -> Option<String> {
+    let load: usize = param(&request.query, "map").filter(|_| is_page(rest))?.parse().ok()?;
+    let at = moment(&request.query, "t")?;
+    if session.is_some_and(|m| m.demo_id().is_some() || m.ready().is_none_or(|r| r.watchable().load == load)) {
+        return None;
+    }
+    let store = sessions.store.as_ref().filter(|_| sessions::is_id(id))?;
+    let demo = crate::matches::live_demos::downloads(&store.dir, id).into_iter().find(|d| d.load() == Some(load))?;
+    Some(format!("{}/w/{id}/watch/{}?t={at}", app.base, demo.file))
 }
 
 /// A demo of ours by id `id`, not playing (now), played again while it is kept: one uploaded
@@ -160,8 +175,12 @@ pub(super) fn match_timeline(s: &mut TcpStream, m: &Arc<Session>, request: &Requ
     let at = if m.watches_server() { length } else { lock(&m.hub).played.min(length) };
     let (live, rounds, marks) = (r.is_live(), r.rounds_in(part.load), r.marks(usize::MAX).1);
     let (start, origin) = (part.start, part.origin);
-    let body =
+    let mut body =
         serde_json::json!({ "at": at, "length": length, "start": start, "origin": origin, "live": live, "rounds": rounds, "marks": marks });
+    // For links to a moment.
+    if m.demo_id().is_none() {
+        body["load"] = part.load.into();
+    }
     respond(s, "200 OK", JSON, body.to_string().as_bytes())
 }
 

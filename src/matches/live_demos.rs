@@ -70,6 +70,13 @@ pub(crate) struct Download {
     pub(crate) bytes: u64,
 }
 
+impl Download {
+    /// The load it is of.
+    pub(crate) fn load(&self) -> Option<usize> {
+        load_tick(&self.file).map(|(load, _)| load)
+    }
+}
+
 /// A demo's voice file.
 fn voice_of(demo: &Path) -> PathBuf {
     let mut name = demo.as_os_str().to_owned();

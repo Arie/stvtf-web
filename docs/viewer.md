@@ -224,7 +224,10 @@ a touch screen), down to 20 s; a sideways scroll, shift and the wheel, or two fi
 it. A line under it shows where that is in the whole. Playback that leaves what it shows is
 followed, 4 s after the viewer last moved it.
 
-`?t=12:34` (from map start) opens a private playback there; the link button copies one.
+`?t=12:34` (from map start) opens a private playback there; the link button copies one, with
+`map=<load>` on a live match (once on another map, or gone: that map's comms demo). The address
+stays as opened; a reload resumes. A room's link button copies the same while not at live: it moves
+the room for an admin, once.
 
 | route                      |                                                                                                                                                       |
 | -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |

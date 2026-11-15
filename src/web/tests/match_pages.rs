@@ -326,6 +326,10 @@ fn a_matchs_demo_with_comms_is_watched_as_a_demo_of_its_own() {
     let (app, _dir) = kept_app(&id);
     assert!(get(&app, &format!("/w/{id}/demos"), "").contains(&format!(r#""watch":"/w/{id}/watch/100""#)));
     assert!(get(&app, &format!("/w/{id}/"), "").contains(&format!(r#"href="/w/{id}/watch/100""#)), "the gone match's page too");
+    // A link to a moment on that map leads to its demo.
+    let moment = get(&app, &format!("/w/{id}/?map=0&t=1:02"), "");
+    assert!(moment.starts_with("HTTP/1.1 303") && moment.contains(&format!("Location: /w/{id}/watch/100?t=1:02\r\n")), "{moment}");
+    assert!(get(&app, &format!("/w/{id}/?map=1&t=1:02"), "").starts_with("HTTP/1.1 404"));
     let watched = get(&app, &format!("/w/{id}/watch/100"), "");
     let page = watched.split("Location: ").nth(1).and_then(|l| l.split("\r\n").next()).unwrap_or_default().to_string();
     let demo = page.strip_prefix("/w/").and_then(|p| p.strip_suffix('/')).and_then(sessions::id_demo);
