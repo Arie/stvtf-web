@@ -19,9 +19,21 @@ fi
 regions=("$@")
 [[ ${#regions[@]} -eq 0 ]] && regions=(eu na au sea)
 
+version=${VERSION:-$(git rev-parse --short=12 HEAD)_stvtf_$(git -C ../stvtf rev-parse --short=12 HEAD)}
+
+# Kamal's image prune fails on the relay's image: deployed all the same if this version runs.
+deploy() {
+  kamal deploy --skip-push -d "$1" && return
+  if kamal app version -d "$1" 2>/dev/null | grep -qxF "$version"; then
+    echo "$1: runs $version; Kamal's clean-up failed (the relay's image is in use)" >&2
+  else
+    return 1
+  fi
+}
+
 pids=()
 for d in "${regions[@]}"; do
-  kamal deploy --skip-push -d "$d" &
+  deploy "$d" &
   pids+=($!)
 done
 status=0
