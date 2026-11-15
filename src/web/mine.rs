@@ -10,7 +10,8 @@ use crate::matches::sessions::{self, Sessions};
 pub(super) fn mine(v: &Visit, sessions: &Sessions) -> Vec<Yours> {
     let (app, w) = (&v.app, &v.who);
     let uid = w.user.as_ref().map(|u| u.uid.as_str());
-    let by = counted(w.user.as_ref(), None, v.client);
+    // Never by address: another site reads this page without cookies.
+    let by = w.user.as_ref().and_then(|u| counted(Some(u), None, v.client));
     let mut rows = Vec::new();
     let mut row = |kind: &'static str, page: String, what: &str| rows.push(Yours { kind, page, what: what.to_string() });
     let uploads = sessions.store.as_ref().map_or_default(|store| upload::kept_by(store, uid, by.as_deref()));
