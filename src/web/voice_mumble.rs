@@ -5,6 +5,7 @@
 //! voice (`voice_in::has_say`). The bot asks all that is wanted (`GET /voice/mumble`, with its
 //! key); how each goes it says to `voice_who`.
 
+use super::Out;
 use super::visitor::Who;
 use super::voice_in::{has_say, is_key};
 use super::{JSON, Request, TEXT, json_body, respond};
@@ -14,8 +15,6 @@ use crate::voice::feed::{DEFAULT_DELAY, MAX_DELAY};
 use crate::voice::mumble::{DEFAULT_PORT, MumbleJob, is_host, place};
 use crate::{App, lock};
 use serde::Deserialize;
-use std::io::{BufReader, Take};
-use std::net::TcpStream;
 
 /// The longest a channel's name, a password or a status is, in characters.
 const MAX_TEXT: usize = 100;
@@ -42,21 +41,14 @@ struct Ask {
 }
 
 /// `POST /w/<id>/voice-mumble`.
-pub(super) fn post_mumble(
-    s: &mut TcpStream,
-    reader: &mut BufReader<Take<TcpStream>>,
-    app: &App,
-    m: Option<&Session>,
-    request: &Request,
-    who: &Who,
-) -> std::io::Result<()> {
+pub(super) fn post_mumble(s: &mut Out, app: &App, m: Option<&Session>, request: &Request, who: &Who) -> std::io::Result<()> {
     let Some(m) = m.filter(|m| m.is_live() && app.voice.key.is_some()) else {
         return respond(s, "404 Not Found", TEXT, b"No voice here");
     };
     if !has_say(app, m, who) {
         return respond(s, "403 Forbidden", TEXT, b"Not allowed");
     }
-    let Ok(ask) = json_body::<Ask>(reader, request) else { return respond(s, "400 Bad Request", TEXT, b"Invalid") };
+    let Ok(ask) = json_body::<Ask>(request) else { return respond(s, "400 Bad Request", TEXT, b"Invalid") };
     if ask.leave {
         leave_mumble(m, ask.id);
         app.voice.mumble_changes.changed();
@@ -130,7 +122,7 @@ fn want(app: &App, m: &Session, ask: Ask) -> Result<(), &'static str> {
 /// `GET /voice/mumble`, the bot's: every channel wanted, with what it takes to sit in it and to
 /// post its voice, and the `version` of that. Asked with `?since=<version>` it waits (a while)
 /// until something changed since.
-pub(super) fn get_mumble_jobs(s: &mut TcpStream, app: &App, sessions: &Sessions, request: &Request) -> std::io::Result<()> {
+pub(super) fn get_mumble_jobs(s: &mut Out, app: &App, sessions: &Sessions, request: &Request) -> std::io::Result<()> {
     let Some(key) = &app.voice.key else { return respond(s, "404 Not Found", TEXT, b"") };
     if !is_key(key, request.bearer.as_deref()) {
         return respond(s, "401 Unauthorized", TEXT, b"");

@@ -24,7 +24,7 @@ use crate::matches::sessions::Sessions;
 use crate::web::{MAX_STREAMS_PER_CLIENT, app_version, module_preloads, serve};
 use anyhow::{Context, Result, bail};
 use std::collections::HashMap;
-use std::net::{IpAddr, TcpListener, TcpStream};
+use std::net::{IpAddr, TcpListener};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
@@ -84,18 +84,18 @@ struct App {
     /// The site in front: where people sign in.
     home: Option<String>,
     /// Open event streams by client address.
-    streams: Mutex<HashMap<IpAddr, usize>>,
+    streams: Arc<Mutex<HashMap<IpAddr, usize>>>,
     rooms: rooms::registry::Rooms,
     /// Team voice comms.
     voice: voice::VoiceSetup,
 }
 
 /// Counts an event stream against its client's limit until dropped.
-struct Stream<'a>(&'a App, IpAddr);
+struct Stream(Arc<Mutex<HashMap<IpAddr, usize>>>, IpAddr);
 
-impl Drop for Stream<'_> {
+impl Drop for Stream {
     fn drop(&mut self) {
-        let mut streams = lock(&self.0.streams);
+        let mut streams = lock(&self.0);
         if let Some(n) = streams.get_mut(&self.1) {
             *n -= 1;
             if *n == 0 {
@@ -134,18 +134,18 @@ impl App {
     }
 
     /// A slot for one more event stream from `client`, or None when it has too many open.
-    fn stream_slot(&self, client: IpAddr) -> Option<Stream<'_>> {
+    fn stream_slot(&self, client: IpAddr) -> Option<Stream> {
         let mut streams = lock(&self.streams);
         let n = streams.entry(client).or_default();
         if *n >= MAX_STREAMS_PER_CLIENT {
             return None;
         }
         *n += 1;
-        Some(Stream(self, client))
+        Some(Stream(self.streams.clone(), client))
     }
 
     /// A redirect to `path` under `base`.
-    fn redirect(&self, s: &mut TcpStream, status: &str, path: &str) -> std::io::Result<()> {
+    fn redirect(&self, s: &mut web::Out, status: &str, path: &str) -> std::io::Result<()> {
         web::redirect(s, status, &format!("{}{path}", self.base))
     }
 }
@@ -429,7 +429,7 @@ fn main() -> Result<()> {
         base: options.base_path.clone(),
         keys,
         home: options.home.clone(),
-        streams: Mutex::default(),
+        streams: Arc::default(),
         rooms: rooms::registry::Rooms::new(store, relays).with_maps(options.cache.clone()),
         voice: voice::VoiceSetup {
             key: voice_key.clone(),

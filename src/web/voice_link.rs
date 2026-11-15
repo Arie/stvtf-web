@@ -3,20 +3,20 @@
 //! to the voice bot (`GET /voice/who?discord=<id>`, with its key). Linking is off without a
 //! Discord application (`STVTF_DISCORD_CLIENT_ID`, `_SECRET` and `_REDIRECT`).
 
+use super::Out;
 use super::voice_in::is_key;
 use super::{JSON, Request, TEXT, form_decode, param, respond, respond_with, set_cookie, url_encode};
 use crate::App;
 use crate::matches::sessions::random_id;
 use crate::voice::ids::is_snowflake;
 use crate::voice::links::ask_discord;
-use std::net::TcpStream;
 
 /// The cookie that says which sign-in a browser began, and how long it has to end it.
 pub(super) const STATE_COOKIE: &str = "voice_link";
 const STATE_FOR: u64 = 600;
 
 /// `/voice/link`: off to Discord, to come back to `/voice/linked`.
-pub(super) fn link(s: &mut TcpStream, app: &App) -> std::io::Result<()> {
+pub(super) fn link(s: &mut Out, app: &App) -> std::io::Result<()> {
     let Some(d) = &app.voice.links.discord else { return respond(s, "404 Not Found", TEXT, b"No linking here") };
     let state = random_id();
     let to = format!(
@@ -29,7 +29,7 @@ pub(super) fn link(s: &mut TcpStream, app: &App) -> std::io::Result<()> {
 }
 
 /// `/voice/linked`: back from Discord with a code, in the browser that set out.
-pub(super) fn linked(s: &mut TcpStream, app: &App, request: &Request) -> std::io::Result<()> {
+pub(super) fn linked(s: &mut Out, app: &App, request: &Request) -> std::io::Result<()> {
     let Some(d) = &app.voice.links.discord else { return respond(s, "404 Not Found", TEXT, b"No linking here") };
     let state = param(&request.query, "state").unwrap_or_default();
     let code = param(&request.query, "code").map_or_default(form_decode);
@@ -51,7 +51,7 @@ pub(super) fn linked(s: &mut TcpStream, app: &App, request: &Request) -> std::io
 }
 
 /// `/voice/who?discord=<id>`: the Steam id linked to a Discord user, to the bot.
-pub(super) fn who(s: &mut TcpStream, app: &App, request: &Request) -> std::io::Result<()> {
+pub(super) fn who(s: &mut Out, app: &App, request: &Request) -> std::io::Result<()> {
     let Some(key) = &app.voice.key else { return respond(s, "404 Not Found", TEXT, b"") };
     if !is_key(key, request.bearer.as_deref()) {
         return respond(s, "401 Unauthorized", TEXT, b"");

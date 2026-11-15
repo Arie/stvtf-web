@@ -120,7 +120,7 @@ pub(crate) fn app(matches: Matches) -> App {
         base: String::new(),
         keys: None,
         home: None,
-        streams: Mutex::default(),
+        streams: Arc::default(),
         rooms: rooms::registry::Rooms::default(),
         voice: voice::VoiceSetup::default(),
     }

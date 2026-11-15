@@ -1,9 +1,9 @@
 //! The files served: page modules, fonts, icons, backpacks, maps, overviews.
 
+use super::Out;
 use super::{CSS, HTML, JS, JSON, SVG, TEXT, WEBP, WOFF2, not_found, respond, respond_cached, respond_with};
 use crate::maps::cache::{map_geometry, map_geometry_gzip, overview};
 use crate::{App, is_name, lock};
-use std::net::TcpStream;
 
 include!(concat!(env!("OUT_DIR"), "/app_files.rs"));
 const ICONS: [(&str, &[u8]); 9] = [
@@ -27,7 +27,7 @@ const FNV_PRIME: u64 = 0x0100_0000_01b3;
 const LOADER_CACHE_FOR: std::time::Duration = std::time::Duration::from_mins(5);
 
 /// The page's files, pictures and maps.
-pub(super) fn serve_file(s: &mut TcpStream, app: &App, path: &str, gzip: bool) -> std::io::Result<()> {
+pub(super) fn serve_file(s: &mut Out, app: &App, path: &str, gzip: bool) -> std::io::Result<()> {
     match path {
         "/fonts/RobotoCondensed-Regular.woff2" => respond_cached(s, WOFF2, include_bytes!("../../fonts/RobotoCondensed-Regular.woff2")),
         "/fonts/RobotoCondensed-Bold.woff2" => respond_cached(s, WOFF2, include_bytes!("../../fonts/RobotoCondensed-Bold.woff2")),
@@ -67,7 +67,7 @@ pub(super) fn serve_file(s: &mut TcpStream, app: &App, path: &str, gzip: bool) -
 
 /// A map's geometry (gzipped when the browser takes it), or a demos.tf overview, from the cache
 /// (fetched and made on a miss).
-fn serve_cached(s: &mut TcpStream, app: &App, p: &str, gzip: bool) -> std::io::Result<()> {
+fn serve_cached(s: &mut Out, app: &App, p: &str, gzip: bool) -> std::io::Result<()> {
     let result = if let Some(file) = p.strip_prefix("/overview/") {
         let _one_at_a_time = lock(&app.overviews);
         overview(&app.cache, file)
@@ -97,7 +97,7 @@ fn serve_cached(s: &mut TcpStream, app: &App, p: &str, gzip: bool) -> std::io::R
 }
 
 /// A backpack picture or `items.json`; the name is checked so it cannot leave the directory.
-fn serve_backpack(s: &mut TcpStream, app: &App, file: &str) -> std::io::Result<()> {
+fn serve_backpack(s: &mut Out, app: &App, file: &str) -> std::io::Result<()> {
     let found = match file.rsplit_once('.') {
         Some((stem, "webp")) if is_name(stem, b"_") => Some(WEBP),
         Some(("items", "json")) => Some(JSON),

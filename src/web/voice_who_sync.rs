@@ -1,5 +1,6 @@
 //! The list of who is who between regions (`voice::who`): its routes, and asking a site.
 
+use super::Out;
 use super::token::Keys;
 use super::voice_in::is_key;
 use super::{JSON, Request, TEXT, json_body, param, respond};
@@ -7,8 +8,6 @@ use crate::App;
 use crate::voice::ids::{is_voice_id, parse_steamid};
 use crate::voice::who::{CASTER, MAX_NAME, RegionEntry, Site, TIMEOUT};
 use anyhow::Context;
-use std::io::{BufReader, Take};
-use std::net::TcpStream;
 use std::sync::Arc;
 
 /// The site at `home` (as a stv.tf's `--home`), asked with tokens sealed with `keys`.
@@ -31,7 +30,7 @@ pub(crate) fn site(home: &str, keys: Arc<Keys>) -> Site {
 }
 
 /// `GET /voice/known?since=<version>`, another stv.tf's: what changed since.
-pub(super) fn get_known(s: &mut TcpStream, app: &App, request: &Request) -> std::io::Result<()> {
+pub(super) fn get_known(s: &mut Out, app: &App, request: &Request) -> std::io::Result<()> {
     let Some(key) = &app.voice.key else { return respond(s, "404 Not Found", TEXT, b"") };
     if !is_key(key, request.bearer.as_deref()) {
         return respond(s, "401 Unauthorized", TEXT, b"");
@@ -42,12 +41,12 @@ pub(super) fn get_known(s: &mut TcpStream, app: &App, request: &Request) -> std:
 }
 
 /// `POST /voice/known`, another stv.tf's: what was said on a page there.
-pub(super) fn post_known(s: &mut TcpStream, reader: &mut BufReader<Take<TcpStream>>, app: &App, request: &Request) -> std::io::Result<()> {
+pub(super) fn post_known(s: &mut Out, app: &App, request: &Request) -> std::io::Result<()> {
     let Some(key) = &app.voice.key else { return respond(s, "404 Not Found", TEXT, b"") };
     if !is_key(key, request.bearer.as_deref()) {
         return respond(s, "401 Unauthorized", TEXT, b"");
     }
-    let Ok(said) = json_body::<RegionEntry>(reader, request) else { return respond(s, "400 Bad Request", TEXT, b"Invalid") };
+    let Ok(said) = json_body::<RegionEntry>(request) else { return respond(s, "400 Bad Request", TEXT, b"Invalid") };
     let steamid = said.steamid.as_deref().map(parse_steamid);
     if !is_voice_id(&said.id) || steamid == Some(None) {
         return respond(s, "400 Bad Request", TEXT, b"Invalid");

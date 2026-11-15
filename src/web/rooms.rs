@@ -1,5 +1,6 @@
 //! A room's page, event stream and controls, and opening one.
 
+use super::Out;
 use super::client::counted;
 use super::events::{stream, too_many_streams, wants_detail, wants_voice};
 use super::matches::is_page;
@@ -11,12 +12,11 @@ use crate::App;
 use crate::matches::sessions::{Session, Sessions, logged};
 use crate::rooms::room::{ArcDraw, CircleDraw, Control, Draw, LightDraw, MapChoice, NoteDraw, Room, StartAt, ViewPost};
 use anyhow::Result;
-use std::io::{BufReader, Take};
-use std::net::{IpAddr, TcpStream};
+use std::net::IpAddr;
 use std::sync::Arc;
 
 /// The new room's page, for the browser that opened it.
-pub(super) fn opened(s: &mut TcpStream, app: &App, id: &str, cookie: Option<&str>) -> Result<()> {
+pub(super) fn opened(s: &mut Out, app: &App, id: &str, cookie: Option<&str>) -> Result<()> {
     let body = serde_json::json!({ "page": format!("{}/r/{id}/", app.base) }).to_string();
     let mut headers = vec![("Content-Type", JSON)];
     if let Some(c) = cookie {
@@ -26,15 +26,7 @@ pub(super) fn opened(s: &mut TcpStream, app: &App, id: &str, cookie: Option<&str
 }
 
 /// `GET` says whether a room can be opened on match `m`; `POST` opens one, owned by the browser.
-pub(super) fn open_room(
-    s: &mut TcpStream,
-    app: &App,
-    sessions: &Sessions,
-    reader: &mut BufReader<Take<TcpStream>>,
-    m: &Arc<Session>,
-    request: &Request,
-    client: IpAddr,
-) -> Result<()> {
+pub(super) fn open_room(s: &mut Out, app: &App, sessions: &Sessions, m: &Arc<Session>, request: &Request, client: IpAddr) -> Result<()> {
     if !m.recordable() && m.gave_up() {
         return Ok(respond(s, "410 Gone", TEXT, b"This match has nothing to play.")?);
     }
@@ -47,7 +39,7 @@ pub(super) fn open_room(
         return Ok(respond(s, "200 OK", JSON, b"{}")?);
     }
     // Where its opener was watching, if they say: it starts there.
-    let start = match (request.length > 0).then(|| json_body::<Where>(reader, request)).transpose() {
+    let start = match (request.length > 0).then(|| json_body::<Where>(request)).transpose() {
         Ok(w) => w.and_then(|w| Some(StartAt { at: w.at?, speed: 1.0, paused: w.paused })),
         Err(e) => return Ok(refuse(s, "400 Bad Request", &e)?),
     };
@@ -100,15 +92,7 @@ pub(super) struct Admin {
 }
 
 /// A room's page, event stream and controls: `path` is what follows `/r/`.
-pub(super) fn serve_room(
-    mut s: TcpStream,
-    reader: &mut BufReader<Take<TcpStream>>,
-    app: &App,
-    sessions: &Sessions,
-    request: &Request,
-    path: &str,
-    client: IpAddr,
-) -> Result<()> {
+pub(super) fn serve_room(mut s: Out, app: &App, sessions: &Sessions, request: &Request, path: &str, client: IpAddr) -> Result<()> {
     let (id, rest) = path.split_once('/').unwrap_or((path, ""));
     let Some(room) = app.rooms.get(id, sessions) else {
         return Ok(respond(&mut s, "404 Not Found", TEXT, b"That room has closed.")?);
@@ -117,8 +101,7 @@ pub(super) fn serve_room(
     let who = who(app, request);
     // Its match's voice from outside: as on the match's own page.
     if rest.starts_with("voice")
-        && let Some(answered) =
-            super::voice_routes::voice_route(&mut s, reader, app, live(app, sessions, &room).as_ref(), request, rest, &who)
+        && let Some(answered) = super::voice_routes::voice_route(&mut s, app, live(app, sessions, &room).as_ref(), request, rest, &who)
     {
         answered?;
         return Ok(());
@@ -133,15 +116,15 @@ pub(super) fn serve_room(
             respond_with(&mut s, "200 OK", &headers, &app.page(INDEX))?;
         }
         ("events", "GET") => match app.stream_slot(client) {
-            Some(_slot) => {
+            Some(slot) => {
                 let name = param(&request.query, "name").map(form_decode);
                 let listed = param(&request.query, "overlay") != Some("1");
                 let site = who.user.as_ref().map(|u| u.name.as_str());
-                let _watching = room.join(&who.key, name.as_deref(), site, listed);
+                let watching = room.join(&who.key, name.as_deref(), site, listed);
                 // By Steam id when signed in: whose room it was, when something is asked of it
                 // later.
                 log!("room {} joined by {}", logged(&room.id), who.user.as_ref().map_or("a guest", |u| u.uid.as_str()));
-                stream(s, &room.hub, request.gzip, wants_detail(&request.query), wants_voice(&request.query))?;
+                stream(&s, &room.hub, request.gzip, wants_detail(&request.query), wants_voice(&request.query), (slot, watching))?;
             }
             None => too_many_streams(&mut s)?,
         },
@@ -152,7 +135,7 @@ pub(super) fn serve_room(
             respond(&mut s, "200 OK", JSON, serde_json::json!(demos).to_string().as_bytes())?;
         }
         ("marks", "GET") => respond_marks(&mut s, &request.query, |from| room.marks(from))?,
-        (part, "POST") => change(&mut s, reader, request, &room, &who, part)?,
+        (part, "POST") => change(&mut s, request, &room, &who, part)?,
         _ => not_found(&mut s)?,
     }
     Ok(())
@@ -164,7 +147,7 @@ fn live(app: &App, sessions: &Sessions, room: &Room) -> Option<Arc<Session>> {
 }
 
 /// Who the visitor is in `room`, and what they may do.
-fn me(s: &mut TcpStream, app: &App, room: &Room, who: &Who) -> std::io::Result<()> {
+fn me(s: &mut Out, app: &App, room: &Room, who: &Who) -> std::io::Result<()> {
     let (id, admin) = room.me(&who.key);
     let me = serde_json::json!({
         "id": id,
@@ -177,14 +160,7 @@ fn me(s: &mut TcpStream, app: &App, room: &Room, who: &Who) -> std::io::Result<(
 }
 
 /// A change to `room` (`part`, posted): one's own name and ink by anyone, the rest by its admins.
-fn change(
-    s: &mut TcpStream,
-    reader: &mut BufReader<Take<TcpStream>>,
-    request: &Request,
-    room: &Room,
-    who: &Who,
-    part: &str,
-) -> std::io::Result<()> {
+fn change(s: &mut Out, request: &Request, room: &Room, who: &Who, part: &str) -> std::io::Result<()> {
     let guest = &who.key;
     match part {
         "claim" if who.user.as_ref().is_some_and(|u| u.streamer) => {
@@ -192,24 +168,24 @@ fn change(
             respond(s, "204 No Content", TEXT, b"")
         }
         "claim" => respond(s, "403 Forbidden", TEXT, b"Only the site's streamers make themselves admin."),
-        "name" => done(s, json_body::<Name>(reader, request).map(|n| room.rename(guest, &n.name))),
+        "name" => done(s, json_body::<Name>(request).map(|n| room.rename(guest, &n.name))),
         "control" | "draw" | "arc" | "circle" | "light" | "note" | "clear" | "admin" | "view" | "ink" | "map" if !room.is_admin(guest) => {
             respond(s, "403 Forbidden", TEXT, b"Only the room's admins do that.")
         }
-        "view" => done(s, json_body::<ViewPost>(reader, request).and_then(|v| room.set_view(&v, guest))),
-        "ink" => done(s, json_body::<Ink>(reader, request).and_then(|i| room.set_ink(guest, &i.ink))),
-        "draw" => done(s, json_body::<Draw>(reader, request).and_then(|d| room.draw(&d, guest))),
-        "arc" => done(s, json_body::<ArcDraw>(reader, request).and_then(|a| room.arc(&a, guest))),
-        "circle" => done(s, json_body::<CircleDraw>(reader, request).and_then(|c| room.circle(&c, guest))),
-        "light" => done(s, json_body::<LightDraw>(reader, request).and_then(|l| room.light(&l, guest))),
-        "note" => done(s, json_body::<NoteDraw>(reader, request).and_then(|n| room.note(&n, guest))),
+        "view" => done(s, json_body::<ViewPost>(request).and_then(|v| room.set_view(&v, guest))),
+        "ink" => done(s, json_body::<Ink>(request).and_then(|i| room.set_ink(guest, &i.ink))),
+        "draw" => done(s, json_body::<Draw>(request).and_then(|d| room.draw(&d, guest))),
+        "arc" => done(s, json_body::<ArcDraw>(request).and_then(|a| room.arc(&a, guest))),
+        "circle" => done(s, json_body::<CircleDraw>(request).and_then(|c| room.circle(&c, guest))),
+        "light" => done(s, json_body::<LightDraw>(request).and_then(|l| room.light(&l, guest))),
+        "note" => done(s, json_body::<NoteDraw>(request).and_then(|n| room.note(&n, guest))),
         "clear" => {
             room.clear(guest);
             respond(s, "204 No Content", TEXT, b"")
         }
-        "control" => done(s, json_body::<Control>(reader, request).and_then(|c| room.control(&c))),
-        "map" => done(s, json_body::<MapChoice>(reader, request).and_then(|m| room.move_to_map(&m))),
-        "admin" => done(s, json_body::<Admin>(reader, request).and_then(|a| room.set_admin(guest, a.person, a.admin))),
+        "control" => done(s, json_body::<Control>(request).and_then(|c| room.control(&c))),
+        "map" => done(s, json_body::<MapChoice>(request).and_then(|m| room.move_to_map(&m))),
+        "admin" => done(s, json_body::<Admin>(request).and_then(|a| room.set_admin(guest, a.person, a.admin))),
         _ => not_found(s),
     }
 }

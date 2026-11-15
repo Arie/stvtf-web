@@ -12,18 +12,19 @@
 //! By whoever is signed in (where nobody signs in, anyone). Kept as a demos.tf demo is, and of
 //! one person only one: another takes its place.
 
+use super::Out;
 use super::client::counted;
 use super::visitor::who;
 use super::{JSON, Request, TEXT, json_body, param, refuse, respond};
 use crate::App;
 use crate::matches::sessions::{self, DEMO_PREFIX, Sessions, Store, demo_dem, demo_info, demo_output};
 use anyhow::{Context, Result, bail};
-use std::io::{BufReader, Read, Take, Write};
-use std::net::{IpAddr, TcpStream};
+use std::io::{Read, Write};
+use std::net::IpAddr;
 
 /// The biggest demo (sent, and unpacked), and part of one: under what Cloudflare lets through.
 pub(super) const MAX_DEMO: u64 = 512 << 20;
-const MAX_PART: usize = 32 << 20;
+pub(super) const MAX_PART: usize = 32 << 20;
 /// What a `SourceTV` demo's header names as its client.
 const STV_CLIENT: &str = "SourceTV Demo";
 
@@ -43,14 +44,7 @@ fn uploader(app: &App, request: &Request, client: IpAddr) -> Result<Option<Strin
 }
 
 /// `/upload` and what is under it.
-pub(super) fn serve_upload(
-    s: &mut TcpStream,
-    reader: &mut BufReader<Take<TcpStream>>,
-    app: &App,
-    sessions: &Sessions,
-    request: &Request,
-    client: IpAddr,
-) -> std::io::Result<()> {
+pub(super) fn serve_upload(s: &mut Out, app: &App, sessions: &Sessions, request: &Request, client: IpAddr) -> std::io::Result<()> {
     let Some(store) = &sessions.store else { return respond(s, "404 Not Found", TEXT, b"No demos are kept here") };
     let id = request.path.strip_prefix("/upload/").filter(|id| sessions::is_id(id));
     if let ("/upload", "GET") = (request.path.as_str(), request.method.as_str()) {
@@ -61,9 +55,9 @@ pub(super) fn serve_upload(
         Err(e) => return refuse(s, "403 Forbidden", &e),
     };
     let done = match (request.path.as_str(), request.method.as_str(), id) {
-        ("/upload", "POST", _) => begin(reader, request, store),
-        (_, "PUT", Some(id)) => return put_part(s, reader, request, store, id),
-        (_, "POST", Some(id)) => finish(reader, app, sessions, request, store, id, by.as_deref()),
+        ("/upload", "POST", _) => begin(request, store),
+        (_, "PUT", Some(id)) => return put_part(s, request, store, id),
+        (_, "POST", Some(id)) => finish(app, sessions, request, store, id, by.as_deref()),
         _ => return respond(s, "404 Not Found", TEXT, b"not found"),
     };
     match done {
@@ -77,8 +71,8 @@ struct Begin {
     size: u64,
 }
 
-fn begin(reader: &mut BufReader<Take<TcpStream>>, request: &Request, store: &Store) -> Result<serde_json::Value> {
-    let Begin { size } = json_body(reader, request)?;
+fn begin(request: &Request, store: &Store) -> Result<serde_json::Value> {
+    let Begin { size } = json_body(request)?;
     if size > MAX_DEMO {
         bail!("Over {} MB", MAX_DEMO >> 20);
     }
@@ -92,7 +86,7 @@ fn begin(reader: &mut BufReader<Take<TcpStream>>, request: &Request, store: &Sto
 }
 
 /// `PUT /upload/<id>?at=`: the body goes on the end of what is there, if `at` is where that is.
-fn put_part(s: &mut TcpStream, reader: &mut BufReader<Take<TcpStream>>, request: &Request, store: &Store, id: &str) -> std::io::Result<()> {
+fn put_part(s: &mut Out, request: &Request, store: &Store, id: &str) -> std::io::Result<()> {
     let path = store.dir.join(part_name(id));
     let Ok(had) = std::fs::metadata(&path).map(|m| m.len()) else { return respond(s, "404 Not Found", TEXT, b"No such upload") };
     let at = param(&request.query, "at").and_then(|a| a.parse::<u64>().ok());
@@ -102,12 +96,7 @@ fn put_part(s: &mut TcpStream, reader: &mut BufReader<Take<TcpStream>>, request:
     if at != Some(had) {
         return respond(s, "409 Conflict", TEXT, had.to_string().as_bytes());
     }
-    // The body has an allowance of its own: the headers may have used up most of theirs.
-    let buffered = reader.buffer().len() as u64;
-    reader.get_mut().set_limit((request.length as u64).saturating_sub(buffered));
-    let mut body = vec![0; request.length];
-    reader.read_exact(&mut body)?;
-    std::fs::File::options().append(true).open(&path)?.write_all(&body)?;
+    std::fs::File::options().append(true).open(&path)?.write_all(&request.body)?;
     respond(s, "200 OK", TEXT, (had + request.length as u64).to_string().as_bytes())
 }
 
@@ -165,16 +154,8 @@ fn forget(store: &Store, demo: u64) {
 }
 
 /// `POST /upload/<id>`: the demo is whole. It is kept, and plays.
-fn finish(
-    reader: &mut BufReader<Take<TcpStream>>,
-    app: &App,
-    sessions: &Sessions,
-    request: &Request,
-    store: &Store,
-    id: &str,
-    by: Option<&str>,
-) -> Result<serde_json::Value> {
-    let said: Finish = if request.length > 0 { json_body(reader, request)? } else { Finish::default() };
+fn finish(app: &App, sessions: &Sessions, request: &Request, store: &Store, id: &str, by: Option<&str>) -> Result<serde_json::Value> {
+    let said: Finish = if request.length > 0 { json_body(request)? } else { Finish::default() };
     let part = store.dir.join(part_name(id));
     let user = who(app, request).user;
     let kept = keep(store, &part, &said.name, by, user.as_ref().map(|u| u.uid.as_str()));

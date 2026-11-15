@@ -1,5 +1,6 @@
 //! A match's page, timeline and private playbacks, and starting one from a site's link.
 
+use super::Out;
 use super::client::counted;
 use super::events::{stream, too_many_streams, wants_detail, wants_voice};
 use super::rooms::{open_room, opened};
@@ -16,8 +17,7 @@ use crate::voice::who::WhoIsWho;
 use crate::{App, is_name, lock};
 use anyhow::{Result, anyhow};
 use std::fmt::Write as _;
-use std::io::{BufReader, Take};
-use std::net::{IpAddr, TcpStream};
+use std::net::IpAddr;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -25,15 +25,7 @@ use std::time::{Duration, Instant};
 const GONE: &str = "That match is no longer being watched; paste its connect string to watch it again.";
 
 /// A match's page and event stream: `path` is what follows `/w/`.
-pub(super) fn serve_match(
-    mut s: TcpStream,
-    reader: &mut BufReader<Take<TcpStream>>,
-    app: &App,
-    sessions: &Sessions,
-    request: &Request,
-    path: &str,
-    client: IpAddr,
-) -> Result<()> {
+pub(super) fn serve_match(mut s: Out, app: &App, sessions: &Sessions, request: &Request, path: &str, client: IpAddr) -> Result<()> {
     let (id, rest) = sessions::split_id(path);
     // A match's demos with its comms in them, kept after it too.
     if rest == "demos" {
@@ -76,19 +68,19 @@ pub(super) fn serve_match(
             app.redirect(&mut s, "308 Permanent Redirect", &format!("{}/", request.path))?;
         }
         (Some(_), rest) if is_page(rest) => respond(&mut s, "200 OK", HTML, &app.page(INDEX))?,
-        (Some(m), "room") => open_room(&mut s, app, sessions, reader, &m, request, client)?,
+        (Some(m), "room") => open_room(&mut s, app, sessions, &m, request, client)?,
         (Some(m), part @ ("timeline" | "marks")) => match_timeline(&mut s, &m, request, part)?,
-        (Some(m), "rewind") if request.method == "POST" => rewind(&mut s, reader, app, &m, request, client)?,
+        (Some(m), "rewind") if request.method == "POST" => rewind(&mut s, app, &m, request, client)?,
         (Some(m), rest) if rest.starts_with("voice") => {
-            match super::voice_routes::voice_route(&mut s, reader, app, Some(&m), request, rest, &who(app, request)) {
+            match super::voice_routes::voice_route(&mut s, app, Some(&m), request, rest, &who(app, request)) {
                 Some(answered) => answered?,
                 None => not_found(&mut s)?,
             }
         }
         (Some(m), "events") => match app.stream_slot(client) {
-            Some(_slot) => {
-                let _viewer = Viewer::new(m.clone());
-                stream(s, &m.hub, request.gzip, wants_detail(&request.query), wants_voice(&request.query))?;
+            Some(slot) => {
+                let held = (slot, Viewer::new(m.clone()));
+                stream(&s, &m.hub, request.gzip, wants_detail(&request.query), wants_voice(&request.query), held)?;
             }
             None => too_many_streams(&mut s)?,
         },
@@ -136,16 +128,9 @@ pub(super) struct Rewind {
 }
 
 /// A viewer of match `m` goes back in time: a private playback, theirs alone, from where they say.
-pub(super) fn rewind(
-    s: &mut TcpStream,
-    reader: &mut BufReader<Take<TcpStream>>,
-    app: &App,
-    m: &Arc<Session>,
-    request: &Request,
-    client: IpAddr,
-) -> Result<()> {
+pub(super) fn rewind(s: &mut Out, app: &App, m: &Arc<Session>, request: &Request, client: IpAddr) -> Result<()> {
     let Some(recording) = m.ready() else { return Ok(respond(s, "409 Conflict", TEXT, b"No timeline yet.")?) };
-    let r = match json_body::<Rewind>(reader, request) {
+    let r = match json_body::<Rewind>(request) {
         Ok(r) => r,
         Err(e) => return Ok(refuse(s, "400 Bad Request", &e)?),
     };
@@ -161,7 +146,7 @@ pub(super) fn rewind(
 /// A match page's timeline, of the map a room opened now is on: where its shared playback is (a
 /// live match at live, or at its end), how long it is, its rounds and how many marks; or the
 /// marks from `?from=` on. While a demo is read, `202 {}`.
-pub(super) fn match_timeline(s: &mut TcpStream, m: &Arc<Session>, request: &Request, part: &str) -> std::io::Result<()> {
+pub(super) fn match_timeline(s: &mut Out, m: &Arc<Session>, request: &Request, part: &str) -> std::io::Result<()> {
     let Some(r) = m.ready() else {
         m.prepare();
         return respond(s, "202 Accepted", JSON, b"{}");
@@ -187,7 +172,7 @@ pub(super) fn match_timeline(s: &mut TcpStream, m: &Arc<Session>, request: &Requ
 }
 
 /// Every match, for the site in front, with a list token.
-pub(super) fn list_matches(s: &mut TcpStream, keys: &token::Keys, sessions: &Sessions, request: &Request) -> Result<()> {
+pub(super) fn list_matches(s: &mut Out, keys: &token::Keys, sessions: &Sessions, request: &Request) -> Result<()> {
     if request.bearer.as_deref().is_none_or(|t| keys.open_list(t, unix_now()).is_err()) {
         respond_with(s, "401 Unauthorized", &[("Content-Type", TEXT), ("WWW-Authenticate", "Bearer")], b"needs a list token")?;
         return Ok(());
@@ -321,15 +306,7 @@ pub(super) fn comms_demos(app: &App, sessions: &Sessions, id: &str) -> Vec<serde
 
 /// `GET /w/<id>/watch/<file>`: plays that demo with its comms as a match of its own, and sends
 /// the visitor to its page.
-fn watch_comms_demo(
-    s: &mut TcpStream,
-    app: &App,
-    sessions: &Sessions,
-    request: &Request,
-    id: &str,
-    file: &str,
-    client: IpAddr,
-) -> Result<()> {
+fn watch_comms_demo(s: &mut Out, app: &App, sessions: &Sessions, request: &Request, id: &str, file: &str, client: IpAddr) -> Result<()> {
     let by = counted(who(app, request).user.as_ref(), None, client);
     match sessions.open_comms_demo_as(by.as_deref(), id, file, app.voice.who.clone()) {
         Ok(m) => {
@@ -389,7 +366,7 @@ pub(super) fn build_comms_demo(dir: &Path, id: &str, file: &str, who: &WhoIsWho)
 /// `GET /w/<id>/demos/<file>.dem`: that demo as TF2 plays it, the comms written into it. Asked
 /// with `?built=<mark>`, the answer sets that mark as a cookie: the page that waits for it then
 /// knows the demo is built and on its way.
-fn comms_demo(s: &mut TcpStream, app: &App, sessions: &Sessions, request: &Request, id: &str, file: &str) -> std::io::Result<()> {
+fn comms_demo(s: &mut Out, app: &App, sessions: &Sessions, request: &Request, id: &str, file: &str) -> std::io::Result<()> {
     let built = sessions
         .store
         .as_ref()

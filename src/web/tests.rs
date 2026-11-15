@@ -5,6 +5,7 @@ use crate::testing::{TempDir, app, server, web_server};
 use crate::web::client::{client_key, is_cloudflare, on_our_network};
 use crate::{App, Matches, TcpListener};
 use flate2::read::GzDecoder;
+use std::net::TcpStream;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Instant;

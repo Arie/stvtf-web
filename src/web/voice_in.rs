@@ -1,6 +1,7 @@
 //! Voice from outside a match (a team's Discord, through the bot): `POST /w/<id>/voice` with the
 //! bot's key. Off without `STVTF_VOICE_KEY`.
 
+use super::Out;
 use super::{Request, TEXT, json_body, respond};
 use crate::App;
 use crate::matches::sessions::Session;
@@ -9,8 +10,6 @@ use crate::voice::hold::Took;
 use crate::voice::ids::is_voice_id;
 use base64::Engine;
 use serde::Deserialize;
-use std::io::{BufReader, Take};
-use std::net::TcpStream;
 use std::sync::Arc;
 
 /// The most frames in a post (0.64 s), and the longest a frame is in base64.
@@ -57,18 +56,12 @@ fn is_steamid(s: &str) -> bool {
 /// The most characters of a speaker's name kept.
 const MAX_NAME: usize = 40;
 
-pub(super) fn post_voice(
-    s: &mut TcpStream,
-    reader: &mut BufReader<Take<TcpStream>>,
-    app: &App,
-    m: &Arc<Session>,
-    request: &Request,
-) -> std::io::Result<()> {
+pub(super) fn post_voice(s: &mut Out, app: &App, m: &Arc<Session>, request: &Request) -> std::io::Result<()> {
     let Some(key) = &app.voice.key else { return respond(s, "404 Not Found", TEXT, b"") };
     if !is_key(key, request.bearer.as_deref()) {
         return respond(s, "401 Unauthorized", TEXT, b"");
     }
-    let Ok(said) = json_body::<VoicePost>(reader, request) else { return respond(s, "400 Bad Request", TEXT, b"not voice") };
+    let Ok(said) = json_body::<VoicePost>(request) else { return respond(s, "400 Bad Request", TEXT, b"not voice") };
     // The key says it is our bot; the invite, that whoever brought it in was let into this match.
     if !is_key(m.voice_invite(), said.invite.as_deref()) {
         return respond(s, "403 Forbidden", TEXT, b"not invited");
@@ -112,7 +105,7 @@ pub(super) fn has_say(app: &App, m: &Session, who: &super::visitor::Who) -> bool
 /// `GET /w/<id>/voice-invite` (and a room's): the invite, and where to add the bot to a Discord
 /// server (`STVTF_VOICE_BOT`), to those with a say. Every page asks: no content for the rest, and
 /// where no voice comes in, rather than an error in everyone's console.
-pub(super) fn get_voice_invite(s: &mut TcpStream, app: &App, m: Option<&Session>, who: &super::visitor::Who) -> std::io::Result<()> {
+pub(super) fn get_voice_invite(s: &mut Out, app: &App, m: Option<&Session>, who: &super::visitor::Who) -> std::io::Result<()> {
     // A demo with comms watched here: no bot to bring in, only whose its voices are.
     if super::voice_who::reviewed(app, m, who).is_some() {
         return respond(s, "200 OK", super::JSON, br#"{"review":true}"#);

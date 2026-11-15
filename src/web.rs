@@ -4,10 +4,11 @@ use crate::matches::hub::SharedHub;
 use crate::matches::recording::Mark;
 use crate::matches::sessions;
 use crate::matches::sessions::Sessions;
-use crate::{App, Matches};
+use crate::{App, Matches, lock};
 use anyhow::{Result, bail};
-use std::io::{BufRead, BufReader, Read, Take, Write};
-use std::net::{IpAddr, TcpStream};
+use std::io::{BufRead, BufReader, Read, Write};
+use std::net::IpAddr;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 mod assets;
@@ -70,7 +71,42 @@ const WRITE_TIMEOUT: Duration = Duration::from_secs(30);
 /// How long a browser keeps a file that does not change for a given build.
 const CACHE_FOR: Duration = Duration::from_hours(24);
 
-/// What the server needs of a request; the body, if any, is still to be read.
+/// What a request is answered with: its handler puts it here, the server sends it.
+#[derive(Clone, Default)]
+pub(crate) struct Out(Arc<Mutex<Option<Reply>>>);
+
+pub(crate) struct Reply {
+    pub(crate) status: String,
+    pub(crate) headers: Vec<(String, String)>,
+    pub(crate) body: Body,
+}
+
+/// A whole body, or events written as they come until the client is gone.
+pub(crate) enum Body {
+    Whole(Vec<u8>),
+    Events(Events),
+}
+
+/// Writes events until the client is gone.
+pub(crate) type Events = Box<dyn FnOnce(&mut dyn Write) -> Result<()> + Send>;
+
+impl Out {
+    fn put(&self, status: &str, headers: &[(&str, &str)], body: Body) -> std::io::Result<()> {
+        let mut reply = lock(&self.0);
+        if reply.is_some() {
+            return Err(std::io::Error::other("answered twice"));
+        }
+        let headers = headers.iter().map(|(n, v)| ((*n).to_string(), (*v).to_string())).collect();
+        *reply = Some(Reply { status: status.to_string(), headers, body });
+        Ok(())
+    }
+
+    pub(crate) fn take(&self) -> Option<Reply> {
+        lock(&self.0).take()
+    }
+}
+
+/// What the server needs of a request, and its body.
 struct Request {
     method: String,
     path: String,
@@ -89,6 +125,7 @@ struct Request {
     voice_link: Option<String>,
     /// `User-Agent`.
     agent: String,
+    body: Vec<u8>,
 }
 
 /// The request line and headers.
@@ -111,6 +148,7 @@ fn read_request(reader: &mut impl BufRead) -> Result<Request> {
         user: None,
         voice_link: None,
         agent: String::new(),
+        body: Vec::new(),
     };
     loop {
         let mut header = String::new();
@@ -149,26 +187,12 @@ fn param<'a>(query: &'a str, name: &str) -> Option<&'a str> {
     query.split('&').find_map(|kv| kv.split_once('=').filter(|(k, _)| *k == name).map(|(_, v)| v))
 }
 
-/// The status line and headers; every response says `nosniff` and may be read by any site.
-fn write_head(s: &mut impl Write, status: &str, headers: &[(&str, &str)]) -> std::io::Result<()> {
-    write!(s, "HTTP/1.1 {status}\r\n")?;
-    for (name, value) in headers {
-        write!(s, "{name}: {value}\r\n")?;
-    }
-    // Everything here is public and nothing uses cookies: <stv-map> on other sites reads it all.
-    write!(s, "Access-Control-Allow-Origin: *\r\nX-Content-Type-Options: nosniff\r\n\r\n")
+/// A whole response.
+fn respond_with(s: &mut Out, status: &str, headers: &[(&str, &str)], body: &[u8]) -> std::io::Result<()> {
+    s.put(status, headers, Body::Whole(body.to_vec()))
 }
 
-/// A whole response, after which the connection closes.
-fn respond_with(s: &mut TcpStream, status: &str, headers: &[(&str, &str)], body: &[u8]) -> std::io::Result<()> {
-    let length = body.len().to_string();
-    let mut all = headers.to_vec();
-    all.extend([("Content-Length", length.as_str()), ("Connection", "close")]);
-    write_head(s, status, &all)?;
-    s.write_all(body)
-}
-
-fn respond(s: &mut TcpStream, status: &str, ctype: &str, body: &[u8]) -> std::io::Result<()> {
+fn respond(s: &mut Out, status: &str, ctype: &str, body: &[u8]) -> std::io::Result<()> {
     // Pages name the build's files: no-cache, so a reload gets a new build.
     if ctype == HTML {
         return respond_with(s, status, &[("Content-Type", ctype), ("Cache-Control", "no-cache")], body);
@@ -177,25 +201,25 @@ fn respond(s: &mut TcpStream, status: &str, ctype: &str, body: &[u8]) -> std::io
 }
 
 /// A file that never changes for a given build, so the browser keeps it.
-fn respond_cached(s: &mut TcpStream, ctype: &str, body: &[u8]) -> std::io::Result<()> {
+fn respond_cached(s: &mut Out, ctype: &str, body: &[u8]) -> std::io::Result<()> {
     let max_age = format!("max-age={}", CACHE_FOR.as_secs());
     respond_with(s, "200 OK", &[("Content-Type", ctype), ("Cache-Control", &max_age)], body)
 }
 
 /// `status`, with why as text.
-fn refuse(s: &mut TcpStream, status: &str, why: &anyhow::Error) -> std::io::Result<()> {
+fn refuse(s: &mut Out, status: &str, why: &anyhow::Error) -> std::io::Result<()> {
     respond(s, status, TEXT, format!("{why:#}").as_bytes())
 }
 
-fn not_found(s: &mut TcpStream) -> std::io::Result<()> {
+fn not_found(s: &mut Out) -> std::io::Result<()> {
     respond(s, "404 Not Found", TEXT, b"not found")
 }
 
-pub(crate) fn redirect(s: &mut TcpStream, status: &str, location: &str) -> std::io::Result<()> {
+pub(crate) fn redirect(s: &mut Out, status: &str, location: &str) -> std::io::Result<()> {
     respond_with(s, status, &[("Location", location)], b"")
 }
 
-pub(crate) fn serve(mut s: TcpStream, app: &App) -> Result<()> {
+pub(crate) fn serve(mut s: std::net::TcpStream, app: &App) -> Result<()> {
     // A client that sends nothing, or stops reading `/events`, does not keep its thread forever.
     s.set_read_timeout(Some(READ_TIMEOUT))?;
     s.set_write_timeout(Some(WRITE_TIMEOUT))?;
@@ -203,23 +227,57 @@ pub(crate) fn serve(mut s: TcpStream, app: &App) -> Result<()> {
     // (with delayed acks, up to 40 ms an event).
     s.set_nodelay(true)?;
     let mut reader = BufReader::new(s.try_clone()?.take(MAX_REQUEST));
-    let request = read_request(&mut reader)?;
+    let mut request = read_request(&mut reader)?;
+    if request.length <= body_limit(&request) {
+        // The body has an allowance of its own: the headers may have used up most of theirs.
+        let buffered = reader.buffer().len() as u64;
+        reader.get_mut().set_limit((request.length as u64).saturating_sub(buffered));
+        request.body = vec![0; request.length];
+        reader.read_exact(&mut request.body)?;
+    }
     let peer = s.peer_addr()?.ip();
-    let client = client_of(&request.forwarded, peer);
+    let out = Out::default();
+    answer(out.clone(), app, &request, client_of(&request.forwarded, peer))?;
+    let Some(reply) = out.take() else { bail!("no answer") };
+    write!(s, "HTTP/1.1 {}\r\n", reply.status)?;
+    for (name, value) in &reply.headers {
+        write!(s, "{name}: {value}\r\n")?;
+    }
+    match reply.body {
+        Body::Whole(body) => {
+            write!(s, "Content-Length: {}\r\nConnection: close\r\n", body.len())?;
+            write!(s, "Access-Control-Allow-Origin: *\r\nX-Content-Type-Options: nosniff\r\n\r\n")?;
+            s.write_all(&body)?;
+        }
+        Body::Events(events) => {
+            write!(s, "Access-Control-Allow-Origin: *\r\nX-Content-Type-Options: nosniff\r\n\r\n")?;
+            events(&mut s)?;
+        }
+    }
+    Ok(())
+}
+
+/// The most a request's body may be: a part of an upload, or little.
+fn body_limit(request: &Request) -> usize {
+    if request.method == "PUT" && request.path.starts_with("/upload/") { upload::MAX_PART } else { MAX_REQUEST as usize }
+}
+
+/// The answer to `request`, from `client`.
+fn answer(mut s: Out, app: &App, request: &Request, client: IpAddr) -> Result<()> {
     match &app.matches {
         _ if request.path == "/up" => respond(&mut s, "200 OK", TEXT, b"ok")?,
-        Matches::One(hub) => serve_one(s, app, hub, &request, client)?,
-        Matches::Many(sessions) => serve_many(s, &mut reader, app, sessions, &request, client)?,
+        Matches::One(hub) => serve_one(s, app, hub, request, client)?,
+        Matches::Many(sessions) => serve_many(s, app, sessions, request, client)?,
     }
     Ok(())
 }
 
 /// The one match a server given a server address watches, at `/`.
-fn serve_one(mut s: TcpStream, app: &App, hub: &SharedHub, request: &Request, client: IpAddr) -> Result<()> {
+fn serve_one(mut s: Out, app: &App, hub: &SharedHub, request: &Request, client: IpAddr) -> Result<()> {
     match request.path.as_str() {
         p if p == "/index.html" || p.strip_prefix('/').is_some_and(is_page) => respond(&mut s, "200 OK", HTML, &app.page(INDEX))?,
         "/events" => match app.stream_slot(client) {
-            Some(_slot) => stream(s, hub, request.gzip, wants_detail(&request.query), wants_voice(&request.query))?,
+            Some(slot) => stream(&s, hub, request.gzip, wants_detail(&request.query), wants_voice(&request.query), slot)?,
             None => too_many_streams(&mut s)?,
         },
         path => serve_file(&mut s, app, path, request.gzip)?,
@@ -228,20 +286,13 @@ fn serve_one(mut s: TcpStream, app: &App, hub: &SharedHub, request: &Request, cl
 }
 
 /// Any number of matches, each at `/w/<id>/`, and the ways to start one.
-fn serve_many(
-    mut s: TcpStream,
-    reader: &mut BufReader<Take<TcpStream>>,
-    app: &App,
-    sessions: &Sessions,
-    request: &Request,
-    client: IpAddr,
-) -> Result<()> {
+fn serve_many(mut s: Out, app: &App, sessions: &Sessions, request: &Request, client: IpAddr) -> Result<()> {
     match (request.path.as_str(), request.method.as_str()) {
         ("/matches", "GET") if let Some(keys) = &app.keys => list_matches(&mut s, keys, sessions, request)?,
         ("/mumble", "GET") => respond(&mut s, "200 OK", HTML, &app.page(MUMBLE))?,
         ("/mumble.json", "GET") => respond(&mut s, "200 OK", JSON, MUMBLE_JSON.as_bytes())?,
         (path, _) if path == "/upload" || path.starts_with("/upload/") => {
-            upload::serve_upload(&mut s, reader, app, sessions, request, client)?;
+            upload::serve_upload(&mut s, app, sessions, request, client)?;
         }
         ("/signin", "GET") if let Some(site) = app.home.as_deref().and_then(origin) => {
             redirect(&mut s, "302 Found", &format!("{site}/stv/sign_in?return={}", url_encode(&return_to(app, request))))?;
@@ -261,7 +312,7 @@ fn serve_many(
         ("/voice/who", "GET") => voice_link::who(&mut s, app, request)?,
         ("/voice/mumble", "GET") => voice_mumble::get_mumble_jobs(&mut s, app, sessions, request)?,
         ("/voice/known", "GET") => voice_who_sync::get_known(&mut s, app, request)?,
-        ("/voice/known", "POST") => voice_who_sync::post_known(&mut s, reader, app, request)?,
+        ("/voice/known", "POST") => voice_who_sync::post_known(&mut s, app, request)?,
         ("/start", _) => match start(app, sessions, request, client) {
             // <stv-map> asks where the match is instead of following the redirect.
             Ok(m) if param(&request.query, "format") == Some("json") => {
@@ -275,52 +326,47 @@ fn serve_many(
         // What a page says went wrong in it (see `report`): taken or not, it is not told.
         ("/fault", "POST") => {
             let who = visitor::who(app, request).user;
-            crate::report::page_fault(&read_body(reader, request)?, &request.agent, who.as_ref().map(|u| u.uid.as_str()));
+            crate::report::page_fault(&read_body(request)?, &request.agent, who.as_ref().map(|u| u.uid.as_str()));
             respond(&mut s, "204 No Content", TEXT, b"")?;
         }
         ("/watch", "POST") if request.length as u64 > MAX_REQUEST => {
             respond(&mut s, "413 Content Too Large", TEXT, format!("over {MAX_REQUEST} bytes").as_bytes())?;
         }
-        ("/watch", "POST") => post_watch(&mut s, reader, app, sessions, request, client)?,
-        (p, _) if let Some(path) = p.strip_prefix("/w/") => serve_match(s, reader, app, sessions, request, path, client)?,
-        (p, _) if let Some(path) = p.strip_prefix("/r/") => serve_room(s, reader, app, sessions, request, path, client)?,
+        ("/watch", "POST") => post_watch(&mut s, app, sessions, request, client)?,
+        (p, _) if let Some(path) = p.strip_prefix("/w/") => serve_match(s, app, sessions, request, path, client)?,
+        (p, _) if let Some(path) = p.strip_prefix("/r/") => serve_room(s, app, sessions, request, path, client)?,
         (path, _) => serve_file(&mut s, app, path, request.gzip)?,
     }
     Ok(())
 }
 
 /// Back to the page `?return=` names, setting `cookie`.
-fn back_with(s: &mut TcpStream, app: &App, request: &Request, cookie: &str) -> std::io::Result<()> {
+fn back_with(s: &mut Out, app: &App, request: &Request, cookie: &str) -> std::io::Result<()> {
     respond_with(s, "303 See Other", &[("Location", &return_to(app, request)), ("Set-Cookie", cookie)], b"")
 }
 
 /// The body of a request, up to [`MAX_REQUEST`] bytes.
-fn read_body(reader: &mut BufReader<Take<TcpStream>>, request: &Request) -> Result<Vec<u8>> {
+fn read_body(request: &Request) -> Result<Vec<u8>> {
     if request.length as u64 > MAX_REQUEST {
         bail!("over {MAX_REQUEST} bytes");
     }
-    // The body has an allowance of its own: the headers may have used up most of theirs.
-    let buffered = reader.buffer().len() as u64;
-    reader.get_mut().set_limit((request.length as u64).saturating_sub(buffered));
-    let mut body = vec![0; request.length];
-    reader.read_exact(&mut body)?;
-    Ok(body)
+    Ok(request.body.clone())
 }
 
 /// A JSON body read as `T`, or why not.
-fn json_body<T: serde::de::DeserializeOwned>(reader: &mut BufReader<Take<TcpStream>>, request: &Request) -> Result<T> {
-    Ok(serde_json::from_slice(&read_body(reader, request)?)?)
+fn json_body<T: serde::de::DeserializeOwned>(request: &Request) -> Result<T> {
+    Ok(serde_json::from_slice(&read_body(request)?)?)
 }
 
 /// The marks from `?from=` on, and how many there are in all.
-fn respond_marks(s: &mut TcpStream, query: &str, marks: impl FnOnce(usize) -> (Vec<Mark>, usize)) -> std::io::Result<()> {
+fn respond_marks(s: &mut Out, query: &str, marks: impl FnOnce(usize) -> (Vec<Mark>, usize)) -> std::io::Result<()> {
     let from = param(query, "from").and_then(|f| f.parse().ok()).unwrap_or(0);
     let (marks, all) = marks(from);
     respond(s, "200 OK", JSON, serde_json::json!({ "marks": marks, "all": all }).to_string().as_bytes())
 }
 
 /// `204` when `done` is, `400` with why not.
-fn done(s: &mut TcpStream, done: Result<()>) -> std::io::Result<()> {
+fn done(s: &mut Out, done: Result<()>) -> std::io::Result<()> {
     match done {
         Ok(()) => respond(s, "204 No Content", TEXT, b""),
         Err(e) => refuse(s, "400 Bad Request", &e),
@@ -328,15 +374,8 @@ fn done(s: &mut TcpStream, done: Result<()>) -> std::io::Result<()> {
 }
 
 /// `POST /watch`: the front page's form.
-fn post_watch(
-    s: &mut TcpStream,
-    reader: &mut BufReader<Take<TcpStream>>,
-    app: &App,
-    sessions: &Sessions,
-    request: &Request,
-    client: IpAddr,
-) -> Result<()> {
-    let body = read_body(reader, request)?;
+fn post_watch(s: &mut Out, app: &App, sessions: &Sessions, request: &Request, client: IpAddr) -> Result<()> {
+    let body = read_body(request)?;
     let form = String::from_utf8_lossy(&body);
     let line = param(&form, "connect").map_or_default(form_decode);
     let user = visitor::who(app, request).user;
@@ -351,13 +390,7 @@ fn post_watch(
 }
 
 /// The match `line` asks for: a connect string, or a demos.tf link. Behind a site, signed in.
-fn watch(
-    app: &App,
-    sessions: &Sessions,
-    user: Option<&token::User>,
-    line: &str,
-    client: IpAddr,
-) -> Result<std::sync::Arc<sessions::Session>> {
+fn watch(app: &App, sessions: &Sessions, user: Option<&token::User>, line: &str, client: IpAddr) -> Result<Arc<sessions::Session>> {
     if app.keys.is_some() && user.is_none() {
         anyhow::bail!("Sign in first");
     }
