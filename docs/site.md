@@ -65,3 +65,9 @@ From a room ("Sign in with serveme"): `/signin?return=PATH` → the site's
 `stvtf_user` cookie for 30 days; `/signout` drops it. Signed in, a person is their Steam id in
 rooms (admin rights follow them to any device) with the site's name, linking to their Steam
 profile. Streamers may make themselves admin in any room.
+
+## Mumble bots
+
+`/mumble` lists the certificates the voice bot signs in to Mumble servers by (name and SHA-1), for
+a server's admins to know it by or register; `/mumble.json` is the same for a script (`name`,
+`sha1`, `sha256`). Both are `app/pages/mumble.*`, written from the certificates when those change.

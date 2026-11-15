@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>stv.tf · Mumble bots</title>
+<base href="/">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="alternate icon" href="favicon.ico" sizes="any">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="stylesheet" href="app/dev/landing.css">
+</head>
+<body>
+<main id="mumble">
+  <h1>Mumble bots</h1>
+  <p>The stv.tf voice bot records a team's channel for a match.
+  It signs in by one of these certificates, the same every time; a second bot on a server at the
+  same time, uses the second, and so on.</p>
+  <table>
+    <tr><th>Name</th><th>Certificate (SHA-1)</th></tr>
+    <tr><td>stv.tf</td><td><code>5e09bed787b3f1d1b61c6cb0def1e8e185e8b127</code></td></tr>
+    <tr><td>stv.tf-2</td><td><code>8a5d31eecd7361a4368c2f5f48b0fedabd17c936</code></td></tr>
+    <tr><td>stv.tf-3</td><td><code>c4fc4ca13cceb619e4ae436bfde08409d1e36173</code></td></tr>
+    <tr><td>stv.tf-4</td><td><code>f217b00fe18eabcbf81567fe46ee34d3e82d0a55</code></td></tr>
+    <tr><td>stv.tf-5</td><td><code>d72345186559085005ae8a04e1a7c14298ec9dfa</code></td></tr>
+    <tr><td>stv.tf-6</td><td><code>fe05ed59772f83ef43d471069b6795b9da7204e9</code></td></tr>
+    <tr><td>stv.tf-7</td><td><code>bca7fd32224025875e23ddef26406821b6ddd9ea</code></td></tr>
+    <tr><td>stv.tf-8</td><td><code>aa5a24f6627e8801ac4e47e7702c4027fcdbb361</code></td></tr>
+  </table>
+  <p><b>Check:</b> right-click the bot, Information: its certificate's SHA-1 is in this list.</p>
+  <p><b>Register:</b> have the bot join once (a match's Comms menu, Mumble), then right-click it,
+  Register. It is the same bot from then on.</p>
+  <p><b>More than one team:</b> register <code>stv.tf-2</code> the same way, while two bots are in.</p>
+  <p>For scripts: <a href="mumble.json">mumble.json</a>.</p>
+</main>
+</body>
+</html>

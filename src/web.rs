@@ -35,6 +35,9 @@ use visitor::{origin, return_to, set_cookie, url_encode};
 
 const INDEX: &str = include_str!("../app/pages/index.html");
 const LANDING: &str = include_str!("../app/pages/landing.html");
+/// The voice bot's Mumble certificates: a page, and JSON.
+const MUMBLE: &str = include_str!("../app/pages/mumble.html");
+const MUMBLE_JSON: &str = include_str!("../app/pages/mumble.json");
 const HTML: &str = "text/html; charset=utf-8";
 const CSS: &str = "text/css; charset=utf-8";
 const JS: &str = "text/javascript; charset=utf-8";
@@ -234,6 +237,8 @@ fn serve_many(
     match (request.path.as_str(), request.method.as_str()) {
         (path @ ("/" | "/watch"), _) if app.keys.is_some() => front_door(&mut s, app, path)?,
         ("/matches", "GET") if let Some(keys) = &app.keys => list_matches(&mut s, keys, sessions, request)?,
+        ("/mumble", "GET") => respond(&mut s, "200 OK", HTML, &app.page(MUMBLE))?,
+        ("/mumble.json", "GET") => respond(&mut s, "200 OK", JSON, MUMBLE_JSON.as_bytes())?,
         (path, _) if path == "/upload" || path.starts_with("/upload/") => {
             upload::serve_upload(&mut s, reader, app, sessions, request, client)?;
         }

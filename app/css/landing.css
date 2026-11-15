@@ -83,3 +83,24 @@ progress {
 form[hidden] {
   display: none;
 }
+#mumble table {
+  width: 100%;
+  margin: 0 0 16px;
+  border-collapse: collapse;
+}
+#mumble th,
+#mumble td {
+  padding: 6px 8px 6px 0;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  white-space: nowrap;
+}
+#mumble code {
+  font-size: 12px;
+  overflow-wrap: anywhere;
+  white-space: normal;
+  user-select: all;
+}
+#mumble a {
+  color: var(--blue);
+}

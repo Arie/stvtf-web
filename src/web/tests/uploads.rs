@@ -34,6 +34,16 @@ fn send(app: &App, demo: &[u8], name: &str) -> String {
 fn a_demo_uploaded_in_parts_plays_as_a_match_and_again_while_it_is_kept() {
     let (app, dir) = upload_app();
     assert!(get(&app, "/upload", "").contains(r#"data-signed="1""#), "nobody signs in here: anyone");
+    assert!(get(&app, "/mumble", "").contains("<td>stv.tf-2</td>"));
+    let listed = get(&app, "/mumble.json", "");
+    let listed: serde_json::Value = serde_json::from_str(listed.split("\r\n\r\n").nth(1).unwrap()).unwrap();
+    assert!(
+        listed
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|c| c["sha1"].as_str().unwrap().len() == 40 && c["name"].as_str().unwrap().starts_with("stv.tf"))
+    );
     let demo = std::fs::read(concat!(env!("CARGO_MANIFEST_DIR"), "/../stvtf/tests/fixtures/tc_hydro.dem")).unwrap();
     let done = send(&app, &demo, "match.dem");
     assert!(done.starts_with("HTTP/1.1 200"), "{done}");
