@@ -120,3 +120,31 @@ form[hidden] {
 #mumble a {
   color: var(--blue);
 }
+.logo {
+  display: block;
+  margin-bottom: 16px;
+  border-radius: 12px;
+}
+h2 {
+  margin: 28px 0 6px;
+  font-size: 15px;
+}
+.mine {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.mine a {
+  display: block;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line);
+  color: var(--text);
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+.mine b {
+  display: inline-block;
+  min-width: 56px;
+  color: var(--dim);
+  font-weight: 600;
+}

@@ -86,7 +86,7 @@ fn a_demo_sent_zipped_is_the_demo_and_someones_next_takes_the_place_of_their_las
     let keep = |bytes: &[u8], by| {
         let part = dir.join("demo-up-x.part");
         std::fs::write(&part, bytes).unwrap();
-        upload::keep(&store, &part, "x.dem", Some(by)).unwrap()
+        upload::keep(&store, &part, "x.dem", Some(by), None).unwrap()
     };
     let other = [&demo[..], &[0]].concat();
     let (first, theirs) = (keep(&[&demo[..], &[9]].concat(), "steam:1"), keep(&other, "steam:2"));
@@ -94,6 +94,13 @@ fn a_demo_sent_zipped_is_the_demo_and_someones_next_takes_the_place_of_their_las
     assert!(kept(first) && kept(theirs));
     let second = keep(&[&demo[..], &[0, 0]].concat(), "steam:1");
     assert!(!kept(first) && kept(second) && kept(theirs), "their last went, another's stays");
+    // Theirs to list: by who they count as, or by who signed in (a streamer counts as nobody).
+    assert_eq!(upload::kept_by(&store, None, Some("steam:1")), [(second, "x.dem".to_string())]);
+    let part = dir.join("demo-up-y.part");
+    std::fs::write(&part, [&demo[..], &[1, 2, 3]].concat()).unwrap();
+    let streamers = upload::keep(&store, &part, "<b>.dem", None, Some("u9")).unwrap();
+    assert_eq!(upload::kept_by(&store, Some("u9"), None), [(streamers, "<b>.dem".to_string())]);
+    assert_eq!(upload::kept_by(&store, None, None), []);
 }
 
 #[test]

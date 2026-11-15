@@ -259,6 +259,17 @@ impl Rooms {
     }
 
     /// Rooms that count towards the match limit: not private playbacks.
+    /// The rooms `owner` has open (not private playbacks): each one's id and map.
+    pub(crate) fn of(&self, owner: &str) -> Vec<(String, String)> {
+        let mut theirs: Vec<(String, String)> = lock(&self.open)
+            .iter()
+            .filter(|(_, e)| !e.is_private() && e.room.owned_by(owner))
+            .map(|(id, e)| (id.clone(), e.room.map()))
+            .collect();
+        theirs.sort();
+        theirs
+    }
+
     pub(crate) fn shared_count(&self) -> usize {
         lock(&self.open).values().filter(|e| !e.is_private()).count()
     }

@@ -132,8 +132,8 @@ fn number_of(path: &std::path::Path, kind: sessions::Own) -> Result<u64> {
     Ok(sessions::own_demo(kind, &format!("up-{hash:016x}-{len}")))
 }
 
-/// What is kept of `by`'s uploads: each one's number.
-fn kept_of(store: &Store, by: &str) -> Vec<u64> {
+/// The uploads kept whose info is `theirs`: each one's number and info.
+fn kept(store: &Store, theirs: impl Fn(&serde_json::Value) -> bool) -> Vec<(u64, serde_json::Value)> {
     std::fs::read_dir(&store.dir)
         .into_iter()
         .flatten()
@@ -142,9 +142,20 @@ fn kept_of(store: &Store, by: &str) -> Vec<u64> {
             let name = e.file_name().to_string_lossy().into_owned();
             let demo: u64 = name.strip_prefix(DEMO_PREFIX)?.strip_suffix(".up")?.parse().ok()?;
             let info: serde_json::Value = serde_json::from_slice(&std::fs::read(e.path()).ok()?).ok()?;
-            (info["by"].as_str() == Some(by)).then_some(demo)
+            theirs(&info).then_some((demo, info))
         })
         .collect()
+}
+
+/// The uploads kept of user `uid`, or counting against `by`: each one's number and name.
+pub(super) fn kept_by(store: &Store, uid: Option<&str>, by: Option<&str>) -> Vec<(u64, String)> {
+    let is = |v: &serde_json::Value, who: Option<&str>| who.is_some() && v.as_str() == who;
+    let mut theirs: Vec<(u64, String)> = kept(store, |info| is(&info["uid"], uid) || is(&info["by"], by))
+        .into_iter()
+        .map(|(demo, info)| (demo, info["name"].as_str().filter(|n| !n.is_empty()).or(info["map"].as_str()).unwrap_or("demo").to_string()))
+        .collect();
+    theirs.sort();
+    theirs
 }
 
 fn forget(store: &Store, demo: u64) {
@@ -165,7 +176,8 @@ fn finish(
 ) -> Result<serde_json::Value> {
     let said: Finish = if request.length > 0 { json_body(reader, request)? } else { Finish::default() };
     let part = store.dir.join(part_name(id));
-    let kept = keep(store, &part, &said.name, by);
+    let user = who(app, request).user;
+    let kept = keep(store, &part, &said.name, by, user.as_ref().map(|u| u.uid.as_str()));
     if kept.is_err() {
         let _ = std::fs::remove_file(&part);
     }
@@ -176,7 +188,7 @@ fn finish(
 }
 
 /// The upload at `part` kept as a demo of its own, `by`'s: its number.
-pub(super) fn keep(store: &Store, part: &std::path::Path, name: &str, by: Option<&str>) -> Result<u64> {
+pub(super) fn keep(store: &Store, part: &std::path::Path, name: &str, by: Option<&str>, uid: Option<&str>) -> Result<u64> {
     super::unpack::unpack(part, MAX_DEMO)?;
     let mut head = vec![0u8; stvtf::demo::HEADER_LEN];
     std::fs::File::open(part).context("No such upload")?.read_exact(&mut head).context("Not a demo")?;
@@ -190,12 +202,12 @@ pub(super) fn keep(store: &Store, part: &std::path::Path, name: &str, by: Option
         return Ok(demo);
     }
     // Their last goes.
-    for old in by.map_or_default(|by| kept_of(store, by)) {
+    for (old, _) in by.map_or_default(|by| kept(store, |info| info["by"].as_str() == Some(by))) {
         forget(store, old);
     }
     std::fs::rename(part, store.dir.join(demo_dem(demo)))?;
     let name: String = name.chars().filter(|c| !c.is_control()).take(100).collect();
-    let info = serde_json::json!({ "by": by, "pov": pov, "name": name, "map": header.map });
+    let info = serde_json::json!({ "by": by, "uid": uid, "pov": pov, "name": name, "map": header.map });
     std::fs::write(store.dir.join(demo_info(demo)), info.to_string())?;
     Ok(demo)
 }

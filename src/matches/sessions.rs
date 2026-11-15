@@ -97,6 +97,16 @@ impl Sessions {
         all
     }
 
+    /// The matches going that `owner` started, or that count against `by`.
+    pub fn of(&self, owner: Option<&str>, by: Option<&str>) -> Vec<Listed> {
+        let theirs =
+            |s: &Session| (owner.is_some() && s.owner.as_deref() == owner) || (by.is_some() && s.by.get().map(String::as_str) == by);
+        let mut all: Vec<Listed> =
+            self.lock().values().filter(|s| !s.pinned && !s.done.load(Ordering::Relaxed) && theirs(s)).map(|s| s.listed()).collect();
+        all.sort_by(|a, b| a.id.cmp(&b.id));
+        all
+    }
+
     /// Whether any match, the demo included, is on `map`.
     pub fn on_map(&self, map: &str) -> bool {
         self.lock().values().any(|s| lock(&s.hub).map.as_deref() == Some(map))

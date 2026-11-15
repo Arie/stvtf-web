@@ -22,6 +22,8 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+const GONE: &str = "That match is no longer being watched; paste its connect string to watch it again.";
+
 /// A match's page and event stream: `path` is what follows `/w/`.
 pub(super) fn serve_match(
     mut s: TcpStream,
@@ -69,10 +71,7 @@ pub(super) fn serve_match(
             let back = super::visitor::url_encode(&format!("{}{}{at}", app.base, request.path));
             app.redirect(&mut s, "303 See Other", &format!("/signin?return={back}"))?;
         }
-        (None, _) => {
-            let gone = landing(app, request, "That match is no longer being watched; paste its connect string to watch it again.");
-            respond(&mut s, "404 Not Found", HTML, &app.page(&gone))?;
-        }
+        (None, _) => respond(&mut s, "404 Not Found", HTML, &app.page(&landing(app, sessions, request, client, GONE)))?,
         (Some(_), "") if !path.ends_with('/') => {
             app.redirect(&mut s, "308 Permanent Redirect", &format!("{}/", request.path))?;
         }

@@ -128,6 +128,9 @@ fn admins_make_others_admin() {
     let (app, _dir) = demo_app();
     let (page, owner) = open_room(&app);
     let viewer = format!("stvtf_guest={}", "1".repeat(32));
+    // The room is on its owner's front page only.
+    assert!(get(&app, "/", &owner).contains(&format!(r#"<a href="{page}"><b>Room</b> "#)));
+    assert!(!get(&app, "/", &viewer).contains("<b>Room</b>"));
     let me = get(&app, &format!("{page}me"), &viewer);
     assert!(me.ends_with(r#"{"admin":false,"id":2,"signed":false,"signin":false,"streamer":false}"#), "{me}");
     assert!(post(&app, &format!("{page}name"), &viewer, r#"{"name":"caster"}"#).starts_with("HTTP/1.1 204"));

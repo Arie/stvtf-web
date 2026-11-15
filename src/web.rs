@@ -14,6 +14,7 @@ mod assets;
 mod client;
 mod events;
 mod matches;
+mod mine;
 mod rooms;
 pub(crate) mod token;
 mod unpack;
@@ -270,7 +271,7 @@ fn serve_many(
             Ok(m) => app.redirect(&mut s, "303 See Other", &format!("/w/{}/{}", m.id, start_view(&request.query)))?,
             Err(e) => refuse(&mut s, "400 Bad Request", &e)?,
         },
-        ("/", "GET") => respond(&mut s, "200 OK", HTML, &app.page(&landing(app, request, "")))?,
+        ("/", "GET") => respond(&mut s, "200 OK", HTML, &app.page(&landing(app, sessions, request, client, "")))?,
         // What a page says went wrong in it (see `report`): taken or not, it is not told.
         ("/fault", "POST") => {
             let who = visitor::who(app, request).user;
@@ -343,7 +344,7 @@ fn post_watch(
         Ok(m) => app.redirect(s, "303 See Other", &format!("/w/{}/", m.id))?,
         Err(e) => {
             let status = if app.keys.is_some() && user.is_none() { "403 Forbidden" } else { "400 Bad Request" };
-            respond(s, status, HTML, &app.page(&landing(app, request, &format!("{e:#}"))))?;
+            respond(s, status, HTML, &app.page(&landing(app, sessions, request, client, &format!("{e:#}"))))?;
         }
     }
     Ok(())
@@ -379,14 +380,19 @@ fn unix_now() -> u64 {
 }
 
 /// The front page, with `error` if any.
-fn landing(app: &App, request: &Request, error: &str) -> String {
-    let escaped = error.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;");
+fn landing(app: &App, sessions: &Sessions, request: &Request, client: IpAddr, error: &str) -> String {
     let signed = app.keys.is_none() || visitor::who(app, request).user.is_some();
     LANDING
+        .replace("{mine}", &mine::mine(app, sessions, request, client))
         .replace("{signed}", if signed { "1" } else { "" })
         .replace("{max}", &(upload::MAX_DEMO >> 20).to_string())
         .replace("{base}", &app.base)
-        .replace("{error}", &escaped)
+        .replace("{error}", &escape(error))
+}
+
+/// `text` for HTML.
+fn escape(text: &str) -> String {
+    text.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;")
 }
 
 /// A form value: `+` is a space and `%XX` a byte.

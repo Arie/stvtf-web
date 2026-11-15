@@ -191,7 +191,12 @@ fn behind_a_site_matches_start_only_from_its_tokens() {
     let started = post(&app, "/watch", &cookie, "connect=192.0.2.1%3A27020+tv");
     assert!(started.starts_with("HTTP/1.1 303") && started.contains("Location: /live/w/"), "{started}");
     assert_eq!(serde_json::json!(sessions_of(&app).list())[0]["owner"], "u7");
+    // It is listed on their front page, and on nobody else's.
+    let theirs = get(&app, "/", &cookie);
+    assert!(theirs.contains("<h2>Yours</h2>") && theirs.contains("<b>Match</b> starting</a>"), "{theirs}");
+    assert!(!get(&app, "/", "").contains("Yours"));
     sessions_of(&app).stop_all();
+    assert!(!get(&app, "/", &cookie).contains("Yours"), "ended, it is gone from it");
     let exp = unix_now() + 60;
     let t = token::seal(&key, &format!(r#"{{"connect":"connect 192.0.2.1:27020; password \"tv\"","owner":"u1","exp":{exp}}}"#), [3; 12]);
     let response = get(&app, &format!("/start?t={t}"), "");

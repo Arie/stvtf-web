@@ -13,6 +13,7 @@
 </head>
 <body>
 <main id="front" data-signed="{signed}" data-max="{max}">
+  <img class="logo" src="favicon.svg" alt="stv.tf" width="56" height="56">
   <h1>Watch a match</h1>
   <p>Paste a SourceTV connect string, like <code>connect host:27020; password "tv"</code>, or a
   demos.tf link, like <code>https://demos.tf/1527264</code>.</p>
@@ -28,6 +29,7 @@
   <a class="signin" href="signin?return={base}/" hidden>Sign in with serveme</a>
   <progress max="1" value="0" hidden></progress>
   <div class="error">{error}</div>
+  {mine}
 </main>
 </body>
 </html>
