@@ -8,8 +8,7 @@ use axum::response::{Html, IntoResponse, Response};
 use serde::Deserialize;
 use std::sync::OnceLock;
 
-/// The viewer: a match's page, or a room's. Its modules are named all at once, where a browser
-/// would find them import by import (a chain 15 deep).
+/// The viewer page of a match or room; preloads all modules (the import chain is 15 deep).
 #[derive(Template)]
 #[template(path = "index.html")]
 pub(super) struct Viewer<'a> {
@@ -18,8 +17,7 @@ pub(super) struct Viewer<'a> {
     modules: &'static [String],
 }
 
-/// The front page, with why the last attempt came to nothing if it did, and what is the
-/// visitor's.
+/// The front page, with the last attempt's error and the visitor's own list.
 #[derive(Template)]
 #[template(path = "landing.html")]
 pub(super) struct Front<'a> {
@@ -53,8 +51,7 @@ struct Bot {
     sha1: String,
 }
 
-/// A demo with comms kept of a match: its map, its size in MB, where it is to download (`href`)
-/// and what plays it here (`watch`).
+/// A match's comms demo: map, MB, download (`href`) and replay (`watch`) links.
 #[derive(serde::Serialize)]
 pub(super) struct Kept {
     pub(super) map: String,

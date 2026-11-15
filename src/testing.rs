@@ -112,8 +112,7 @@ pub(crate) fn web_server(files: Vec<(&'static str, Vec<u8>)>) -> (String, Arc<Mu
     (base, asked)
 }
 
-/// An app for a test: changed as if it were the test's own, and shared with the server that
-/// serves it a request at a time.
+/// A test's app, shared with the server serving it.
 pub(crate) struct TestApp(Arc<App>);
 
 impl TestApp {

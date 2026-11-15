@@ -318,8 +318,7 @@ fn who_is_who(options: &Options, keys: Option<&Arc<web::token::Keys>>, voice_key
     voice::who::WhoIsWho::new(options.sessions.as_deref(), home.as_deref().zip(voice_key), sites)
 }
 
-/// What is said goes to stderr and, with `--logs`, to files too, the relays' notes with it:
-/// files for each process.
+/// Logs to stderr and, with `--logs`, to files per process.
 fn keep_log(options: &Options) {
     log::start(options.logs.as_deref(), if options.relay_daemon.is_some() { "relay" } else { "web" });
     stvtf::relay::log_to(|line| log!("{line}"));
@@ -397,8 +396,7 @@ fn main() -> Result<()> {
     serve_until_stopped(&options.listen, app, keeper, &STOP)
 }
 
-/// Serves until told to stop; what the next process picks up is saved (by `keeper`) before this
-/// one ends.
+/// Serves until stopped, then lets `keeper` save for the next process.
 fn serve_until_stopped(listen: &str, app: Arc<App>, keeper: Option<std::thread::JoinHandle<()>>, stop: &'static AtomicBool) -> Result<()> {
     web::server::run(listen, app, stop)?;
     if let Some(keeper) = keeper {

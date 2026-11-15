@@ -41,8 +41,7 @@ pub(super) async fn form(State(app): State<Shared>) -> Redirect {
     Redirect::to(&format!("{}/", app.base))
 }
 
-/// Where uploads are kept, and who uploads (none for someone no limit holds for). Answered early
-/// when nothing is kept, or they may not.
+/// The upload store and the uploader (none if unlimited); refused if none or not allowed.
 fn uploading(v: &Visit) -> Result<(&Store, Option<String>), Early> {
     let Some(store) = &v.sessions()?.store else {
         return Err((StatusCode::NOT_FOUND, "No demos are kept here").into_response().into());

@@ -64,8 +64,7 @@ pub(super) fn open_room(v: &Visit, sessions: &Sessions, m: &Arc<Session>, open: 
     opened(app, &room.id, cookie.as_deref())
 }
 
-/// What is asked of a match's `room`: whether one can be opened, or one, from where its opener
-/// says they were watching.
+/// A match's `room`: whether one can open, or opening one at the opener's moment.
 pub(super) enum Open {
     Asked,
     From(Option<Where>),
@@ -113,8 +112,7 @@ pub(super) fn found(v: &Visit, id: &str) -> Result<Arc<Room>, Early> {
     }
 }
 
-/// `/r/<id>/`, with a delay or as an overlay: the page. Without a cookie (none yet, or refused),
-/// a page is someone new each time.
+/// `/r/<id>/`, also delayed or as overlay: the page. No cookie means a new guest each time.
 pub(super) async fn show(v: Visit, Path(at): Path<RoomAt>) -> Answered {
     answer(move || {
         found(&v, &at.id)?;
@@ -186,8 +184,7 @@ fn me(app: &App, room: &Room, who: &Who) -> Response {
     Json(me).into_response()
 }
 
-/// The room a change is posted to: answered early that only its admins do that, when `admins`
-/// and the visitor is none.
+/// The room a change is for; refused to non-admins when `admins`.
 fn changing(v: &Visit, id: &str, admins: bool) -> Result<Arc<Room>, Early> {
     let room = found(v, id)?;
     if admins && !room.is_admin(&v.who.key) {

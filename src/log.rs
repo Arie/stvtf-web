@@ -1,7 +1,5 @@
-//! What the server says of itself, through `tracing`: on stderr, and with `--logs DIR` in files
-//! there too, which outlive the container (a deploy starts a new one, and the old one's own log
-//! goes with it): `<DIR>/<name>.<date>.log`, a new one each day and a week of them kept.
-//! `RUST_LOG` says how much (default `info`; `tower_http=debug` has each request).
+//! Logging through `tracing`: stderr, and with `--logs DIR` daily files, a week kept.
+//! `RUST_LOG` sets the level (default `info`; `tower_http=debug` logs requests).
 
 use std::path::Path;
 use std::sync::Mutex;
@@ -13,8 +11,7 @@ use tracing_subscriber::{EnvFilter, Layer, fmt};
 /// How many days' files are kept.
 const KEPT: usize = 7;
 
-/// Starts saying things: on stderr, and in `dir` as `<name>.<date>.log` if it can be written
-/// (a folder that cannot is not worth not starting for: stderr has it all).
+/// Starts logging: stderr, and `<dir>/<name>.<date>.log` if writable.
 pub(crate) fn start(dir: Option<&Path>, name: &str) {
     let level = || EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
     // Plain, without colours: it is read from files and containers' logs.

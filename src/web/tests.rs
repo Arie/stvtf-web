@@ -23,8 +23,7 @@ mod streams;
 mod uploads;
 mod voice;
 
-/// The app served as the server serves it (`axum::serve`, the routes and their layers), on a
-/// port of its own, until dropped.
+/// The app behind a real `axum::serve` on its own port, until dropped.
 struct Served {
     at: std::net::SocketAddr,
     stop: Option<tokio::sync::oneshot::Sender<()>>,
@@ -62,8 +61,7 @@ impl Drop for Served {
     }
 }
 
-/// A response as the tests read it: the header names as they are written out in the specs
-/// (`Content-Type`), where the server sends them in lower case.
+/// A response with title-cased header names (`Content-Type`), as the tests match them.
 fn named(response: &[u8]) -> Vec<u8> {
     let Some(end) = response.windows(4).position(|w| w == b"\r\n\r\n") else { return response.to_vec() };
     let head = String::from_utf8_lossy(&response[..end]);
@@ -109,8 +107,7 @@ fn asks(query: &str) -> HashMap<String, String> {
     serde_urlencoded::from_str(query).unwrap()
 }
 
-/// The page's stylesheets and modules as the server has them: each one's name under `app/`, its
-/// type and its body; `style.css`, the page's, first.
+/// The page's files: name under `app/`, type and body; `style.css` first.
 fn app_files() -> Vec<(&'static str, &'static str, &'static [u8])> {
     let typed = |(name, body): &'static (String, Vec<u8>)| {
         let css = std::path::Path::new(name).extension().is_some_and(|e| e == "css");

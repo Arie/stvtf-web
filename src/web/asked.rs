@@ -74,8 +74,7 @@ impl FromRequestParts<Shared> for Visit {
 impl FromRequestParts<Shared> for Who {
     type Rejection = StatusCode;
 
-    /// The user signed in with the site, by their Steam id, or the browser by its guest cookie:
-    /// a new one, to set, if it had none.
+    /// The signed-in user, or the guest cookie's: a new one if none.
     async fn from_request_parts(parts: &mut Parts, app: &Shared) -> Result<Self, StatusCode> {
         let Ok(jar) = CookieJar::from_request_parts(parts, app).await;
         let user = app.keys.as_ref().zip(jar.get(USER_COOKIE)).and_then(|(k, c)| k.kept(c.value(), unix_now()));
@@ -89,8 +88,7 @@ impl FromRequestParts<Shared> for Who {
     }
 }
 
-/// The match a path under `/w/` is of, and what follows its id: an id is one part of the path,
-/// or of a demo of ours two (`demo/1a2b…`), which no route's parameters tell apart.
+/// A match id off a `/w/` path and what follows it: ids are one segment, or two (`demo/1a2b…`).
 pub(super) struct MatchAt {
     pub(super) id: String,
     pub(super) rest: String,

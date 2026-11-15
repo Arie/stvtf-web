@@ -28,8 +28,7 @@ use std::time::{Duration, Instant};
 
 const GONE: &str = "That match is no longer being watched; paste its connect string to watch it again.";
 
-/// The match asked for, a demo kept played again. Answered early otherwise: gone, or its page
-/// elsewhere.
+/// The match asked for, reopening a kept demo; else gone or redirected.
 pub(super) fn found(v: &Visit, at: &MatchAt) -> Result<Arc<Session>, Early> {
     let (app, sessions) = (&v.app, v.sessions()?);
     let (id, rest) = (at.id.as_str(), at.rest.as_str());

@@ -1,5 +1,4 @@
-//! The server: axum serves the routes with their layers; each request's work is done on a
-//! blocking thread (see `asked::answer`), and an event stream is written by a thread of its own.
+//! The server: axum with tower-http layers; handlers work on blocking threads (`asked::answer`).
 
 use super::Shared;
 use anyhow::Result;
@@ -19,8 +18,7 @@ use tower_http::set_header::SetResponseHeaderLayer;
 use tower_http::timeout::TimeoutLayer;
 use tower_http::trace::TraceLayer;
 
-/// Serves `app` on `listen` until `stop`: requests under way are then finished, and event
-/// streams end (see `events::stream`).
+/// Serves `app` on `listen` until `stop`, then finishes requests and ends event streams.
 pub(crate) fn run(listen: &str, app: Shared, stop: &'static AtomicBool) -> Result<()> {
     let runtime = tokio::runtime::Builder::new_multi_thread().enable_all().build()?;
     runtime.block_on(async {
@@ -33,8 +31,7 @@ pub(crate) fn run(listen: &str, app: Shared, stop: &'static AtomicBool) -> Resul
             }
             super::events::end_all();
         };
-        // What is under way gets a while to finish: a client that will not let go does not hold
-        // the process up.
+        // A grace period: a stuck client does not hold the process up.
         tokio::select! {
             served = serve(listener, app, stopped) => served?,
             () = stopped_for(stop, FINISH_WITHIN) => {}
@@ -60,8 +57,7 @@ pub(crate) async fn serve(
     app: Shared,
     stopped: impl Future<Output = ()> + Send + 'static,
 ) -> Result<()> {
-    // Every write is a whole response or a flushed batch of events: no waiting to fill a packet
-    // (with delayed acks, up to 40 ms an event).
+    // No Nagle: it delays events by up to 40 ms.
     let listener = listener.tap_io(|tcp| {
         let _ = tcp.set_nodelay(true);
     });
@@ -72,11 +68,8 @@ pub(crate) async fn serve(
 /// A request is answered in this time, its body read: an upload's part on a slow line, at most.
 const ANSWER_WITHIN: Duration = Duration::from_mins(5);
 
-/// The app's routes (see [`super::routes`]). Every response says `nosniff`, and what is read
-/// with GET may be read by any site (it is public: `<stv-map>` on other sites reads it all,
-/// without cookies). Nothing is changed at another site's asking (a browser says where a request
-/// is from), and the pages that act for whoever is signed in are not shown in another site's
-/// frame.
+/// The routes with their layers: `nosniff`, GET readable by any site (`<stv-map>` embeds),
+/// cross-site writes refused, signed-in pages not framed.
 pub(crate) fn router(app: Shared) -> Router {
     let (all, acting) = super::routes::routes(&app);
     let unframed = SetResponseHeaderLayer::overriding(header::X_FRAME_OPTIONS, HeaderValue::from_static("DENY"));
@@ -89,7 +82,6 @@ pub(crate) fn router(app: Shared) -> Router {
         .layer(TimeoutLayer::with_status_code(StatusCode::REQUEST_TIMEOUT, ANSWER_WITHIN))
         // Each request, for whoever asks to see them (`RUST_LOG=tower_http=debug`).
         .layer(TraceLayer::new_for_http())
-        // What compresses well is compressed for whoever takes it; an event stream compresses
-        // itself, flushing each batch (`events::stream`).
+        // Event streams compress themselves, flushing per batch (`events::stream`).
         .layer(CompressionLayer::new())
 }

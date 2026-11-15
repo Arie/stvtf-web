@@ -1,5 +1,4 @@
-//! What is someone's on the front page: their uploaded demo, and the matches and rooms going in
-//! their name.
+//! The front page's "Yours": a visitor's upload, live matches and rooms.
 
 use super::asked::Visit;
 use super::client::counted;

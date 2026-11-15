@@ -8,8 +8,7 @@ use axum::response::{IntoResponse, Response};
 use rust_embed::RustEmbed;
 use std::sync::OnceLock;
 
-/// The page's files: modules, and stylesheets (each at the top is served as one file, its
-/// `@import`s of `css/` put in their place).
+/// The page's modules and stylesheets (top-level ones served with their `@import`s inlined).
 #[derive(RustEmbed)]
 #[folder = "app"]
 #[include = "*.js"]
@@ -22,8 +21,7 @@ struct AppFiles;
 #[include = "*.woff2"]
 struct Fonts;
 
-/// The class icons, and under `brand/` the site's own (the voice bot's avatar is there too, set
-/// in Discord by hand).
+/// Class icons, and the site's own under `brand/`.
 #[derive(RustEmbed)]
 #[folder = "icons"]
 #[include = "*.svg"]
@@ -56,8 +54,7 @@ fn data<E: RustEmbed>(name: &str) -> Option<Vec<u8>> {
     E::get(name).map(|file| file.data.into_owned())
 }
 
-/// The page's stylesheets and modules as they are served, by their name under `app/`:
-/// `style.css`, the page's, first.
+/// The page's files as served, by name under `app/`; `style.css` first.
 pub(super) fn app_files() -> &'static [(String, Vec<u8>)] {
     static FILES: OnceLock<Vec<(String, Vec<u8>)>> = OnceLock::new();
     FILES.get_or_init(|| {
@@ -83,8 +80,7 @@ fn inline_imports(sheet: &str) -> String {
     sheet.lines().map(|line| part(line).unwrap_or_else(|| format!("{line}\n"))).collect()
 }
 
-/// File `path` of what is served as it is: the page's under the version of this build
-/// (`/app/<version>/…`), kept by browsers for a day, as are the fonts and the site's own icons.
+/// Static file `path`, cached for a day; the page's are under `/app/<version>/`.
 pub(super) fn site_file(path: &str) -> Response {
     let name = path.trim_start_matches('/');
     let (body, kept) = match name.split_once('/') {
@@ -123,8 +119,7 @@ pub(super) fn embed_loader() -> Response {
     (headers, loader).into_response()
 }
 
-/// `/overview/<file>`: a demos.tf overview, or the maps' boundaries, from the cache (fetched on
-/// a miss).
+/// `/overview/<file>`: an overview or the maps' boundaries, cached, fetched on a miss.
 pub(super) fn cached_overview(app: &App, file: &str) -> Response {
     let _one_at_a_time = lock(&app.overviews);
     match overview(&app.cache, file) {
@@ -137,11 +132,9 @@ pub(super) fn cached_overview(app: &App, file: &str) -> Response {
     }
 }
 
-/// `/map/<name>`: a map's geometry from the cache, gzipped when the browser takes it (it is 1.5
-/// to 3.5 MB, and about a sixth of that gzipped); built on a miss, if a match is on that map.
+/// `/map/<name>`: a map's geometry, cached, gzipped if taken; built on a miss for a live map.
 pub(super) fn map(app: &App, name: &str, gzip: bool) -> Response {
-    // Only a map being watched is built, so only those are locked: any other is read from the
-    // cache, which is written whole or not at all.
+    // Only a watched map is built, so only those lock.
     let fetch = app.on_map(name);
     let map_lock = fetch.then(|| app.map_lock(name));
     let _one_at_a_time = map_lock.as_deref().map(lock);
@@ -157,8 +150,7 @@ pub(super) fn map(app: &App, name: &str, gzip: bool) -> Response {
 
 /// Changes whenever a page file does, so browsers holding `/app/` files for a day fetch new ones
 /// after a deploy; the modules' relative imports carry it along.
-/// The viewer's modules: not the embed's entry nor the upload page's, which its page does not
-/// load.
+/// The viewer's modules, without the embed's and upload page's entries.
 pub(super) fn page_modules() -> &'static [String] {
     static MODULES: OnceLock<Vec<String>> = OnceLock::new();
     MODULES.get_or_init(|| {
@@ -167,8 +159,7 @@ pub(super) fn page_modules() -> &'static [String] {
     })
 }
 
-/// The version the page's files are served under: a hash of them (FNV-1a), so browsers holding
-/// them for a day fetch new ones after a deploy; the modules' relative imports carry it along.
+/// The page files' version: their hash (FNV-1a), so a deploy busts the day's cache.
 pub(crate) fn app_version() -> &'static str {
     static VERSION: OnceLock<String> = OnceLock::new();
     VERSION.get_or_init(|| format!("{:016x}", fnv1a(app_files().iter().flat_map(|(_, body)| body.iter().copied()))))

@@ -34,8 +34,7 @@ fn voiced(router: Routes, at: &str) -> Routes {
         .route(&format!("{at}/voice-invite"), get(voice::invite))
 }
 
-/// A match's routes under `at`, its id; `next` and `after` name the parts of the path after it.
-/// Its page is there, with a delay, and as an overlay with one or without.
+/// A match's routes under `at` (its id); `next` and `after` name the segments after it.
 fn of_match(router: Routes, at: &str, [next, after]: [&str; 2]) -> Routes {
     voiced(router, at)
         .route(&format!("{at}/"), get(matches::show))
@@ -79,11 +78,9 @@ fn of_room(router: Routes) -> Routes {
         .route("/r/{id}/admin", post(rooms::admin))
 }
 
-/// The routes of the app: of one match at `/`, or of any number of them. Those in `acting` act
-/// for whoever is signed in.
+/// The app's routes; those in `acting` act for the signed-in user.
 pub(super) fn routes(app: &App) -> (Routes, Routes) {
-    // The backpack's pictures are files in a folder; the rest of what is served as it is, the
-    // build put in the binary.
+    // Backpack pictures are files on disk; other static files are embedded.
     let day = SetResponseHeaderLayer::if_not_present(header::CACHE_CONTROL, HeaderValue::from_static("max-age=86400"));
     let all = Router::new()
         .route("/up", get(up))
@@ -121,8 +118,7 @@ pub(super) fn routes(app: &App) -> (Routes, Routes) {
         .route("/voice/known", get(voice::known).post(voice::told))
         .route("/start", any(started))
         .route("/fault", post(fault));
-    // A match's id is one part of the path, or of a demo of ours two (`demo/1a2b…`): the routes
-    // are for both, and `MatchAt` reads the id off the path.
+    // Ids are one or two segments: routes cover both, `MatchAt` reads the id.
     let all = of_match(of_room(all).route("/w/{a}", get(matches::show)), "/w/{a}", ["{b}", "{c}"]);
     (of_match(all, "/w/{a}/{b}", ["{c}", "{d}"]).layer(little).merge(part), acting.layer(little))
 }
@@ -220,8 +216,7 @@ async fn signout(State(app): State<Shared>, Query(back): Query<Back>) -> Respons
     back_with(&app, &back, set_cookie(&app, USER_COOKIE, "", 0))
 }
 
-/// `/start`: the match a site's token asks for. `<stv-map>` asks where it is (`format=json`)
-/// instead of following the redirect.
+/// `/start`: the match a site's token asks for; `format=json` answers its address.
 async fn started(v: Visit, Query(q): Query<HashMap<String, String>>) -> Answered {
     answer(move || {
         let token = q.get("t").map_or("", String::as_str);
