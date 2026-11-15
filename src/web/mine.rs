@@ -1,20 +1,18 @@
 //! What is someone's on the front page: their uploaded demo, and the matches and rooms going in
 //! their name.
 
+use super::asked::Visit;
 use super::client::counted;
+use super::escape;
 use super::upload;
-use super::visitor::who;
-use super::{Request, escape};
-use crate::App;
 use crate::matches::sessions::{self, Sessions};
 use std::fmt::Write as _;
-use std::net::IpAddr;
 
 /// The list, as HTML; nothing when nothing is theirs.
-pub(super) fn mine(app: &App, sessions: &Sessions, request: &Request, client: IpAddr) -> String {
-    let w = who(app, request);
+pub(super) fn mine(v: &Visit, sessions: &Sessions) -> String {
+    let (app, w) = (&v.app, &v.who);
     let uid = w.user.as_ref().map(|u| u.uid.as_str());
-    let by = counted(w.user.as_ref(), None, client);
+    let by = counted(w.user.as_ref(), None, v.client);
     let mut rows = String::new();
     let mut row = |kind: &str, page: String, what: &str| {
         let _ = write!(rows, r#"<li><a href="{}{page}"><b>{kind}</b> {}</a></li>"#, app.base, escape(what));

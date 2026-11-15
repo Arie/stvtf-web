@@ -1,65 +1,64 @@
 //! A room's page, event stream and controls, and opening one.
 
-// Handlers have the shape the routes' adapters take (`server::to` and the like), whether or not
-// one can fail or needs to own what was posted.
-#![allow(clippy::unnecessary_wraps, clippy::needless_pass_by_value)]
-
+use super::asked::{Marks, Stream, Visit, answer};
 use super::client::counted;
-use super::events::{stream, too_many_streams, wants_detail, wants_voice};
+use super::events::{stream, too_many_streams};
 use super::matches::is_page;
-use super::routes::Asked;
-use super::visitor::{Who, origin, who};
-use super::{Answered, Early};
-use super::{HTML, INDEX, JSON, Request, TEXT, done, not_found, refuse, respond, respond_marks, respond_with};
+use super::visitor::{Who, origin};
+use super::{Answered, Early, INDEX, done, marks_from, page};
 use crate::App;
 use crate::matches::sessions::{Session, Sessions, logged};
 use crate::rooms::room::{ArcDraw, CircleDraw, Control, Draw, LightDraw, MapChoice, NoteDraw, Room, StartAt, ViewPost};
 use anyhow::Result;
-use axum::http::StatusCode;
-use axum::response::Response;
-use std::net::IpAddr;
+use axum::Json;
+use axum::extract::{Path, Query};
+use axum::http::{StatusCode, header};
+use axum::response::{IntoResponse, Redirect, Response};
+use serde::Deserialize;
 use std::sync::Arc;
 
 /// The new room's page, for the browser that opened it.
-pub(super) fn opened(app: &App, id: &str, cookie: Option<&str>) -> Answered {
-    let body = serde_json::json!({ "page": format!("{}/r/{id}/", app.base) }).to_string();
-    let mut headers = vec![("Content-Type", JSON)];
-    if let Some(c) = cookie {
-        headers.push(("Set-Cookie", c));
-    }
-    Ok(respond_with(StatusCode::CREATED, &headers, body.as_bytes()))
+pub(super) fn opened(app: &App, id: &str, cookie: Option<&str>) -> Response {
+    let page = Json(serde_json::json!({ "page": format!("{}/r/{id}/", app.base) }));
+    (StatusCode::CREATED, with_cookie(cookie), page).into_response()
 }
 
-/// `GET` says whether a room can be opened on match `m`; `POST` opens one, owned by the browser.
-pub(super) fn open_room(app: &App, sessions: &Sessions, m: &Arc<Session>, request: &Request, client: IpAddr, open: Open) -> Answered {
+/// A `Set-Cookie` of `cookie`, if there is one to set.
+fn with_cookie(cookie: Option<&str>) -> Option<[(header::HeaderName, String); 1]> {
+    cookie.map(|c| [(header::SET_COOKIE, c.to_string())])
+}
+
+/// Whether a room can be opened on match `m`; or one is, owned by the browser.
+pub(super) fn open_room(v: &Visit, sessions: &Sessions, m: &Arc<Session>, open: Open) -> Response {
+    let app = &v.app;
     if !m.recordable() && m.gave_up() {
-        return Ok(respond(StatusCode::GONE, TEXT, b"This match has nothing to play."));
+        return (StatusCode::GONE, "This match has nothing to play.").into_response();
     }
     if !m.recordable() {
-        return Ok(respond(StatusCode::CONFLICT, TEXT, b"This match has nothing to play (yet)."));
+        return (StatusCode::CONFLICT, "This match has nothing to play (yet).").into_response();
     }
     let Open::From(from) = open else {
         // Someone may open one: have it ready.
         m.prepare();
-        return Ok(respond(StatusCode::OK, JSON, b"{}"));
+        return Json(serde_json::json!({})).into_response();
     };
     // Where its opener was watching, if they say: it starts there.
     let start = from.and_then(|w| Some(StartAt { at: w.at?, speed: 1.0, paused: w.paused }));
-    let Who { key: guest, cookie, user } = who(app, request);
+    let Who { key: guest, cookie, user } = v.who.clone();
     // One's room on it already: back to that.
     if let Some(room) = app.rooms.owned(m, &guest) {
         return opened(app, &room.id, cookie.as_deref());
     }
     if sessions.running() + app.rooms.shared_count() >= sessions.max {
-        return Ok(respond(StatusCode::SERVICE_UNAVAILABLE, TEXT, b"This server is watching all it can."));
+        return (StatusCode::SERVICE_UNAVAILABLE, "This server is watching all it can.").into_response();
     }
     let recording = match m.recording() {
         Ok(r) => r,
-        Err(e) => return Ok(refuse(StatusCode::CONFLICT, &e)),
+        Err(e) => return (StatusCode::CONFLICT, format!("{e:#}")).into_response(),
     };
-    let room = match app.rooms.open(m, recording, &guest, counted(user.as_ref(), None, client).as_deref(), start) {
+    let room = match app.rooms.open(m, recording, &guest, counted(user.as_ref(), None, v.client).as_deref(), start) {
         Ok(r) => r,
-        Err(e) => return Ok(refuse(StatusCode::CONFLICT, &e)),
+        Err(e) => return (StatusCode::CONFLICT, format!("{e:#}")).into_response(),
     };
     log!("room {} opened on match {}", logged(&room.id), logged(&m.id));
     opened(app, &room.id, cookie.as_deref())
@@ -100,71 +99,73 @@ pub(super) struct Admin {
     admin: bool,
 }
 
-/// The room a request under `/r/` is for, and what follows its id. Answered early that it has
-/// closed.
-pub(super) fn found(a: &Asked) -> Result<(Arc<Room>, String), Early> {
-    let path = a.request.path.strip_prefix("/r/").unwrap_or_default();
-    let (id, rest) = path.split_once('/').unwrap_or((path, ""));
-    let Some(room) = a.app.rooms.get(id, a.sessions()?) else {
-        return Err(respond(StatusCode::NOT_FOUND, TEXT, b"That room has closed.").into());
-    };
-    Ok((room, rest.to_string()))
+/// A room's path: its id, and the delay its page is shown with, if any.
+#[derive(Deserialize)]
+pub(super) struct RoomAt {
+    id: String,
+}
+
+/// Room `id`, still open: answered early that it has closed.
+pub(super) fn found(v: &Visit, id: &str) -> Result<Arc<Room>, Early> {
+    match v.app.rooms.get(id, v.sessions()?) {
+        Some(room) => Ok(room),
+        None => Err((StatusCode::NOT_FOUND, "That room has closed.").into_response().into()),
+    }
 }
 
 /// `/r/<id>/`, with a delay or as an overlay: the page. Without a cookie (none yet, or refused),
 /// a page is someone new each time.
-pub(super) fn page(a: &Asked) -> Answered {
-    let (_room, rest) = found(a)?;
-    Ok(if rest.is_empty() && !a.request.path.ends_with('/') {
-        a.app.redirect(StatusCode::PERMANENT_REDIRECT, &format!("{}/", a.request.path))
-    } else if is_page(&rest) {
-        let who = who(&a.app, &a.request);
-        let mut headers = vec![("Content-Type", HTML), ("Cache-Control", "no-cache")];
-        if let Some(c) = &who.cookie {
-            headers.push(("Set-Cookie", c));
-        }
-        respond_with(StatusCode::OK, &headers, &a.app.page(INDEX))
-    } else {
-        not_found()
+pub(super) async fn show(v: Visit, Path(at): Path<RoomAt>) -> Answered {
+    answer(move || {
+        found(&v, &at.id)?;
+        let rest = v.path.strip_prefix("/r/").and_then(|p| p.split_once('/')).map_or("", |(_, rest)| rest);
+        Ok(if rest.is_empty() && !v.path.ends_with('/') {
+            Redirect::permanent(&format!("{}{}/", v.app.base, v.path)).into_response()
+        } else if is_page(rest) {
+            (with_cookie(v.who.cookie.as_deref()), page(v.app.page(INDEX))).into_response()
+        } else {
+            StatusCode::NOT_FOUND.into_response()
+        })
     })
+    .await
 }
 
 /// `/r/<id>/events`.
-pub(super) fn events(a: &Asked) -> Answered {
-    let (room, _) = found(a)?;
-    let (request, who) = (&a.request, who(&a.app, &a.request));
-    Ok(match a.app.stream_slot(a.client) {
-        Some(slot) => {
-            let name = request.query.get("name").map(str::to_string);
-            let listed = request.query.get("overlay") != Some("1");
-            let site = who.user.as_ref().map(|u| u.name.as_str());
-            let watching = room.join(&who.key, name.as_deref(), site, listed);
-            // By Steam id when signed in: whose room it was, when something is asked of it later.
-            log!("room {} joined by {}", logged(&room.id), who.user.as_ref().map_or("a guest", |u| u.uid.as_str()));
-            stream(&room.hub, request.gzip, wants_detail(&request.query), wants_voice(&request.query), (slot, watching))
-        }
-        None => too_many_streams(),
+pub(super) async fn events(v: Visit, Path(at): Path<RoomAt>, Query(q): Query<Stream>) -> Answered {
+    answer(move || {
+        let (room, who) = (found(&v, &at.id)?, &v.who);
+        let Some(slot) = v.app.stream_slot(v.client) else { return Ok(too_many_streams()) };
+        let site = who.user.as_ref().map(|u| u.name.as_str());
+        let watching = room.join(&who.key, q.name.as_deref(), site, !q.overlay());
+        // By Steam id when signed in: whose room it was, when something is asked of it later.
+        log!("room {} joined by {}", logged(&room.id), who.user.as_ref().map_or("a guest", |u| u.uid.as_str()));
+        Ok(stream(&room.hub, v.gzip, &q, (slot, watching)))
     })
+    .await
 }
 
 /// `/r/<id>/me`.
-pub(super) fn mine(a: &Asked) -> Answered {
-    let (room, _) = found(a)?;
-    Ok(me(&a.app, &room, &who(&a.app, &a.request)))
+pub(super) async fn mine(v: Visit, Path(at): Path<RoomAt>) -> Answered {
+    answer(move || Ok(me(&v.app, &*found(&v, &at.id)?, &v.who))).await
 }
 
 /// `/r/<id>/demos`: its match's demos with comms in them.
-pub(super) fn demos(a: &Asked) -> Answered {
-    let (room, _) = found(a)?;
-    let sessions = a.sessions()?;
-    let demos = a.app.rooms.live_match(&room.id, sessions).map_or_default(|m| super::matches::comms_demos(&a.app, sessions, &m.id));
-    Ok(respond(StatusCode::OK, JSON, serde_json::json!(demos).to_string().as_bytes()))
+pub(super) async fn demos(v: Visit, Path(at): Path<RoomAt>) -> Answered {
+    answer(move || {
+        let (room, sessions) = (found(&v, &at.id)?, v.sessions()?);
+        let demos = v.app.rooms.live_match(&room.id, sessions).map_or_default(|m| super::matches::comms_demos(&v.app, sessions, &m.id));
+        Ok(Json(demos).into_response())
+    })
+    .await
 }
 
 /// `/r/<id>/marks`.
-pub(super) fn marks(a: &Asked) -> Answered {
-    let (room, _) = found(a)?;
-    Ok(respond_marks(&a.request.query, |from| room.marks(from)))
+pub(super) async fn marks(v: Visit, Path(at): Path<RoomAt>, Query(asked): Query<Marks>) -> Answered {
+    answer(move || {
+        let room = found(&v, &at.id)?;
+        Ok(marks_from(&asked, |from| room.marks(from)))
+    })
+    .await
 }
 
 /// The live match `room` is on, if it is on one.
@@ -182,51 +183,60 @@ fn me(app: &App, room: &Room, who: &Who) -> Response {
         "streamer": who.user.as_ref().is_some_and(|u| u.streamer),
         "signin": app.keys.is_some() && app.home.as_deref().and_then(origin).is_some(),
     });
-    respond(StatusCode::OK, JSON, me.to_string().as_bytes())
+    Json(me).into_response()
 }
 
-/// The room a change is posted to, and who posts it. Answered early that only its admins do
-/// that, when `admins` and they are none.
-fn changing(a: &Asked, admins: bool) -> Result<(Arc<Room>, Who), Early> {
-    let ((room, _), who) = (found(a)?, who(&a.app, &a.request));
-    if admins && !room.is_admin(&who.key) {
-        return Err(respond(StatusCode::FORBIDDEN, TEXT, b"Only the room's admins do that.").into());
+/// The room a change is posted to: answered early that only its admins do that, when `admins`
+/// and the visitor is none.
+fn changing(v: &Visit, id: &str, admins: bool) -> Result<Arc<Room>, Early> {
+    let room = found(v, id)?;
+    if admins && !room.is_admin(&v.who.key) {
+        return Err((StatusCode::FORBIDDEN, "Only the room's admins do that.").into_response().into());
     }
-    Ok((room, who))
+    Ok(room)
 }
 
 /// `POST /r/<id>/claim`: a streamer makes themselves admin.
-pub(super) fn claim(a: &Asked) -> Answered {
-    let (room, who) = changing(a, false)?;
-    if !who.user.as_ref().is_some_and(|u| u.streamer) {
-        return Ok(respond(StatusCode::FORBIDDEN, TEXT, b"Only the site's streamers make themselves admin."));
-    }
-    room.make_admin(&who.key);
-    Ok(respond(StatusCode::NO_CONTENT, TEXT, b""))
+pub(super) async fn claim(v: Visit, Path(at): Path<RoomAt>) -> Answered {
+    answer(move || {
+        let room = changing(&v, &at.id, false)?;
+        if !v.who.user.as_ref().is_some_and(|u| u.streamer) {
+            return Ok((StatusCode::FORBIDDEN, "Only the site's streamers make themselves admin.").into_response());
+        }
+        room.make_admin(&v.who.key);
+        Ok(StatusCode::NO_CONTENT.into_response())
+    })
+    .await
 }
 
 /// `POST /r/<id>/name`: one's own name, by anyone.
-pub(super) fn name(a: &Asked, n: Name) -> Answered {
-    let (room, who) = changing(a, false)?;
-    room.rename(&who.key, &n.name);
-    Ok(respond(StatusCode::NO_CONTENT, TEXT, b""))
+pub(super) async fn name(v: Visit, Path(at): Path<RoomAt>, Json(n): Json<Name>) -> Answered {
+    answer(move || {
+        changing(&v, &at.id, false)?.rename(&v.who.key, &n.name);
+        Ok(StatusCode::NO_CONTENT.into_response())
+    })
+    .await
 }
 
 /// `POST /r/<id>/clear`.
-pub(super) fn clear(a: &Asked) -> Answered {
-    let (room, who) = changing(a, true)?;
-    room.clear(&who.key);
-    Ok(respond(StatusCode::NO_CONTENT, TEXT, b""))
+pub(super) async fn clear(v: Visit, Path(at): Path<RoomAt>) -> Answered {
+    answer(move || {
+        changing(&v, &at.id, true)?.clear(&v.who.key);
+        Ok(StatusCode::NO_CONTENT.into_response())
+    })
+    .await
 }
 
 /// The rest of what a room's admins post: each a route, and what it does with what was posted.
 macro_rules! by_admins {
     ($($(#[$doc:meta])* $route:ident($body:ty) => |$room:ident, $guest:ident, $posted:ident| $does:expr;)*) => {$(
         $(#[$doc])*
-        pub(super) fn $route(a: &Asked, $posted: $body) -> Answered {
-            let ($room, who) = changing(a, true)?;
-            let $guest = &who.key;
-            Ok(done($does))
+        pub(super) async fn $route(v: Visit, Path(at): Path<RoomAt>, Json($posted): Json<$body>) -> Answered {
+            answer(move || {
+                let ($room, $guest) = (changing(&v, &at.id, true)?, &v.who.key);
+                Ok(done($does))
+            })
+            .await
         }
     )*};
 }

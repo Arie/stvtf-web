@@ -2,9 +2,11 @@ use super::assets::APP;
 use super::*;
 use crate::matches::hub::{SharedHub, publish};
 use crate::testing::{TempDir, TestApp, app, server, web_server};
-use crate::web::client::{client_key, is_cloudflare, on_our_network};
+use crate::web::client::{client_key, client_of, is_cloudflare, on_our_network};
+use crate::web::matches::start_view;
 use crate::{App, Matches};
 use flate2::read::GzDecoder;
+use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::TcpListener;
 use std::net::TcpStream;
@@ -60,8 +62,8 @@ fn head_and_body(response: &[u8]) -> (String, &[u8]) {
 }
 
 /// A query string's values, as a request's.
-fn asks(query: &str) -> Asks {
-    Asks(serde_urlencoded::from_str(query).unwrap())
+fn asks(query: &str) -> HashMap<String, String> {
+    serde_urlencoded::from_str(query).unwrap()
 }
 
 fn sessions_of(app: &TestApp) -> &Sessions {

@@ -1,13 +1,14 @@
 //! Voice from outside a match (a team's Discord, through the bot): `POST /w/<id>/voice` with the
 //! bot's key. Off without `STVTF_VOICE_KEY`.
 
-use super::{Request, TEXT, respond};
 use crate::App;
 use crate::matches::sessions::Session;
 use crate::voice::feed::{MAX_DELAY, Speaker, delay_left};
 use crate::voice::hold::Took;
 use crate::voice::ids::is_voice_id;
+use axum::Json;
 use axum::http::StatusCode;
+use axum::response::IntoResponse;
 use axum::response::Response;
 use base64::Engine;
 use serde::Deserialize;
@@ -57,17 +58,17 @@ fn is_steamid(s: &str) -> bool {
 /// The most characters of a speaker's name kept.
 const MAX_NAME: usize = 40;
 
-pub(super) fn post_voice(app: &App, m: &Arc<Session>, request: &Request, said: VoicePost) -> Response {
-    let Some(key) = &app.voice.key else { return respond(StatusCode::NOT_FOUND, TEXT, b"") };
-    if !is_key(key, request.bearer.as_deref()) {
-        return respond(StatusCode::UNAUTHORIZED, TEXT, b"");
+pub(super) fn post_voice(app: &App, m: &Arc<Session>, bearer: Option<&str>, said: VoicePost) -> Response {
+    let Some(key) = &app.voice.key else { return StatusCode::NOT_FOUND.into_response() };
+    if !is_key(key, bearer) {
+        return StatusCode::UNAUTHORIZED.into_response();
     }
     // The key says it is our bot; the invite, that whoever brought it in was let into this match.
     if !is_key(m.voice_invite(), said.invite.as_deref()) {
-        return respond(StatusCode::FORBIDDEN, TEXT, b"not invited");
+        return (StatusCode::FORBIDDEN, "not invited").into_response();
     }
     if said.frames.len() > MAX_FRAMES {
-        return respond(StatusCode::PAYLOAD_TOO_LARGE, TEXT, b"too many frames");
+        return (StatusCode::PAYLOAD_TOO_LARGE, "too many frames").into_response();
     }
     let b64 = base64::engine::general_purpose::STANDARD;
     let sound = !said.frames.is_empty() && said.frames.iter().all(|f| f.len() <= MAX_FRAME && b64.decode(f).is_ok_and(|d| !d.is_empty()));
@@ -77,7 +78,7 @@ pub(super) fn post_voice(app: &App, m: &Arc<Session>, request: &Request, said: V
         (None, None) => false,
     };
     if !sound || !known || said.delay.is_some_and(|d| !(0.0..=MAX_DELAY).contains(&d)) || said.late < 0.0 {
-        return respond(StatusCode::BAD_REQUEST, TEXT, b"not voice");
+        return (StatusCode::BAD_REQUEST, "not voice").into_response();
     }
     let who = Speaker {
         steamid: said.steamid,
@@ -86,13 +87,13 @@ pub(super) fn post_voice(app: &App, m: &Arc<Session>, request: &Request, said: V
         channel: said.channel.filter(|c| is_voice_id(c)),
     };
     match m.take_in_voice(&who, said.frames, Some(delay_left(said.delay, said.late))) {
-        None => respond(StatusCode::NOT_FOUND, TEXT, b"not a live match"),
-        Some(Took::Held { due }) => respond(StatusCode::OK, TEXT, format!("held until tick {due}").as_bytes()),
-        Some(Took::PauseTalk) => respond(StatusCode::OK, TEXT, b"pause talk"),
-        Some(Took::Live) => respond(StatusCode::OK, TEXT, b"live"),
-        Some(Took::NoStream) => respond(StatusCode::CONFLICT, TEXT, b"no stream yet"),
-        Some(Took::Full) => respond(StatusCode::TOO_MANY_REQUESTS, TEXT, b"too many speakers"),
-        Some(Took::Closed) => respond(StatusCode::SERVICE_UNAVAILABLE, TEXT, b"restarting"),
+        None => (StatusCode::NOT_FOUND, "not a live match").into_response(),
+        Some(Took::Held { due }) => format!("held until tick {due}").into_response(),
+        Some(Took::PauseTalk) => (StatusCode::OK, "pause talk").into_response(),
+        Some(Took::Live) => (StatusCode::OK, "live").into_response(),
+        Some(Took::NoStream) => (StatusCode::CONFLICT, "no stream yet").into_response(),
+        Some(Took::Full) => (StatusCode::TOO_MANY_REQUESTS, "too many speakers").into_response(),
+        Some(Took::Closed) => (StatusCode::SERVICE_UNAVAILABLE, "restarting").into_response(),
     }
 }
 
@@ -108,11 +109,11 @@ pub(super) fn has_say(app: &App, m: &Session, who: &super::visitor::Who) -> bool
 pub(super) fn get_voice_invite(app: &App, m: Option<&Session>, who: &super::visitor::Who) -> Response {
     // A demo with comms watched here: no bot to bring in, only whose its voices are.
     if super::voice_who::reviewed(app, m, who).is_some() {
-        return respond(StatusCode::OK, super::JSON, br#"{"review":true}"#);
+        return Json(serde_json::json!({ "review": true })).into_response();
     }
     let Some(m) = m.filter(|m| m.is_live() && app.voice.key.is_some() && has_say(app, m, who)) else {
-        return respond(StatusCode::NO_CONTENT, TEXT, b"");
+        return StatusCode::NO_CONTENT.into_response();
     };
     let invite = serde_json::json!({ "invite": m.voice_invite(), "bot": app.voice.bot });
-    respond(StatusCode::OK, super::JSON, invite.to_string().as_bytes())
+    Json(invite).into_response()
 }

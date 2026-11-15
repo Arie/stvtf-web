@@ -7,13 +7,14 @@
 
 use super::visitor::Who;
 use super::voice_in::{has_say, is_key};
-use super::{JSON, Request, TEXT, respond};
 use crate::matches::sessions::{Session, Sessions};
 use crate::voice::ChannelState;
 use crate::voice::feed::{DEFAULT_DELAY, MAX_DELAY};
 use crate::voice::mumble::{DEFAULT_PORT, MumbleJob, is_host, place};
 use crate::{App, lock};
+use axum::Json;
 use axum::http::StatusCode;
+use axum::response::IntoResponse;
 use axum::response::Response;
 use serde::Deserialize;
 
@@ -44,22 +45,22 @@ pub(super) struct Ask {
 /// `POST /w/<id>/voice-mumble`.
 pub(super) fn post_mumble(app: &App, m: Option<&Session>, ask: Ask, who: &Who) -> Response {
     let Some(m) = m.filter(|m| m.is_live() && app.voice.key.is_some()) else {
-        return respond(StatusCode::NOT_FOUND, TEXT, b"No voice here");
+        return (StatusCode::NOT_FOUND, "No voice here").into_response();
     };
     if !has_say(app, m, who) {
-        return respond(StatusCode::FORBIDDEN, TEXT, b"Not allowed");
+        return (StatusCode::FORBIDDEN, "Not allowed").into_response();
     }
     if ask.leave {
         leave_mumble(m, ask.id);
         app.voice.mumble_changes.changed();
-        return respond(StatusCode::NO_CONTENT, TEXT, b"");
+        return StatusCode::NO_CONTENT.into_response();
     }
     // Decided with the match held, answered once it is not.
     if let Err(why) = want(app, m, ask) {
-        return respond(StatusCode::BAD_REQUEST, TEXT, why.as_bytes());
+        return (StatusCode::BAD_REQUEST, why).into_response();
     }
     app.voice.mumble_changes.changed();
-    respond(StatusCode::NO_CONTENT, TEXT, b"")
+    StatusCode::NO_CONTENT.into_response()
 }
 
 /// The bot leaves match `m`'s Mumble channel `id`, or with none all of them.
@@ -122,12 +123,11 @@ fn want(app: &App, m: &Session, ask: Ask) -> Result<(), &'static str> {
 /// `GET /voice/mumble`, the bot's: every channel wanted, with what it takes to sit in it and to
 /// post its voice, and the `version` of that. Asked with `?since=<version>` it waits (a while)
 /// until something changed since.
-pub(super) fn get_mumble_jobs(app: &App, sessions: &Sessions, request: &Request) -> Response {
-    let Some(key) = &app.voice.key else { return respond(StatusCode::NOT_FOUND, TEXT, b"") };
-    if !is_key(key, request.bearer.as_deref()) {
-        return respond(StatusCode::UNAUTHORIZED, TEXT, b"");
+pub(super) fn get_mumble_jobs(app: &App, sessions: &Sessions, bearer: Option<&str>, since: Option<u64>) -> Response {
+    let Some(key) = &app.voice.key else { return StatusCode::NOT_FOUND.into_response() };
+    if !is_key(key, bearer) {
+        return StatusCode::UNAUTHORIZED.into_response();
     }
-    let since = request.query.get("since").and_then(|v| v.parse::<u64>().ok());
     let version = app.voice.mumble_changes.wait(since);
     let jobs: Vec<serde_json::Value> = sessions
         .live()
@@ -144,5 +144,5 @@ pub(super) fn get_mumble_jobs(app: &App, sessions: &Sessions, request: &Request)
                 .collect::<Vec<_>>()
         })
         .collect();
-    respond(StatusCode::OK, JSON, serde_json::json!({ "jobs": jobs, "version": version }).to_string().as_bytes())
+    Json(serde_json::json!({ "jobs": jobs, "version": version })).into_response()
 }

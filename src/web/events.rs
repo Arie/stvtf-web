@@ -1,10 +1,10 @@
 //! A page's event stream: a hub's lines as Server-Sent Events.
 
-use super::Asks;
-use super::{TEXT, respond, respond_with};
+use super::asked::Stream;
 use crate::matches::hub::{SharedHub, subscribe_to};
 use axum::body::{Body, Bytes};
 use axum::http::StatusCode;
+use axum::http::header::{self, HeaderName};
 use axum::response::{IntoResponse, Response};
 use flate2::Compression;
 use flate2::write::GzEncoder;
@@ -25,27 +25,15 @@ pub(super) const KEEPALIVE: Duration = Duration::from_secs(15);
 pub(super) const RECONNECT_AFTER: Duration = Duration::from_secs(1);
 
 pub(super) fn too_many_streams() -> Response {
-    respond(StatusCode::TOO_MANY_REQUESTS, TEXT, b"too many matches open from your address")
-}
-
-pub(super) fn wants_detail(query: &Asks) -> bool {
-    query.get("detail") == Some("1")
-}
-
-pub(super) fn wants_voice(query: &Asks) -> bool {
-    query.get("voice") == Some("1")
+    (StatusCode::TOO_MANY_REQUESTS, "too many matches open from your address").into_response()
 }
 
 /// A match's events to one browser, until it goes away.
 /// Snapshots are about 17 a second of very similar JSON: gzip, flushed after each batch so nothing
 /// waits, brings a viewer from about 95 KB/s down to a few.
-pub(super) fn stream(hub: &SharedHub, gzip: bool, detail: bool, voice: bool, held: impl Send + 'static) -> Response {
+pub(super) fn stream(hub: &SharedHub, gzip: bool, asked: &Stream, held: impl Send + 'static) -> Response {
     let Some(open) = Streaming::open() else { return StatusCode::SERVICE_UNAVAILABLE.into_response() };
-    let mut headers = vec![("Content-Type", "text/event-stream"), ("Cache-Control", "no-cache"), ("X-Accel-Buffering", "no")];
-    if gzip {
-        headers.push(("Content-Encoding", "gzip"));
-    }
-    let rx = subscribe_to(hub, detail, voice);
+    let rx = subscribe_to(hub, asked.detail(), asked.voice());
     let (tx, body) = tokio::sync::mpsc::channel(QUEUED);
     std::thread::spawn(move || {
         // Held while it streams: its place among the streams, its viewer of the match.
@@ -54,9 +42,11 @@ pub(super) fn stream(hub: &SharedHub, gzip: bool, detail: bool, voice: bool, hel
         let mut out: Box<dyn Write> = if gzip { Box::new(GzEncoder::new(to, Compression::new(STREAM_GZIP))) } else { Box::new(to) };
         let _ = events(&mut out, &rx);
     });
-    let mut response = respond_with(StatusCode::OK, &headers, b"");
-    *response.body_mut() = Body::from_stream(tokio_stream::wrappers::ReceiverStream::new(body));
-    response
+    let unbuffered = HeaderName::from_static("x-accel-buffering");
+    let headers = [(header::CONTENT_TYPE, "text/event-stream"), (header::CACHE_CONTROL, "no-cache"), (unbuffered, "no")];
+    let body = Body::from_stream(tokio_stream::wrappers::ReceiverStream::new(body));
+    let gzipped = gzip.then_some([(header::CONTENT_ENCODING, "gzip")]);
+    (headers, gzipped, body).into_response()
 }
 
 /// The lines `rx` hears written as events, flushed after each batch, until the client is gone.

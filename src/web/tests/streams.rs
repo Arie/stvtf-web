@@ -204,7 +204,7 @@ fn only_a_proxy_of_ours_is_believed_about_the_client() {
 
 #[test]
 fn forwarded_addresses_are_read_in_order() {
-    let forwarded = |value: &str| server::forwarded(value).iter().map(ToString::to_string).collect::<Vec<_>>().join(" ");
+    let forwarded = |value: &str| asked::forwarded(value).iter().map(ToString::to_string).collect::<Vec<_>>().join(" ");
     assert_eq!(forwarded("203.0.113.9"), "203.0.113.9");
     assert_eq!(forwarded("198.51.100.7, 203.0.113.9"), "198.51.100.7 203.0.113.9");
     assert_eq!(forwarded("2001:db8::1"), "2001:db8::1");

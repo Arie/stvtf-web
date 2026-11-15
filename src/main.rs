@@ -141,11 +141,6 @@ impl App {
         *n += 1;
         Some(Stream(self.streams.clone(), client))
     }
-
-    /// A redirect to `path` under `base`.
-    fn redirect(&self, status: axum::http::StatusCode, path: &str) -> axum::response::Response {
-        web::redirect(status, &format!("{}{path}", self.base))
-    }
 }
 
 /// Fetches demos.tf's overviews and builds the most played maps, so their first viewer does not

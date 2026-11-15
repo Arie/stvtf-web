@@ -4,12 +4,16 @@
 //! Discord application (`STVTF_DISCORD_CLIENT_ID`, `_SECRET` and `_REDIRECT`).
 
 use super::voice_in::is_key;
-use super::{JSON, Request, TEXT, query_of, respond, respond_with, set_cookie};
+use super::{query_of, set_cookie};
 use crate::App;
 use crate::matches::sessions::random_id;
 use crate::voice::ids::is_snowflake;
 use crate::voice::links::ask_discord;
+use axum::Json;
 use axum::http::StatusCode;
+use axum::http::header;
+use axum::response::IntoResponse;
+use axum::response::Redirect;
 use axum::response::Response;
 
 /// The cookie that says which sign-in a browser began, and how long it has to end it.
@@ -18,7 +22,7 @@ const STATE_FOR: u64 = 600;
 
 /// `/voice/link`: off to Discord, to come back to `/voice/linked`.
 pub(super) fn link(app: &App) -> Response {
-    let Some(d) = &app.voice.links.discord else { return respond(StatusCode::NOT_FOUND, TEXT, b"No linking here") };
+    let Some(d) = &app.voice.links.discord else { return (StatusCode::NOT_FOUND, "No linking here").into_response() };
     let state = random_id();
     let asked = [
         ("response_type", "code"),
@@ -28,40 +32,38 @@ pub(super) fn link(app: &App) -> Response {
         ("state", state.as_str()),
     ];
     let to = format!("{}/oauth2/authorize?{}", d.api, query_of(&asked));
-    respond_with(StatusCode::FOUND, &[("Location", &to), ("Set-Cookie", &set_cookie(app, STATE_COOKIE, &state, STATE_FOR))], b"")
+    ([(header::SET_COOKIE, set_cookie(app, STATE_COOKIE, &state, STATE_FOR))], Redirect::to(&to)).into_response()
 }
 
 /// `/voice/linked`: back from Discord with a code, in the browser that set out.
-pub(super) fn linked(app: &App, request: &Request) -> Response {
-    let Some(d) = &app.voice.links.discord else { return respond(StatusCode::NOT_FOUND, TEXT, b"No linking here") };
-    let state = request.query.get("state").unwrap_or_default();
-    let code = request.query.get("code").map_or_default(str::to_string);
-    if state.is_empty() || code.is_empty() || request.voice_link.as_deref() != Some(state) {
-        return respond(StatusCode::BAD_REQUEST, TEXT, b"Expired. Try again.");
+pub(super) fn linked(app: &App, state: &str, code: &str, began: Option<&str>) -> Response {
+    let Some(d) = &app.voice.links.discord else { return (StatusCode::NOT_FOUND, "No linking here").into_response() };
+    if state.is_empty() || code.is_empty() || began != Some(state) {
+        return (StatusCode::BAD_REQUEST, "Expired. Try again.").into_response();
     }
-    match ask_discord(d, &code) {
+    match ask_discord(d, code) {
         Ok((discord, Some(steamid))) => {
             let done = format!("Linked to {steamid}.");
             app.voice.links.link(discord, steamid);
-            respond(StatusCode::OK, TEXT, done.as_bytes())
+            done.into_response()
         }
-        Ok((_, None)) => respond(StatusCode::CONFLICT, TEXT, b"No Steam on your Discord. Add it under Connections."),
+        Ok((_, None)) => (StatusCode::CONFLICT, "No Steam on your Discord. Add it under Connections.").into_response(),
         Err(e) => {
             log!("voice link failed: {e:#}");
-            respond(StatusCode::BAD_GATEWAY, TEXT, b"Discord error. Try again.")
+            (StatusCode::BAD_GATEWAY, "Discord error. Try again.").into_response()
         }
     }
 }
 
 /// `/voice/who?discord=<id>`: the Steam id linked to a Discord user, to the bot.
-pub(super) fn who(app: &App, request: &Request) -> Response {
-    let Some(key) = &app.voice.key else { return respond(StatusCode::NOT_FOUND, TEXT, b"") };
-    if !is_key(key, request.bearer.as_deref()) {
-        return respond(StatusCode::UNAUTHORIZED, TEXT, b"");
+pub(super) fn who(app: &App, bearer: Option<&str>, discord: Option<&str>) -> Response {
+    let Some(key) = &app.voice.key else { return StatusCode::NOT_FOUND.into_response() };
+    if !is_key(key, bearer) {
+        return StatusCode::UNAUTHORIZED.into_response();
     }
-    let Some(discord) = request.query.get("discord").filter(|d| is_snowflake(d)) else {
-        return respond(StatusCode::BAD_REQUEST, TEXT, b"a Discord id");
+    let Some(discord) = discord.filter(|d| is_snowflake(d)) else {
+        return (StatusCode::BAD_REQUEST, "a Discord id").into_response();
     };
     let who = serde_json::json!({ "steamid": app.voice.links.steamid(discord) });
-    respond(StatusCode::OK, JSON, who.to_string().as_bytes())
+    Json(who).into_response()
 }

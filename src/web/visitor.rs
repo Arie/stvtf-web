@@ -1,9 +1,8 @@
 //! The visitor: signed in with the site, or a guest by cookie, and where they go back to.
 
-use super::{GUEST_COOKIE, Request, token, unix_now};
+use super::{GUEST_COOKIE, token};
 use crate::App;
 use crate::matches::sessions;
-use crate::rooms::people::steam_key;
 use cookie::time::Duration;
 use cookie::{Cookie, SameSite};
 
@@ -25,23 +24,20 @@ pub(super) fn set_cookie(app: &App, name: &str, value: &str, seconds: u64) -> St
 
 /// Who is asking, to the rooms: the user signed in with the site, by their Steam id, or the
 /// browser by its guest cookie; and a `Set-Cookie` for a new guest cookie if it had none.
+#[derive(Clone)]
 pub(super) struct Who {
     pub(super) key: String,
     pub(super) cookie: Option<String>,
     pub(super) user: Option<token::User>,
 }
 
-pub(super) fn who(app: &App, request: &Request) -> Who {
-    let user = app.keys.as_ref().zip(request.user.as_deref()).and_then(|(k, c)| k.kept(c, unix_now()));
-    if let Some(user) = user {
-        return Who { key: steam_key(&user.uid), cookie: None, user: Some(user) };
+impl Who {
+    /// A browser seen for the first time.
+    pub(super) fn new_guest(app: &App) -> Who {
+        let g = sessions::random_id();
+        let cookie = set_cookie(app, GUEST_COOKIE, &g, GUEST_FOR.as_secs());
+        Who { key: g, cookie: Some(cookie), user: None }
     }
-    if let Some(g) = &request.guest {
-        return Who { key: g.clone(), cookie: None, user: None };
-    }
-    let g = sessions::random_id();
-    let cookie = set_cookie(app, GUEST_COOKIE, &g, GUEST_FOR.as_secs());
-    Who { key: g, cookie: Some(cookie), user: None }
 }
 
 /// The site's address, from where `/` sends visitors (`--home`): its scheme and host.
@@ -50,9 +46,9 @@ pub(super) fn origin(home: &str) -> Option<&str> {
     Some(&home[..home[rest..].find('/').map_or(home.len(), |i| rest + i)])
 }
 
-/// A page of ours to go back to: `?return=` if it is one (a path, not another site), else our home.
-pub(super) fn return_to(app: &App, request: &Request) -> String {
-    let path = request.query.get("return").map_or_default(str::to_string);
+/// A page of ours to go back to: `to` if it is one (a path, not another site), else our home.
+pub(super) fn return_to(app: &App, to: Option<&str>) -> String {
+    let path = to.unwrap_or_default();
     let ours = path.starts_with(&format!("{}/", app.base)) && !path.starts_with("//") && !path.contains(['\\', '\r', '\n']);
-    if ours { path } else { format!("{}/", app.base) }
+    if ours { path.to_string() } else { format!("{}/", app.base) }
 }

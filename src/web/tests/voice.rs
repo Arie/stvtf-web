@@ -143,7 +143,7 @@ fn a_discord_user_links_the_steam_account_discord_verified_and_the_bot_asks_who_
     let app = linking_app(r#"[{"type":"twitch","id":"1","verified":true},{"type":"steam","id":"76561197960265733","verified":true}]"#);
     assert!(who(&app, "77", "k").ends_with(r#"{"steamid":null}"#), "not linked yet");
     let sent = get(&app, "/voice/link", "");
-    assert!(sent.starts_with("HTTP/1.1 302"), "{sent}");
+    assert!(sent.starts_with("HTTP/1.1 303"), "{sent}");
     let location = sent.lines().find_map(|l| l.strip_prefix("Location: ")).unwrap();
     assert!(location.contains("/oauth2/authorize?response_type=code&client_id=id1&scope=identify+connections"), "{location}");
     assert!(location.contains("&redirect_uri=https%3A%2F%2Fstv.example%2Fvoice%2Flinked"), "{location}");

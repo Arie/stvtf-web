@@ -2,12 +2,13 @@
 
 use super::token::Keys;
 use super::voice_in::is_key;
-use super::{JSON, Request, TEXT, respond};
 use crate::App;
 use crate::voice::ids::{is_voice_id, parse_steamid};
 use crate::voice::who::{CASTER, MAX_NAME, RegionEntry, Site, TIMEOUT};
 use anyhow::Context;
+use axum::Json;
 use axum::http::StatusCode;
+use axum::response::IntoResponse;
 use axum::response::Response;
 use std::sync::Arc;
 
@@ -31,33 +32,32 @@ pub(crate) fn site(home: &str, keys: Arc<Keys>) -> Site {
 }
 
 /// `GET /voice/known?since=<version>`, another stv.tf's: what changed since.
-pub(super) fn get_known(app: &App, request: &Request) -> Response {
-    let Some(key) = &app.voice.key else { return respond(StatusCode::NOT_FOUND, TEXT, b"") };
-    if !is_key(key, request.bearer.as_deref()) {
-        return respond(StatusCode::UNAUTHORIZED, TEXT, b"");
+pub(super) fn get_known(app: &App, bearer: Option<&str>, since: u64) -> Response {
+    let Some(key) = &app.voice.key else { return StatusCode::NOT_FOUND.into_response() };
+    if !is_key(key, bearer) {
+        return StatusCode::UNAUTHORIZED.into_response();
     }
-    let since = request.query.get("since").and_then(|v| v.parse().ok()).unwrap_or(0);
     let (version, known) = app.voice.who.since(since);
-    respond(StatusCode::OK, JSON, serde_json::json!({ "version": version, "known": known }).to_string().as_bytes())
+    Json(serde_json::json!({ "version": version, "known": known })).into_response()
 }
 
 /// `POST /voice/known`, another stv.tf's: what was said on a page there.
-pub(super) fn post_known(app: &App, request: &Request, said: &RegionEntry) -> Response {
-    let Some(key) = &app.voice.key else { return respond(StatusCode::NOT_FOUND, TEXT, b"") };
-    if !is_key(key, request.bearer.as_deref()) {
-        return respond(StatusCode::UNAUTHORIZED, TEXT, b"");
+pub(super) fn post_known(app: &App, bearer: Option<&str>, said: &RegionEntry) -> Response {
+    let Some(key) = &app.voice.key else { return StatusCode::NOT_FOUND.into_response() };
+    if !is_key(key, bearer) {
+        return StatusCode::UNAUTHORIZED.into_response();
     }
     let steamid = said.steamid.as_deref().map(parse_steamid);
     if !is_voice_id(&said.id) || steamid == Some(None) {
-        return respond(StatusCode::BAD_REQUEST, TEXT, b"Invalid");
+        return (StatusCode::BAD_REQUEST, "Invalid").into_response();
     }
     let name: String = said.name.chars().filter(|c| !c.is_control()).collect();
     if said.src.len() > MAX_NAME || !said.src.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'-' | b':')) {
-        return respond(StatusCode::BAD_REQUEST, TEXT, b"Invalid");
+        return (StatusCode::BAD_REQUEST, "Invalid").into_response();
     }
     if !matches!(said.by.as_str(), "" | CASTER) {
-        return respond(StatusCode::BAD_REQUEST, TEXT, b"Invalid");
+        return (StatusCode::BAD_REQUEST, "Invalid").into_response();
     }
     app.voice.who.take_from_region(&said.id, steamid.flatten().as_deref(), &name, &said.src, &said.by);
-    respond(StatusCode::NO_CONTENT, TEXT, b"")
+    StatusCode::NO_CONTENT.into_response()
 }

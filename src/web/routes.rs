@@ -1,237 +1,222 @@
-//! The routes: axum's, each answered by one function here or in its own module.
+//! The routes, and the handlers of those that belong to no part of the site in particular.
 
-// Handlers have the shape the routes' adapters take (`server::to` and the like), whether or not
-// one can fail or needs to own what was posted.
-#![allow(clippy::unnecessary_wraps, clippy::needless_pass_by_value)]
-
-use super::Answered;
-use super::MAX_REQUEST;
-use super::query_of;
-use super::server::{bytes, form, json, json_if_any, to};
+use super::asked::{Back, Stream, Visit, answer};
 use super::visitor::{origin, return_to, set_cookie};
 use super::{
-    HTML, INDEX, JSON, MUMBLE, MUMBLE_JSON, Request, TEXT, USER_COOKIE, assets, back_with, events, landing, matches, not_found, post_watch,
-    redirect, refuse, respond, rooms, start, start_view, token, unix_now, upload, visitor, voice_link, voice_mumble, voice_who_sync,
+    Answered, INDEX, MAX_REQUEST, MUMBLE, MUMBLE_JSON, Shared, USER_COOKIE, assets, events, landing, matches, page, query_of, rooms, token,
+    unix_now, upload, voice_routes as voice, watch,
 };
-use crate::matches::sessions::Sessions;
 use crate::{App, Matches};
-use anyhow::{Result, anyhow};
-use axum::Router;
 use axum::body::Bytes;
-use axum::extract::DefaultBodyLimit;
-use axum::http::StatusCode;
+use axum::extract::{DefaultBodyLimit, Query, State};
+use axum::http::{HeaderMap, StatusCode, header};
+use axum::response::{IntoResponse, Redirect, Response};
 use axum::routing::{any, get, post, put};
-use std::net::IpAddr;
-use std::sync::Arc;
+use axum::{Form, Json, Router};
+use serde::Deserialize;
+use std::collections::HashMap;
 use tower_http::limit::RequestBodyLimitLayer;
 
-/// A request, as its route's function gets it: all of it but its body.
-pub(super) struct Asked {
-    pub(super) app: Arc<App>,
-    pub(super) request: Request,
-    pub(super) client: IpAddr,
-}
-
-impl Asked {
-    /// The matches of a server of any number of them.
-    pub(super) fn sessions(&self) -> Result<&Sessions> {
-        match &self.app.matches {
-            Matches::Many(sessions) => Ok(sessions),
-            Matches::One(_) => Err(anyhow!("one match here")),
-        }
-    }
-}
-
-type Routes = Router<Arc<App>>;
-
-/// The page and its overlay under `at`, each with a delay (path part `next`, or under the
-/// overlay `after`) or without.
-fn pages(router: Routes, at: &str, [next, after]: [&str; 2], page: fn(&Asked) -> Answered) -> Routes {
-    let shapes = [format!("{at}/"), format!("{at}/{next}"), format!("{at}/overlay"), format!("{at}/overlay/{after}")];
-    shapes.iter().fold(router, |r, shape| r.route(shape, get(to(page))))
-}
+type Routes = Router<Shared>;
 
 /// The routes of a match's or a room's voice from outside, under `at`.
-fn voice(router: Routes, at: &str) -> Routes {
-    use super::voice_routes as v;
+fn voiced(router: Routes, at: &str) -> Routes {
     router
-        .route(&format!("{at}/voice"), post(json(v::voice)))
-        .route(&format!("{at}/voice-mumble"), post(json(v::mumble)))
-        .route(&format!("{at}/voice-status"), post(json(v::status)))
-        .route(&format!("{at}/voice-match"), post(json(v::matched)))
-        .route(&format!("{at}/voice-comms"), get(to(v::comms)))
-        .route(&format!("{at}/voices"), get(to(v::voices)))
-        .route(&format!("{at}/voice-invite"), get(to(v::invite)))
+        .route(&format!("{at}/voice"), post(voice::voice))
+        .route(&format!("{at}/voice-mumble"), post(voice::mumble))
+        .route(&format!("{at}/voice-status"), post(voice::status))
+        .route(&format!("{at}/voice-match"), post(voice::matched))
+        .route(&format!("{at}/voice-comms"), get(voice::comms))
+        .route(&format!("{at}/voices"), get(voice::voices))
+        .route(&format!("{at}/voice-invite"), get(voice::invite))
 }
 
 /// A match's routes under `at`, its id; `next` and `after` name the parts of the path after it.
+/// Its page is there, with a delay, and as an overlay with one or without.
 fn of_match(router: Routes, at: &str, [next, after]: [&str; 2]) -> Routes {
-    voice(pages(router, at, [next, after], matches::page), at)
-        .route(&format!("{at}/demos"), get(to(matches::demos)))
-        .route(&format!("{at}/demos/{after}"), get(to(matches::demo)))
-        .route(&format!("{at}/watch/{after}"), get(to(matches::watch)))
-        .route(&format!("{at}/room"), get(to(matches::room)).post(json_if_any(matches::room_opened)))
-        .route(&format!("{at}/timeline"), get(to(matches::timeline)))
-        .route(&format!("{at}/marks"), get(to(matches::timeline)))
-        .route(&format!("{at}/rewind"), post(json(matches::rewound)))
-        .route(&format!("{at}/events"), get(to(matches::events)))
+    voiced(router, at)
+        .route(&format!("{at}/"), get(matches::show))
+        .route(&format!("{at}/{next}"), get(matches::show))
+        .route(&format!("{at}/overlay"), get(matches::show))
+        .route(&format!("{at}/overlay/{after}"), get(matches::show))
+        .route(&format!("{at}/demos"), get(matches::demos))
+        .route(&format!("{at}/demos/{after}"), get(matches::demo))
+        .route(&format!("{at}/watch/{after}"), get(matches::watch))
+        .route(&format!("{at}/room"), get(matches::room).post(matches::room_opened))
+        .route(&format!("{at}/timeline"), get(matches::timeline))
+        .route(&format!("{at}/marks"), get(matches::timeline))
+        .route(&format!("{at}/rewind"), post(matches::rewound))
+        .route(&format!("{at}/events"), get(matches::events))
 }
 
 /// A room's routes: its pages, what it shows, and what is posted to it.
 fn of_room(router: Routes) -> Routes {
-    let at = "/r/{id}";
-    voice(pages(router, at, ["{delay}", "{delay}"], rooms::page), at)
-        .route(at, get(to(rooms::page)))
-        .route("/r/{id}/events", get(to(rooms::events)))
-        .route("/r/{id}/me", get(to(rooms::mine)))
-        .route("/r/{id}/demos", get(to(rooms::demos)))
-        .route("/r/{id}/marks", get(to(rooms::marks)))
-        .route("/r/{id}/claim", post(to(rooms::claim)))
-        .route("/r/{id}/clear", post(to(rooms::clear)))
-        .route("/r/{id}/name", post(json(rooms::name)))
-        .route("/r/{id}/view", post(json(rooms::view)))
-        .route("/r/{id}/ink", post(json(rooms::ink)))
-        .route("/r/{id}/draw", post(json(rooms::draw)))
-        .route("/r/{id}/arc", post(json(rooms::arc)))
-        .route("/r/{id}/circle", post(json(rooms::circle)))
-        .route("/r/{id}/light", post(json(rooms::light)))
-        .route("/r/{id}/note", post(json(rooms::note)))
-        .route("/r/{id}/control", post(json(rooms::control)))
-        .route("/r/{id}/map", post(json(rooms::map)))
-        .route("/r/{id}/admin", post(json(rooms::admin)))
+    voiced(router, "/r/{id}")
+        .route("/r/{id}", get(rooms::show))
+        .route("/r/{id}/", get(rooms::show))
+        .route("/r/{id}/{delay}", get(rooms::show))
+        .route("/r/{id}/overlay", get(rooms::show))
+        .route("/r/{id}/overlay/{delay}", get(rooms::show))
+        .route("/r/{id}/events", get(rooms::events))
+        .route("/r/{id}/me", get(rooms::mine))
+        .route("/r/{id}/demos", get(rooms::demos))
+        .route("/r/{id}/marks", get(rooms::marks))
+        .route("/r/{id}/claim", post(rooms::claim))
+        .route("/r/{id}/clear", post(rooms::clear))
+        .route("/r/{id}/name", post(rooms::name))
+        .route("/r/{id}/view", post(rooms::view))
+        .route("/r/{id}/ink", post(rooms::ink))
+        .route("/r/{id}/draw", post(rooms::draw))
+        .route("/r/{id}/arc", post(rooms::arc))
+        .route("/r/{id}/circle", post(rooms::circle))
+        .route("/r/{id}/light", post(rooms::light))
+        .route("/r/{id}/note", post(rooms::note))
+        .route("/r/{id}/control", post(rooms::control))
+        .route("/r/{id}/map", post(rooms::map))
+        .route("/r/{id}/admin", post(rooms::admin))
 }
 
 /// The routes of the app: of one match at `/`, or of any number of them. Those in `acting` act
 /// for whoever is signed in.
 pub(super) fn routes(app: &App) -> (Routes, Routes) {
-    let all = Router::new().route("/up", get(to(up))).fallback(get(to(file)));
+    let all = Router::new().route("/up", get(up)).fallback(get(file));
     if matches!(app.matches, Matches::One(_)) {
-        let one = pages(all, "", ["{delay}", "{delay}"], one_page).route("/index.html", get(to(one_page)));
-        return (one.route("/events", get(to(one_events))), Router::new());
+        let one = all
+            .route("/", get(one_page))
+            .route("/index.html", get(one_page))
+            .route("/{delay}", get(one_page))
+            .route("/overlay", get(one_page))
+            .route("/overlay/{delay}", get(one_page));
+        return (one.route("/events", get(one_events)), Router::new());
     }
-    let acting = Router::new().route("/", get(to(front))).route("/watch", post(form(watch))).route("/mumble", get(to(mumble)));
     // A body is no bigger than the little a form or JSON takes; an upload's part may be.
     let little = RequestBodyLimitLayer::new(MAX_REQUEST as usize);
     let big = (DefaultBodyLimit::max(upload::MAX_PART), RequestBodyLimitLayer::new(upload::MAX_PART));
-    let part = Router::new().route("/upload/{id}", put(bytes(upload::part)).layer(big));
+    let part = Router::new().route("/upload/{id}", put(upload::part).layer(big));
+    let acting = Router::new().route("/", get(front)).route("/watch", post(watched)).route("/mumble", get(mumble));
     let all = all
-        .route("/matches", get(to(list)))
-        .route("/mumble.json", get(to(mumble_json)))
-        .route("/upload", get(to(upload::form)).post(json(upload::begun)))
-        .route("/upload/{id}", post(json_if_any(upload::finished)))
-        .route("/signin", get(to(signin)))
-        .route("/signed_in", get(to(signed_in)))
-        .route("/signout", get(to(signout)))
-        .route("/voice/link", get(to(|a| Ok(voice_link::link(&a.app)))))
-        .route("/voice/linked", get(to(|a| Ok(voice_link::linked(&a.app, &a.request)))))
-        .route("/voice/who", get(to(|a| Ok(voice_link::who(&a.app, &a.request)))))
-        .route("/voice/mumble", get(to(|a| Ok(voice_mumble::get_mumble_jobs(&a.app, a.sessions()?, &a.request)))))
-        .route(
-            "/voice/known",
-            get(to(|a| Ok(voice_who_sync::get_known(&a.app, &a.request))))
-                .post(json(|a, said| Ok(voice_who_sync::post_known(&a.app, &a.request, &said)))),
-        )
-        .route("/start", any(to(started)))
-        .route("/fault", post(bytes(fault)));
+        .route("/matches", get(matches::list))
+        .route("/mumble.json", get(mumble_json))
+        .route("/upload", get(upload::form).post(upload::begun))
+        .route("/upload/{id}", post(upload::finished))
+        .route("/signin", get(signin))
+        .route("/signed_in", get(signed_in))
+        .route("/signout", get(signout))
+        .route("/voice/link", get(voice::link))
+        .route("/voice/linked", get(voice::linked))
+        .route("/voice/who", get(voice::who))
+        .route("/voice/mumble", get(voice::mumble_jobs))
+        .route("/voice/known", get(voice::known).post(voice::told))
+        .route("/start", any(started))
+        .route("/fault", post(fault));
     // A match's id is one part of the path, or of a demo of ours two (`demo/1a2b…`): the routes
-    // are for both, and each handler reads the id off the path (`sessions::split_id`).
-    let all = of_match(of_room(all).route("/w/{a}", get(to(matches::page))), "/w/{a}", ["{b}", "{c}"]);
+    // are for both, and `MatchAt` reads the id off the path.
+    let all = of_match(of_room(all).route("/w/{a}", get(matches::show)), "/w/{a}", ["{b}", "{c}"]);
     (of_match(all, "/w/{a}/{b}", ["{c}", "{d}"]).layer(little).merge(part), acting.layer(little))
 }
 
-fn up(_: &Asked) -> Answered {
-    Ok(respond(StatusCode::OK, TEXT, b"ok"))
+async fn up() -> &'static str {
+    "ok"
 }
 
-fn file(a: &Asked) -> Answered {
-    Ok(assets::serve_file(&a.app, &a.request.path, a.request.gzip))
+async fn file(v: Visit) -> Answered {
+    answer(move || Ok(assets::serve_file(&v.app, &v.path, v.gzip))).await
 }
 
 /// The one match's page, at `/`.
-fn one_page(a: &Asked) -> Answered {
-    let path = &a.request.path;
-    if path == "/index.html" || path.strip_prefix('/').is_some_and(matches::is_page) {
-        return Ok(respond(StatusCode::OK, HTML, &a.app.page(INDEX)));
+async fn one_page(v: Visit) -> Answered {
+    if v.path == "/index.html" || v.path.strip_prefix('/').is_some_and(matches::is_page) {
+        return Ok(page(v.app.page(INDEX)).into_response());
     }
-    file(a)
+    file(v).await
 }
 
-fn one_events(a: &Asked) -> Answered {
-    let Matches::One(hub) = &a.app.matches else { return Ok(not_found()) };
-    match a.app.stream_slot(a.client) {
-        Some(slot) => {
-            Ok(events::stream(hub, a.request.gzip, events::wants_detail(&a.request.query), events::wants_voice(&a.request.query), slot))
-        }
-        None => Ok(events::too_many_streams()),
+async fn one_events(v: Visit, Query(q): Query<Stream>) -> Response {
+    let Matches::One(hub) = &v.app.matches else { return StatusCode::NOT_FOUND.into_response() };
+    match v.app.stream_slot(v.client) {
+        Some(slot) => events::stream(hub, v.gzip, &q, slot),
+        None => events::too_many_streams(),
     }
 }
 
-fn front(a: &Asked) -> Answered {
-    Ok(respond(StatusCode::OK, HTML, &a.app.page(&landing(&a.app, a.sessions()?, &a.request, a.client, ""))))
+async fn front(v: Visit) -> Answered {
+    answer(move || Ok(page(v.app.page(&landing(&v, v.sessions()?, ""))).into_response())).await
 }
 
 /// The front page's form.
-#[derive(serde::Deserialize)]
+#[derive(Deserialize)]
 struct Watch {
     #[serde(default)]
     connect: String,
 }
 
-fn watch(a: &Asked, form: Watch) -> Answered {
-    Ok(post_watch(&a.app, a.sessions()?, &a.request, a.client, &form.connect))
-}
-
-fn mumble(a: &Asked) -> Answered {
-    Ok(respond(StatusCode::OK, HTML, &a.app.page(MUMBLE)))
-}
-
-fn mumble_json(_: &Asked) -> Answered {
-    Ok(respond(StatusCode::OK, JSON, MUMBLE_JSON.as_bytes()))
-}
-
-/// `/matches`: every match, for the site in front.
-fn list(a: &Asked) -> Answered {
-    let Some(keys) = &a.app.keys else { return Ok(not_found()) };
-    matches::list_matches(keys, a.sessions()?, &a.request)
-}
-
-fn signin(a: &Asked) -> Answered {
-    let Some(site) = a.app.home.as_deref().and_then(origin) else { return Ok(not_found()) };
-    let back = return_to(&a.app, &a.request);
-    Ok(redirect(StatusCode::FOUND, &format!("{site}/stv/sign_in?{}", query_of(&[("return", &back)]))))
-}
-
-fn signed_in(a: &Asked) -> Answered {
-    let Some(keys) = &a.app.keys else { return Ok(not_found()) };
-    Ok(match keys.open_signin(a.request.query.get("t").unwrap_or_default(), unix_now()) {
-        Ok(user) => {
-            let kept = set_cookie(&a.app, USER_COOKIE, &keys.keep(&user, unix_now()), token::SIGNED_IN_FOR);
-            back_with(&a.app, &a.request, &kept)
-        }
-        Err(e) => refuse(StatusCode::BAD_REQUEST, &e),
+/// `POST /watch`: the match the form asks for, or the page again with why not.
+async fn watched(v: Visit, Form(form): Form<Watch>) -> Answered {
+    answer(move || {
+        let sessions = v.sessions()?;
+        Ok(match watch(&v.app, sessions, v.who.user.as_ref(), &form.connect, v.client) {
+            Ok(m) => Redirect::to(&format!("{}/w/{}/", v.app.base, m.id)).into_response(),
+            Err(e) => {
+                let status = if v.app.keys.is_some() && v.who.user.is_none() { StatusCode::FORBIDDEN } else { StatusCode::BAD_REQUEST };
+                (status, page(v.app.page(&landing(&v, sessions, &format!("{e:#}"))))).into_response()
+            }
+        })
     })
+    .await
 }
 
-fn signout(a: &Asked) -> Answered {
-    Ok(back_with(&a.app, &a.request, &set_cookie(&a.app, USER_COOKIE, "", 0)))
+async fn mumble(State(app): State<Shared>) -> impl IntoResponse {
+    page(app.page(MUMBLE))
 }
 
-/// `/start`: the match a site's token asks for.
-fn started(a: &Asked) -> Answered {
-    Ok(match start(&a.app, a.sessions()?, &a.request, a.client) {
-        // <stv-map> asks where the match is instead of following the redirect.
-        Ok(m) if a.request.query.get("format") == Some("json") => {
-            let page = format!("{}/w/{}/", a.app.base, m.id);
-            respond(StatusCode::OK, JSON, serde_json::json!({ "page": page }).to_string().as_bytes())
-        }
-        Ok(m) => a.app.redirect(StatusCode::SEE_OTHER, &format!("/w/{}/{}", m.id, start_view(&a.request.query))),
-        Err(e) => refuse(StatusCode::BAD_REQUEST, &e),
+async fn mumble_json() -> impl IntoResponse {
+    ([(header::CONTENT_TYPE, "application/json")], MUMBLE_JSON)
+}
+
+/// `/signin`: to the site in front, to come back to `?return=`.
+async fn signin(State(app): State<Shared>, Query(back): Query<Back>) -> Response {
+    let Some(site) = app.home.as_deref().and_then(origin) else { return StatusCode::NOT_FOUND.into_response() };
+    let back = return_to(&app, back.to.as_deref());
+    Redirect::to(&format!("{site}/stv/sign_in?{}", query_of(&[("return", &back)]))).into_response()
+}
+
+/// Back to the page `back` names, setting `cookie`.
+fn back_with(app: &App, back: &Back, cookie: String) -> Response {
+    ([(header::SET_COOKIE, cookie)], Redirect::to(&return_to(app, back.to.as_deref()))).into_response()
+}
+
+/// `/signed_in`: back from the site, with who signed in.
+async fn signed_in(State(app): State<Shared>, Query(back): Query<Back>) -> Response {
+    let Some(keys) = &app.keys else { return StatusCode::NOT_FOUND.into_response() };
+    match keys.open_signin(back.t.as_deref().unwrap_or_default(), unix_now()) {
+        Ok(user) => back_with(&app, &back, set_cookie(&app, USER_COOKIE, &keys.keep(&user, unix_now()), token::SIGNED_IN_FOR)),
+        Err(e) => (StatusCode::BAD_REQUEST, format!("{e:#}")).into_response(),
+    }
+}
+
+async fn signout(State(app): State<Shared>, Query(back): Query<Back>) -> Response {
+    back_with(&app, &back, set_cookie(&app, USER_COOKIE, "", 0))
+}
+
+/// `/start`: the match a site's token asks for. `<stv-map>` asks where it is (`format=json`)
+/// instead of following the redirect.
+async fn started(v: Visit, Query(q): Query<HashMap<String, String>>) -> Answered {
+    answer(move || {
+        let token = q.get("t").map_or("", String::as_str);
+        Ok(match matches::start(&v, v.sessions()?, token) {
+            Ok(m) if q.get("format").map(String::as_str) == Some("json") => {
+                Json(serde_json::json!({ "page": format!("{}/w/{}/", v.app.base, m.id) })).into_response()
+            }
+            Ok(m) => Redirect::to(&format!("{}/w/{}/{}", v.app.base, m.id, matches::start_view(&q))).into_response(),
+            Err(e) => (StatusCode::BAD_REQUEST, format!("{e:#}")).into_response(),
+        })
     })
+    .await
 }
 
 /// `/fault`: what a page says went wrong in it (see `report`): taken or not, it is not told.
-fn fault(a: &Asked, said: Bytes) -> Answered {
-    let who = visitor::who(&a.app, &a.request).user;
-    crate::report::page_fault(&said, &a.request.agent, who.as_ref().map(|u| u.uid.as_str()));
-    Ok(respond(StatusCode::NO_CONTENT, TEXT, b""))
+async fn fault(v: Visit, headers: HeaderMap, said: Bytes) -> StatusCode {
+    let agent = headers.get(header::USER_AGENT).and_then(|a| a.to_str().ok()).unwrap_or_default();
+    crate::report::page_fault(&said, agent.trim(), v.who.user.as_ref().map(|u| u.uid.as_str()));
+    StatusCode::NO_CONTENT
 }
