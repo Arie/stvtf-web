@@ -9,12 +9,12 @@ All tokens are AES-256-GCM, `base64url(12-byte nonce | ciphertext | tag)` of a J
 `exp`. Start tokens may add `"reservation"`, linking the match to the site's reservation. A start token
 does not list, a list token starts nothing.
 
-| token | |
-|---|---|
-| `{"connect", "owner", "exp"}` | `/start?t=TOKEN` starts or joins that match. `owner` (Steam id or null) is logged, limits nothing. |
-| `{"demo": <id>, "owner", "exp"}` | plays that [demos.tf](https://demos.tf) demo, see below |
-| `{"list": true, "exp"}` | `GET /matches` with `Authorization: Bearer TOKEN` |
-| `{"signin": {"uid", "name", "streamer"}, "exp"}` | sign-in, see below |
+| token                                            |                                                                                                    |
+| ------------------------------------------------ | -------------------------------------------------------------------------------------------------- |
+| `{"connect", "owner", "exp"}`                    | `/start?t=TOKEN` starts or joins that match. `owner` (Steam id or null) is logged, limits nothing. |
+| `{"demo": <id>, "owner", "exp"}`                 | plays that [demos.tf](https://demos.tf) demo, see below                                            |
+| `{"list": true, "exp"}`                          | `GET /matches` with `Authorization: Bearer TOKEN`                                                  |
+| `{"signin": {"uid", "name", "streamer"}, "exp"}` | sign-in, see below                                                                                 |
 
 With a key set, matches start from start links, and from the front page (`/`: a connect string,
 a demos.tf link or an upload) for whoever is signed in, as theirs. The SourceTV password is never
@@ -37,8 +37,8 @@ relays play it), so the next to open the demo waits for neither: for a month sin
 and 5 GB of them at most (the longest unplayed go first). Plays once at
 game speed, holding still while unwatched; everyone who opens it watches together. Ends like a
 live match, 3 minutes after its last viewer; not picked up after a restart. Counts towards
-`--max-matches`. Page: `/w/d<id>/`. Once ended, that link sends the visitor to `--home` with the
-demo filled in.
+`--max-matches`. Page: `/w/d<id>/`. Once ended, that link plays it again
+for whoever is signed in (others sign in first), from its `?t=` if it has one.
 
 ## Uploaded demos
 

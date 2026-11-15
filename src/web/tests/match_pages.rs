@@ -23,16 +23,20 @@ fn start_links_carry_every_display_toggle() {
 }
 
 #[test]
-fn a_demo_not_playing_is_played_again_by_the_site() {
-    let (app, _key, _dir) = site_app();
+fn a_demo_not_playing_plays_again_for_whoever_is_signed_in() {
+    let (app, key, _dir) = site_app();
+    // Signed out: sign in, then back.
     let out = get(&app, "/w/d1531482/", "");
-    assert!(
-        out.starts_with("HTTP/1.1 303") && out.contains("Location: https://serveme.tf/stv?connect=https%3A%2F%2Fdemos.tf%2F1531482"),
-        "{out}"
-    );
+    assert!(out.starts_with("HTTP/1.1 303") && out.contains("Location: /signin?return=/w/d1531482/\r\n"), "{out}");
     let at = get(&app, "/w/d1531482/?t=12:34", "");
-    assert!(at.contains("demos.tf%2F1531482&at=12:34\r\n"), "the moment goes along: {at}");
-    assert!(!get(&app, "/w/d1531482/?t=x%0d", "").contains("&at="));
+    assert!(at.contains("Location: /signin?return=/w/d1531482/%3Ft%3D12%3A34\r\n"), "the moment goes along: {at}");
+    assert!(!get(&app, "/w/d1531482/?t=x%0d", "").contains("%3Ft"));
+    let cookie = signed_in(&app, &key, r#"{"uid":"u7","name":"n","streamer":false}"#);
+    let page = get(&app, "/w/d1531482/?t=12:34", &cookie);
+    assert!(page.starts_with("HTTP/1.1 200") && page.contains(HTML), "{page}");
+    let listed = serde_json::json!(sessions_of(&app).list());
+    assert!(listed.as_array().unwrap().iter().any(|m| m["demo"] == 1_531_482 && m["owner"] == "u7"), "{listed}");
+    sessions_of(&app).stop_all();
     assert!(get(&app, "/w/d1531482/events", "").starts_with("HTTP/1.1 404"), "only the page");
     assert!(get(&app, "/w/dx/", "").starts_with("HTTP/1.1 404"));
 }
@@ -175,7 +179,7 @@ fn behind_a_site_matches_start_only_from_its_tokens() {
     app.base = "/live".into();
     app.keys = Some(Arc::new(token::Keys::from_hex(&key).unwrap()));
     app.home = Some("https://serveme.tf/stv".into());
-    // Its own front page is for whoever is signed in: their matches are theirs.
+    // The front page is for whoever is signed in.
     let front = get(&app, "/", "");
     assert!(front.starts_with("HTTP/1.1 200") && front.contains(r#"data-signed="""#), "{front}");
     assert!(front.contains(r#"href="signin?return=/live/""#), "{front}");

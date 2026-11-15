@@ -58,14 +58,16 @@ pub(super) fn serve_match(
     match (session, rest) {
         // Gone, but with comms kept: what there is to download.
         (None, _) if !kept.is_empty() => respond(&mut s, "404 Not Found", HTML, gone_with_demos(&kept).as_bytes())?,
-        // A demo not playing (now): the site plays it again.
+        // An ended demos.tf demo, nobody signed in: sign in, then back.
         (None, rest)
             if is_page(rest)
-                && let (Some(demo), Some(home)) = (sessions::id_demo(id).filter(|d| !sessions::is_own_demo(*d)), &app.home) =>
+                && app.home.is_some()
+                && who(app, request).user.is_none()
+                && sessions::id_demo(id).is_some_and(|d| !sessions::is_own_demo(d)) =>
         {
-            let at = moment(&request.query, "t").map_or_default(|t| format!("&at={t}"));
-            let to = format!("{home}?connect=https%3A%2F%2Fdemos.tf%2F{demo}{at}");
-            redirect(&mut s, "303 See Other", &to)?;
+            let at = moment(&request.query, "t").map_or_default(|t| format!("?t={t}"));
+            let back = super::visitor::url_encode(&format!("{}{}{at}", app.base, request.path));
+            app.redirect(&mut s, "303 See Other", &format!("/signin?return={back}"))?;
         }
         (None, _) => {
             let gone = landing(app, request, "That match is no longer being watched; paste its connect string to watch it again.");
@@ -108,11 +110,15 @@ fn moved_on(app: &App, sessions: &Sessions, request: &Request, id: &str, rest: &
     Some(format!("{}/w/{id}/watch/{}?t={at}", app.base, demo.file))
 }
 
-/// A demo of ours by id `id`, not playing (now), played again while it is kept: one uploaded
-/// here, or a match's demo with its comms.
+/// Demo `id`, not playing, played again: demos.tf's (behind a site, signed in), or one kept here.
 fn kept_demo(app: &App, sessions: &Sessions, request: &Request, id: &str, rest: &str, client: IpAddr) -> Option<Arc<Session>> {
-    let demo = sessions::id_demo(id).filter(|d| sessions::is_own_demo(*d) && is_page(rest))?;
-    let by = counted(who(app, request).user.as_ref(), None, client);
+    let demo = sessions::id_demo(id).filter(|_| is_page(rest))?;
+    let user = who(app, request).user;
+    let by = counted(user.as_ref(), None, client);
+    if !sessions::is_own_demo(demo) {
+        let may = app.keys.is_none() || user.is_some();
+        return may.then(|| sessions.open_demo_as(by.as_deref(), demo, user.as_ref().map(|u| u.uid.as_str())).ok()).flatten();
+    }
     match sessions.open_upload_as(by.as_deref(), demo) {
         Some(opened) => opened.ok(),
         None => sessions.open_kept_comms_as(by.as_deref(), demo, app.voice.who.clone()),
