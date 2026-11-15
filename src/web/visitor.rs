@@ -49,6 +49,7 @@ pub(super) fn origin(home: &str) -> Option<&str> {
 /// A page of ours to go back to: `to` if it is one (a path, not another site), else our home.
 pub(super) fn return_to(app: &App, to: Option<&str>) -> String {
     let path = to.unwrap_or_default();
-    let ours = path.starts_with(&format!("{}/", app.base)) && !path.starts_with("//") && !path.contains(['\\', '\r', '\n']);
+    let ours =
+        path.starts_with(&format!("{}/", app.base)) && !path.starts_with("//") && !path.contains(|c: char| c == '\\' || c.is_control());
     if ours { path.to_string() } else { format!("{}/", app.base) }
 }

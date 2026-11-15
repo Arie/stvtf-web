@@ -7,7 +7,7 @@ fn signing_in_goes_by_the_site_and_back_only_to_our_own_pages() {
     let (app, key, _dir) = site_app();
     let out = get(&app, "/signin?return=/r/abc/", "");
     assert!(out.contains("Location: https://serveme.tf/stv/sign_in?return=%2Fr%2Fabc%2F"), "{out}");
-    for elsewhere in ["https://evil.example/", "//evil.example/", "/\\evil.example"] {
+    for elsewhere in ["https://evil.example/", "//evil.example/", "/\\evil.example", "/%09/evil.example"] {
         let out = get(&app, &format!("/signin?return={elsewhere}"), "");
         assert!(out.contains("sign_in?return=%2F\r\n"), "{elsewhere}: {out}");
     }
