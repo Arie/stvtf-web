@@ -10,12 +10,13 @@ export const me = { id: 0, admin: false };
 // Everyone's names, by number.
 /** @type {Map<number, string>} */
 export const names = new Map();
+// Not reached (a restart, a line down), it is refused: no fault of the page's.
 /** @param {string} path @param {object} body */
 export const post = (path, body, base = HOME) =>
   fetch(new URL(path, base), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
-  });
+  }).catch(() => new Response("Could not reach the server", { status: 503 }));
 // The moment watched now, as a link's `t`; none before anything plays.
 export const watched = { t: /** @type {() => string | null} */ (() => null) };
