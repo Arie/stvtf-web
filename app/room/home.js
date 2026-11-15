@@ -17,3 +17,5 @@ export const post = (path, body, base = HOME) =>
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
+// The moment watched now, as a link's `t`; none before anything plays.
+export const watched = { t: /** @type {() => string | null} */ (() => null) };

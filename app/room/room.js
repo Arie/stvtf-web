@@ -19,7 +19,7 @@ import { noteKey, noteTool } from "./notes.js";
 import { closeViewMenu, viewMenu } from "./viewmenu.js";
 import { mapsMenu } from "./maps.js";
 import { pushMirror } from "../map/camera.js";
-import { HOME, IN_ROOM, me, names, post } from "./home.js";
+import { HOME, IN_ROOM, me, names, post, watched } from "./home.js";
 import { copyLink, copyText } from "./copy.js";
 import { inkKey, people, signedIn } from "./people.js";
 import { inTf2 } from "./intf2.js";
@@ -275,6 +275,7 @@ function watchBar() {
   const own = ownPlayback(bar, () => shared());
   watchingAt = () =>
     bar.last && (own.active() || !bar.last.live) ? { at: Math.round(bar.at()), paused: bar.state().paused } : null;
+  watched.t = () => (bar.last ? clock(Math.max(0, bar.since())) : null);
   bar.allow(true);
   playbackListeners.add(m => own.active() && bar.heard(m));
   copyLink("Copy a link to this moment", () => momentLink(bar.since(), bar.last?.load));

@@ -3,7 +3,7 @@
 // from their name: a guess shows as one until someone confirms it), to change: another player,
 // nobody, or a Steam ID as people write them.
 import { state } from "../core/core.js";
-import { HOME } from "../room/home.js";
+import { HOME, watched } from "../room/home.js";
 import * as voice from "../core/voice.js";
 import { act, el, heading } from "./voicebits.js";
 
@@ -93,9 +93,12 @@ function row(v) {
 // The way to the demo built anew, from the moment watched now.
 export function rebuiltRow() {
   if (!rebuilt) return [];
-  const t = new URLSearchParams(location.search).get("t");
-  const a = el("a", { href: t && /^[\d:]+$/.test(t) ? `${rebuilt}?t=${t}` : rebuilt, className: "vcopy" }, "▶ Apply");
+  const a = el("a", { href: rebuilt, className: "vcopy" }, "▶ Apply");
   a.title = "Rebuilds the demo";
+  a.onclick = () => {
+    const t = watched.t();
+    if (t) a.href = `${rebuilt}?t=${t}`;
+  };
   return [el("div", { className: "vrow vinvite" }, a)];
 }
 
