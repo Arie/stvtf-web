@@ -15,6 +15,7 @@
 use super::asked::{Visit, answer};
 use super::client::counted;
 use super::{Answered, Early, Shared};
+use crate::lock;
 use crate::matches::sessions::{self, DEMO_PREFIX, Store, demo_dem, demo_info, demo_output};
 use anyhow::{Context, Result, bail};
 use axum::Json;
@@ -22,7 +23,9 @@ use axum::body::Bytes;
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Redirect, Response};
+use std::collections::HashMap;
 use std::io::{Read, Write};
+use std::sync::Mutex;
 
 /// The biggest demo (sent, and unpacked), and part of one: under what Cloudflare lets through.
 pub(super) const MAX_DEMO: u64 = 512 << 20;
@@ -66,7 +69,11 @@ fn said(done: Result<serde_json::Value>) -> Response {
 
 /// `POST /upload`.
 pub(super) async fn begun(v: Visit, Json(upload): Json<Begin>) -> Answered {
-    answer(move || Ok(said(begin(&upload, uploading(&v)?.0)))).await
+    answer(move || {
+        let (store, by) = uploading(&v)?;
+        Ok(said(begin(&upload, store, by.as_deref())))
+    })
+    .await
 }
 
 /// `?at=`: where a part goes on.
@@ -99,7 +106,10 @@ pub(super) struct Begin {
     size: u64,
 }
 
-fn begin(upload: &Begin, store: &Store) -> Result<serde_json::Value> {
+/// Each person's upload under way: beginning another drops it.
+static UNDER_WAY: Mutex<Option<HashMap<String, String>>> = Mutex::new(None);
+
+pub(super) fn begin(upload: &Begin, store: &Store, by: Option<&str>) -> Result<serde_json::Value> {
     let size = upload.size;
     if size > MAX_DEMO {
         bail!("Over {} MB", MAX_DEMO >> 20);
@@ -110,11 +120,17 @@ fn begin(upload: &Begin, store: &Store) -> Result<serde_json::Value> {
     let id = sessions::random_id();
     std::fs::create_dir_all(&store.dir)?;
     std::fs::File::create(store.dir.join(part_name(&id)))?;
+    let last = by.and_then(|by| lock(&UNDER_WAY).get_or_insert_default().insert(by.to_string(), id.clone()));
+    if let Some(last) = last {
+        let _one = lock(&ONE_AT_A_TIME);
+        let _ = std::fs::remove_file(store.dir.join(part_name(&last)));
+    }
     Ok(serde_json::json!({ "id": id, "part": MAX_PART }))
 }
 
 /// `PUT /upload/<id>?at=`: the body goes on the end of what is there, if `at` is where that is.
 fn put_part(at: Option<u64>, body: &[u8], store: &Store, id: &str) -> Answered {
+    let _one = lock(&ONE_AT_A_TIME);
     let path = store.dir.join(part_name(id));
     let Ok(had) = std::fs::metadata(&path).map(|m| m.len()) else { return Ok((StatusCode::NOT_FOUND, "No such upload").into_response()) };
     if had + body.len() as u64 > MAX_DEMO {
@@ -126,6 +142,9 @@ fn put_part(at: Option<u64>, body: &[u8], store: &Store, id: &str) -> Answered {
     std::fs::File::options().append(true).open(&path)?.write_all(body)?;
     Ok((had + body.len() as u64).to_string().into_response())
 }
+
+/// Held while a part is added or an upload finished: what was checked still holds.
+static ONE_AT_A_TIME: Mutex<()> = Mutex::new(());
 
 #[derive(serde::Deserialize, Default)]
 #[serde(default)]
@@ -184,11 +203,15 @@ fn forget(store: &Store, demo: u64) {
 fn finish(v: &Visit, store: &Store, id: &str, by: Option<&str>, said: &Finish) -> Result<serde_json::Value> {
     let (app, sessions, user) = (&v.app, v.sessions()?, &v.who.user);
     let part = store.dir.join(part_name(id));
-    let kept = keep(store, &part, &said.name, by, user.as_ref().map(|u| u.uid.as_str()));
-    if kept.is_err() {
-        let _ = std::fs::remove_file(&part);
-    }
-    let demo = kept?;
+    let demo = {
+        let _one = lock(&ONE_AT_A_TIME);
+        let kept = keep(store, &part, &said.name, by, user.as_ref().map(|u| u.uid.as_str()));
+        if kept.is_err() {
+            let _ = std::fs::remove_file(&part);
+        }
+        kept?
+    };
+    lock(&UNDER_WAY).get_or_insert_default().retain(|_, theirs| theirs != id);
     let m = sessions.open_upload_as(by, demo).context("Not kept")??;
     log!("demo {demo} uploaded by {}, {}", by.unwrap_or("-"), said.name.chars().filter(|c| !c.is_control()).take(80).collect::<String>());
     Ok(serde_json::json!({ "page": format!("{}/w/{}/", app.base, m.id) }))

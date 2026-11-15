@@ -120,3 +120,17 @@ fn what_is_no_tf2_demo_or_too_big_or_from_nobody_signed_in_is_refused() {
     let refused = post(&app, "/upload", "", r#"{"size":5000}"#);
     assert!(refused.starts_with("HTTP/1.1 403") && refused.contains("Sign in first"), "{refused}");
 }
+
+#[test]
+fn beginning_another_upload_drops_the_one_under_way() {
+    let dir = TempDir::new("uploads-under-way");
+    let store = sessions::Store { dir: dir.to_path_buf(), keys: None };
+    let size: upload::Begin = serde_json::from_str(r#"{"size":4096}"#).unwrap();
+    let parts = || std::fs::read_dir(&dir).unwrap().count();
+    let first = upload::begin(&size, &store, Some("steam:1")).unwrap();
+    upload::begin(&size, &store, Some("steam:2")).unwrap();
+    assert_eq!(parts(), 2);
+    let second = upload::begin(&size, &store, Some("steam:1")).unwrap();
+    assert_eq!(parts(), 2);
+    assert_ne!(first["id"], second["id"]);
+}
