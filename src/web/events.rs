@@ -21,6 +21,9 @@ pub(super) const STREAM_GZIP: u32 = 5;
 /// An event stream with nothing to send sends a comment this often, so proxies keep it open.
 pub(super) const KEEPALIVE: Duration = Duration::from_secs(15);
 
+/// How often a quiet stream looks whether the server is stopping.
+const LOOK: Duration = Duration::from_millis(250);
+
 /// After a restart (a deploy), browsers come back after this instead of their default 3 s.
 pub(super) const RECONNECT_AFTER: Duration = Duration::from_secs(1);
 
@@ -38,9 +41,15 @@ pub(super) fn stream(hub: &SharedHub, gzip: bool, asked: &Stream, held: impl Sen
     std::thread::spawn(move || {
         // Held while it streams: its place among the streams, its viewer of the match.
         let (_open, _held) = (open, held);
-        let to = Chunks { tx, held: Vec::new() };
-        let mut out: Box<dyn Write> = if gzip { Box::new(GzEncoder::new(to, Compression::new(STREAM_GZIP))) } else { Box::new(to) };
-        let _ = events(&mut out, &rx);
+        let mut to = Chunks { tx, held: Vec::new() };
+        if !gzip {
+            let _ = events(&mut to, &rx);
+            return;
+        }
+        let mut gz = GzEncoder::new(to, Compression::new(STREAM_GZIP));
+        let _ = events(&mut gz, &rx);
+        // Its trailer too: the stream ends whole.
+        let _ = gz.finish().and_then(|mut to| to.flush());
     });
     let unbuffered = HeaderName::from_static("x-accel-buffering");
     let headers = [(header::CONTENT_TYPE, "text/event-stream"), (header::CACHE_CONTROL, "no-cache"), (unbuffered, "no")];
@@ -53,20 +62,28 @@ pub(super) fn stream(hub: &SharedHub, gzip: bool, asked: &Stream, held: impl Sen
 fn events(out: &mut dyn Write, rx: &Receiver<Arc<str>>) -> std::io::Result<()> {
     write!(out, "retry: {}\n\n", RECONNECT_AFTER.as_millis())?;
     out.flush()?;
+    let mut quiet = Duration::ZERO;
     loop {
         if ENDING.load(Ordering::Relaxed) {
             return Ok(());
         }
-        match rx.recv_timeout(KEEPALIVE) {
+        match rx.recv_timeout(LOOK) {
             // Whatever else is already queued goes out in the same flush.
             Ok(line) => {
                 for line in std::iter::once(line).chain(rx.try_iter()) {
                     write!(out, "data: {line}\n\n")?;
                 }
             }
-            Err(RecvTimeoutError::Timeout) => write!(out, ": keepalive\n\n")?,
+            Err(RecvTimeoutError::Timeout) => {
+                quiet += LOOK;
+                if quiet < KEEPALIVE {
+                    continue;
+                }
+                write!(out, ": keepalive\n\n")?;
+            }
             Err(RecvTimeoutError::Disconnected) => return Ok(()),
         }
+        quiet = Duration::ZERO;
         out.flush()?;
     }
 }
