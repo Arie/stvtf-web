@@ -290,7 +290,7 @@ fn a_refusal_is_answered_with_the_match_not_held() {
 fn a_match_page_s_voice_routes_take_the_methods_a_room_s_do() {
     let (app, id) = voice_app();
     for (path, body) in [("voice-comms", ""), ("voices", ""), ("voice-invite", "")] {
-        assert!(post(&app, &format!("/w/{id}/{path}"), "", body).starts_with("HTTP/1.1 404"), "{path}");
+        assert!(post(&app, &format!("/w/{id}/{path}"), "", body).starts_with("HTTP/1.1 405"), "{path}");
         assert!(!get(&app, &format!("/w/{id}/{path}"), "").starts_with("HTTP/1.1 404"), "{path}");
     }
 }

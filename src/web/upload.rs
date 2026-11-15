@@ -14,6 +14,7 @@
 
 use super::Out;
 use super::client::counted;
+use super::routes::Asked;
 use super::visitor::who;
 use super::{JSON, Request, TEXT, json_body, param, refuse, respond};
 use crate::App;
@@ -43,27 +44,57 @@ fn uploader(app: &App, request: &Request, client: IpAddr) -> Result<Option<Strin
     Ok(counted(user.as_ref(), None, client))
 }
 
-/// `/upload` and what is under it.
-pub(super) fn serve_upload(s: &mut Out, app: &App, sessions: &Sessions, request: &Request, client: IpAddr) -> std::io::Result<()> {
-    let Some(store) = &sessions.store else { return respond(s, "404 Not Found", TEXT, b"No demos are kept here") };
-    let id = request.path.strip_prefix("/upload/").filter(|id| sessions::is_id(id));
-    if let ("/upload", "GET") = (request.path.as_str(), request.method.as_str()) {
-        return app.redirect(s, "302 Found", "/");
+/// `GET /upload`: the form is on the front page.
+pub(super) fn form(s: &mut Out, a: &Asked) -> Result<()> {
+    Ok(a.app.redirect(s, "302 Found", "/")?)
+}
+
+/// Where uploads are kept, and who uploads. None once answered that there is none.
+fn uploading<'a>(s: &mut Out, a: &'a Asked) -> Result<Option<(&'a Store, Option<String>)>> {
+    let Some(store) = &a.sessions()?.store else {
+        respond(s, "404 Not Found", TEXT, b"No demos are kept here")?;
+        return Ok(None);
+    };
+    match uploader(a.app, a.request, a.client) {
+        Ok(by) => Ok(Some((store, by))),
+        Err(e) => {
+            refuse(s, "403 Forbidden", &e)?;
+            Ok(None)
+        }
     }
-    let by = match uploader(app, request, client) {
-        Ok(by) => by,
-        Err(e) => return refuse(s, "403 Forbidden", &e),
-    };
-    let done = match (request.path.as_str(), request.method.as_str(), id) {
-        ("/upload", "POST", _) => begin(request, store),
-        (_, "PUT", Some(id)) => return put_part(s, request, store, id),
-        (_, "POST", Some(id)) => finish(app, sessions, request, store, id, by.as_deref()),
-        _ => return respond(s, "404 Not Found", TEXT, b"not found"),
-    };
+}
+
+/// The upload a request under `/upload/` is of.
+fn upload_id(a: &Asked) -> Option<String> {
+    a.request.path.strip_prefix("/upload/").filter(|id| sessions::is_id(id)).map(str::to_string)
+}
+
+fn said(s: &mut Out, done: Result<serde_json::Value>) -> Result<()> {
     match done {
-        Ok(said) => respond(s, "200 OK", JSON, said.to_string().as_bytes()),
-        Err(e) => refuse(s, "400 Bad Request", &e),
+        Ok(said) => respond(s, "200 OK", JSON, said.to_string().as_bytes())?,
+        Err(e) => refuse(s, "400 Bad Request", &e)?,
     }
+    Ok(())
+}
+
+/// `POST /upload`.
+pub(super) fn begun(s: &mut Out, a: &Asked) -> Result<()> {
+    let Some((store, _)) = uploading(s, a)? else { return Ok(()) };
+    said(s, begin(a.request, store))
+}
+
+/// `PUT /upload/<id>`.
+pub(super) fn part(s: &mut Out, a: &Asked) -> Result<()> {
+    let Some((store, _)) = uploading(s, a)? else { return Ok(()) };
+    let Some(id) = upload_id(a) else { return Ok(respond(s, "404 Not Found", TEXT, b"not found")?) };
+    Ok(put_part(s, a.request, store, &id)?)
+}
+
+/// `POST /upload/<id>`.
+pub(super) fn finished(s: &mut Out, a: &Asked) -> Result<()> {
+    let Some((store, by)) = uploading(s, a)? else { return Ok(()) };
+    let Some(id) = upload_id(a) else { return Ok(respond(s, "404 Not Found", TEXT, b"not found")?) };
+    said(s, finish(a.app, a.sessions()?, a.request, store, &id, by.as_deref()))
 }
 
 #[derive(serde::Deserialize)]

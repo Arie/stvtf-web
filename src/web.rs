@@ -1,10 +1,9 @@
 //! The HTTP side: pages, files, event streams and starting matches.
 
-use crate::matches::hub::SharedHub;
 use crate::matches::recording::Mark;
 use crate::matches::sessions;
 use crate::matches::sessions::Sessions;
-use crate::{App, Matches, lock};
+use crate::{App, lock};
 use anyhow::{Result, bail};
 use std::io::Write;
 use std::net::IpAddr;
@@ -17,6 +16,7 @@ mod events;
 mod matches;
 mod mine;
 mod rooms;
+mod routes;
 pub(crate) mod server;
 pub(crate) mod token;
 mod unpack;
@@ -29,13 +29,10 @@ pub(crate) mod voice_routes;
 pub(crate) mod voice_who;
 pub(crate) mod voice_who_sync;
 
-use assets::serve_file;
 pub(crate) use assets::{app_version, module_preloads};
 use client::{client_of, counted};
-use events::{stream, too_many_streams, wants_detail, wants_voice};
-use matches::{is_page, list_matches, serve_match, start, start_view};
-use rooms::serve_room;
-use visitor::{origin, return_to, set_cookie, url_encode};
+use matches::{start, start_view};
+use visitor::{return_to, set_cookie, url_encode};
 
 const INDEX: &str = include_str!("../app/pages/index.html");
 const LANDING: &str = include_str!("../app/pages/landing.html");
@@ -170,84 +167,6 @@ pub(crate) fn redirect(s: &mut Out, status: &str, location: &str) -> std::io::Re
 /// The most a request's body may be: a part of an upload, or little.
 fn body_limit(request: &Request) -> usize {
     if request.method == "PUT" && request.path.starts_with("/upload/") { upload::MAX_PART } else { MAX_REQUEST as usize }
-}
-
-/// The answer to `request`, from `client`.
-fn answer(mut s: Out, app: &App, request: &Request, client: IpAddr) -> Result<()> {
-    match &app.matches {
-        _ if request.path == "/up" => respond(&mut s, "200 OK", TEXT, b"ok")?,
-        Matches::One(hub) => serve_one(s, app, hub, request, client)?,
-        Matches::Many(sessions) => serve_many(s, app, sessions, request, client)?,
-    }
-    Ok(())
-}
-
-/// The one match a server given a server address watches, at `/`.
-fn serve_one(mut s: Out, app: &App, hub: &SharedHub, request: &Request, client: IpAddr) -> Result<()> {
-    match request.path.as_str() {
-        p if p == "/index.html" || p.strip_prefix('/').is_some_and(is_page) => respond(&mut s, "200 OK", HTML, &app.page(INDEX))?,
-        "/events" => match app.stream_slot(client) {
-            Some(slot) => stream(&s, hub, request.gzip, wants_detail(&request.query), wants_voice(&request.query), slot)?,
-            None => too_many_streams(&mut s)?,
-        },
-        path => serve_file(&mut s, app, path, request.gzip)?,
-    }
-    Ok(())
-}
-
-/// Any number of matches, each at `/w/<id>/`, and the ways to start one.
-fn serve_many(mut s: Out, app: &App, sessions: &Sessions, request: &Request, client: IpAddr) -> Result<()> {
-    match (request.path.as_str(), request.method.as_str()) {
-        ("/matches", "GET") if let Some(keys) = &app.keys => list_matches(&mut s, keys, sessions, request)?,
-        ("/mumble", "GET") => respond(&mut s, "200 OK", HTML, &app.page(MUMBLE))?,
-        ("/mumble.json", "GET") => respond(&mut s, "200 OK", JSON, MUMBLE_JSON.as_bytes())?,
-        (path, _) if path == "/upload" || path.starts_with("/upload/") => {
-            upload::serve_upload(&mut s, app, sessions, request, client)?;
-        }
-        ("/signin", "GET") if let Some(site) = app.home.as_deref().and_then(origin) => {
-            redirect(&mut s, "302 Found", &format!("{site}/stv/sign_in?return={}", url_encode(&return_to(app, request))))?;
-        }
-        ("/signed_in", "GET") if let Some(keys) = &app.keys => {
-            match keys.open_signin(param(&request.query, "t").unwrap_or_default(), unix_now()) {
-                Ok(user) => {
-                    let kept = set_cookie(app, USER_COOKIE, &keys.keep(&user, unix_now()), token::SIGNED_IN_FOR);
-                    back_with(&mut s, app, request, &kept)?;
-                }
-                Err(e) => refuse(&mut s, "400 Bad Request", &e)?,
-            }
-        }
-        ("/signout", "GET") => back_with(&mut s, app, request, &set_cookie(app, USER_COOKIE, "", 0))?,
-        ("/voice/link", "GET") => voice_link::link(&mut s, app)?,
-        ("/voice/linked", "GET") => voice_link::linked(&mut s, app, request)?,
-        ("/voice/who", "GET") => voice_link::who(&mut s, app, request)?,
-        ("/voice/mumble", "GET") => voice_mumble::get_mumble_jobs(&mut s, app, sessions, request)?,
-        ("/voice/known", "GET") => voice_who_sync::get_known(&mut s, app, request)?,
-        ("/voice/known", "POST") => voice_who_sync::post_known(&mut s, app, request)?,
-        ("/start", _) => match start(app, sessions, request, client) {
-            // <stv-map> asks where the match is instead of following the redirect.
-            Ok(m) if param(&request.query, "format") == Some("json") => {
-                let page = format!("{}/w/{}/", app.base, m.id);
-                respond(&mut s, "200 OK", JSON, serde_json::json!({ "page": page }).to_string().as_bytes())?;
-            }
-            Ok(m) => app.redirect(&mut s, "303 See Other", &format!("/w/{}/{}", m.id, start_view(&request.query)))?,
-            Err(e) => refuse(&mut s, "400 Bad Request", &e)?,
-        },
-        ("/", "GET") => respond(&mut s, "200 OK", HTML, &app.page(&landing(app, sessions, request, client, "")))?,
-        // What a page says went wrong in it (see `report`): taken or not, it is not told.
-        ("/fault", "POST") => {
-            let who = visitor::who(app, request).user;
-            crate::report::page_fault(&read_body(request)?, &request.agent, who.as_ref().map(|u| u.uid.as_str()));
-            respond(&mut s, "204 No Content", TEXT, b"")?;
-        }
-        ("/watch", "POST") if request.length as u64 > MAX_REQUEST => {
-            respond(&mut s, "413 Content Too Large", TEXT, format!("over {MAX_REQUEST} bytes").as_bytes())?;
-        }
-        ("/watch", "POST") => post_watch(&mut s, app, sessions, request, client)?,
-        (p, _) if let Some(path) = p.strip_prefix("/w/") => serve_match(s, app, sessions, request, path, client)?,
-        (p, _) if let Some(path) = p.strip_prefix("/r/") => serve_room(s, app, sessions, request, path, client)?,
-        (path, _) => serve_file(&mut s, app, path, request.gzip)?,
-    }
-    Ok(())
 }
 
 /// Back to the page `?return=` names, setting `cookie`.

@@ -1,8 +1,9 @@
 //! The server: hyper takes the connections and reads the requests, axum routes them with its
-//! layers; each is answered on a blocking thread (see [`super::answer`]), and an event stream is
+//! layers; each is answered on a blocking thread (see [`super::routes`]), and an event stream is
 //! written by a thread of its own.
 
-use super::{Body as Answer, Events, Out, Reply, Request, client_of, cookie, voice_link};
+use super::routes::{Answer, Asked};
+use super::{Body as Whole, Events, Out, Reply, Request, client_of, cookie, voice_link};
 use super::{GUEST_COOKIE, USER_COOKIE};
 use crate::App;
 use crate::matches::sessions;
@@ -13,12 +14,13 @@ use axum::extract::{ConnectInfo, State};
 use axum::http::header::{self, HeaderName, HeaderValue};
 use axum::http::{HeaderMap, Method, StatusCode};
 use axum::response::{IntoResponse, Response};
-use axum::routing::any;
 use hyper::server::conn::http1;
 use hyper_util::rt::{TokioIo, TokioTimer};
 use hyper_util::service::TowerToHyperService;
+use std::future::Future;
 use std::io::Write;
 use std::net::{IpAddr, SocketAddr};
+use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
@@ -26,6 +28,8 @@ use tokio::sync::mpsc::error::TrySendError;
 use tower_http::cors::{self, CorsLayer};
 use tower_http::set_header::SetResponseHeaderLayer;
 use tower_http::timeout::TimeoutLayer;
+
+type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
 /// Event streams open at once; more are refused.
 pub(crate) const MAX_STREAMS: usize = 512;
@@ -78,31 +82,38 @@ pub(crate) async fn connection(tcp: tokio::net::TcpStream, peer: SocketAddr, rou
 /// A request is answered in this time, its body read: an upload's part on a slow line, at most.
 const ANSWER_WITHIN: Duration = Duration::from_mins(5);
 
-/// Every request goes to [`handle`]. Every response says `nosniff`, and what is read with GET
-/// may be read by any site (it is public: `<stv-map>` on other sites reads it all, without
-/// cookies). The pages that act for whoever is signed in are not shown in another site's frame.
+/// The app's routes (see [`super::routes`]). Every response says `nosniff`, and what is read
+/// with GET may be read by any site (it is public: `<stv-map>` on other sites reads it all,
+/// without cookies). The pages that act for whoever is signed in are not shown in another site's
+/// frame.
 pub(crate) fn router(app: Arc<App>) -> Router {
+    let (all, acting) = super::routes::routes(&app);
     let unframed = SetResponseHeaderLayer::overriding(header::X_FRAME_OPTIONS, HeaderValue::from_static("DENY"));
-    let own = Router::new().route("/", any(handle)).route("/watch", any(handle)).route("/mumble", any(handle)).layer(unframed);
-    Router::new()
-        .merge(own)
-        .fallback(handle)
+    all.merge(acting.layer(unframed))
         .with_state(app)
         .layer(SetResponseHeaderLayer::overriding(header::X_CONTENT_TYPE_OPTIONS, HeaderValue::from_static("nosniff")))
         .layer(CorsLayer::new().allow_origin(cors::Any).allow_methods([Method::GET]))
         .layer(TimeoutLayer::with_status_code(StatusCode::REQUEST_TIMEOUT, ANSWER_WITHIN))
 }
 
-async fn handle(State(app): State<Arc<App>>, ConnectInfo(peer): ConnectInfo<SocketAddr>, request: axum::extract::Request) -> Response {
-    let (request, client) = match request_of(peer.ip(), request).await {
-        Ok(asked) => asked,
-        Err(refused) => return refused.into_response(),
-    };
-    let answered = tokio::task::spawn_blocking(move || {
-        let out = Out::default();
-        super::answer(out.clone(), &app, &request, client).ok().and_then(|()| out.take())
-    });
-    response_of(answered.await.ok().flatten())
+/// A route's handler: `answer`, on a blocking thread, with the request read.
+pub(super) fn to(
+    answer: Answer,
+) -> impl Fn(State<Arc<App>>, ConnectInfo<SocketAddr>, axum::extract::Request) -> BoxFuture<'static, Response> + Clone + Send + Sync + 'static
+{
+    move |State(app), ConnectInfo(peer), request| {
+        Box::pin(async move {
+            let (request, client) = match request_of(peer.ip(), request).await {
+                Ok(asked) => asked,
+                Err(refused) => return refused.into_response(),
+            };
+            let answered = tokio::task::spawn_blocking(move || {
+                let mut out = Out::default();
+                answer(&mut out, &Asked { app: &app, request: &request, client }).ok().and_then(|()| out.take())
+            });
+            response_of(answered.await.ok().flatten())
+        })
+    }
 }
 
 /// What the handlers need of a request, its body read; and who asks. Refused: a body over the
@@ -154,8 +165,8 @@ fn one(headers: &HeaderMap, name: HeaderName) -> Option<&str> {
 fn response_of(reply: Option<Reply>) -> Response {
     let Some(reply) = reply else { return StatusCode::INTERNAL_SERVER_ERROR.into_response() };
     let body = match reply.body {
-        Answer::Whole(body) => Body::from(body),
-        Answer::Events(events) => match events_body(events) {
+        Whole::Whole(body) => Body::from(body),
+        Whole::Events(events) => match events_body(events) {
             Some(body) => body,
             None => return StatusCode::SERVICE_UNAVAILABLE.into_response(),
         },

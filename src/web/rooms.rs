@@ -4,6 +4,7 @@ use super::Out;
 use super::client::counted;
 use super::events::{stream, too_many_streams, wants_detail, wants_voice};
 use super::matches::is_page;
+use super::routes::Asked;
 use super::visitor::{Who, origin, who};
 use super::{
     HTML, INDEX, JSON, Request, TEXT, done, form_decode, json_body, not_found, param, refuse, respond, respond_marks, respond_with,
@@ -91,54 +92,91 @@ pub(super) struct Admin {
     admin: bool,
 }
 
-/// A room's page, event stream and controls: `path` is what follows `/r/`.
-pub(super) fn serve_room(mut s: Out, app: &App, sessions: &Sessions, request: &Request, path: &str, client: IpAddr) -> Result<()> {
+/// The room a request under `/r/` is for, and what follows its id. None once answered that it
+/// has closed.
+fn found(s: &mut Out, a: &Asked) -> Result<Option<(Arc<Room>, String)>> {
+    let path = a.request.path.strip_prefix("/r/").unwrap_or_default();
     let (id, rest) = path.split_once('/').unwrap_or((path, ""));
-    let Some(room) = app.rooms.get(id, sessions) else {
-        return Ok(respond(&mut s, "404 Not Found", TEXT, b"That room has closed.")?);
+    let Some(room) = a.app.rooms.get(id, a.sessions()?) else {
+        respond(s, "404 Not Found", TEXT, b"That room has closed.")?;
+        return Ok(None);
     };
-    // Without a cookie (none yet, or refused), a page is someone new each time.
-    let who = who(app, request);
-    // Its match's voice from outside: as on the match's own page.
-    if rest.starts_with("voice")
-        && let Some(answered) = super::voice_routes::voice_route(&mut s, app, live(app, sessions, &room).as_ref(), request, rest, &who)
-    {
-        answered?;
-        return Ok(());
-    }
-    match (rest, request.method.as_str()) {
-        ("", _) if !path.ends_with('/') => app.redirect(&mut s, "308 Permanent Redirect", &format!("{}/", request.path))?,
-        (rest, "GET") if is_page(rest) => {
-            let mut headers = vec![("Content-Type", HTML), ("Cache-Control", "no-cache")];
-            if let Some(c) = &who.cookie {
-                headers.push(("Set-Cookie", c));
-            }
-            respond_with(&mut s, "200 OK", &headers, &app.page(INDEX))?;
+    Ok(Some((room, rest.to_string())))
+}
+
+/// `/r/<id>/`, with a delay or as an overlay: the page. Without a cookie (none yet, or refused),
+/// a page is someone new each time.
+pub(super) fn page(s: &mut Out, a: &Asked) -> Result<()> {
+    let Some((_room, rest)) = found(s, a)? else { return Ok(()) };
+    if rest.is_empty() && !a.request.path.ends_with('/') {
+        a.app.redirect(s, "308 Permanent Redirect", &format!("{}/", a.request.path))?;
+    } else if is_page(&rest) {
+        let who = who(a.app, a.request);
+        let mut headers = vec![("Content-Type", HTML), ("Cache-Control", "no-cache")];
+        if let Some(c) = &who.cookie {
+            headers.push(("Set-Cookie", c));
         }
-        ("events", "GET") => match app.stream_slot(client) {
-            Some(slot) => {
-                let name = param(&request.query, "name").map(form_decode);
-                let listed = param(&request.query, "overlay") != Some("1");
-                let site = who.user.as_ref().map(|u| u.name.as_str());
-                let watching = room.join(&who.key, name.as_deref(), site, listed);
-                // By Steam id when signed in: whose room it was, when something is asked of it
-                // later.
-                log!("room {} joined by {}", logged(&room.id), who.user.as_ref().map_or("a guest", |u| u.uid.as_str()));
-                stream(&s, &room.hub, request.gzip, wants_detail(&request.query), wants_voice(&request.query), (slot, watching))?;
-            }
-            None => too_many_streams(&mut s)?,
-        },
-        ("me", "GET") => me(&mut s, app, &room, &who)?,
-        ("demos", "GET") => {
-            // Its match's demos with comms in them.
-            let demos = app.rooms.live_match(&room.id, sessions).map_or_default(|m| super::matches::comms_demos(app, sessions, &m.id));
-            respond(&mut s, "200 OK", JSON, serde_json::json!(demos).to_string().as_bytes())?;
-        }
-        ("marks", "GET") => respond_marks(&mut s, &request.query, |from| room.marks(from))?,
-        (part, "POST") => change(&mut s, request, &room, &who, part)?,
-        _ => not_found(&mut s)?,
+        respond_with(s, "200 OK", &headers, &a.app.page(INDEX))?;
+    } else {
+        not_found(s)?;
     }
     Ok(())
+}
+
+/// `/r/<id>/voice…`: its match's voice from outside, as on the match's own page.
+pub(super) fn voice(s: &mut Out, a: &Asked) -> Result<()> {
+    let Some((room, rest)) = found(s, a)? else { return Ok(()) };
+    let on = live(a.app, a.sessions()?, &room);
+    match super::voice_routes::voice_route(s, a.app, on.as_ref(), a.request, &rest, &who(a.app, a.request)) {
+        Some(answered) => answered?,
+        None => not_found(s)?,
+    }
+    Ok(())
+}
+
+/// `/r/<id>/events`.
+pub(super) fn events(s: &mut Out, a: &Asked) -> Result<()> {
+    let Some((room, _)) = found(s, a)? else { return Ok(()) };
+    let (request, who) = (a.request, who(a.app, a.request));
+    match a.app.stream_slot(a.client) {
+        Some(slot) => {
+            let name = param(&request.query, "name").map(form_decode);
+            let listed = param(&request.query, "overlay") != Some("1");
+            let site = who.user.as_ref().map(|u| u.name.as_str());
+            let watching = room.join(&who.key, name.as_deref(), site, listed);
+            // By Steam id when signed in: whose room it was, when something is asked of it later.
+            log!("room {} joined by {}", logged(&room.id), who.user.as_ref().map_or("a guest", |u| u.uid.as_str()));
+            stream(s, &room.hub, request.gzip, wants_detail(&request.query), wants_voice(&request.query), (slot, watching))?;
+        }
+        None => too_many_streams(s)?,
+    }
+    Ok(())
+}
+
+/// `/r/<id>/me`.
+pub(super) fn mine(s: &mut Out, a: &Asked) -> Result<()> {
+    let Some((room, _)) = found(s, a)? else { return Ok(()) };
+    Ok(me(s, a.app, &room, &who(a.app, a.request))?)
+}
+
+/// `/r/<id>/demos`: its match's demos with comms in them.
+pub(super) fn demos(s: &mut Out, a: &Asked) -> Result<()> {
+    let Some((room, _)) = found(s, a)? else { return Ok(()) };
+    let sessions = a.sessions()?;
+    let demos = a.app.rooms.live_match(&room.id, sessions).map_or_default(|m| super::matches::comms_demos(a.app, sessions, &m.id));
+    Ok(respond(s, "200 OK", JSON, serde_json::json!(demos).to_string().as_bytes())?)
+}
+
+/// `/r/<id>/marks`.
+pub(super) fn marks(s: &mut Out, a: &Asked) -> Result<()> {
+    let Some((room, _)) = found(s, a)? else { return Ok(()) };
+    Ok(respond_marks(s, &a.request.query, |from| room.marks(from))?)
+}
+
+/// `POST /r/<id>/<part>`: a change to the room.
+pub(super) fn changed(s: &mut Out, a: &Asked) -> Result<()> {
+    let Some((room, part)) = found(s, a)? else { return Ok(()) };
+    Ok(change(s, a.request, &room, &who(a.app, a.request), &part)?)
 }
 
 /// The live match `room` is on, if it is on one.

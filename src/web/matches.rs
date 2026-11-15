@@ -4,6 +4,7 @@ use super::Out;
 use super::client::counted;
 use super::events::{stream, too_many_streams, wants_detail, wants_voice};
 use super::rooms::{open_room, opened};
+use super::routes::Asked;
 use super::token::Source;
 use super::visitor::{Who, who};
 use super::{
@@ -24,67 +25,118 @@ use std::time::{Duration, Instant};
 
 const GONE: &str = "That match is no longer being watched; paste its connect string to watch it again.";
 
-/// A match's page and event stream: `path` is what follows `/w/`.
-pub(super) fn serve_match(mut s: Out, app: &App, sessions: &Sessions, request: &Request, path: &str, client: IpAddr) -> Result<()> {
-    let (id, rest) = sessions::split_id(path);
-    // A match's demos with its comms in them, kept after it too.
-    if rest == "demos" {
-        return Ok(respond(&mut s, "200 OK", JSON, serde_json::json!(comms_demos(app, sessions, id)).to_string().as_bytes())?);
-    }
-    if let Some(file) = rest.strip_prefix("demos/") {
-        return Ok(comms_demo(&mut s, app, sessions, request, id, file)?);
-    }
-    if let Some(file) = rest.strip_prefix("watch/") {
-        return watch_comms_demo(&mut s, app, sessions, request, id, file, client);
-    }
-    let uploaded = || kept_demo(app, sessions, request, id, rest, client);
-    let session = sessions.get(id).or_else(uploaded);
+/// The match a request under `/w/` is for, and what follows its id.
+fn asked(a: &Asked) -> (String, String) {
+    let (id, rest) = sessions::split_id(a.request.path.strip_prefix("/w/").unwrap_or_default());
+    (id.to_string(), rest.to_string())
+}
+
+/// The match asked for, a demo kept played again. None once answered otherwise: gone, or its
+/// page elsewhere.
+fn found(s: &mut Out, a: &Asked) -> Result<Option<Arc<Session>>> {
+    let (app, sessions, request, client) = (a.app, a.sessions()?, a.request, a.client);
+    let (id, rest) = asked(a);
+    let (id, rest) = (id.as_str(), rest.as_str());
+    let session = sessions.get(id).or_else(|| kept_demo(app, sessions, request, id, rest, client));
     if let Some(to) = moved_on(app, sessions, request, id, rest, session.as_ref()) {
-        return Ok(redirect(&mut s, "303 See Other", &to)?);
+        redirect(s, "303 See Other", &to)?;
+        return Ok(None);
     }
     // A demo with comms of which more is known since is another demo: its page is elsewhere.
     if let Some(m) = session.as_ref().filter(|m| m.id != id) {
         let at = moment(&request.query, "t").map_or_default(|t| format!("?t={t}"));
-        return Ok(redirect(&mut s, "303 See Other", &format!("{}/w/{}/{at}", app.base, m.id))?);
+        redirect(s, "303 See Other", &format!("{}/w/{}/{at}", app.base, m.id))?;
+        return Ok(None);
+    }
+    if session.is_some() {
+        return Ok(session);
     }
     // Looked for only when a page of a match that is gone is asked for: it reads the store.
-    let kept = if session.is_none() && is_page(rest) { comms_demos(app, sessions, id) } else { Vec::new() };
-    match (session, rest) {
+    let kept = if is_page(rest) { comms_demos(app, sessions, id) } else { Vec::new() };
+    let ended_demo = is_page(rest) && app.home.is_some() && sessions::id_demo(id).is_some_and(|d| !sessions::is_own_demo(d));
+    if !kept.is_empty() {
         // Gone, but with comms kept: what there is to download.
-        (None, _) if !kept.is_empty() => respond(&mut s, "404 Not Found", HTML, gone_with_demos(&kept).as_bytes())?,
+        respond(s, "404 Not Found", HTML, gone_with_demos(&kept).as_bytes())?;
+    } else if ended_demo && who(app, request).user.is_none() {
         // An ended demos.tf demo, nobody signed in: sign in, then back.
-        (None, rest)
-            if is_page(rest)
-                && app.home.is_some()
-                && who(app, request).user.is_none()
-                && sessions::id_demo(id).is_some_and(|d| !sessions::is_own_demo(d)) =>
-        {
-            let at = moment(&request.query, "t").map_or_default(|t| format!("?t={t}"));
-            let back = super::visitor::url_encode(&format!("{}{}{at}", app.base, request.path));
-            app.redirect(&mut s, "303 See Other", &format!("/signin?return={back}"))?;
+        let at = moment(&request.query, "t").map_or_default(|t| format!("?t={t}"));
+        let back = super::visitor::url_encode(&format!("{}{}{at}", app.base, request.path));
+        app.redirect(s, "303 See Other", &format!("/signin?return={back}"))?;
+    } else {
+        respond(s, "404 Not Found", HTML, &app.page(&landing(app, sessions, request, client, GONE)))?;
+    }
+    Ok(None)
+}
+
+/// `/w/<id>/`, with a delay or as an overlay: the page.
+pub(super) fn page(s: &mut Out, a: &Asked) -> Result<()> {
+    let (_, rest) = asked(a);
+    let Some(_playing) = found(s, a)? else { return Ok(()) };
+    if rest.is_empty() && !a.request.path.ends_with('/') {
+        a.app.redirect(s, "308 Permanent Redirect", &format!("{}/", a.request.path))?;
+    } else if is_page(&rest) {
+        respond(s, "200 OK", HTML, &a.app.page(INDEX))?;
+    } else {
+        not_found(s)?;
+    }
+    Ok(())
+}
+
+/// `/w/<id>/demos`: its demos with its comms in them, kept after it too.
+pub(super) fn demos(s: &mut Out, a: &Asked) -> Result<()> {
+    let listed = serde_json::json!(comms_demos(a.app, a.sessions()?, &asked(a).0));
+    Ok(respond(s, "200 OK", JSON, listed.to_string().as_bytes())?)
+}
+
+/// `/w/<id>/demos/<file>`: one of them.
+pub(super) fn demo(s: &mut Out, a: &Asked) -> Result<()> {
+    let (id, rest) = asked(a);
+    Ok(comms_demo(s, a.app, a.sessions()?, a.request, &id, rest.strip_prefix("demos/").unwrap_or_default())?)
+}
+
+/// `/w/<id>/watch/<file>`.
+pub(super) fn watch(s: &mut Out, a: &Asked) -> Result<()> {
+    let (id, rest) = asked(a);
+    watch_comms_demo(s, a.app, a.sessions()?, a.request, &id, rest.strip_prefix("watch/").unwrap_or_default(), a.client)
+}
+
+/// `/w/<id>/room`.
+pub(super) fn room(s: &mut Out, a: &Asked) -> Result<()> {
+    let Some(m) = found(s, a)? else { return Ok(()) };
+    open_room(s, a.app, a.sessions()?, &m, a.request, a.client)
+}
+
+/// `/w/<id>/timeline` and `/marks`.
+pub(super) fn timeline(s: &mut Out, a: &Asked) -> Result<()> {
+    let Some(m) = found(s, a)? else { return Ok(()) };
+    Ok(match_timeline(s, &m, a.request, &asked(a).1)?)
+}
+
+/// `POST /w/<id>/rewind`.
+pub(super) fn rewound(s: &mut Out, a: &Asked) -> Result<()> {
+    let Some(m) = found(s, a)? else { return Ok(()) };
+    rewind(s, a.app, &m, a.request, a.client)
+}
+
+/// `/w/<id>/voice…`: its voice from outside.
+pub(super) fn voice(s: &mut Out, a: &Asked) -> Result<()> {
+    let Some(m) = found(s, a)? else { return Ok(()) };
+    match super::voice_routes::voice_route(s, a.app, Some(&m), a.request, &asked(a).1, &who(a.app, a.request)) {
+        Some(answered) => answered?,
+        None => not_found(s)?,
+    }
+    Ok(())
+}
+
+/// `/w/<id>/events`.
+pub(super) fn events(s: &mut Out, a: &Asked) -> Result<()> {
+    let Some(m) = found(s, a)? else { return Ok(()) };
+    match a.app.stream_slot(a.client) {
+        Some(slot) => {
+            let held = (slot, Viewer::new(m.clone()));
+            stream(s, &m.hub, a.request.gzip, wants_detail(&a.request.query), wants_voice(&a.request.query), held)?;
         }
-        (None, _) => respond(&mut s, "404 Not Found", HTML, &app.page(&landing(app, sessions, request, client, GONE)))?,
-        (Some(_), "") if !path.ends_with('/') => {
-            app.redirect(&mut s, "308 Permanent Redirect", &format!("{}/", request.path))?;
-        }
-        (Some(_), rest) if is_page(rest) => respond(&mut s, "200 OK", HTML, &app.page(INDEX))?,
-        (Some(m), "room") => open_room(&mut s, app, sessions, &m, request, client)?,
-        (Some(m), part @ ("timeline" | "marks")) => match_timeline(&mut s, &m, request, part)?,
-        (Some(m), "rewind") if request.method == "POST" => rewind(&mut s, app, &m, request, client)?,
-        (Some(m), rest) if rest.starts_with("voice") => {
-            match super::voice_routes::voice_route(&mut s, app, Some(&m), request, rest, &who(app, request)) {
-                Some(answered) => answered?,
-                None => not_found(&mut s)?,
-            }
-        }
-        (Some(m), "events") => match app.stream_slot(client) {
-            Some(slot) => {
-                let held = (slot, Viewer::new(m.clone()));
-                stream(&s, &m.hub, request.gzip, wants_detail(&request.query), wants_voice(&request.query), held)?;
-            }
-            None => too_many_streams(&mut s)?,
-        },
-        _ => not_found(&mut s)?,
+        None => too_many_streams(s)?,
     }
     Ok(())
 }

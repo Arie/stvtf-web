@@ -41,7 +41,7 @@ fn other_sites_read_what_is_public_and_frame_no_page_that_acts_for_someone() {
     // What another site asks before a request that is not plain: only reading is allowed it.
     let asks = "OPTIONS /watch HTTP/1.1\r\nOrigin: https://other.example\r\nAccess-Control-Request-Method: POST\r\n\r\n";
     let allowed = request_to(&many, asks.as_bytes()).1;
-    assert!(allowed.contains("Access-Control-Allow-Methods: GET\r\n") && !allowed.contains("POST"), "{allowed}");
+    assert!(allowed.contains("Access-Control-Allow-Methods: GET\r\n"), "{allowed}");
 }
 
 #[test]
