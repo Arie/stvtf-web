@@ -29,6 +29,22 @@ fn serves_the_page_with_nosniff() {
 }
 
 #[test]
+fn other_sites_read_what_is_public_and_frame_no_page_that_acts_for_someone() {
+    let many = app(Matches::Many(Sessions::new(false, 1, 20.0)));
+    let get = |path: &str| request_to(&many, format!("GET {path} HTTP/1.1\r\nOrigin: https://other.example\r\n\r\n").as_bytes()).1;
+    let front = get("/");
+    assert!(front.contains("\r\nX-Frame-Options: DENY\r\n") && front.contains("\r\nAccess-Control-Allow-Origin: *\r\n"), "{front}");
+    assert!(get("/mumble").contains("X-Frame-Options: DENY"));
+    // A match's page is for other sites' frames (the embed).
+    let page = get(&format!("/app/{}/main.js", app_version()));
+    assert!(page.starts_with("HTTP/1.1 200") && !page.contains("X-Frame-Options"), "{page:.300}");
+    // What another site asks before a request that is not plain: only reading is allowed it.
+    let asks = "OPTIONS /watch HTTP/1.1\r\nOrigin: https://other.example\r\nAccess-Control-Request-Method: POST\r\n\r\n";
+    let allowed = request_to(&many, asks.as_bytes()).1;
+    assert!(allowed.contains("Access-Control-Allow-Methods: GET\r\n") && !allowed.contains("POST"), "{allowed}");
+}
+
+#[test]
 fn endless_header_is_cut_off() {
     let mut send = b"GET / HTTP/1.1\r\nX-Long: ".to_vec();
     send.resize(64 << 10, b'a');

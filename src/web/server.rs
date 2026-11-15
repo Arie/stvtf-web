@@ -11,8 +11,9 @@ use axum::Router;
 use axum::body::{Body, Bytes};
 use axum::extract::{ConnectInfo, State};
 use axum::http::header::{self, HeaderName, HeaderValue};
-use axum::http::{HeaderMap, StatusCode};
+use axum::http::{HeaderMap, Method, StatusCode};
 use axum::response::{IntoResponse, Response};
+use axum::routing::any;
 use hyper::server::conn::http1;
 use hyper_util::rt::{TokioIo, TokioTimer};
 use hyper_util::service::TowerToHyperService;
@@ -22,7 +23,9 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 use tokio::sync::mpsc::error::TrySendError;
+use tower_http::cors::{self, CorsLayer};
 use tower_http::set_header::SetResponseHeaderLayer;
+use tower_http::timeout::TimeoutLayer;
 
 /// Event streams open at once; more are refused.
 pub(crate) const MAX_STREAMS: usize = 512;
@@ -72,14 +75,22 @@ pub(crate) async fn connection(tcp: tokio::net::TcpStream, peer: SocketAddr, rou
     Ok(http.serve_connection(TokioIo::new(tcp), service).await?)
 }
 
-/// Every request goes to [`handle`]; every response says `nosniff` and may be read by any site
-/// (everything here is public: `<stv-map>` on other sites reads it all).
+/// A request is answered in this time, its body read: an upload's part on a slow line, at most.
+const ANSWER_WITHIN: Duration = Duration::from_mins(5);
+
+/// Every request goes to [`handle`]. Every response says `nosniff`, and what is read with GET
+/// may be read by any site (it is public: `<stv-map>` on other sites reads it all, without
+/// cookies). The pages that act for whoever is signed in are not shown in another site's frame.
 pub(crate) fn router(app: Arc<App>) -> Router {
+    let unframed = SetResponseHeaderLayer::overriding(header::X_FRAME_OPTIONS, HeaderValue::from_static("DENY"));
+    let own = Router::new().route("/", any(handle)).route("/watch", any(handle)).route("/mumble", any(handle)).layer(unframed);
     Router::new()
+        .merge(own)
         .fallback(handle)
         .with_state(app)
         .layer(SetResponseHeaderLayer::overriding(header::X_CONTENT_TYPE_OPTIONS, HeaderValue::from_static("nosniff")))
-        .layer(SetResponseHeaderLayer::overriding(header::ACCESS_CONTROL_ALLOW_ORIGIN, HeaderValue::from_static("*")))
+        .layer(CorsLayer::new().allow_origin(cors::Any).allow_methods([Method::GET]))
+        .layer(TimeoutLayer::with_status_code(StatusCode::REQUEST_TIMEOUT, ANSWER_WITHIN))
 }
 
 async fn handle(State(app): State<Arc<App>>, ConnectInfo(peer): ConnectInfo<SocketAddr>, request: axum::extract::Request) -> Response {
