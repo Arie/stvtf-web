@@ -8,7 +8,7 @@
 !stvtf-web/Cargo.toml
 !stvtf-web/Cargo.lock
 !stvtf-web/rust-toolchain.toml
-!stvtf-web/build.rs
+!stvtf-web/templates
 !stvtf-web/clippy.toml
 !stvtf-web/src
 !stvtf-web/app
