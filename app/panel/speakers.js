@@ -36,7 +36,7 @@ export function initVoice() {
     button.textContent = voice.voiceOn() && !waiting ? "🔊" : "🔇";
     button.title = waiting ? "Click to hear" : "The players' voice";
     button.classList.toggle("on", voice.voiceOn() && !waiting);
-    button.classList.toggle("wait", waiting);
+    button.classList.toggle("wait", voice.voiceMissed());
     if (!list.hidden) renderList(list);
   };
   button.onclick = () => {

@@ -119,6 +119,10 @@ for (const first of ["pointerdown", "keydown"])
 // Whether voice is on but nothing can be heard yet: the page waits for its first click.
 export const voiceWaiting = () => voiceOn() && audio?.state !== "running";
 
+// Whether someone spoke while it waited: only then does the page ask for the click.
+let missed = false;
+export const voiceMissed = () => voiceWaiting() && missed;
+
 /** @param {string} id */
 function forget(id) {
   const s = speakers.get(id);
@@ -254,6 +258,10 @@ export function loudnessOf(id) {
 
 /** @param {VoiceLine} m */
 export function onVoice(m) {
+  if (!missed && voiceWaiting() && m.frames.length) {
+    missed = true;
+    voiceListeners.forEach(f => f());
+  }
   if (!voiceOn() || !audio || !playing || !(m.rate > 0)) return;
   const s = speaker(m);
   if (!s) return;
