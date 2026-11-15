@@ -3,19 +3,22 @@
 use super::asked::{Back, Stream, Visit, answer};
 use super::visitor::{origin, return_to, set_cookie};
 use super::{
-    Answered, MAX_REQUEST, MUMBLE_JSON, Shared, USER_COOKIE, assets, events, landing, matches, pages, query_of, rooms, token, unix_now,
-    upload, voice_routes as voice, watch,
+    Answered, MAX_REQUEST, Shared, USER_COOKIE, assets, events, landing, matches, pages, query_of, rooms, token, unix_now, upload,
+    voice_routes as voice, watch,
 };
 use crate::{App, Matches};
 use axum::body::Bytes;
-use axum::extract::{DefaultBodyLimit, Query, State};
-use axum::http::{HeaderMap, StatusCode, header};
+use axum::extract::{DefaultBodyLimit, Path, Query, State};
+use axum::http::{HeaderMap, HeaderValue, StatusCode, Uri, header};
 use axum::response::{IntoResponse, Redirect, Response};
 use axum::routing::{any, get, post, put};
 use axum::{Form, Json, Router};
 use serde::Deserialize;
 use std::collections::HashMap;
+use tower::ServiceBuilder;
 use tower_http::limit::RequestBodyLimitLayer;
+use tower_http::services::ServeDir;
+use tower_http::set_header::SetResponseHeaderLayer;
 
 type Routes = Router<Shared>;
 
@@ -79,7 +82,16 @@ fn of_room(router: Routes) -> Routes {
 /// The routes of the app: of one match at `/`, or of any number of them. Those in `acting` act
 /// for whoever is signed in.
 pub(super) fn routes(app: &App) -> (Routes, Routes) {
-    let all = Router::new().route("/up", get(up)).fallback(get(file));
+    // The backpack's pictures are files in a folder; the rest of what is served as it is, the
+    // build put in the binary.
+    let day = SetResponseHeaderLayer::if_not_present(header::CACHE_CONTROL, HeaderValue::from_static("max-age=86400"));
+    let all = Router::new()
+        .route("/up", get(up))
+        .route("/embed/v1/stv-map.js", get(|| async { assets::embed_loader() }))
+        .route("/overview/{file}", get(overview))
+        .route("/map/{name}", get(map))
+        .nest_service("/backpack", ServiceBuilder::new().layer(day).service(ServeDir::new(&app.backpack)))
+        .fallback(get(file));
     if matches!(app.matches, Matches::One(_)) {
         let one = all
             .route("/", get(one_page))
@@ -119,8 +131,18 @@ async fn up() -> &'static str {
     "ok"
 }
 
-async fn file(v: Visit) -> Answered {
-    answer(move || Ok(assets::serve_file(&v.app, &v.path, v.gzip))).await
+async fn file(uri: Uri) -> Response {
+    assets::site_file(uri.path())
+}
+
+/// `/overview/<file>`: fetched on a miss, which may take a while.
+async fn overview(State(app): State<Shared>, Path(file): Path<String>) -> Answered {
+    answer(move || Ok(assets::cached_overview(&app, &file))).await
+}
+
+/// `/map/<name>`: built on a miss.
+async fn map(v: Visit, Path(name): Path<String>) -> Answered {
+    answer(move || Ok(assets::map(&v.app, &name, v.gzip))).await
 }
 
 /// The one match's page, at `/`.
@@ -128,7 +150,7 @@ async fn one_page(v: Visit) -> Answered {
     if v.path == "/index.html" || v.path.strip_prefix('/').is_some_and(matches::is_page) {
         return Ok(pages::viewer(&v.app));
     }
-    file(v).await
+    Ok(assets::site_file(&v.path))
 }
 
 async fn one_events(v: Visit, Query(q): Query<Stream>) -> Response {
@@ -169,8 +191,8 @@ async fn mumble(State(app): State<Shared>) -> Response {
     pages::bots(&app)
 }
 
-async fn mumble_json() -> impl IntoResponse {
-    ([(header::CONTENT_TYPE, "application/json")], MUMBLE_JSON)
+async fn mumble_json() -> Response {
+    assets::site_file("mumble.json")
 }
 
 /// `/signin`: to the site in front, to come back to `?return=`.

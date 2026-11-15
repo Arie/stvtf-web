@@ -37,15 +37,15 @@ pub(crate) use assets::app_version;
 use client::counted;
 use visitor::set_cookie;
 
-/// The voice bot's Mumble certificates.
-const MUMBLE_JSON: &str = include_str!("../app/mumble.json");
+#[cfg(test)]
 const HTML: &str = "text/html; charset=utf-8";
+#[cfg(test)]
 const CSS: &str = "text/css; charset=utf-8";
 const JS: &str = "text/javascript; charset=utf-8";
 const JSON: &str = "application/json";
 const WEBP: &str = "image/webp";
+#[cfg(test)]
 const SVG: &str = "image/svg+xml";
-const WOFF2: &str = "font/woff2";
 
 /// Who the browser is, to the rooms; and who signed in with the site, still sealed.
 const GUEST_COOKIE: &str = "stvtf_guest";

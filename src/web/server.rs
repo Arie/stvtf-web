@@ -13,6 +13,7 @@ use hyper_util::rt::{TokioIo, TokioTimer};
 use hyper_util::service::TowerToHyperService;
 use std::net::SocketAddr;
 use std::time::Duration;
+use tower_http::compression::CompressionLayer;
 use tower_http::cors::{self, CorsLayer};
 use tower_http::csrf::CsrfLayer;
 use tower_http::set_header::SetResponseHeaderLayer;
@@ -83,4 +84,7 @@ pub(crate) fn router(app: Shared) -> Router {
         .layer(SetResponseHeaderLayer::overriding(header::X_CONTENT_TYPE_OPTIONS, HeaderValue::from_static("nosniff")))
         .layer(CorsLayer::new().allow_origin(cors::Any).allow_methods([Method::GET]))
         .layer(TimeoutLayer::with_status_code(StatusCode::REQUEST_TIMEOUT, ANSWER_WITHIN))
+        // What compresses well is compressed for whoever takes it; an event stream compresses
+        // itself, flushing each batch (`events::stream`).
+        .layer(CompressionLayer::new())
 }

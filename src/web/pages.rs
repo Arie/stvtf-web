@@ -15,7 +15,7 @@ use std::sync::OnceLock;
 pub(super) struct Viewer<'a> {
     base: &'a str,
     version: &'static str,
-    modules: &'static [&'static str],
+    modules: &'static [String],
 }
 
 /// The front page, with why the last attempt came to nothing if it did, and what is the
@@ -90,7 +90,8 @@ pub(super) fn front(app: &App, signed: bool, error: &str, yours: Vec<Yours>) -> 
 
 pub(super) fn bots(app: &App) -> Response {
     static BOTS: OnceLock<Vec<Bot>> = OnceLock::new();
-    let bots = BOTS.get_or_init(|| serde_json::from_str(super::MUMBLE_JSON).unwrap_or_default());
+    let bots =
+        BOTS.get_or_init(|| super::assets::mumble_bots().and_then(|listed| serde_json::from_slice(&listed).ok()).unwrap_or_default());
     page(&Bots { base: &app.base, version: app_version(), listed: bots })
 }
 

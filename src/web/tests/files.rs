@@ -109,13 +109,13 @@ fn serves_the_page_and_its_modules_under_the_version() {
         "{page}"
     );
     let mut imported = std::collections::HashSet::new();
-    for (name, ctype, _) in APP {
+    for (name, ctype, _) in app_files() {
         let file = get(&format!("/app/{v}/{name}"));
         assert!(file.starts_with("HTTP/1.1 200 OK") && file.contains("max-age=86400"), "{name}");
         assert!(file.contains(&format!("Content-Type: {ctype}")), "{name}");
         imported.extend(imports(name, &file));
     }
-    for (name, ctype, _) in APP {
+    for (name, ctype, _) in app_files() {
         // The page's entries, the upload page's, and the one /embed/v1/stv-map.js loads for
         // other sites.
         let entry = ["main.js", "core/faults.js", "stv-map.js", "upload.js"].contains(&name);
@@ -123,10 +123,11 @@ fn serves_the_page_and_its_modules_under_the_version() {
     }
     // And everything imported is served: a module missing from APP would 404 in the browser.
     for import in &imported {
-        assert!(APP.iter().any(|(name, ..)| name == import), "{import} is imported but not in APP");
+        assert!(app_files().iter().any(|(name, ..)| name == import), "{import} is imported but not in APP");
     }
     // The stylesheet's own links are relative to where it is served.
-    let css = std::str::from_utf8(APP[0].2).unwrap();
+    let files = app_files();
+    let css = std::str::from_utf8(files[0].2).unwrap();
     for link in css.split("url(\"").skip(1).map(|r| r.split('"').next().unwrap()).filter(|l| !l.starts_with("data:")) {
         let mut path: Vec<&str> = vec!["app", v];
         for part in link.split('/') {

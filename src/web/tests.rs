@@ -1,4 +1,3 @@
-use super::assets::APP;
 use super::*;
 use crate::matches::hub::{SharedHub, publish};
 use crate::testing::{TempDir, TestApp, app, server, web_server};
@@ -64,6 +63,16 @@ fn head_and_body(response: &[u8]) -> (String, &[u8]) {
 /// A query string's values, as a request's.
 fn asks(query: &str) -> HashMap<String, String> {
     serde_urlencoded::from_str(query).unwrap()
+}
+
+/// The page's stylesheets and modules as the server has them: each one's name under `app/`, its
+/// type and its body; `style.css`, the page's, first.
+fn app_files() -> Vec<(&'static str, &'static str, &'static [u8])> {
+    let typed = |(name, body): &'static (String, Vec<u8>)| {
+        let css = std::path::Path::new(name).extension().is_some_and(|e| e == "css");
+        (name.as_str(), if css { CSS } else { JS }, body.as_slice())
+    };
+    assets::app_files().iter().map(typed).collect()
 }
 
 fn sessions_of(app: &TestApp) -> &Sessions {
