@@ -2410,6 +2410,8 @@ dependencies = [
  "base64 0.22.1",
  "cookie",
  "flate2",
+ "hyper",
+ "hyper-util",
  "lzma-rs",
  "mime_guess",
  "rust-embed",

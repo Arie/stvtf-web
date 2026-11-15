@@ -1,14 +1,18 @@
-//! The server: axum with tower-http layers; handlers work on blocking threads (`asked::answer`).
+//! The server: axum's routes with tower-http layers, on hyper (`axum::serve` has no header
+//! timeout); handlers work on blocking threads (`asked::answer`).
 
 use super::Shared;
 use anyhow::Result;
 use axum::Router;
-use axum::extract::DefaultBodyLimit;
+use axum::extract::{ConnectInfo, DefaultBodyLimit};
 use axum::http::header::{self, HeaderValue};
 use axum::http::{Method, StatusCode};
-use axum::serve::ListenerExt;
+use hyper::server::conn::http1;
+use hyper_util::rt::{TokioIo, TokioTimer};
+use hyper_util::server::graceful::GracefulShutdown;
+use hyper_util::service::TowerToHyperService;
 use std::future::Future;
-use std::net::SocketAddr;
+use std::pin::pin;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 use tower_http::compression::CompressionLayer;
@@ -21,7 +25,7 @@ use tower_http::trace::TraceLayer;
 /// Serves `app` on `listen` until `stop`, then finishes requests and ends event streams.
 pub(crate) fn run(listen: &str, app: Shared, stop: &'static AtomicBool) -> Result<()> {
     let runtime = tokio::runtime::Builder::new_multi_thread().enable_all().build()?;
-    runtime.block_on(async {
+    let served = runtime.block_on(async {
         let listener = tokio::net::TcpListener::bind(listen).await?;
         log!("http://{listen}/");
         let stopped = async move {
@@ -37,7 +41,10 @@ pub(crate) fn run(listen: &str, app: Shared, stop: &'static AtomicBool) -> Resul
             () = stopped_for(stop, FINISH_WITHIN) => {}
         }
         Ok(())
-    })
+    });
+    // Handlers still at work on blocking threads are not waited for.
+    runtime.shutdown_timeout(Duration::from_secs(1));
+    served
 }
 
 /// How long requests under way have to finish once the server is told to stop.
@@ -51,18 +58,48 @@ async fn stopped_for(stop: &'static AtomicBool, long: Duration) {
     tokio::time::sleep(long).await;
 }
 
+/// A request's head arrives in this time, as does the next on a connection kept open.
+const HEAD_WITHIN: Duration = Duration::from_secs(30);
+
 /// Serves `app` on `listener` until `stopped`, then finishes what is under way.
 pub(crate) async fn serve(
     listener: tokio::net::TcpListener,
     app: Shared,
     stopped: impl Future<Output = ()> + Send + 'static,
 ) -> Result<()> {
-    // No Nagle: it delays events by up to 40 ms.
-    let listener = listener.tap_io(|tcp| {
+    let router = router(app);
+    let mut http = http1::Builder::new();
+    http.timer(TokioTimer::new()).header_read_timeout(HEAD_WITHIN);
+    let graceful = GracefulShutdown::new();
+    let mut stopped = pin!(stopped);
+    loop {
+        let accepted = tokio::select! {
+            accepted = listener.accept() => accepted,
+            () = &mut stopped => break,
+        };
+        let Ok((tcp, peer)) = accepted else {
+            // Out of file descriptors, say: not in a spin.
+            tokio::time::sleep(Duration::from_millis(50)).await;
+            continue;
+        };
+        // No Nagle: it delays events by up to 40 ms.
         let _ = tcp.set_nodelay(true);
-    });
-    let service = router(app).into_make_service_with_connect_info::<SocketAddr>();
-    Ok(axum::serve(listener, service).with_graceful_shutdown(stopped).await?)
+        let shared = TowerToHyperService::new(router.clone());
+        let service = hyper::service::service_fn(move |mut request: hyper::Request<hyper::body::Incoming>| {
+            request.extensions_mut().insert(ConnectInfo(peer));
+            hyper::service::Service::call(&shared, request)
+        });
+        let (http, watcher) = (http.clone(), graceful.watcher());
+        tokio::spawn(async move {
+            // hyper's timer starts at the first byte: one that sends none is not kept either.
+            if !matches!(tokio::time::timeout(HEAD_WITHIN, tcp.peek(&mut [0])).await, Ok(Ok(1..))) {
+                return;
+            }
+            let _ = watcher.watch(http.serve_connection(TokioIo::new(tcp), service)).await;
+        });
+    }
+    graceful.shutdown().await;
+    Ok(())
 }
 
 /// A request is answered in this time, its body read: an upload's part on a slow line, at most.
