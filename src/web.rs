@@ -6,8 +6,8 @@ use crate::matches::sessions;
 use crate::matches::sessions::Sessions;
 use anyhow::Result;
 use axum::Json;
-use axum::http::{StatusCode, header};
-use axum::response::{Html, IntoResponse, Response};
+use axum::http::StatusCode;
+use axum::response::{IntoResponse, Response};
 use std::net::IpAddr;
 use std::sync::Arc;
 use std::time::Duration;
@@ -18,6 +18,7 @@ mod client;
 mod events;
 mod matches;
 mod mine;
+mod pages;
 mod rooms;
 mod routes;
 pub(crate) mod server;
@@ -32,15 +33,12 @@ pub(crate) mod voice_routes;
 pub(crate) mod voice_who;
 pub(crate) mod voice_who_sync;
 
-pub(crate) use assets::{app_version, module_preloads};
+pub(crate) use assets::app_version;
 use client::counted;
 use visitor::set_cookie;
 
-const INDEX: &str = include_str!("../app/pages/index.html");
-const LANDING: &str = include_str!("../app/pages/landing.html");
-/// The voice bot's Mumble certificates: a page, and JSON.
-const MUMBLE: &str = include_str!("../app/pages/mumble.html");
-const MUMBLE_JSON: &str = include_str!("../app/pages/mumble.json");
+/// The voice bot's Mumble certificates.
+const MUMBLE_JSON: &str = include_str!("../app/mumble.json");
 const HTML: &str = "text/html; charset=utf-8";
 const CSS: &str = "text/css; charset=utf-8";
 const JS: &str = "text/javascript; charset=utf-8";
@@ -103,11 +101,6 @@ fn query_of(pairs: &[(&str, &str)]) -> String {
     serde_urlencoded::to_string(pairs).unwrap_or_default()
 }
 
-/// A page: no-cache, so a reload gets a new build (it names the build's files).
-fn page(html: Vec<u8>) -> impl IntoResponse {
-    ([(header::CACHE_CONTROL, "no-cache")], Html(html))
-}
-
 /// The marks from the one `asked` for on, and how many there are in all.
 fn marks_from(asked: &asked::Marks, marks: impl FnOnce(usize) -> (Vec<Mark>, usize)) -> Response {
     let (marks, all) = marks(asked.from());
@@ -146,19 +139,9 @@ fn unix_now() -> u64 {
 }
 
 /// The front page, with `error` if any.
-fn landing(v: &asked::Visit, sessions: &Sessions, error: &str) -> String {
+fn landing(v: &asked::Visit, sessions: &Sessions, error: &str) -> Response {
     let signed = v.app.keys.is_none() || v.who.user.is_some();
-    LANDING
-        .replace("{mine}", &mine::mine(v, sessions))
-        .replace("{signed}", if signed { "1" } else { "" })
-        .replace("{max}", &(upload::MAX_DEMO >> 20).to_string())
-        .replace("{base}", &v.app.base)
-        .replace("{error}", &escape(error))
-}
-
-/// `text` for HTML.
-fn escape(text: &str) -> String {
-    text.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;")
+    pages::front(&v.app, signed, error, mine::mine(v, sessions))
 }
 
 #[cfg(test)]

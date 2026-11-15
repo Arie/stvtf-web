@@ -3,8 +3,8 @@
 use super::asked::{Back, Stream, Visit, answer};
 use super::visitor::{origin, return_to, set_cookie};
 use super::{
-    Answered, INDEX, MAX_REQUEST, MUMBLE, MUMBLE_JSON, Shared, USER_COOKIE, assets, events, landing, matches, page, query_of, rooms, token,
-    unix_now, upload, voice_routes as voice, watch,
+    Answered, MAX_REQUEST, MUMBLE_JSON, Shared, USER_COOKIE, assets, events, landing, matches, pages, query_of, rooms, token, unix_now,
+    upload, voice_routes as voice, watch,
 };
 use crate::{App, Matches};
 use axum::body::Bytes;
@@ -126,7 +126,7 @@ async fn file(v: Visit) -> Answered {
 /// The one match's page, at `/`.
 async fn one_page(v: Visit) -> Answered {
     if v.path == "/index.html" || v.path.strip_prefix('/').is_some_and(matches::is_page) {
-        return Ok(page(v.app.page(INDEX)).into_response());
+        return Ok(pages::viewer(&v.app));
     }
     file(v).await
 }
@@ -140,7 +140,7 @@ async fn one_events(v: Visit, Query(q): Query<Stream>) -> Response {
 }
 
 async fn front(v: Visit) -> Answered {
-    answer(move || Ok(page(v.app.page(&landing(&v, v.sessions()?, ""))).into_response())).await
+    answer(move || Ok(landing(&v, v.sessions()?, ""))).await
 }
 
 /// The front page's form.
@@ -158,15 +158,15 @@ async fn watched(v: Visit, Form(form): Form<Watch>) -> Answered {
             Ok(m) => Redirect::to(&format!("{}/w/{}/", v.app.base, m.id)).into_response(),
             Err(e) => {
                 let status = if v.app.keys.is_some() && v.who.user.is_none() { StatusCode::FORBIDDEN } else { StatusCode::BAD_REQUEST };
-                (status, page(v.app.page(&landing(&v, sessions, &format!("{e:#}"))))).into_response()
+                pages::with(status, landing(&v, sessions, &format!("{e:#}")))
             }
         })
     })
     .await
 }
 
-async fn mumble(State(app): State<Shared>) -> impl IntoResponse {
-    page(app.page(MUMBLE))
+async fn mumble(State(app): State<Shared>) -> Response {
+    pages::bots(&app)
 }
 
 async fn mumble_json() -> impl IntoResponse {

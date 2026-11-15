@@ -91,7 +91,7 @@ npm run test:browser    # after cargo build and `npx playwright-core install --o
 - `app/`: the page, embedded in the binary (canvas, ES modules, no bundler). `build.rs` lists its
   modules and joins the stylesheet's parts.
   - `main.js` draws each frame; `stv-map.js` is `<stv-map>`; `style.css` lists `css/` in order;
-    `pages/` has `index.html` and `landing.html`.
+    the pages are askama templates in `templates/`.
   - `core/`: `core.js` (state, options, tick clock), `stream.js` (event stream), `env.js` (own
     page or `<stv-map>`), `input.js` (keys, mouse, follow), `layers.js` (overkill settings).
   - `map/`: `view.js` (load, frame, rotate, background), `geometry.js`, `camera.js` (auto zoom);

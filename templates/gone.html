@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>stv.tf</title>
+<base href="{{ base }}/">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="app/{{ version }}/landing.css">
+</head>
+<body>
+<main id="gone">
+  <h1>Match ended</h1>
+  <p>With comms:</p>
+  <ul class="mine">
+    {%- for demo in demos %}
+    <li><a href="{{ demo.watch }}"><b>▶</b> {{ demo.map }}</a> · <a href="{{ demo.href }}" download>{{ demo.mb }} MB ↓</a></li>
+    {%- endfor %}
+  </ul>
+</main>
+</body>
+</html>

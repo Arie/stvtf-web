@@ -3,20 +3,17 @@
 
 use super::asked::Visit;
 use super::client::counted;
-use super::escape;
+use super::pages::Yours;
 use super::upload;
 use crate::matches::sessions::{self, Sessions};
-use std::fmt::Write as _;
 
-/// The list, as HTML; nothing when nothing is theirs.
-pub(super) fn mine(v: &Visit, sessions: &Sessions) -> String {
+/// What is theirs, to list.
+pub(super) fn mine(v: &Visit, sessions: &Sessions) -> Vec<Yours> {
     let (app, w) = (&v.app, &v.who);
     let uid = w.user.as_ref().map(|u| u.uid.as_str());
     let by = counted(w.user.as_ref(), None, v.client);
-    let mut rows = String::new();
-    let mut row = |kind: &str, page: String, what: &str| {
-        let _ = write!(rows, r#"<li><a href="{}{page}"><b>{kind}</b> {}</a></li>"#, app.base, escape(what));
-    };
+    let mut rows = Vec::new();
+    let mut row = |kind: &'static str, page: String, what: &str| rows.push(Yours { kind, page, what: what.to_string() });
     let uploads = sessions.store.as_ref().map_or_default(|store| upload::kept_by(store, uid, by.as_deref()));
     for (demo, name) in &uploads {
         row("Demo", format!("/w/{}/", sessions::demo_id(*demo)), name);
@@ -31,5 +28,5 @@ pub(super) fn mine(v: &Visit, sessions: &Sessions) -> String {
     for (id, map) in app.rooms.of(&w.key) {
         row("Room", format!("/r/{id}/"), &map);
     }
-    if rows.is_empty() { rows } else { format!(r#"<h2>Yours</h2><ul class="mine">{rows}</ul>"#) }
+    rows
 }

@@ -21,7 +21,7 @@ use crate::maps::cache::{demostf_maps, map_geometry_gzip, overview, warm_maps};
 use crate::matches::hub::{SharedHub, watch_into};
 use crate::matches::replay::replay;
 use crate::matches::sessions::Sessions;
-use crate::web::{MAX_STREAMS_PER_CLIENT, app_version, module_preloads};
+use crate::web::MAX_STREAMS_PER_CLIENT;
 use anyhow::{Context, Result, bail};
 use std::collections::HashMap;
 use std::net::IpAddr;
@@ -104,18 +104,6 @@ impl Drop for Stream {
 }
 
 impl App {
-    /// A page with its links resolved under `base`.
-    fn page(&self, html: &str) -> Vec<u8> {
-        let html = html
-            .replace(r#"<base href="/">"#, &format!(r#"<base href="{}/">"#, self.base))
-            .replace("\"app/dev/", &format!("\"app/{}/", app_version()));
-        // The viewer's page: its modules all at once.
-        if html.contains("/main.js\"></script>") {
-            return html.replacen("</head>", &format!("{}</head>", module_preloads()), 1).into_bytes();
-        }
-        html.into_bytes()
-    }
-
     /// Whether a match being watched, or a room, is on `map`: only those maps are fetched and
     /// built on request.
     fn on_map(&self, map: &str) -> bool {

@@ -5,7 +5,7 @@ use super::client::counted;
 use super::events::{stream, too_many_streams};
 use super::matches::is_page;
 use super::visitor::{Who, origin};
-use super::{Answered, Early, INDEX, done, marks_from, page};
+use super::{Answered, Early, done, marks_from, pages};
 use crate::App;
 use crate::matches::sessions::{Session, Sessions, logged};
 use crate::rooms::room::{ArcDraw, CircleDraw, Control, Draw, LightDraw, MapChoice, NoteDraw, Room, StartAt, ViewPost};
@@ -122,7 +122,7 @@ pub(super) async fn show(v: Visit, Path(at): Path<RoomAt>) -> Answered {
         Ok(if rest.is_empty() && !v.path.ends_with('/') {
             Redirect::permanent(&format!("{}{}/", v.app.base, v.path)).into_response()
         } else if is_page(rest) {
-            (with_cookie(v.who.cookie.as_deref()), page(v.app.page(INDEX))).into_response()
+            (with_cookie(v.who.cookie.as_deref()), pages::viewer(&v.app)).into_response()
         } else {
             StatusCode::NOT_FOUND.into_response()
         })

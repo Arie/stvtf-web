@@ -124,17 +124,12 @@ fn serve_backpack(app: &App, file: &str) -> Response {
 
 /// Changes whenever a page file does, so browsers holding `/app/` files for a day fetch new ones
 /// after a deploy; the modules' relative imports carry it along.
-/// A `modulepreload` link for each of the page's modules: a browser fetches them at once, where
-/// it would find them import by import (a chain 15 deep). At low priority: at the stylesheet's
-/// they hold the first paint back a second on a slow connection.
-pub(crate) fn module_preloads() -> &'static str {
-    static LINKS: std::sync::OnceLock<String> = std::sync::OnceLock::new();
-    LINKS.get_or_init(|| {
-        // Not the embed's entry nor the upload page's, which the viewer's page does not load.
-        let modules = APP.iter().filter(|(name, ctype, _)| *ctype == JS && !["stv-map.js", "upload.js"].contains(name));
-        modules.fold(String::new(), |links, (name, ..)| {
-            format!("{links}<link rel=\"modulepreload\" fetchpriority=\"low\" href=\"app/{}/{name}\">\n", app_version())
-        })
+/// The viewer's modules: not the embed's entry nor the upload page's, which its page does not
+/// load.
+pub(super) fn page_modules() -> &'static [&'static str] {
+    static MODULES: std::sync::OnceLock<Vec<&'static str>> = std::sync::OnceLock::new();
+    MODULES.get_or_init(|| {
+        APP.iter().filter(|(name, ctype, _)| *ctype == JS && !["stv-map.js", "upload.js"].contains(name)).map(|(name, ..)| *name).collect()
     })
 }
 

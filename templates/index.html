@@ -5,12 +5,15 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>stv.tf</title>
 <!-- The server fills in where it is served (behind a proxy, /live/); all asset links are relative to it. -->
-<base href="/">
+<base href="{{ base }}/">
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
 <link rel="alternate icon" href="favicon.ico" sizes="any">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="stylesheet" href="killicons.css">
-<link rel="stylesheet" href="app/dev/style.css">
+<link rel="stylesheet" href="app/{{ version }}/style.css">
+{% for module in modules -%}
+<link rel="modulepreload" fetchpriority="low" href="app/{{ version }}/{{ module }}">
+{% endfor -%}
 </head>
 <body>
 <div class="stvtf" id="app">
@@ -127,7 +130,7 @@
   </aside>
 </main>
 </div>
-<script type="module" src="app/dev/core/faults.js"></script>
-<script type="module" src="app/dev/main.js"></script>
+<script type="module" src="app/{{ version }}/core/faults.js"></script>
+<script type="module" src="app/{{ version }}/main.js"></script>
 </body>
 </html>

@@ -1,7 +1,7 @@
 //! Lists the page's files in `app/` for the server to embed (`APP` in `src/web/assets.rs`), so a
 //! module moved or added there needs no list kept by hand. Each stylesheet at the top
 //! (`style.css`, the page's, first) is served as one file: its `@import`s of `css/` are put in
-//! their place. `pages/` holds the HTML, which the server takes itself.
+//! their place. The pages themselves are templates, in `templates/`.
 
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};

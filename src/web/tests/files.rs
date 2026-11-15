@@ -295,7 +295,9 @@ fn cached_overviews_keep_and_maps_do_not() {
 
 #[test]
 fn pages_leave_styling_to_the_stylesheet() {
-    for page in [INDEX, LANDING] {
+    let pages = ["index.html", "landing.html", "mumble.html", "gone.html"]
+        .map(|page| std::fs::read_to_string(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("templates").join(page)).unwrap());
+    for page in &pages {
         assert!(!page.contains(" style=") && !page.contains("<style"), "styling in a page: put it in app/css/");
     }
 }

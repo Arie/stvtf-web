@@ -71,4 +71,4 @@ profile. Streamers may make themselves admin in any room.
 
 `/mumble` lists the certificates the voice bot signs in to Mumble servers by (name and SHA-1), for
 a server's admins to know it by or register; `/mumble.json` is the same for a script (`name`,
-`sha1`, `sha256`). Both are `app/pages/mumble.*`, written from the certificates when those change.
+`sha1`, `sha256`): `app/mumble.json`, written from the certificates when those change; the page lists it.

@@ -1,0 +1,105 @@
+//! The pages: templates in `templates/`, filled in and escaped by askama.
+
+use super::app_version;
+use crate::App;
+use askama::Template;
+use axum::http::{StatusCode, header};
+use axum::response::{Html, IntoResponse, Response};
+use serde::Deserialize;
+use std::sync::OnceLock;
+
+/// The viewer: a match's page, or a room's. Its modules are named all at once, where a browser
+/// would find them import by import (a chain 15 deep).
+#[derive(Template)]
+#[template(path = "index.html")]
+pub(super) struct Viewer<'a> {
+    base: &'a str,
+    version: &'static str,
+    modules: &'static [&'static str],
+}
+
+/// The front page, with why the last attempt came to nothing if it did, and what is the
+/// visitor's.
+#[derive(Template)]
+#[template(path = "landing.html")]
+pub(super) struct Front<'a> {
+    base: &'a str,
+    version: &'static str,
+    signed: bool,
+    max: u64,
+    error: &'a str,
+    yours: Vec<Yours>,
+}
+
+/// Something of the visitor's: a demo, a match or a room, and its page.
+pub(super) struct Yours {
+    pub(super) kind: &'static str,
+    pub(super) page: String,
+    pub(super) what: String,
+}
+
+/// The voice bot's Mumble certificates.
+#[derive(Template)]
+#[template(path = "mumble.html")]
+struct Bots<'a> {
+    base: &'a str,
+    version: &'static str,
+    listed: &'static [Bot],
+}
+
+#[derive(Deserialize)]
+struct Bot {
+    name: String,
+    sha1: String,
+}
+
+/// A demo with comms kept of a match: its map, its size in MB, where it is to download (`href`)
+/// and what plays it here (`watch`).
+#[derive(serde::Serialize)]
+pub(super) struct Kept {
+    pub(super) map: String,
+    pub(super) mb: u64,
+    pub(super) href: String,
+    pub(super) watch: String,
+}
+
+/// A match that is gone, with its demos to download.
+#[derive(Template)]
+#[template(path = "gone.html")]
+struct Gone<'a> {
+    base: &'a str,
+    version: &'static str,
+    demos: &'a [Kept],
+}
+
+/// A page: no-cache, so a reload gets a new build (it names the build's files).
+fn page(template: &impl Template) -> Response {
+    match template.render() {
+        Ok(html) => ([(header::CACHE_CONTROL, "no-cache")], Html(html)).into_response(),
+        Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    }
+}
+
+pub(super) fn viewer(app: &App) -> Response {
+    page(&Viewer { base: &app.base, version: app_version(), modules: super::assets::page_modules() })
+}
+
+pub(super) fn front(app: &App, signed: bool, error: &str, yours: Vec<Yours>) -> Response {
+    page(&Front { base: &app.base, version: app_version(), signed, max: super::upload::MAX_DEMO >> 20, error, yours })
+}
+
+pub(super) fn bots(app: &App) -> Response {
+    static BOTS: OnceLock<Vec<Bot>> = OnceLock::new();
+    let bots = BOTS.get_or_init(|| serde_json::from_str(super::MUMBLE_JSON).unwrap_or_default());
+    page(&Bots { base: &app.base, version: app_version(), listed: bots })
+}
+
+pub(super) fn gone(app: &App, demos: &[Kept]) -> Response {
+    page(&Gone { base: &app.base, version: app_version(), demos })
+}
+
+/// `status`, with `page` as its body.
+pub(super) fn with(status: StatusCode, mut page: Response) -> Response {
+    *page.status_mut() = status;
+    page
+}

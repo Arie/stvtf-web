@@ -27,6 +27,7 @@ hyper-util = { version = "0.1.21", features = ["tokio", "service"] }
 axum-extra = { version = "0.12.6", default-features = false, features = ["cookie"] }
 cookie = "0.18"
 serde_urlencoded = "0.7.1"
+askama = { version = "0.16.1", default-features = false, features = ["derive", "std"] }
 
 [profile.release]
 debug = 1

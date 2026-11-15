@@ -3,10 +3,11 @@
 use super::asked::{Marks, MatchAt, Stream, Visit, answer, is_moment};
 use super::client::counted;
 use super::events::{stream, too_many_streams};
+use super::pages::{self, Kept};
 use super::rooms::{Open, Where, open_room, opened};
 use super::token::Source;
 use super::visitor::Who;
-use super::{Answered, Early, INDEX, MAX_DELAY_S, landing, marks_from, page, query_of, unix_now};
+use super::{Answered, Early, MAX_DELAY_S, landing, marks_from, query_of, unix_now};
 use crate::matches::sessions;
 use crate::matches::sessions::{Session, Sessions, Viewer};
 use crate::rooms::room::StartAt;
@@ -16,12 +17,11 @@ use anyhow::{Result, anyhow};
 use axum::Json;
 use axum::extract::Query;
 use axum::http::{StatusCode, header};
-use axum::response::{Html, IntoResponse, Redirect, Response};
+use axum::response::{IntoResponse, Redirect, Response};
 use axum_extra::extract::CookieJar;
 use cookie::{Cookie, SameSite};
 use serde::Deserialize;
 use std::collections::HashMap;
-use std::fmt::Write as _;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -50,13 +50,13 @@ pub(super) fn found(v: &Visit, at: &MatchAt) -> Result<Arc<Session>, Early> {
     let ended_demo = is_page(rest) && app.home.is_some() && sessions::id_demo(id).is_some_and(|d| !sessions::is_own_demo(d));
     let gone = if !kept.is_empty() {
         // Gone, but with comms kept: what there is to download.
-        (StatusCode::NOT_FOUND, Html(gone_with_demos(&kept))).into_response()
+        pages::with(StatusCode::NOT_FOUND, pages::gone(app, &kept))
     } else if ended_demo && v.who.user.is_none() {
         // An ended demos.tf demo, nobody signed in: sign in, then back.
         let back = format!("{}{}{moment}", app.base, v.path);
         Redirect::to(&format!("{}/signin?{}", app.base, query_of(&[("return", &back)]))).into_response()
     } else {
-        (StatusCode::NOT_FOUND, page(app.page(&landing(v, sessions, GONE)))).into_response()
+        pages::with(StatusCode::NOT_FOUND, landing(v, sessions, GONE))
     };
     Err(gone.into())
 }
@@ -68,7 +68,7 @@ pub(super) async fn show(v: Visit, at: MatchAt) -> Answered {
         Ok(if at.rest.is_empty() && !v.path.ends_with('/') {
             Redirect::permanent(&format!("{}{}/", v.app.base, v.path)).into_response()
         } else if is_page(&at.rest) {
-            page(v.app.page(INDEX)).into_response()
+            pages::viewer(&v.app)
         } else {
             StatusCode::NOT_FOUND.into_response()
         })
@@ -304,25 +304,9 @@ pub(super) fn is_page(rest: &str) -> bool {
     }
 }
 
-/// The page of a match that is gone, with its demos to download.
-fn gone_with_demos(kept: &[serde_json::Value]) -> String {
-    let mut links = String::new();
-    for d in kept {
-        let (href, map) = (d["href"].as_str().unwrap_or_default(), d["map"].as_str().unwrap_or_default());
-        let watch = d["watch"].as_str().unwrap_or_default();
-        let _ = write!(links, r#"<li><a href="{watch}">{map}</a> · <a href="{href}" download>{} MB ↓</a></li>"#, d["mb"]);
-    }
-    format!(
-        "<!doctype html><meta charset=utf-8><meta name=viewport content=\"width=device-width\"><title>stv.tf</title>\
-         <body style=\"font:16px system-ui;background:#16171a;color:#ddd;max-width:32em;margin:3em auto;padding:0 1em\">\
-         <p>Match ended. With comms:</p>\
-         <ul>{links}</ul>"
-    )
-}
-
 /// Match `id`'s demos with comms in them: per demo its map, its size in MB, where it is to
 /// download (`href`) and what plays it here (`watch`). None without a store, or for an id that is none.
-pub(super) fn comms_demos(app: &App, sessions: &Sessions, id: &str) -> Vec<serde_json::Value> {
+pub(super) fn comms_demos(app: &App, sessions: &Sessions, id: &str) -> Vec<Kept> {
     let Some(store) = sessions.store.as_ref().filter(|_| sessions::is_id(id)) else { return Vec::new() };
     crate::matches::live_demos::downloads(&store.dir, id)
         .into_iter()
@@ -330,7 +314,7 @@ pub(super) fn comms_demos(app: &App, sessions: &Sessions, id: &str) -> Vec<serde
         .map(|d| {
             let href = format!("{}/w/{id}/demos/{}.dem", app.base, d.file);
             let watch = format!("{}/w/{id}/watch/{}", app.base, d.file);
-            serde_json::json!({ "map": d.map, "mb": d.bytes.div_ceil(1 << 20), "href": href, "watch": watch })
+            Kept { map: d.map, mb: d.bytes.div_ceil(1 << 20), href, watch }
         })
         .collect()
 }
