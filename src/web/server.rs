@@ -17,6 +17,7 @@ use tower_http::cors::{self, CorsLayer};
 use tower_http::csrf::CsrfLayer;
 use tower_http::set_header::SetResponseHeaderLayer;
 use tower_http::timeout::TimeoutLayer;
+use tower_http::trace::TraceLayer;
 
 /// Serves `app` on `listen` until `stop`: requests under way are then finished, and event
 /// streams end (see `events::stream`).
@@ -86,6 +87,8 @@ pub(crate) fn router(app: Shared) -> Router {
         .layer(SetResponseHeaderLayer::overriding(header::X_CONTENT_TYPE_OPTIONS, HeaderValue::from_static("nosniff")))
         .layer(CorsLayer::new().allow_origin(cors::Any).allow_methods([Method::GET]))
         .layer(TimeoutLayer::with_status_code(StatusCode::REQUEST_TIMEOUT, ANSWER_WITHIN))
+        // Each request, for whoever asks to see them (`RUST_LOG=tower_http=debug`).
+        .layer(TraceLayer::new_for_http())
         // What compresses well is compressed for whoever takes it; an event stream compresses
         // itself, flushing each batch (`events::stream`).
         .layer(CompressionLayer::new())

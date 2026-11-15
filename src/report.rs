@@ -49,7 +49,7 @@ pub(crate) fn start(process: &'static str) -> sentry::ClientInitGuard {
 /// Says `text` as a line, and tells Sentry: `kind` (the line unfilled) is what makes it the same
 /// fault as another.
 pub(crate) fn fault(kind: &'static str, text: &str) {
-    crate::log::line(&format!("stvtf-web: {text}"));
+    tracing::error!("{text}");
     if due(kind, Instant::now()) {
         sentry::capture_event(Event {
             message: Some(text.to_string()),

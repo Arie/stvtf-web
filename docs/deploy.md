@@ -3,12 +3,12 @@
 `config/deploy.yml` is the Kamal config: one app per region on the serveme.tf web hosts.
 `STVTF_TOKEN_KEY` comes from `~/.config/stvtf/token.key` (shared with serveme.tf).
 
-| command | |
-|---|---|
-| `bin/build` | builds and pushes the one image all regions run |
-| `bin/deploy [REGION...]` | deploys it, in parallel (default: all four) |
-| `kamal deploy -d eu\|na\|au\|sea` | builds and deploys one region |
-| `bin/relays [--now] [REGION...]` | restarts the relays at the version `bin/build` pushed (boots them the first time); for a change to them |
+| command                           |                                                                                                         |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `bin/build`                       | builds and pushes the one image all regions run                                                         |
+| `bin/deploy [REGION...]`          | deploys it, in parallel (default: all four)                                                             |
+| `kamal deploy -d eu\|na\|au\|sea` | builds and deploys one region                                                                           |
+| `bin/relays [--now] [REGION...]`  | restarts the relays at the version `bin/build` pushed (boots them the first time); for a change to them |
 
 The registry is ghcr.io, with the classic token in `~/.config/stvtf/ghcr.token`, scope
 `write:packages` only, because Kamal leaves the login on every host.
@@ -51,14 +51,16 @@ these files leaves them be.
 
 What the app and the relays say of themselves is on the containers' own logs (`kamal app logs`,
 `kamal accessory logs relay`), which go with the container at the next deploy, and with
-`--logs /data/logs` (every region has it) in `/data/logs/web.log` and `relay.log` too, each line
-with its time: set aside at 8 MB as `web.1.log` up to `.5`, so some 48 MB a process at most.
+`--logs /data/logs` (every region has it) in files there too: `web.<date>.log` and
+`relay.<date>.log`, a new one each day (UTC) and a week of them kept, each line with its time.
+`RUST_LOG` says how much is said (default `info`; `RUST_LOG=info,tower_http=debug` adds a line
+for each request).
 They say when a match, a room or a relay starts and ends, who joined a room (by Steam id when
 signed in), and of each relay (by its port) the TF2 clients that came and went (by name, their
 address without its end), why they left, and every jump and pause.
 
 ```
-kamal app exec -d na --reuse 'tail -200 /data/logs/relay.log'
+kamal app exec -d na --reuse 'tail -200 /data/logs/relay.$(date -u +%F).log'
 ```
 
 ## Faults

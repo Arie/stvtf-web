@@ -70,9 +70,12 @@ npm run test:browser    # after cargo build and `npx playwright-core install --o
 
 - `src/main.rs`: start-up, match housekeeping, connections; `src/cli.rs`: the command line;
   `src/log.rs`: what the server says of itself (`--logs`).
-- `src/web/`: HTTP, on hyper, axum and tower-http. `server.rs`: connections, the layers (CORS,
-  CSRF, frame and timeout) and the adapter that answers each request on a blocking thread;
-  `routes.rs`: the routes; the rest: one module per part of the site.
+- `src/web/`: HTTP, on axum and tower-http. `server.rs`: `axum::serve` and the layers (CORS,
+  CSRF, frames, limits, compression, tracing); `routes.rs`: the routes; `asked.rs`: our
+  extractors and typed queries; `pages.rs`: the askama templates in `templates/`; `assets.rs`:
+  the files embedded with rust-embed; the rest: one module per part of the site. Handlers are
+  `async fn`s with extractors; their work, which blocks, runs on a blocking thread
+  (`asked::answer`).
   `web/assets.rs`: served files (`/map/NAME`, `/overview/`, `/backpack/`, icons, fonts).
   `web/token.rs`: the site's tokens.
 - `src/matches/`: `hub` (a match's state, feed, per-page queues), `sessions` (many matches, saved

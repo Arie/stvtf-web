@@ -47,8 +47,8 @@ too, see [rooms](rooms.md#across-restarts).
 SIGTERM or Ctrl-C disconnects every match cleanly (otherwise the server holds the slot for 300 s);
 a second Ctrl-C exits at once. `--replay` has nothing to disconnect and takes the second.
 
-`--logs DIR` keeps what the server says of itself in `DIR/web.log` too (a relay process's in
-`relay.log`), see [deploy](deploy.md#logs).
+`--logs DIR` keeps what the server says of itself in `DIR/web.<date>.log` too (a relay
+process's in `relay.<date>.log`), see [deploy](deploy.md#logs).
 
 `SENTRY_DSN` has what goes wrong told to Sentry, see [deploy](deploy.md#faults).
 

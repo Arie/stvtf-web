@@ -318,15 +318,11 @@ fn who_is_who(options: &Options, keys: Option<&Arc<web::token::Keys>>, voice_key
     voice::who::WhoIsWho::new(options.sessions.as_deref(), home.as_deref().zip(voice_key), sites)
 }
 
-/// What is said is kept in a file too (`--logs`), the relays' notes with it: one for each
-/// process. A folder that cannot be written is not worth not starting for: stderr has it all.
+/// What is said goes to stderr and, with `--logs`, to files too, the relays' notes with it:
+/// files for each process.
 fn keep_log(options: &Options) {
-    if let Some(logs) = &options.logs
-        && let Err(e) = log::keep_in(logs, if options.relay_daemon.is_some() { "relay" } else { "web" })
-    {
-        log!("no log kept in {}: {e}", logs.display());
-    }
-    stvtf::relay::log_to(log::line);
+    log::start(options.logs.as_deref(), if options.relay_daemon.is_some() { "relay" } else { "web" });
+    stvtf::relay::log_to(|line| log!("{line}"));
 }
 
 /// The relay process, if `options` ask for it: only the relays (the rest are the image's for the
