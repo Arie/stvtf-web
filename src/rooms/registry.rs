@@ -717,6 +717,23 @@ mod tests {
     }
 
     #[test]
+    fn a_demo_s_files_are_swept_together() {
+        let dir = TempDir::new("demos-together");
+        for (name, bytes, hours) in [("demo-1.dem", 100, 5), ("demo-1.gz", 10, 2), ("demo-1.up", 1, 2), ("demo-2.gz", 10, 3)] {
+            let path = dir.join(name);
+            std::fs::write(&path, vec![0; bytes]).unwrap();
+            let at = SystemTime::now() - Duration::from_hours(hours);
+            std::fs::File::options().write(true).open(&path).unwrap().set_modified(at).unwrap();
+        }
+        // Over the budget by the older `.dem` alone: the demo longest unplayed goes, whole.
+        sweep_demos(&dir, Duration::from_hours(48), 115, STALE);
+        let mut left: Vec<String> =
+            std::fs::read_dir(&*dir).unwrap().flatten().map(|e| e.file_name().to_string_lossy().into_owned()).collect();
+        left.sort();
+        assert_eq!(left, ["demo-1.dem", "demo-1.gz", "demo-1.up"]);
+    }
+
+    #[test]
     fn the_sweep_leaves_the_demos_of_a_match_still_running() {
         let dir = TempDir::new("sweep-live");
         let store = store(&dir);

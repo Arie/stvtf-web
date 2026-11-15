@@ -7,6 +7,7 @@ use crate::matches::recording::{Save, Sink};
 use crate::web::token;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -221,23 +222,31 @@ pub(crate) fn is_kept_demo(name: &str) -> bool {
     name.starts_with(DEMO_PREFIX) && std::path::Path::new(name).extension().is_none_or(|e| e != "part")
 }
 
-/// Drops the demos.tf demos' files in `dir` not played for `max_age`, and the longest unplayed
-/// past `budget` bytes of them; not one played within `fresh` (a match or a room may be on it).
+/// Drops the demos in `dir` not played for `max_age`, and the longest unplayed past `budget`
+/// bytes; not one played within `fresh`. A demo's files go together.
 pub(crate) fn sweep_demos(dir: &std::path::Path, max_age: Duration, budget: u64, fresh: Duration) {
-    let mut kept: Vec<(Duration, u64, PathBuf)> = std::fs::read_dir(dir)
-        .into_iter()
-        .flatten()
-        .flatten()
-        .filter(|e| is_kept_demo(&e.file_name().to_string_lossy()))
-        .filter_map(|e| Some((age(&e).ok()?, e.metadata().ok()?.len(), e.path())))
-        .collect();
+    let mut demos: BTreeMap<String, (Duration, u64, Vec<PathBuf>)> = BTreeMap::new();
+    for e in std::fs::read_dir(dir).into_iter().flatten().flatten() {
+        let name = e.file_name().to_string_lossy().into_owned();
+        let (Ok(age), Ok(meta)) = (age(&e), e.metadata()) else { continue };
+        if !is_kept_demo(&name) {
+            continue;
+        }
+        let demo = demos.entry(name.split('.').next().unwrap_or_default().to_string()).or_insert((age, 0, Vec::new()));
+        demo.0 = demo.0.min(age);
+        demo.1 += meta.len();
+        demo.2.push(e.path());
+    }
+    let mut kept: Vec<_> = demos.into_values().collect();
     kept.sort_by_key(|(age, ..)| *age);
     let mut total = 0;
-    for (age, bytes, path) in kept {
+    for (age, bytes, files) in kept {
         total += bytes;
         if age > fresh && (total > budget || age > max_age) {
             total -= bytes;
-            let _ = std::fs::remove_file(path);
+            for file in files {
+                let _ = std::fs::remove_file(file);
+            }
         }
     }
 }
