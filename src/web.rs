@@ -236,7 +236,6 @@ fn serve_many(
     client: IpAddr,
 ) -> Result<()> {
     match (request.path.as_str(), request.method.as_str()) {
-        (path @ ("/" | "/watch"), _) if app.keys.is_some() => front_door(&mut s, app, path)?,
         ("/matches", "GET") if let Some(keys) = &app.keys => list_matches(&mut s, keys, sessions, request)?,
         ("/mumble", "GET") => respond(&mut s, "200 OK", HTML, &app.page(MUMBLE))?,
         ("/mumble.json", "GET") => respond(&mut s, "200 OK", JSON, MUMBLE_JSON.as_bytes())?,
@@ -271,7 +270,7 @@ fn serve_many(
             Ok(m) => app.redirect(&mut s, "303 See Other", &format!("/w/{}/{}", m.id, start_view(&request.query)))?,
             Err(e) => refuse(&mut s, "400 Bad Request", &e)?,
         },
-        ("/", "GET") => respond(&mut s, "200 OK", HTML, &app.page(&landing("")))?,
+        ("/", "GET") => respond(&mut s, "200 OK", HTML, &app.page(&landing(app, request, "")))?,
         // What a page says went wrong in it (see `report`): taken or not, it is not told.
         ("/fault", "POST") => {
             let who = visitor::who(app, request).user;
@@ -281,15 +280,7 @@ fn serve_many(
         ("/watch", "POST") if request.length as u64 > MAX_REQUEST => {
             respond(&mut s, "413 Content Too Large", TEXT, format!("over {MAX_REQUEST} bytes").as_bytes())?;
         }
-        ("/watch", "POST") => {
-            let body = read_body(reader, request)?;
-            let form = String::from_utf8_lossy(&body);
-            let line = param(&form, "connect").map_or_default(form_decode);
-            match sessions.open_as(counted(None, None, client).as_deref(), &line, None, None) {
-                Ok(m) => app.redirect(&mut s, "303 See Other", &format!("/w/{}/", m.id))?,
-                Err(e) => respond(&mut s, "400 Bad Request", HTML, &app.page(&landing(&format!("{e:#}"))))?,
-            }
-        }
+        ("/watch", "POST") => post_watch(&mut s, reader, app, sessions, request, client)?,
         (p, _) if let Some(path) = p.strip_prefix("/w/") => serve_match(s, reader, app, sessions, request, path, client)?,
         (p, _) if let Some(path) = p.strip_prefix("/r/") => serve_room(s, reader, app, sessions, request, path, client)?,
         (path, _) => serve_file(&mut s, app, path, request.gzip)?,
@@ -335,23 +326,67 @@ fn done(s: &mut TcpStream, done: Result<()>) -> std::io::Result<()> {
     }
 }
 
-/// Matches start only from the site's links: `/` sends visitors to it (`--home`), and the form to
-/// watch any server is closed.
-fn front_door(s: &mut TcpStream, app: &App, path: &str) -> std::io::Result<()> {
-    match app.home.as_deref().filter(|_| path == "/") {
-        Some(home) => redirect(s, "302 Found", home),
-        None => respond(s, "403 Forbidden", TEXT, b"Start watching a match from the site that sent you here."),
+/// `POST /watch`: the front page's form.
+fn post_watch(
+    s: &mut TcpStream,
+    reader: &mut BufReader<Take<TcpStream>>,
+    app: &App,
+    sessions: &Sessions,
+    request: &Request,
+    client: IpAddr,
+) -> Result<()> {
+    let body = read_body(reader, request)?;
+    let form = String::from_utf8_lossy(&body);
+    let line = param(&form, "connect").map_or_default(form_decode);
+    let user = visitor::who(app, request).user;
+    match watch(app, sessions, user.as_ref(), &line, client) {
+        Ok(m) => app.redirect(s, "303 See Other", &format!("/w/{}/", m.id))?,
+        Err(e) => {
+            let status = if app.keys.is_some() && user.is_none() { "403 Forbidden" } else { "400 Bad Request" };
+            respond(s, status, HTML, &app.page(&landing(app, request, &format!("{e:#}"))))?;
+        }
     }
+    Ok(())
+}
+
+/// The match `line` asks for: a connect string, or a demos.tf link. Behind a site, signed in.
+fn watch(
+    app: &App,
+    sessions: &Sessions,
+    user: Option<&token::User>,
+    line: &str,
+    client: IpAddr,
+) -> Result<std::sync::Arc<sessions::Session>> {
+    if app.keys.is_some() && user.is_none() {
+        anyhow::bail!("Sign in first");
+    }
+    let by = counted(user, None, client);
+    let owner = user.map(|u| u.uid.as_str());
+    match demostf_link(line) {
+        Some(demo) => sessions.open_demo_as(by.as_deref(), demo, owner),
+        None => sessions.open_as(by.as_deref(), line, owner, None),
+    }
+}
+
+/// The demo of a demos.tf link.
+fn demostf_link(line: &str) -> Option<u64> {
+    let rest = line.trim().trim_start_matches("https://").trim_start_matches("www.").strip_prefix("demos.tf/")?;
+    rest.trim_end_matches('/').parse().ok().filter(|d| !sessions::is_own_demo(*d))
 }
 
 fn unix_now() -> u64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs())
 }
 
-/// The start page, with an error from the last attempt if there was one.
-fn landing(error: &str) -> String {
+/// The front page, with `error` if any.
+fn landing(app: &App, request: &Request, error: &str) -> String {
     let escaped = error.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;");
-    LANDING.replace("{error}", &escaped)
+    let signed = app.keys.is_none() || visitor::who(app, request).user.is_some();
+    LANDING
+        .replace("{signed}", if signed { "1" } else { "" })
+        .replace("{max}", &(upload::MAX_DEMO >> 20).to_string())
+        .replace("{base}", &app.base)
+        .replace("{error}", &escaped)
 }
 
 /// A form value: `+` is a space and `%XX` a byte.

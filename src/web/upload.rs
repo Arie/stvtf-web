@@ -2,7 +2,7 @@
 //! only what that player's game was sent, and is not relayed to TF2), as it is or packed (see
 //! [`super::unpack`]). Sent in parts, a proxy in front taking only so much in one request:
 //!
-//! - `GET /upload`: the page.
+//! - `GET /upload`: to the front page, which has the form.
 //! - `POST /upload` `{"size"}`: begins one; `{"id", "part"}`, the most bytes a part may be.
 //! - `PUT /upload/<id>?at=<bytes so far>`: the next part; `409` with how many bytes there are
 //!   when that is not where it goes on.
@@ -14,16 +14,15 @@
 
 use super::client::counted;
 use super::visitor::who;
-use super::{HTML, JSON, Request, TEXT, json_body, param, refuse, respond};
+use super::{JSON, Request, TEXT, json_body, param, refuse, respond};
 use crate::App;
 use crate::matches::sessions::{self, DEMO_PREFIX, Sessions, Store, demo_dem, demo_info, demo_output};
 use anyhow::{Context, Result, bail};
 use std::io::{BufReader, Read, Take, Write};
 use std::net::{IpAddr, TcpStream};
 
-const PAGE: &str = include_str!("../../app/pages/upload.html");
 /// The biggest demo (sent, and unpacked), and part of one: under what Cloudflare lets through.
-const MAX_DEMO: u64 = 512 << 20;
+pub(super) const MAX_DEMO: u64 = 512 << 20;
 const MAX_PART: usize = 32 << 20;
 /// What a `SourceTV` demo's header names as its client.
 const STV_CLIENT: &str = "SourceTV Demo";
@@ -55,9 +54,7 @@ pub(super) fn serve_upload(
     let Some(store) = &sessions.store else { return respond(s, "404 Not Found", TEXT, b"No demos are kept here") };
     let id = request.path.strip_prefix("/upload/").filter(|id| sessions::is_id(id));
     if let ("/upload", "GET") = (request.path.as_str(), request.method.as_str()) {
-        let signed = app.keys.is_none() || who(app, request).user.is_some();
-        let page = PAGE.replace("{signed}", if signed { "1" } else { "" }).replace("{max}", &(MAX_DEMO >> 20).to_string());
-        return respond(s, "200 OK", HTML, &app.page(&page));
+        return app.redirect(s, "302 Found", "/");
     }
     let by = match uploader(app, request, client) {
         Ok(by) => by,

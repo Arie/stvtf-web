@@ -16,11 +16,11 @@ does not list, a list token starts nothing.
 | `{"list": true, "exp"}` | `GET /matches` with `Authorization: Bearer TOKEN` |
 | `{"signin": {"uid", "name", "streamer"}, "exp"}` | sign-in, see below |
 
-With a key set, matches start only from start links; the SourceTV password is never readable in
-a URL.
+With a key set, matches start from start links, and from the front page (`/`: a connect string,
+a demos.tf link or an upload) for whoever is signed in, as theirs. The SourceTV password is never
+readable in a URL.
 
-`--home URL` sends visitors of `/` to the site (each serveme.tf region has its own `/stv` page);
-without it `/` answers 403.
+`--home URL` is the site: where people sign in, and where an ended demo's link leads.
 
 ## `/matches`
 
@@ -42,7 +42,7 @@ demo filled in.
 
 ## Uploaded demos
 
-`/upload`: a page that takes a `.dem` (512 MB at most; or a `.zip` with one in it, or a `.gz`,
+The front page takes a `.dem` (512 MB at most; or a `.zip` with one in it, or a `.gz`,
 unpacked to no more than that, whatever it says of itself) from whoever is signed in (where nobody
 signs in, from anyone) and plays it as a match of its own at `/w/demo/<id>/` (a player's own at
 `/w/pov/<id>/`), where a room is opened on it like on any other. A `SourceTV` demo, or a player's own: that one has only what

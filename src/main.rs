@@ -81,7 +81,7 @@ struct App {
     base: String,
     /// When set, matches start only from tokens a site in front of us made.
     keys: Option<Arc<web::token::Keys>>,
-    /// Where `/` sends visitors when matches start only from the site's links.
+    /// The site in front: where people sign in.
     home: Option<String>,
     /// Open event streams by client address.
     streams: Mutex<HashMap<IpAddr, usize>>,

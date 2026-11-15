@@ -1,6 +1,5 @@
-// The upload page (pages/upload.html): a demo sent in parts (a proxy in front takes only so much
-// in one request), a part that failed sent again from where the server has it, and then on to
-// where it plays. See the server's web/upload.rs.
+// The front page's upload (pages/landing.html): a demo sent in parts, a failed part sent again
+// from where the server has it, then on to where it plays. See the server's web/upload.rs.
 
 // How often a part that would not go is tried again, and how long between tries, in milliseconds.
 const TRIES = 5,
@@ -47,21 +46,20 @@ export async function upload(file, home, said) {
   return (await done.json()).page;
 }
 
-const main = globalThis.document?.getElementById("upload");
+const main = globalThis.document?.getElementById("front");
 if (main) {
-  const form = /** @type {HTMLFormElement} */ (main.querySelector("form")),
-    file = /** @type {HTMLInputElement} */ (main.querySelector("input")),
-    button = /** @type {HTMLButtonElement} */ (main.querySelector("button")),
+  const form = /** @type {HTMLFormElement} */ (main.querySelector("#upload")),
+    file = /** @type {HTMLInputElement} */ (form.querySelector("input")),
+    button = /** @type {HTMLButtonElement} */ (form.querySelector("button")),
     bar = /** @type {HTMLProgressElement} */ (main.querySelector("progress")),
     error = /** @type {HTMLElement} */ (main.querySelector(".error"));
   if (!main.dataset.signed) {
-    form.hidden = true;
+    for (const hide of main.querySelectorAll("form, .or")) /** @type {HTMLElement} */ (hide).hidden = true;
     /** @type {HTMLElement} */ (main.querySelector(".signin")).hidden = false;
   }
-  form.onsubmit = async e => {
-    e.preventDefault();
-    const demo = file.files?.[0];
-    if (!demo) return;
+  /** @param {File | undefined} demo */
+  const send = async demo => {
+    if (!demo || button.disabled) return;
     error.textContent = "";
     if (demo.size > Number(main.dataset.max) * 2 ** 20) return void (error.textContent = `Over ${main.dataset.max} MB`);
     [button.disabled, bar.hidden, bar.value] = [true, false, 0];
@@ -71,5 +69,15 @@ if (main) {
       error.textContent = err instanceof Error ? err.message : "Failed";
       [button.disabled, bar.hidden] = [false, true];
     }
+  };
+  form.onsubmit = e => {
+    e.preventDefault();
+    void send(file.files?.[0]);
+  };
+  // Dropped on the page.
+  document.ondragover = e => e.preventDefault();
+  document.ondrop = e => {
+    e.preventDefault();
+    if (main.dataset.signed) void send(e.dataTransfer?.files[0]);
   };
 }

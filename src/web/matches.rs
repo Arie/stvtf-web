@@ -67,11 +67,8 @@ pub(super) fn serve_match(
             let to = format!("{home}?connect=https%3A%2F%2Fdemos.tf%2F{demo}{at}");
             redirect(&mut s, "303 See Other", &to)?;
         }
-        (None, _) if app.keys.is_some() => {
-            respond(&mut s, "404 Not Found", TEXT, b"That match is no longer being watched; open it again from the site.")?;
-        }
         (None, _) => {
-            let gone = landing("That match is no longer being watched; paste its connect string to watch it again.");
+            let gone = landing(app, request, "That match is no longer being watched; paste its connect string to watch it again.");
             respond(&mut s, "404 Not Found", HTML, &app.page(&gone))?;
         }
         (Some(_), "") if !path.ends_with('/') => {

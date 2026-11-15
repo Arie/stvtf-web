@@ -174,12 +174,20 @@ fn behind_a_site_matches_start_only_from_its_tokens() {
     let mut app = app(Matches::Many(Sessions::new(false, 4, 20.0)));
     app.base = "/live".into();
     app.keys = Some(Arc::new(token::Keys::from_hex(&key).unwrap()));
-    assert!(get(&app, "/", "").starts_with("HTTP/1.1 403"));
-    assert!(post_watch(&app, "192.0.2.1%3A27020+tv").starts_with("HTTP/1.1 403"));
     app.home = Some("https://serveme.tf/stv".into());
-    let home = get(&app, "/", "");
-    assert!(home.starts_with("HTTP/1.1 302") && home.contains("Location: https://serveme.tf/stv\r\n"), "{home}");
-    assert!(post_watch(&app, "192.0.2.1%3A27020+tv").starts_with("HTTP/1.1 403"));
+    // Its own front page is for whoever is signed in: their matches are theirs.
+    let front = get(&app, "/", "");
+    assert!(front.starts_with("HTTP/1.1 200") && front.contains(r#"data-signed="""#), "{front}");
+    assert!(front.contains(r#"href="signin?return=/live/""#), "{front}");
+    let refused = post_watch(&app, "192.0.2.1%3A27020+tv");
+    assert!(refused.starts_with("HTTP/1.1 403") && refused.contains("Sign in first"), "{refused}");
+    let user = token::User { uid: "u7".into(), name: "n".into(), streamer: false };
+    let cookie = format!("stvtf_user={}", app.keys.as_ref().unwrap().keep(&user, unix_now()));
+    assert!(get(&app, "/", &cookie).contains(r#"data-signed="1""#));
+    let started = post(&app, "/watch", &cookie, "connect=192.0.2.1%3A27020+tv");
+    assert!(started.starts_with("HTTP/1.1 303") && started.contains("Location: /live/w/"), "{started}");
+    assert_eq!(serde_json::json!(sessions_of(&app).list())[0]["owner"], "u7");
+    sessions_of(&app).stop_all();
     let exp = unix_now() + 60;
     let t = token::seal(&key, &format!(r#"{{"connect":"connect 192.0.2.1:27020; password \"tv\"","owner":"u1","exp":{exp}}}"#), [3; 12]);
     let response = get(&app, &format!("/start?t={t}"), "");
@@ -240,8 +248,11 @@ fn a_match_no_longer_watched_says_where_to_start_it_again() {
     let page = gone(&a);
     assert!(page.starts_with("HTTP/1.1 404") && page.contains(HTML) && page.contains("paste its connect string"), "{page}");
     a.keys = Some(Arc::new(token::Keys::from_hex(&"00".repeat(32)).unwrap()));
-    let text = gone(&a);
-    assert!(text.starts_with("HTTP/1.1 404") && text.contains(TEXT) && text.contains("open it again from the site"), "{text}");
+    let behind = gone(&a);
+    assert!(
+        behind.starts_with("HTTP/1.1 404") && behind.contains("paste its connect string") && behind.contains(r#"data-signed="""#),
+        "{behind}"
+    );
 }
 
 #[test]
@@ -382,4 +393,14 @@ fn a_demo_with_comms_watched_here_has_its_voices_put_on_players_after_the_match(
     assert!(get(&app, &format!("{page}voice-invite"), "").starts_with("HTTP/1.1 204"));
     assert!(post(&app, &format!("{page}voice-match"), "", r#"{"discord":"77"}"#).starts_with("HTTP/1.1 403"));
     sessions_of(&app).stop_all();
+}
+
+#[test]
+fn a_demostf_link_is_its_demo() {
+    for link in ["https://demos.tf/1527264", " demos.tf/1527264/ ", "https://www.demos.tf/1527264"] {
+        assert_eq!(demostf_link(link), Some(1_527_264), "{link}");
+    }
+    for not in ["connect 1.2.3.4:27020", "https://demos.tf/", "https://evil.example/demos.tf/1", "demos.tf/9007199254740993"] {
+        assert_eq!(demostf_link(not), None, "{not}");
+    }
 }

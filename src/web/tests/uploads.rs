@@ -33,7 +33,8 @@ fn send(app: &App, demo: &[u8], name: &str) -> String {
 #[test]
 fn a_demo_uploaded_in_parts_plays_as_a_match_and_again_while_it_is_kept() {
     let (app, dir) = upload_app();
-    assert!(get(&app, "/upload", "").contains(r#"data-signed="1""#), "nobody signs in here: anyone");
+    assert!(get(&app, "/", "").contains(r#"data-signed="1""#), "nobody signs in here: anyone");
+    assert!(get(&app, "/upload", "").contains("Location: /\r\n"), "the form is on the front page");
     assert!(get(&app, "/mumble", "").contains("<td>stv.tf-2</td>"));
     let listed = get(&app, "/mumble.json", "");
     let listed: serde_json::Value = serde_json::from_str(listed.split("\r\n\r\n").nth(1).unwrap()).unwrap();
@@ -108,7 +109,7 @@ fn what_is_no_tf2_demo_or_too_big_or_from_nobody_signed_in_is_refused() {
     assert!(put(&app, "/upload/..%2fx?at=0", b"x").starts_with("HTTP/1.1 404"));
     // Behind a site: signed in.
     app.keys = Some(Arc::new(token::Keys::from_hex(&"42".repeat(32)).unwrap()));
-    assert!(get(&app, "/upload", "").contains(r#"data-signed="""#));
+    assert!(get(&app, "/", "").contains(r#"data-signed="""#));
     let refused = post(&app, "/upload", "", r#"{"size":5000}"#);
     assert!(refused.starts_with("HTTP/1.1 403") && refused.contains("Sign in first"), "{refused}");
 }

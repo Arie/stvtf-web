@@ -9,15 +9,24 @@
 <link rel="alternate icon" href="favicon.ico" sizes="any">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="stylesheet" href="app/dev/landing.css">
+<script type="module" src="app/dev/upload.js"></script>
 </head>
 <body>
-<main>
+<main id="front" data-signed="{signed}" data-max="{max}">
   <h1>Watch a match</h1>
-  <p>Paste the server's SourceTV connect string, like <code>connect host:27020; password "tv"</code>.</p>
-  <form method="post" action="watch">
-    <input name="connect" placeholder='connect host:27020; password "tv"' autofocus required autocomplete="off" spellcheck="false">
+  <p>Paste a SourceTV connect string, like <code>connect host:27020; password "tv"</code>, or a
+  demos.tf link, like <code>https://demos.tf/1527264</code>.</p>
+  <form id="watch" method="post" action="watch">
+    <input name="connect" placeholder='connect host:27020; password "tv" or a demos.tf link' autofocus required autocomplete="off" spellcheck="false">
     <button>Watch</button>
   </form>
+  <p class="or">Or upload a demo: .dem, .zip or .gz, up to {max} MB. It replaces your last.</p>
+  <form id="upload">
+    <input type="file" accept=".dem,.zip,.gz" required>
+    <button>Upload</button>
+  </form>
+  <a class="signin" href="signin?return={base}/" hidden>Sign in with serveme</a>
+  <progress max="1" value="0" hidden></progress>
   <div class="error">{error}</div>
 </main>
 </body>
