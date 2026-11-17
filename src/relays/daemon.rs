@@ -373,8 +373,12 @@ pub(crate) fn serve(socket: &Path, relays: &Arc<Relays>, lease: Duration, stop: 
 fn answer(conn: UnixStream, rooms: &Rooms, relays: &Arc<Relays>) -> Result<()> {
     let mut out = conn.try_clone()?;
     for line in BufReader::new(conn).lines() {
-        let answer = match serde_json::from_str::<Request>(&line?) {
-            Ok(r) => handle(r, rooms, relays),
+        let answer = match serde_json::from_str::<Value>(&line?).and_then(|v| Ok((Request::deserialize(&v)?, v))) {
+            // In the trace of the stv.tf request that asked, tagged with its room.
+            Ok((r, v)) => {
+                let (op, room) = (v["op"].as_str().unwrap_or_default(), v["room"].as_str().unwrap_or_default());
+                crate::report::continued(&format!("relay {op}"), v["trace"].as_str(), &[("room", room)], || handle(r, rooms, relays))
+            }
             Err(e) => json!({ "error": format!("{e}") }),
         };
         writeln!(out, "{answer}")?;
@@ -482,8 +486,22 @@ impl Remote {
         Arc::new(Remote { socket: socket.to_owned(), conn: Mutex::new(None), away: Mutex::new(None) })
     }
 
-    /// One request and its answer; after one with no answer, calls fail at once for [`AWAY`].
+    /// One request and its answer, in the trace of the request being answered.
     fn call(&self, request: &Value) -> Result<Value> {
+        self.call_in(request, crate::report::trace_header())
+    }
+
+    /// One request and its answer, in `trace`; after one with no answer, calls fail at once for [`AWAY`].
+    fn call_in(&self, request: &Value, trace: Option<String>) -> Result<Value> {
+        let mut traced = None;
+        let request = match trace {
+            Some(t) => traced.insert({
+                let mut r = request.clone();
+                r["trace"] = t.into();
+                r
+            }),
+            None => request,
+        };
         let mut conn = lock(&self.conn);
         if lock(&self.away).is_some_and(|until| Instant::now() < until) {
             bail!("the relays at {} did not answer", self.socket.display());
@@ -546,6 +564,7 @@ impl Remote {
                 light_given: false,
                 light_due: false,
                 done: None,
+                trace: None,
             }),
             wake: Condvar::new(),
         });
@@ -584,6 +603,8 @@ struct Inner {
     light_given: bool,
     light_due: bool,
     done: Option<Done>,
+    /// The trace of the last request that gave it something to send.
+    trace: Option<String>,
 }
 
 struct Shared {
@@ -598,7 +619,7 @@ impl Shared {
     fn tend(&self) {
         let mut asked = Instant::now();
         loop {
-            let (want, kept, notes, voice, light, done) = {
+            let (want, kept, notes, voice, light, done, trace) = {
                 let mut i = lock(&self.inner);
                 while i.want.is_none() && i.kept.is_none() && i.notes.is_none() && i.voice.is_empty() && !i.light_due && i.done.is_none() {
                     let left = STATUS_EVERY.saturating_sub(asked.elapsed());
@@ -608,34 +629,43 @@ impl Shared {
                     i = self.wake.wait_timeout(i, left).unwrap_or_else(PoisonError::into_inner).0;
                 }
                 let voice: Vec<VoiceLine> = i.voice.drain(..).collect();
-                (i.want.take(), i.kept.take(), i.notes.take(), voice, std::mem::take(&mut i.light_due).then_some(i.light), i.done)
+                (
+                    i.want.take(),
+                    i.kept.take(),
+                    i.notes.take(),
+                    voice,
+                    std::mem::take(&mut i.light_due).then_some(i.light),
+                    i.done,
+                    i.trace.take(),
+                )
             };
+            let call = |request: &Value| self.remote.call_in(request, trace.clone());
             match done {
                 Some(Done::End) => {
-                    let _ = self.remote.call(&json!({ "op": "stop", "room": self.room }));
+                    let _ = call(&json!({ "op": "stop", "room": self.room }));
                     return;
                 }
                 Some(Done::LetGo) => return,
                 None => {}
             }
             if let Some(want) = want {
-                let answer = self.remote.call(&json!({ "op": "follow", "room": self.room, "want": WantLine::of(&want) }));
+                let answer = call(&json!({ "op": "follow", "room": self.room, "want": WantLine::of(&want) }));
                 if answer.is_ok_and(|a| a.get("gone").is_some()) {
                     lock(&self.inner).stopped = true;
                 }
             }
             if let Some(kept) = kept {
                 let kept: Vec<BeamLine> = kept.iter().map(beam_line).collect();
-                let _ = self.remote.call(&json!({ "op": "keep", "room": self.room, "beams": kept }));
+                let _ = call(&json!({ "op": "keep", "room": self.room, "beams": kept }));
             }
             if let Some(notes) = notes {
-                let _ = self.remote.call(&json!({ "op": "notes", "room": self.room, "notes": notes }));
+                let _ = call(&json!({ "op": "notes", "room": self.room, "notes": notes }));
             }
             if !voice.is_empty() {
-                let _ = self.remote.call(&json!({ "op": "voice", "room": self.room, "voice": voice }));
+                let _ = call(&json!({ "op": "voice", "room": self.room, "voice": voice }));
             }
             if let Some(light) = light {
-                let _ = self.remote.call(&json!({ "op": "light", "room": self.room, "light": light }));
+                let _ = call(&json!({ "op": "light", "room": self.room, "light": light }));
             }
             if asked.elapsed() >= STATUS_EVERY {
                 asked = Instant::now();
@@ -675,13 +705,19 @@ pub(crate) struct RemoteRelay(Arc<Shared>);
 impl RemoteRelay {
     /// Where the room is now; only the latest is sent.
     pub(crate) fn follow(&self, want: &Want) {
-        lock(&self.0.inner).want = Some(want.clone());
+        let mut i = lock(&self.0.inner);
+        i.want = Some(want.clone());
+        traced(&mut i);
+        drop(i);
         self.0.wake.notify_all();
     }
 
     /// Beams the TF2 clients in keep seeing, in place of those before; only the latest is sent.
     pub(crate) fn keep(&self, beams: Vec<Beam>) {
-        lock(&self.0.inner).kept = Some(beams);
+        let mut i = lock(&self.0.inner);
+        i.kept = Some(beams);
+        traced(&mut i);
+        drop(i);
         self.0.wake.notify_all();
     }
 
@@ -695,6 +731,7 @@ impl RemoteRelay {
         i.light = light;
         i.light_given = true;
         i.light_due = true;
+        traced(&mut i);
         drop(i);
         self.0.wake.notify_all();
     }
@@ -708,6 +745,7 @@ impl RemoteRelay {
         }
         i.notes_given.clone_from(&notes);
         i.notes = Some(notes);
+        traced(&mut i);
         drop(i);
         self.0.wake.notify_all();
     }
@@ -719,6 +757,7 @@ impl RemoteRelay {
             i.voice.pop_front();
         }
         i.voice.push_back(VoiceLine::of(v));
+        traced(&mut i);
         drop(i);
         self.0.wake.notify_all();
     }
@@ -742,6 +781,13 @@ impl RemoteRelay {
     }
 }
 
+/// What is to send goes in the trace of the request that gave it, if one did.
+fn traced(i: &mut Inner) {
+    if let Some(t) = crate::report::trace_header() {
+        i.trace = Some(t);
+    }
+}
+
 impl Drop for RemoteRelay {
     fn drop(&mut self) {
         self.0.finish(Done::LetGo);
@@ -753,6 +799,27 @@ mod tests {
     use super::*;
     use crate::relays::pool::tests::want;
     use crate::testing::{TempDir, free_port};
+
+    /// A request asked while answering one of stv.tf's goes in its trace.
+    #[test]
+    fn a_request_carries_the_trace_it_was_asked_in() {
+        crate::report::on_for_tests();
+        let dir = TempDir::new("trace");
+        let socket = dir.join("r.sock");
+        let listener = UnixListener::bind(&socket).unwrap();
+        std::thread::spawn(move || {
+            let (conn, _) = listener.accept().unwrap();
+            let mut out = conn.try_clone().unwrap();
+            for line in BufReader::new(conn).lines() {
+                writeln!(out, "{}", json!({ "asked": serde_json::from_str::<Value>(&line.unwrap()).unwrap() })).unwrap();
+            }
+        });
+        let remote = Remote::new(&socket);
+        let header = "0123456789abcdef0123456789abcdef-0123456789abcdef-0";
+        let asked = crate::report::continued("t", Some(header), &[], || remote.call(&json!({ "op": "status" }))).unwrap();
+        assert!(asked["asked"]["trace"].as_str().is_some_and(|t| t.starts_with("0123456789abcdef0123456789abcdef-")), "{asked}");
+        assert!(remote.call(&json!({ "op": "status" })).unwrap()["asked"].get("trace").is_none());
+    }
 
     #[test]
     fn a_beam_goes_to_the_relay_process_as_it_was() {

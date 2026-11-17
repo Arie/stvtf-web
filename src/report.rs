@@ -82,6 +82,12 @@ pub(crate) fn trace_id() -> Option<String> {
     sentry::configure_scope(|s| s.get_span()).map(|span| span.get_trace_context().trace_id.to_string())
 }
 
+/// Its `sentry-trace` header, to carry it to another process.
+pub(crate) fn trace_header() -> Option<String> {
+    let span = sentry::configure_scope(|s| s.get_span())?;
+    span.iter_headers().find(|(name, _)| *name == "sentry-trace").map(|(_, value)| value)
+}
+
 /// Tags the events of this thread, or of the request being answered.
 pub(crate) fn tag(key: &str, value: &str) {
     sentry::configure_scope(|s| s.set_tag(key, value));
@@ -101,6 +107,27 @@ fn of_path(path: &str) -> Option<(&'static str, &str)> {
         (Some("w"), Some("demo" | "pov" | "comms"), Some(id)) | (Some("w"), Some(id), _) if !id.is_empty() => Some(("match", id)),
         _ => None,
     }
+}
+
+/// Runs `f` in the trace another process sent (`header`, as `sentry-trace`), its events tagged.
+pub(crate) fn continued<T>(name: &str, header: Option<&str>, tags: &[(&str, &str)], f: impl FnOnce() -> T) -> T {
+    sentry::Hub::run(Arc::new(sentry::Hub::new_from_top(sentry::Hub::current())), || {
+        let trace = header
+            .map(|h| sentry::start_transaction(sentry::TransactionContext::continue_from_headers(name, "relay", [("sentry-trace", h)])));
+        sentry::configure_scope(|s| {
+            for (key, value) in tags {
+                s.set_tag(key, value);
+            }
+            if let Some(t) = &trace {
+                s.set_span(Some(t.clone().into()));
+            }
+        });
+        let out = f();
+        if let Some(t) = trace {
+            t.finish();
+        }
+        out
+    })
 }
 
 /// Sentry on, sending nowhere: for tests of what it is told.
@@ -272,5 +299,15 @@ mod tests {
         assert_eq!(of_path("/w/demo/xyz/room"), Some(("match", "xyz")));
         assert_eq!(of_path("/w/"), None);
         assert_eq!(of_path("/"), None);
+    }
+
+    #[test]
+    fn a_continued_trace_is_the_senders() {
+        on_for_tests();
+        let header = "0123456789abcdef0123456789abcdef-0123456789abcdef-0";
+        let (id, sent) = continued("t", Some(header), &[], || (trace_id(), trace_header()));
+        assert_eq!(id.as_deref(), Some("0123456789abcdef0123456789abcdef"));
+        assert!(sent.is_some_and(|h| h.starts_with("0123456789abcdef0123456789abcdef-")));
+        assert_eq!(continued("t", None, &[], trace_id), None);
     }
 }
