@@ -3,6 +3,16 @@
 
 // The most told by one page: one that fails every frame says it once.
 let left = 5;
+// The trace of the last request the server failed (`x-trace-id`), told with a fault.
+let trace = "";
+
+const fetched = globalThis.fetch.bind(globalThis);
+/** @type {typeof fetch} */
+globalThis.fetch = async (...args) => {
+  const r = await fetched(...args);
+  if (!r.ok) trace = r.headers.get("x-trace-id") ?? trace;
+  return r;
+};
 
 /** @param {{ name?: string; message?: string; stack?: string } | null | undefined} e */
 function tell(e) {
@@ -15,8 +25,9 @@ function tell(e) {
     stack: stack.slice(0, 8000),
     page: location.pathname,
     build: /\/app\/([^/]+)\//.exec(import.meta.url)?.[1] ?? "",
+    trace,
   });
-  fetch(new URL("fault", document.baseURI), { method: "POST", keepalive: true, body }).catch(() => {});
+  fetched(new URL("fault", document.baseURI), { method: "POST", keepalive: true, body }).catch(() => {});
 }
 
 addEventListener("error", e => tell(e.error ?? { message: e.message, stack: `@${e.filename}:${e.lineno}:${e.colno}` }));

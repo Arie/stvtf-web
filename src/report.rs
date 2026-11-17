@@ -155,6 +155,8 @@ pub(crate) struct PageFault {
     /// The page's path, and the build of its files.
     page: String,
     build: String,
+    /// The trace of the last request that failed it (`x-trace-id`).
+    trace: String,
 }
 
 /// Tells Sentry what a page reported, with its browser (`agent`) and whose it is (`client`, and
@@ -198,6 +200,11 @@ fn page_event(fault: &PageFault, agent: &str, client: IpAddr, steam: Option<&str
     };
     event.tags.insert("page".into(), cut(&fault.page, 100));
     event.tags.insert("build".into(), cut(&fault.build, 40));
+    // In the trace of the request that failed the page, else of its report.
+    let trace = fault.trace.parse().ok().or_else(|| trace_id()?.parse().ok());
+    if let Some(trace_id) = trace {
+        event.contexts.insert("trace".into(), sentry::protocol::TraceContext { trace_id, ..Default::default() }.into());
+    }
     event
 }
 
@@ -299,6 +306,17 @@ mod tests {
         assert_eq!(of_path("/w/demo/xyz/room"), Some(("match", "xyz")));
         assert_eq!(of_path("/w/"), None);
         assert_eq!(of_path("/"), None);
+    }
+
+    #[test]
+    fn a_page_fault_is_in_the_trace_of_the_request_that_failed_it() {
+        let trace = "0123456789abcdef0123456789abcdef";
+        let fault = PageFault { message: "x".into(), trace: trace.into(), ..Default::default() };
+        let event = page_event(&fault, "", IpAddr::from([127, 0, 0, 1]), None);
+        let Some(sentry::protocol::Context::Trace(t)) = event.contexts.get("trace") else { panic!("no trace") };
+        assert_eq!(t.trace_id.to_string(), trace);
+        let junk = PageFault { message: "x".into(), trace: "<script>".into(), ..Default::default() };
+        assert!(!page_event(&junk, "", IpAddr::from([127, 0, 0, 1]), None).contexts.contains_key("trace"));
     }
 
     #[test]
