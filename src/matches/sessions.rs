@@ -142,7 +142,7 @@ impl Sessions {
             let _ = s.by.set(by.to_string());
         }
         s.link(reservation);
-        log!("match {} started on {server}, owner {}", s.label(), owner.unwrap_or("-"));
+        tracing::info!("match {} started on {server}, owner {}", s.label(), owner.unwrap_or("-"));
         if let Some(store) = &self.store
             && let Err(e) = store.save(&s)
         {
@@ -230,13 +230,13 @@ impl Sessions {
             if let Err(e) = demostf::play(&player.hub, demo, hz, &|| player.watched(), &player.stop, kept.as_ref(), made, &|gz| {
                 *lock(&player.source) = Some(Source::Output(gz));
             }) {
-                log!("match {} (demo {demo}) gave up: {e:#}", player.label());
+                tracing::info!("match {} (demo {demo}) gave up: {e:#}", player.label());
             }
             player.done.store(true, Ordering::Relaxed);
         });
         *lock(&s.thread) = Some(thread);
         map.insert(s.id.clone(), s.clone());
-        log!("match {} started on demo {demo}, owner {}", s.label(), owner.unwrap_or("-"));
+        tracing::info!("match {} started on demo {demo}, owner {}", s.label(), owner.unwrap_or("-"));
         Ok(s)
     }
 
@@ -299,7 +299,7 @@ impl Sessions {
             crate::report::tag("match", &watcher.id);
             let demos = demos.map(|d| d as Arc<dyn stvtf::demo::Files>);
             if let Err(e) = watch_into(&watcher.hub, &server.to_string(), &watcher.password, hz, demos, &watcher.stop) {
-                log!("match {} gave up: {e}", watcher.label());
+                tracing::info!("match {} gave up: {e}", watcher.label());
             }
             watcher.done.store(true, Ordering::Relaxed);
         });

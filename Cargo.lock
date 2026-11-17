@@ -2432,6 +2432,8 @@ dependencies = [
  "serde_json",
  "snap",
  "tf-demo-parser",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]

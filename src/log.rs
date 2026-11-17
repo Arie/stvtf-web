@@ -34,10 +34,3 @@ pub(crate) fn start(dir: Option<&Path>, name: &str) {
         tracing::warn!("no log kept in {}: {e}", dir.display());
     }
 }
-
-/// Says a line, formatted as `println!` would.
-macro_rules! log {
-    ($($arg:tt)*) => {
-        tracing::info!($($arg)*)
-    };
-}

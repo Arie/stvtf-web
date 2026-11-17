@@ -157,7 +157,7 @@ fn fetch_with(
         None => in_memory,
     };
     let output = decode_and_keep(id, &demo, snapshot_hz, std::mem::take(&mut *lock(extra)), kept.zip(file.as_deref()))?;
-    log!(
+    tracing::info!(
         "demo {id}: {} MiB fetched in {:.1} s, decoded to {} MiB in {:.1} s",
         demo.len() >> 20,
         fetched.as_secs_f64(),
@@ -176,7 +176,7 @@ fn kept_output(k: &DemoFiles, id: u64) -> Option<Vec<u8>> {
     k.store.touch(&demo_output(id));
     k.store.touch(&demo_dem(id));
     k.store.touch(&crate::matches::sessions::demo_info(id));
-    log!("demo {id}: as kept, {} MiB", output.len() >> 20);
+    tracing::info!("demo {id}: as kept, {} MiB", output.len() >> 20);
     Some(output)
 }
 

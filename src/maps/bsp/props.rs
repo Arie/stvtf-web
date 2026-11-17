@@ -128,7 +128,7 @@ fn read_props(b: &[u8], version: u16) -> Result<Vec<Prop>> {
 /// to where it stands (at any height: a stack of containers is taller than what they reach).
 pub(super) fn prop_floors(data: &[u8], bounds: Option<Bounds>, stands: impl Fn(f64, f64) -> bool) -> Vec<Floor> {
     let props = props(data).unwrap_or_else(|e| {
-        log!("static props left out: {e:#}");
+        tracing::info!("static props left out: {e:#}");
         Vec::new()
     });
     let models = models();

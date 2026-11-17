@@ -90,7 +90,7 @@ impl Room {
                 let why = format!("{e:#}");
                 let mut failed = lock(&self.relay.failed);
                 if failed.as_ref().is_none_or(|(_, before)| *before != why) {
-                    log!("room {}: {why}", logged(&self.id));
+                    tracing::info!("room {}: {why}", logged(&self.id));
                 }
                 *failed = Some((Instant::now(), why));
             }

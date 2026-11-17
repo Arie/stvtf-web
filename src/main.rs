@@ -4,7 +4,6 @@
 //! Events; without one, a page to start watching any server, each match at its own link.
 //! Map geometry comes from the map's BSP on fastdl.
 
-#[macro_use]
 mod log;
 #[macro_use]
 mod report;
@@ -141,7 +140,7 @@ fn warm(app: &App) {
     for map in known {
         let _one_at_a_time = lock(&app.overviews);
         if let Err(e) = overview(&app.cache, &format!("{map}.webp")) {
-            log!("overview of {map}: {e}");
+            tracing::info!("overview of {map}: {e}");
         }
     }
     for name in warm_maps() {
@@ -149,7 +148,7 @@ fn warm(app: &App) {
         let _one_at_a_time = lock(&map_lock);
         // Gzipped too: browsers take that, and the JSON is made on the way.
         if let Err(e) = map_geometry_gzip(&app.cache, name, true) {
-            log!("{name}: {e}");
+            tracing::info!("{name}: {e}");
         }
     }
 }
@@ -163,7 +162,7 @@ fn many(options: &Options, keys: Option<&Arc<web::token::Keys>>) -> Result<Sessi
         sessions.demos = options.relays.is_some() || options.relay_socket.is_some();
         let restored = sessions.restore();
         if restored > 0 {
-            log!("picked up {restored} running matches");
+            tracing::info!("picked up {restored} running matches");
         }
     }
     if let Some(file) = &options.demo {
@@ -243,7 +242,7 @@ fn matches(options: &Options, keys: Option<&Arc<web::token::Keys>>, stop: &'stat
         let hz = options.hz;
         std::thread::spawn(move || {
             if let Err(e) = watch_into(&fed, &target, &password, hz, None, stop) {
-                log!("{e}");
+                tracing::info!("{e}");
             }
             if stop.load(Ordering::Relaxed) {
                 std::process::exit(0);
@@ -321,7 +320,6 @@ fn who_is_who(options: &Options, keys: Option<&Arc<web::token::Keys>>, voice_key
 /// Logs to stderr and, with `--logs`, to files per process.
 fn keep_log(options: &Options) {
     log::start(options.logs.as_deref(), if options.relay_daemon.is_some() { "relay" } else { "web" });
-    stvtf::relay::log_to(|line| log!("{line}"));
 }
 
 /// The relay process, if `options` ask for it: only the relays (the rest are the image's for the
@@ -331,7 +329,7 @@ fn relay_process(options: &Options, stop: &'static AtomicBool) -> Option<Result<
         return Some(relays::daemon::clients(socket).map(|answer| println!("{answer}")));
     }
     let (Some(socket), Some((host, ports))) = (&options.relay_daemon, &options.relays) else { return None };
-    log!("relays on {host}, ports {}-{}", ports.start(), ports.end());
+    tracing::info!("relays on {host}, ports {}-{}", ports.start(), ports.end());
     Some(relays::daemon::serve(socket, &relays::pool::Relays::new(host, ports.clone()), relays::daemon::LEASE, stop))
 }
 

@@ -49,7 +49,7 @@ pub(super) fn linked(app: &App, state: &str, code: &str, began: Option<&str>) ->
         }
         Ok((_, None)) => (StatusCode::CONFLICT, "No Steam on your Discord. Add it under Connections.").into_response(),
         Err(e) => {
-            log!("voice link failed: {e:#}");
+            tracing::info!("voice link failed: {e:#}");
             (StatusCode::BAD_GATEWAY, "Discord error. Try again.").into_response()
         }
     }

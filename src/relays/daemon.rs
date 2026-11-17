@@ -289,7 +289,7 @@ fn take_over(rooms: &Rooms, relays: &Arc<Relays>, file: &Path) {
     };
     let ago = Duration::from_millis(now_ms().saturating_sub(handed.at_ms));
     if ago > HANDED_FOR {
-        return log!("clients handed over {} s ago are gone", ago.as_secs());
+        return tracing::info!("clients handed over {} s ago are gone", ago.as_secs());
     }
     for HandedRoom { room, was, mut want, beams, notes, light, clients } in handed.rooms {
         want.age_ms += ago.as_millis() as u64;
@@ -297,7 +297,7 @@ fn take_over(rooms: &Rooms, relays: &Arc<Relays>, file: &Path) {
         let started = relays.start_with(shows.want.clone(), Some(&was), Some(&clients));
         match started {
             Ok(Some(relay)) if relay.was() == was => {
-                log!(
+                tracing::info!(
                     "relay of room {} taken over on port {}, {} clients, after {} ms",
                     logged(&room),
                     was.port,
@@ -334,14 +334,14 @@ pub(crate) fn serve(socket: &Path, relays: &Arc<Relays>, lease: Duration, stop: 
     let rooms: Rooms = Arc::default();
     take_over(&rooms, relays, &handed_at(socket));
     let listener = UnixListener::bind(socket).with_context(|| format!("listening on {}", socket.display()))?;
-    log!("relays at {}", socket.display());
+    tracing::info!("relays at {}", socket.display());
     let (leaving, file) = (rooms.clone(), handed_at(socket));
     std::thread::spawn(move || {
         while !stop.load(Ordering::Relaxed) {
             std::thread::sleep(STOP_POLL);
         }
         match hand_over(&leaving, &file) {
-            Ok(clients) => log!("relays stopping: {clients} clients handed over"),
+            Ok(clients) => tracing::info!("relays stopping: {clients} clients handed over"),
             Err(e) => fault!("relays stopping: clients not handed over: {e:#}"),
         }
         std::process::exit(0);
@@ -353,7 +353,7 @@ pub(crate) fn serve(socket: &Path, relays: &Arc<Relays>, lease: Duration, stop: 
             lock(&reaped).retain(|room, l| {
                 let keep = l.seen.elapsed() < lease && !l.relay.stopped();
                 if !keep {
-                    log!("relay of room {} stopped", logged(room));
+                    tracing::info!("relay of room {} stopped", logged(room));
                 }
                 keep
             });
@@ -390,7 +390,7 @@ fn answer(conn: UnixStream, rooms: &Rooms, relays: &Arc<Relays>) -> Result<()> {
 /// (not its password), or why there is none.
 fn said_of(room: &str, started: &Result<Option<LocalRelay>>) {
     match started {
-        Ok(Some(relay)) => log!("relay of room {} started on port {}", logged(room), relay.was().port),
+        Ok(Some(relay)) => tracing::info!("relay of room {} started on port {}", logged(room), relay.was().port),
         Ok(None) => fault!("no relay for room {}: every port is taken", logged(room)),
         Err(e) => fault!("no relay for room {}: {e:#}", logged(room)),
     }

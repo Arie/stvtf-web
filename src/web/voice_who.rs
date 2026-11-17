@@ -301,7 +301,7 @@ fn post_review_match(app: &App, m: Option<&Session>, v: &Match, who: &Who) -> Re
     // For the next match they talk in too: a streamer's word for sure, a player's a suggestion.
     let caster = who.user.as_ref().is_some_and(|u| u.streamer);
     app.voice.who.remember(&v.voice_id, steamid.as_deref(), &name, caster);
-    log!("demo {id} {file}: {} said to be {}", v.voice_id, steamid.as_deref().unwrap_or("nobody"));
+    tracing::info!("demo {id} {file}: {} said to be {}", v.voice_id, steamid.as_deref().unwrap_or("nobody"));
     let watch = format!("{}/w/{id}/watch/{file}", app.base);
     Json(serde_json::json!({ "watch": watch })).into_response()
 }

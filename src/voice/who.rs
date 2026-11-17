@@ -218,7 +218,7 @@ impl WhoIsWho {
                 self.ask_sites(&who);
             }
             if let Err(e) = self.sync() {
-                log!("who is who not kept up: {e:#}");
+                tracing::info!("who is who not kept up: {e:#}");
             }
             if said.recv_timeout(ASK_EVERY) == Err(RecvTimeoutError::Disconnected) {
                 return;
@@ -337,7 +337,7 @@ impl WhoIsWho {
                 Ok(None) => {}
                 Err(e) => {
                     all_said = false;
-                    log!("{} not asked who a Discord user is: {e:#}", site.name);
+                    tracing::info!("{} not asked who a Discord user is: {e:#}", site.name);
                 }
             }
         }

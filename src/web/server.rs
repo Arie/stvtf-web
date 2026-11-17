@@ -28,7 +28,7 @@ pub(crate) fn run(listen: &str, app: Shared, stop: &'static AtomicBool) -> Resul
     let runtime = tokio::runtime::Builder::new_multi_thread().enable_all().build()?;
     let served = runtime.block_on(async {
         let listener = tokio::net::TcpListener::bind(listen).await?;
-        log!("http://{listen}/");
+        tracing::info!("http://{listen}/");
         let stopped = async move {
             // The flag is the watchers' too, which are no tasks: looked at now and then.
             while !stop.load(Ordering::Relaxed) {

@@ -214,7 +214,11 @@ fn finish(v: &Visit, store: &Store, id: &str, by: Option<&str>, said: &Finish) -
     };
     lock(&UNDER_WAY).get_or_insert_default().retain(|_, theirs| theirs != id);
     let m = sessions.open_upload_as(by, demo).context("Not kept")??;
-    log!("demo {demo} uploaded by {}, {}", by.unwrap_or("-"), said.name.chars().filter(|c| !c.is_control()).take(80).collect::<String>());
+    tracing::info!(
+        "demo {demo} uploaded by {}, {}",
+        by.unwrap_or("-"),
+        said.name.chars().filter(|c| !c.is_control()).take(80).collect::<String>()
+    );
     Ok(serde_json::json!({ "page": format!("{}/w/{}/", app.base, m.id) }))
 }
 

@@ -75,7 +75,7 @@ impl Relays {
         use std::net::ToSocketAddrs;
         let ip = (host, 0).to_socket_addrs().ok().and_then(|mut a| a.find(std::net::SocketAddr::is_ipv4)).map(|a| a.ip().to_string());
         if ip.is_none() {
-            log!("--relay-host {host} has no IPv4 address: rooms get no Open in TF2 link");
+            tracing::info!("--relay-host {host} has no IPv4 address: rooms get no Open in TF2 link");
         }
         Arc::new(Relays { host: host.to_string(), ip, free: Mutex::new(ports.into_iter().collect()) })
     }

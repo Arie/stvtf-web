@@ -322,7 +322,7 @@ impl Rooms {
             Source::Pinned(_) | Source::Demo(_) => None,
         };
         open.insert(id.to_string(), Entry { _viewer: viewer, ..Entry::new(&room, Some(saved.source), saved.by.as_deref()) });
-        log!("room {} picked up", logged(id));
+        tracing::info!("room {} picked up", logged(id));
         Some(room)
     }
 
@@ -435,7 +435,7 @@ impl Rooms {
             store.forget(&file(id));
             store.forget(&marker_file(id));
         }
-        log!("room {} ended", logged(id));
+        tracing::info!("room {} ended", logged(id));
     }
 
     /// Drops saved rooms nobody came back for, demos no room plays, and the files of live matches

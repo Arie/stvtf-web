@@ -60,7 +60,7 @@ pub(super) fn open_room(v: &Visit, sessions: &Sessions, m: &Arc<Session>, open: 
         Ok(r) => r,
         Err(e) => return (StatusCode::CONFLICT, format!("{e:#}")).into_response(),
     };
-    log!("room {} opened on match {}", logged(&room.id), logged(&m.id));
+    tracing::info!("room {} opened on match {}", logged(&room.id), logged(&m.id));
     opened(app, &room.id, cookie.as_deref())
 }
 
@@ -136,7 +136,7 @@ pub(super) async fn events(v: Visit, Path(at): Path<RoomAt>, Query(q): Query<Str
         let site = who.user.as_ref().map(|u| u.name.as_str());
         let watching = room.join(&who.key, q.name.as_deref(), site, !q.overlay());
         // By Steam id when signed in: whose room it was, when something is asked of it later.
-        log!("room {} joined by {}", logged(&room.id), who.user.as_ref().map_or("a guest", |u| u.uid.as_str()));
+        tracing::info!("room {} joined by {}", logged(&room.id), who.user.as_ref().map_or("a guest", |u| u.uid.as_str()));
         Ok(stream(&room.hub, v.gzip, &q, (slot, watching)))
     })
     .await
