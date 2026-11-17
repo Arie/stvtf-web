@@ -1,3 +1,6 @@
 # The code base uses long lines; this keeps `cargo fmt` close to how it is written.
 max_width = 140
 use_small_heuristics = "Max"
+# Nightly rustfmt (`cargo +nightly fmt`): std, then other crates, then this one.
+group_imports = "StdExternalCrate"
+imports_granularity = "Module"

@@ -40,7 +40,8 @@ jobs:
         with:
           path: stvtf-web
           persist-credentials: false
-      - run: rustup toolchain install
+      # Import grouping (rustfmt.toml) is a nightly rustfmt option; the code builds on stable.
+      - run: rustup toolchain install nightly --profile minimal --component rustfmt
       - run: script/test -v -t rustfmt
 
   eslint:

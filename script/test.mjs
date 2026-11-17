@@ -19,7 +19,7 @@ const GULLYWASH = { file: "testdata/maps/cp_gullywash_f9.bsp", hint: "see docs/d
  * @type {{ [name: string]: Task }}
  */
 const TASKS = {
-  rustfmt: { section: "checks", cmd: "cargo fmt --check", fix: "cargo fmt" },
+  rustfmt: { section: "checks", cmd: "cargo +nightly fmt --check", fix: "cargo +nightly fmt" },
   clippy: { section: "checks", cmd: "cargo clippy --all-targets --locked --quiet -- -D warnings" },
   rustdoc: { section: "checks", cmd: "cargo doc --no-deps --locked --quiet", env: { RUSTDOCFLAGS: "-D warnings" } },
   // ESLint's fixes come before Prettier's, which has the last word on layout.
