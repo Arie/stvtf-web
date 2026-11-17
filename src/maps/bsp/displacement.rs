@@ -1,12 +1,14 @@
 //! Displacements (terrain): the grid of points each one bends its base face into, which is
 //! where the ground really is.
 
+use anyhow::{Result, anyhow, bail};
+
 use super::format::{
     FACE_SIZE, LUMP_DISP_VERTS, LUMP_DISPINFO, LUMP_MODELS, MODEL_FIRST_FACE, MODEL_NUM_FACES, SURFEDGE_SIZE, f32_at, i32_at, index_at,
     lump, vec3_at,
 };
-use super::{Vec3, World};
-use anyhow::{Result, anyhow, bail};
+use super::geometry::Vec3;
+use super::read::World;
 
 /// `ddispinfo_t`: its size and the fields read, and `dDispVert`: its size and its direction and
 /// distance.
@@ -127,7 +129,14 @@ pub(super) fn displacements(data: &[u8], world: &World) -> Result<Vec<Displaceme
 }
 
 /// Displacement `disp` of `face`, whose grid points count against `points_left`.
-fn read(info: &[u8], verts: &[u8], disp: usize, face: &super::Face, base: [Vec3; 4], points_left: &mut usize) -> Result<Displacement> {
+fn read(
+    info: &[u8],
+    verts: &[u8],
+    disp: usize,
+    face: &super::read::Face,
+    base: [Vec3; 4],
+    points_left: &mut usize,
+) -> Result<Displacement> {
     let o = disp * DISPINFO_SIZE;
     let start = vec3_at(info, o)?;
     let first = index_at(info, o + DISPINFO_VERTEX_START)?;
@@ -157,11 +166,11 @@ fn read(info: &[u8], verts: &[u8], disp: usize, face: &super::Face, base: [Vec3;
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::maps::bsp::contains_point as contains;
-    use crate::maps::bsp::geometry;
-    use crate::maps::bsp::tests::{replace_lump, swiftwater, swiftwater_built};
     use std::collections::HashMap;
+
+    use super::*;
+    use crate::maps::bsp::tests::{replace_lump, swiftwater, swiftwater_built};
+    use crate::maps::bsp::{contains_point as contains, geometry};
 
     /// The share of boundary grid points that other displacements share (same x, y to the unit)
     /// whose heights are more than 2 units apart.

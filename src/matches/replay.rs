@@ -1,13 +1,15 @@
 //! Saved stvtf output played at game speed.
 
-use crate::matches::hub::{SharedHub, default_tick_interval, publish};
-use anyhow::{Context, Result, bail};
 use std::io::{BufRead, BufReader, Read};
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
+
+use anyhow::{Context, Result, bail};
 use stvtf::Line;
 use stvtf::output::{Stamped, Status};
+
+use crate::matches::hub::{SharedHub, default_tick_interval, publish};
 
 /// A replay's pause between passes, how often a paused one checks for viewers, and the longest
 /// gap it waits out between two lines (map loads and tick resets would stall it).
@@ -61,7 +63,7 @@ pub(crate) fn play_lines(hub: &SharedHub, reader: impl Read, name: &str, play: &
         let Some(stamped) = read_line(&line?, name, n, &mut skipped) else { continue };
         let before = clock.play;
         std::thread::sleep(Duration::from_millis(clock.at(&stamped) - before));
-        crate::lock(hub).played = clock.play;
+        crate::sync::lock(hub).played = clock.play;
         publish(hub, &stamped.line);
     }
     // Without any, the loop would replay the file as fast as it can, forever.
@@ -138,8 +140,7 @@ fn line_time(stamped: &Stamped, interval: f64) -> Option<u64> {
 mod tests {
     use super::*;
     use crate::matches::hub::{SharedHub, default_tick_interval};
-    use crate::testing::TempDir;
-    use crate::testing::server;
+    use crate::testing::{TempDir, server};
 
     #[test]
     fn replay_without_times_stops() {

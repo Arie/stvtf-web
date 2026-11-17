@@ -1,19 +1,21 @@
 //! A page's event stream: a hub's lines as Server-Sent Events.
 
-use super::asked::Stream;
-use crate::matches::hub::{SharedHub, subscribe_to};
+use std::io::Write;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::mpsc::{Receiver, RecvTimeoutError};
+use std::time::{Duration, Instant};
+
 use axum::body::{Body, Bytes};
 use axum::http::StatusCode;
 use axum::http::header::{self, HeaderName};
 use axum::response::{IntoResponse, Response};
 use flate2::Compression;
 use flate2::write::GzEncoder;
-use std::io::Write;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::sync::mpsc::{Receiver, RecvTimeoutError};
-use std::time::{Duration, Instant};
 use tokio::sync::mpsc::error::TrySendError;
+
+use super::asked::Stream;
+use crate::matches::hub::{SharedHub, subscribe_to};
 
 /// The event stream's gzip level: most of the size win at little CPU.
 pub(super) const STREAM_GZIP: u32 = 5;

@@ -11,9 +11,10 @@
 //! What is held can be saved for another process on the same stream ([`VoiceHold::saved`],
 //! [`VoiceHold::adopt`]): due ticks stand, clocks do not.
 
-use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, VecDeque};
 use std::time::{Duration, Instant};
+
+use serde::{Deserialize, Serialize};
 
 /// How long a frame of voice is.
 pub(crate) const FRAME: Duration = Duration::from_millis(20);

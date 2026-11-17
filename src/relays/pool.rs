@@ -3,17 +3,20 @@
 //! `stvtf::relay::Playback`). TF2 clients connect with `connect HOST:PORT; password PW`. The
 //! relays run in this process, or in one of their own that outlives deploys (see `daemon`).
 
-use crate::lock;
-use crate::relays::daemon::{Remote, RemoteRelay};
-use anyhow::{Context, Result};
-use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 use std::time::Duration;
+
+use anyhow::{Context, Result};
+use serde::{Deserialize, Serialize};
 use stvtf::relay::{Beam, Handover, Light, Note, Playback, Relay, RelayConfig, VoiceIn, Want};
+
+use crate::relays::daemon::{Remote, RemoteRelay};
+use crate::report::fault;
+use crate::sync::lock;
 
 /// TF2 clients a room takes at once.
 const SLOTS: usize = 24;
@@ -321,8 +324,9 @@ pub(crate) struct Offer {
 
 #[cfg(test)]
 pub(super) mod tests {
-    use super::*;
     use std::time::Instant;
+
+    use super::*;
 
     /// Two UDP ports nothing has just now.
     fn free_ports() -> [u16; 2] {

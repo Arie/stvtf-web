@@ -3,6 +3,7 @@
 
 use std::path::Path;
 use std::sync::Mutex;
+
 use tracing_appender::rolling::{RollingFileAppender, Rotation};
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;

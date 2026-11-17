@@ -1,15 +1,25 @@
 //! A room going on to another map: by an admin, or by itself when it follows live.
+use std::sync::Arc;
+use std::sync::atomic::Ordering;
 
+use serde_json::Value;
+
+use super::drawing::Draw;
 use super::markers::{Markers, read_marker};
+use super::note::NoteDraw;
 use super::part::MapChoice;
 use super::part_tests::{live_room_then_new_map, playback, push, room_on_a_part_then_trimmed, settle, stalemate};
+use super::play::Control;
+use super::state::{Room, StartAt};
 use super::stream_tests::a_pass;
 use super::tests::until;
-use super::view::View;
+use super::view::{View, ViewPost};
 use super::*;
-use crate::matches::hub::{subscribe, tests::snapshot};
+use crate::matches::hub::subscribe;
+use crate::matches::hub::tests::snapshot;
+use crate::matches::recording::Recording;
+use crate::sync::lock;
 use crate::testing::server;
-use serde_json::Value;
 
 /// A live match on `map`, 200 ms of it so far, with play.
 pub(super) fn live_on(map: &str) -> Arc<Recording> {

@@ -6,15 +6,17 @@
 //! belongs to takes the others' files into its own matches and drops them: the release a deploy
 //! replaces saves until it stops, and a process that crashed leaves what it last saved.
 
-use super::session::Session;
-use super::store::{Store, age};
-use super::{Sessions, is_id};
-use crate::lock;
-use crate::voice::feed::{Adopt, MAX_DELAY, Save, SavedVoice, Speaker};
-use crate::voice::hold::Took;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
+
+use super::session::Session;
+use super::store::{Store, age};
+use super::{Sessions, is_id};
+use crate::report::fault;
+use crate::sync::lock;
+use crate::voice::feed::{Adopt, MAX_DELAY, Save, SavedVoice, Speaker};
+use crate::voice::hold::Took;
 
 /// What the names of the files of held voice start with.
 const HELD_PREFIX: &str = "held-";

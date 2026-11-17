@@ -1,21 +1,24 @@
 //! One match: what it watches or plays, who watches it, and its recording for rooms.
 
-use super::store::{Store, dem_beside, demo_dem};
-use crate::lock;
-use crate::matches::hub::{SharedHub, Summary};
-use crate::matches::live_demos::LiveDemos;
-use crate::matches::recording::Recording;
-use crate::matches::replay;
-use crate::relays::pool::DemoOf;
-use crate::voice::MatchComms;
-use anyhow::{Result, bail};
-use serde::Serialize;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
+
+use anyhow::{Result, bail};
+use serde::Serialize;
+
+use super::store::{Store, dem_beside, demo_dem};
+use crate::matches::hub::{SharedHub, Summary};
+use crate::matches::live_demos::LiveDemos;
+use crate::matches::recording::Recording;
+use crate::matches::replay;
+use crate::relays::pool::DemoOf;
+use crate::report::fault;
+use crate::sync::lock;
+use crate::voice::MatchComms;
 
 /// In play: at least this many players on the teams…
 pub(super) const IN_PLAY_PLAYERS: usize = 2;

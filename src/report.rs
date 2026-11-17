@@ -2,11 +2,12 @@
 //! thread, a line said with `fault!`, and what a viewer's page reports of itself (with the viewer's
 //! address, and the Steam id of one signed in).
 
-use sentry::protocol::{Event, Exception, Frame, IpAddress, Level, Request, Stacktrace, User};
 use std::collections::HashMap;
 use std::net::IpAddr;
 use std::sync::{Arc, LazyLock, Mutex, OnceLock, PoisonError};
 use std::time::{Duration, Instant};
+
+use sentry::protocol::{Event, Exception, Frame, IpAddress, Level, Request, Stacktrace, User};
 
 /// One kind of fault is told once in this long: a save failing every few seconds is one issue.
 const ONCE_IN: Duration = Duration::from_secs(60);
@@ -71,11 +72,12 @@ fn due(kind: &'static str, now: Instant) -> bool {
 }
 
 /// Says a line as `log!` does, and tells Sentry of it.
-macro_rules! fault {
+macro_rules! fault_macro {
     ($fmt:literal $($arg:tt)*) => {
         $crate::report::fault($fmt, &format!($fmt $($arg)*))
     };
 }
+pub(crate) use fault_macro as fault;
 
 /// The trace of the request being answered, if any.
 pub(crate) fn trace_id() -> Option<String> {

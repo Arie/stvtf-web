@@ -1,16 +1,17 @@
 //! The list of who is who between regions (`voice::who`): its routes, and asking a site.
 
-use super::incoming::is_key;
-use crate::App;
-use crate::voice::ids::{is_voice_id, parse_steamid};
-use crate::voice::who::{CASTER, MAX_NAME, RegionEntry, Site, TIMEOUT};
-use crate::web::token::Keys;
+use std::sync::Arc;
+
 use anyhow::Context;
 use axum::Json;
 use axum::http::StatusCode;
-use axum::response::IntoResponse;
-use axum::response::Response;
-use std::sync::Arc;
+use axum::response::{IntoResponse, Response};
+
+use super::incoming::is_key;
+use crate::app::App;
+use crate::voice::ids::{is_voice_id, parse_steamid};
+use crate::voice::who::{CASTER, MAX_NAME, RegionEntry, Site, TIMEOUT};
+use crate::web::token::Keys;
 
 /// The site at `home` (as a stv.tf's `--home`), asked with tokens sealed with `keys`.
 pub(crate) fn site(home: &str, keys: Arc<Keys>) -> Site {
@@ -18,7 +19,7 @@ pub(crate) fn site(home: &str, keys: Arc<Keys>) -> Site {
     let name = home.split("://").last().unwrap_or(home).split('/').next().unwrap_or_default().to_string();
     let agent = ureq::AgentBuilder::new().timeout(TIMEOUT).redirects(0).build();
     let ask = move |discord: &str| {
-        let bearer = format!("Bearer {}", keys.link_token(discord, crate::web::unix_now()));
+        let bearer = format!("Bearer {}", keys.link_token(discord, crate::web::answer::unix_now()));
         match agent.get(&format!("{url}{discord}")).set("Authorization", &bearer).call() {
             Ok(answer) => {
                 let said: serde_json::Value = serde_json::from_str(&answer.into_string()?)?;

@@ -1,13 +1,16 @@
 //! Drawing on a room's map: the marker's strokes, kept until cleared.
 
-use super::note::MAX_NOTES;
-use super::{Room, on_map};
-use crate::lock;
-use crate::matches::hub::send_keeping;
-use anyhow::{Result, bail};
-use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
+
+use anyhow::{Result, bail};
+use serde::{Deserialize, Serialize};
+
+use super::Room;
+use super::note::MAX_NOTES;
+use super::state::on_map;
+use crate::matches::hub::send_keeping;
+use crate::sync::lock;
 
 /// Most points in one drawing request.
 pub(super) const MAX_POINTS: usize = 256;

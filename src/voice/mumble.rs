@@ -3,11 +3,13 @@
 //! what is wanted and says how it goes. Kept with the match, so a restart does not send the bot
 //! away.
 
-use crate::lock;
-use crate::voice::ChannelState;
-use serde::{Deserialize, Serialize};
 use std::sync::{Condvar, Mutex};
 use std::time::{Duration, Instant};
+
+use serde::{Deserialize, Serialize};
+
+use crate::sync::lock;
+use crate::voice::ChannelState;
 
 /// Mumble's own port.
 pub(crate) const DEFAULT_PORT: u16 = 64738;

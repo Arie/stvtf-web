@@ -1,11 +1,19 @@
-use super::drawing::MAX_KEPT_POINTS;
-use super::play::wait;
+use std::fmt::Write as _;
+use std::sync::Arc;
+use std::time::{Duration, Instant};
+
+use stvtf::Line;
+
+use super::arc::ArcDraw;
+use super::drawing::{Draw, Kept, MAX_KEPT_POINTS};
+use super::play::{Control, wait};
 use super::relay::on_course;
-use super::view::View;
+use super::state::{Leader, Room, Saved};
+use super::view::{View, ViewPost};
 use super::*;
 use crate::matches::hub::subscribe;
-use std::fmt::Write as _;
-use stvtf::Line;
+use crate::matches::recording::Recording;
+use crate::sync::lock;
 
 /// `n` feed lines, a tick (15 ms) apart.
 fn room(n: u32) -> Arc<Room> {

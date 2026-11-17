@@ -1,50 +1,54 @@
-//! Many matches in one process: a watcher per `SourceTV` server, started when someone asks for
-//! it and stopped a while after its last viewer leaves. With a store, the matches outlive the
-//! process: a deploy's new container picks them up under the same links.
+//! Many matches at once: started, found, watched, saved and stopped.
 
-use crate::cli::{DEFAULT_TV_PASSWORD, parse_connect};
-use crate::lock;
-use crate::matches::demostf;
-use crate::matches::hub::{SharedHub, watch_into};
-use crate::matches::live_demos::{self, LiveDemos};
-use crate::voice::who::WhoIsWho;
-use anyhow::{Result, anyhow, bail};
-use record::{LiveFile, record};
-use session::{Source, join};
 use std::collections::HashMap;
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
+
+use anyhow::{Result, anyhow, bail};
+
+pub(crate) use super::address::is_public;
+pub(crate) use super::ids::{Own, demo_id, is_id, own_demo, random_id};
+use super::record::{LiveFile, record};
+pub(crate) use super::session::{Listed, Session};
+use super::session::{Source, join};
+pub(crate) use super::store::{Store, demo_dem, demo_info, demo_output};
+use crate::cli::{DEFAULT_TV_PASSWORD, parse_connect};
+use crate::matches::demostf;
+use crate::matches::hub::{SharedHub, watch_into};
+use crate::matches::live_demos::{self, LiveDemos};
+use crate::report::fault;
+use crate::sync::lock;
+use crate::voice::who::WhoIsWho;
+
 /// What makes a demo of ours, for the thread that plays it.
-type MadeDemo = Box<dyn Fn() -> Result<(Vec<u8>, Vec<stvtf::output::Voice>)> + Send>;
+pub(super) type MadeDemo = Box<dyn Fn() -> Result<(Vec<u8>, Vec<stvtf::output::Voice>)> + Send>;
 
 /// A live match in play stays watched with nobody watching it for this long, at most.
-const UNWATCHED_PLAY: Duration = Duration::from_hours(6);
+pub(super) const UNWATCHED_PLAY: Duration = Duration::from_hours(6);
+
 /// A match nobody has watched for this long makes room for a new one when there are as many as
 /// there may be (one just started has no viewer yet either).
 pub(crate) const MAKES_ROOM: Duration = Duration::from_mins(3);
+
 /// Matches one person may have started at once (see [`Sessions::open_as`]).
 pub(crate) const MATCHES_PER_PERSON: usize = 4;
+
 /// How long a process told to stop, and taken over, waits for its files to be asked for: the next
 /// one's streams need their signon first.
-const ASK_WAIT: Duration = Duration::from_millis(if cfg!(test) { 600 } else { 12_000 });
+pub(super) const ASK_WAIT: Duration = Duration::from_millis(if cfg!(test) { 600 } else { 12_000 });
+
 /// How long a process told to stop records on for the recordings asked for and not yet at the
 /// tick asked at: some more than a new connection's first frame is ahead of the stream (11 s
 /// seen). With [`ASK_WAIT`], within the 30 s Kamal gives a container to stop.
 pub(crate) const STOP_WAIT: Duration = Duration::from_millis(if cfg!(test) { 500 } else { 15_000 });
-/// The server of a match that watches none: the demo, a demos.tf demo.
-const NOWHERE: SocketAddr = SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, 0));
 
-mod address;
-mod ids;
-mod record;
-mod session;
-mod store;
-mod voice;
+/// The server of a match that watches none: the demo, a demos.tf demo.
+pub(super) const NOWHERE: SocketAddr = SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, 0));
 
 pub struct Sessions {
-    map: Mutex<HashMap<String, Arc<Session>>>,
+    pub(super) map: Mutex<HashMap<String, Arc<Session>>>,
     /// Refuse private and internal addresses: for a server that strangers can use.
     pub public: bool,
     pub max: usize,
@@ -54,7 +58,7 @@ pub struct Sessions {
     /// demos.tf demos kept.
     pub demos: bool,
     /// This process's mark in the store, once it took the folder over.
-    claim: String,
+    pub(super) claim: String,
 }
 
 impl Sessions {
@@ -62,7 +66,7 @@ impl Sessions {
         Sessions { map: Mutex::default(), public, max, hz, store: None, demos: false, claim: random_id() }
     }
 
-    fn lock(&self) -> std::sync::MutexGuard<'_, HashMap<String, Arc<Session>>> {
+    pub(super) fn lock(&self) -> std::sync::MutexGuard<'_, HashMap<String, Arc<Session>>> {
         lock(&self.map)
     }
 
@@ -201,7 +205,7 @@ impl Sessions {
 
     /// Plays demo `demo`: demos.tf's, or the one `made`, of a match's demo with its comms. Its
     /// file is kept for relays.
-    fn play_demo(
+    pub(super) fn play_demo(
         &self,
         by: Option<&str>,
         demo: u64,
@@ -248,7 +252,7 @@ impl Sessions {
     /// Whether another match may start: there must be fewer than `max`. When there are not, the
     /// one nobody has watched the longest, for [`MAKES_ROOM`] at least (kept on for its players,
     /// see [`Sessions::reap`]), makes room.
-    fn check_room(&self, map: &mut HashMap<String, Arc<Session>>) -> Result<()> {
+    pub(super) fn check_room(&self, map: &mut HashMap<String, Arc<Session>>) -> Result<()> {
         if map.values().filter(|s| !s.pinned).count() < self.max {
             return Ok(());
         }
@@ -261,7 +265,7 @@ impl Sessions {
 
     /// Whether `by` may start another match: fewer than [`MATCHES_PER_PERSON`] of theirs, or one
     /// nobody has watched for [`MAKES_ROOM`], which ends.
-    fn check_person(&self, map: &mut HashMap<String, Arc<Session>>, by: Option<&str>) -> Result<()> {
+    pub(super) fn check_person(&self, map: &mut HashMap<String, Arc<Session>>, by: Option<&str>) -> Result<()> {
         let Some(by) = by else { return Ok(()) };
         let theirs: Vec<&Arc<Session>> =
             map.values().filter(|s| s.by.get().is_some_and(|b| b == by) && !s.done.load(Ordering::Relaxed)).collect();
@@ -278,7 +282,7 @@ impl Sessions {
     /// Watches `server` as session `id`, recording it (`resume`: going on from its saved recording,
     /// before the watcher makes any demo, so the demos go on from its loads).
     #[expect(clippy::too_many_arguments, reason = "a session's parts")]
-    fn start(
+    pub(super) fn start(
         &self,
         map: &mut HashMap<String, Arc<Session>>,
         id: String,
@@ -328,7 +332,7 @@ impl Sessions {
     }
 
     /// Watches the match saved as `id` again, or drops its file if it cannot be read.
-    fn pick_up(&self, map: &mut HashMap<String, Arc<Session>>, store: &Store, id: &str) -> Option<Arc<Session>> {
+    pub(super) fn pick_up(&self, map: &mut HashMap<String, Arc<Session>>, store: &Store, id: &str) -> Option<Arc<Session>> {
         let Ok(saved) = store.load(id) else {
             fault!("dropping unreadable saved match {id}");
             store.forget(id);
@@ -402,7 +406,7 @@ impl Sessions {
     }
 
     /// Stops a session already taken out of the map, and forgets its saved file.
-    fn end(&self, s: &Session, why: &str) {
+    pub(super) fn end(&self, s: &Session, why: &str) {
         // Stopped once a save in progress is done, so no save writes the file again once forgotten.
         {
             let _saving = lock(&s.saving);
@@ -428,11 +432,11 @@ impl Sessions {
         let taken_over = self.store.as_ref().is_some_and(|store| store.taken_over(&self.claim));
         let unasked = |s: &Arc<Session>| !s.giving.load(Ordering::Relaxed) && s.live.get().is_some_and(|r| r.is_written());
         while taken_over && told.elapsed() < ASK_WAIT && self.lock().values().any(unasked) {
-            std::thread::sleep(record::RECORD_POLL);
+            std::thread::sleep(super::record::RECORD_POLL);
         }
         let told = std::time::Instant::now();
         while told.elapsed() < STOP_WAIT && self.lock().values().any(|s| s.giving.load(Ordering::Relaxed)) {
-            std::thread::sleep(record::RECORD_POLL);
+            std::thread::sleep(super::record::RECORD_POLL);
         }
     }
 
@@ -457,23 +461,10 @@ impl Sessions {
 }
 
 /// The id of the one of `sessions` nobody has watched the longest, for [`MAKES_ROOM`] at least.
-fn longest_unwatched<'a>(sessions: impl IntoIterator<Item = &'a Arc<Session>>) -> Option<String> {
+pub(super) fn longest_unwatched<'a>(sessions: impl IntoIterator<Item = &'a Arc<Session>>) -> Option<String> {
     sessions
         .into_iter()
         .filter_map(|s| lock(&s.idle_since).filter(|t| t.elapsed() >= MAKES_ROOM).map(|t| (t, s.id.clone())))
         .min_by_key(|(t, _)| *t)
         .map(|(_, id)| id)
 }
-
-#[cfg(test)]
-mod handover_tests;
-#[cfg(test)]
-use store::live_file;
-#[cfg(test)]
-mod load_tests;
-#[cfg(test)]
-mod tests;
-pub(crate) use address::is_public;
-pub(crate) use ids::{Own, demo_id, id_demo, is_id, is_own_demo, logged, own_demo, random_id, split_id};
-pub(crate) use session::{Listed, Session, Viewer};
-pub(crate) use store::{DEMO_PREFIX, LIVE_PREFIX, Store, age, demo_dem, demo_info, demo_output, is_kept_demo, sweep_demos};

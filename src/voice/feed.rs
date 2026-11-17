@@ -5,17 +5,19 @@
 //! What is held outlives the process: it is saved ([`VoiceFeed::save`]) for the next one on the
 //! same stream to take ([`VoiceFeed::adopt`]).
 
-use crate::lock;
-use crate::matches::hub::{Hub, NamedPlayer, SharedHub, VoiceClock, publish};
-use crate::matches::live_demos::{By, Spoken};
-use crate::voice::hold::{Held, Said, Took, VoiceHold};
-use crate::voice::ids::account_of;
-use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
+
+use serde::{Deserialize, Serialize};
 use stvtf::Line;
 use stvtf::output::{Team, Voice};
+
+use crate::matches::hub::{Hub, NamedPlayer, SharedHub, VoiceClock, publish};
+use crate::matches::live_demos::{By, Spoken};
+use crate::sync::lock;
+use crate::voice::hold::{Held, Said, Took, VoiceHold};
+use crate::voice::ids::account_of;
 
 /// How far behind its game a source's stream is unless it says: most leagues' `tv_delay`.
 pub(crate) const DEFAULT_DELAY: f64 = 90.0;
@@ -548,12 +550,14 @@ impl VoiceFeed {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::mpsc::Receiver;
+
+    use serde_json::Value;
+    use stvtf::output::{Pause, Status, Team};
+
     use super::*;
     use crate::matches::hub::tests::{player, snapshot};
     use crate::matches::hub::{subscribe_all, subscribe_to};
-    use serde_json::Value;
-    use std::sync::mpsc::Receiver;
-    use stvtf::output::{Pause, Status, Team};
 
     const STEAMID: &str = "[U:1:5]";
 

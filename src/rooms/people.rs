@@ -2,9 +2,10 @@
 //! or, signed in with the site, by their Steam id; only the server sees either: pages see a
 //! number per person instead.
 
+use std::collections::{HashMap, HashSet};
+
 use anyhow::{Result, bail};
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
 
 /// How a user signed in with the site is known: this and their Steam id.
 const STEAM: &str = "steam:";

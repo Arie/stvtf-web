@@ -1,9 +1,10 @@
 //! The command line and connect strings.
 
-use anyhow::{Context, Result, anyhow, bail};
 use std::collections::HashMap;
 use std::ops::RangeInclusive;
 use std::path::PathBuf;
+
+use anyhow::{Context, Result, anyhow, bail};
 
 /// The `tv_password` tried when a connect string has none.
 pub(crate) const DEFAULT_TV_PASSWORD: &str = "tv";

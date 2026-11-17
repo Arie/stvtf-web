@@ -1,10 +1,11 @@
 //! An uploaded demo that came packed: gzip, or a zip with one demo in it. What comes out is cut
 //! off at the most a demo may be, names are never paths, and nothing is unpacked twice.
 
-use anyhow::{Context, Result, bail};
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
+
+use anyhow::{Context, Result, bail};
 
 /// The most files a zip may list.
 const MAX_ENTRIES: usize = 64;
@@ -108,9 +109,10 @@ fn demo_in_zip(mut file: File, max: u64) -> Result<Box<dyn Read>> {
 
 #[cfg(test)]
 pub(super) mod tests {
+    use std::io::Write;
+
     use super::*;
     use crate::testing::TempDir;
-    use std::io::Write;
 
     /// A zip of `files`: name, contents, method (0 stored, 8 deflated).
     pub(crate) fn zip_of(files: &[(&str, &[u8], u16)]) -> Vec<u8> {

@@ -32,13 +32,6 @@
 //! stv.tf never waits on it: a thread per relay talks to it, and one that does not answer is left
 //! alone for [`AWAY`].
 
-use crate::lock;
-use crate::matches::sessions::logged;
-use crate::relays::pool::{LocalRelay, Relays, Was};
-use anyhow::{Context, Result, bail};
-use base64::Engine;
-use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
 use std::collections::{HashMap, VecDeque};
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
@@ -46,7 +39,17 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex, PoisonError};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+
+use anyhow::{Context, Result, bail};
+use base64::Engine;
+use serde::{Deserialize, Serialize};
+use serde_json::{Value, json};
 use stvtf::relay::{Beam, Handover, Light, Note, VoiceIn, Want};
+
+use crate::matches::sessions::logged;
+use crate::relays::pool::{LocalRelay, Relays, Was};
+use crate::report::fault;
+use crate::sync::lock;
 
 /// A relay not asked about for this long is stopped: longer than any deploy takes.
 pub(crate) const LEASE: Duration = Duration::from_mins(2);

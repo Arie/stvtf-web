@@ -1,4 +1,5 @@
-use super::*;
+use super::ground::{Floor, Ground};
+use super::strokes::{Drape, LIFT, Piece, dist};
 
 /// A flat or sloped box of floor from (x0, y0) to (x1, y1), `z` high at its middle.
 fn floor(x0: f64, y0: f64, x1: f64, y1: f64, z: f64, g: Option<[f64; 2]>) -> Floor {

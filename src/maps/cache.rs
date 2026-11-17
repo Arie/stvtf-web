@@ -1,16 +1,18 @@
 //! Map geometry built from fastdl's BSPs and demos.tf's overviews, kept on disk.
 
-use crate::is_name;
-use crate::maps::bsp;
-use anyhow::{Result, bail};
-use flate2::Compression;
-use flate2::write::GzEncoder;
-use serde::de::IgnoredAny;
 use std::collections::BTreeMap;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
+
+use anyhow::{Result, bail};
+use flate2::Compression;
+use flate2::write::GzEncoder;
+use serde::de::IgnoredAny;
+
+use crate::app::is_name;
+use crate::maps::bsp;
 
 const WARM: &str = include_str!("../../maps.txt");
 const FASTDL: &str = "https://fastdl.serveme.tf/maps/";
@@ -183,8 +185,8 @@ pub(crate) fn write_atomic(path: &Path, data: &[u8]) -> std::io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::lock;
     use crate::maps::bsp::tests::process;
+    use crate::sync::lock;
     use crate::testing::{TempDir, web_server};
 
     #[test]

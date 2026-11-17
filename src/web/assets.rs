@@ -1,12 +1,16 @@
 //! The files served: page modules, fonts, icons, backpacks, maps, overviews.
 
-use super::{CACHE_FOR, JS, JSON, WEBP};
-use crate::maps::cache::{map_geometry, map_geometry_gzip, overview, overview_kept};
-use crate::{App, lock};
+use std::sync::OnceLock;
+
 use axum::http::{StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use rust_embed::RustEmbed;
-use std::sync::OnceLock;
+
+use super::content::{JS, JSON, WEBP};
+use super::limits::CACHE_FOR;
+use crate::app::App;
+use crate::maps::cache::{map_geometry, map_geometry_gzip, overview, overview_kept};
+use crate::sync::lock;
 
 /// The page's modules and stylesheets (top-level ones served with their `@import`s inlined).
 #[derive(RustEmbed)]

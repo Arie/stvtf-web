@@ -1,14 +1,17 @@
 //! An admin's moves, and following again: the page's Live on a map that is over.
+use serde_json::Value;
 
 use super::move_tests::{decided, live_room_at_live_on, on_map, push_server, push_snapshot};
 use super::part::MapChoice;
 use super::part_tests::{OLD_SAVED_ROOM, playback, push, settle};
+use super::play::Control;
+use super::state::Room;
 use super::stream_tests::a_pass;
 use super::tests::until;
-use super::view::View;
-use super::*;
-use crate::matches::hub::{subscribe, tests::snapshot};
-use serde_json::Value;
+use super::view::{View, ViewPost};
+use crate::matches::hub::subscribe;
+use crate::matches::hub::tests::snapshot;
+use crate::sync::lock;
 
 #[test]
 fn live_on_a_map_over_follows_again_and_the_room_goes_on_when_the_next_plays() {

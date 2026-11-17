@@ -4,23 +4,26 @@
 //! decoded again; the store's sweep keeps them within a budget. The file comes in to disk, many
 //! at a time; decoding holds a whole file in memory, one at a time.
 
-use crate::matches::hub::{SharedHub, publish};
-use crate::matches::replay::play_lines;
-use crate::matches::sessions::{Store, demo_dem, demo_output};
-use crate::{is_name, lock};
+use std::io::{BufWriter, Read, Write};
+use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
+
 use anyhow::{Context, Result, bail};
 use flate2::Compression;
 use flate2::read::GzDecoder;
 use flate2::write::GzEncoder;
 use serde::Deserialize;
-use std::io::{BufWriter, Read, Write};
-use std::path::Path;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
-use std::time::Duration;
-use std::time::Instant;
 use stvtf::Line;
 use stvtf::output::{Stamped, Status, Voice};
+
+use crate::app::is_name;
+use crate::matches::hub::{SharedHub, publish};
+use crate::matches::replay::play_lines;
+use crate::matches::sessions::{Store, demo_dem, demo_output};
+use crate::report::fault;
+use crate::sync::lock;
 
 const API: &str = "https://api.demos.tf/demos/";
 /// A whole evening on one demo is a few hundred MiB.

@@ -2,13 +2,14 @@
 //! first, then over (the air-strafe) and down onto the landing; seen from above, straight. And
 //! drawing one in a room: two clicks, launch then landing, kept with the marker.
 
-use super::Room;
-use super::beams::{HEAD, HEAD_ANGLE, beam, hex};
-use super::drawing::Kept;
-use crate::lock;
 use anyhow::{Result, bail};
 use serde::Deserialize;
 use stvtf::relay::Beam;
+
+use super::Room;
+use super::beams::{HEAD, HEAD_ANGLE, beam, hex};
+use super::drawing::Kept;
+use crate::sync::lock;
 
 /// Two clicks closer than this are no jump.
 const MIN_JUMP: f64 = 16.0;

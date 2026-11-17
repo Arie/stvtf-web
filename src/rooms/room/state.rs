@@ -1,106 +1,96 @@
-//! A room: a recording played into its own hub, paused, sped up and sought by its owner, with
-//! everyone in it seeing the same.
+//! A room: what it plays, who is in it, and what they draw and say.
 
-use crate::lock;
-use crate::matches::hub::{SharedHub, announce};
-use crate::matches::recording::Recording;
-use crate::relays::pool::{Offer, RoomRelay, Was};
-use crate::rooms::people::People;
-use anyhow::Result;
-use drawing::kept_line;
-use markers::Markers;
-use play::{Pace, State};
-use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex, OnceLock};
 use std::time::{Duration, Instant};
-mod arc;
-mod beams;
-mod circle;
-mod drawing;
-mod gap;
-mod light;
-mod markers;
-mod note;
-mod part;
-mod play;
-mod relay;
-mod view;
+
+use anyhow::Result;
+use serde::{Deserialize, Serialize};
+
+pub(crate) use super::drawing::Kept;
+use super::drawing::kept_line;
+use super::markers::Markers;
+use super::play::{Pace, State};
+use crate::matches::hub::{SharedHub, announce};
+use crate::matches::recording::Recording;
+use crate::relays::pool::{Offer, RoomRelay, Was};
+use crate::rooms::people::People;
+use crate::sync::lock;
 
 pub(crate) const SPEEDS: [f64; 5] = [0.25, 0.5, 1.0, 2.0, 4.0];
 
 /// Coordinates pages may send: well past any map (Source's reach 16384).
-const MAP_REACH: f64 = 1e6;
+pub(super) const MAP_REACH: f64 = 1e6;
 
 /// Whether `v` is a coordinate pages may send.
-fn on_map(v: f64) -> bool {
+pub(super) fn on_map(v: f64) -> bool {
     v.is_finite() && v.abs() < MAP_REACH
 }
 
 pub(crate) struct Room {
     pub(crate) id: String,
     pub(crate) hub: SharedHub,
-    people: Mutex<People>,
+    pub(super) people: Mutex<People>,
     /// The admin's number, page and the kind of view it chose, when one did.
-    leader: Mutex<Option<Leader>>,
+    pub(super) leader: Mutex<Option<Leader>>,
     /// The latest view line, to save.
-    view: Mutex<Option<Arc<str>>>,
+    pub(super) view: Mutex<Option<Arc<str>>>,
     /// The view before a player was followed, and who led it: a follow ended goes back to it.
-    before_follow: Mutex<Option<(Leader, Arc<str>)>>,
-    recording: Arc<Recording>,
-    state: Mutex<State>,
-    wake: Condvar,
-    viewers: AtomicUsize,
+    pub(super) before_follow: Mutex<Option<(Leader, Arc<str>)>>,
+    pub(super) recording: Arc<Recording>,
+    pub(super) state: Mutex<State>,
+    pub(super) wake: Condvar,
+    pub(super) viewers: AtomicUsize,
     pub(crate) idle_since: Mutex<Option<Instant>>,
     /// Where its relay would play from, if it can have one.
-    offer: OnceLock<Offer>,
+    pub(super) offer: OnceLock<Offer>,
     /// Where the maps' geometry is kept: the floors arcs and the relay's strokes are laid on.
-    maps: OnceLock<std::path::PathBuf>,
+    pub(super) maps: OnceLock<std::path::PathBuf>,
     /// Its relay to TF2 clients, and what goes with it.
-    relay: RelayState,
+    pub(super) relay: RelayState,
     /// The user id the view follows; the relay's camera does too.
-    camera: Mutex<Option<u16>>,
+    pub(super) camera: Mutex<Option<u16>>,
     /// The permanent marker, and which map's the pages and the relay were last told.
-    marker: MarkerState,
+    pub(super) marker: MarkerState,
     /// The voice handed to its relay, whether it has one or not.
     #[cfg(test)]
-    relayed: Mutex<Vec<stvtf::relay::VoiceIn>>,
+    pub(super) relayed: Mutex<Vec<stvtf::relay::VoiceIn>>,
 }
 
 /// A room's relay, while the room is open and someone has been on a page of it, and what was
 /// last said of it.
 #[derive(Default)]
-struct RelayState {
-    current: Mutex<Option<RoomRelay>>,
+pub(super) struct RelayState {
+    pub(super) current: Mutex<Option<RoomRelay>>,
     /// What its pages were last told of the relay.
-    said: Mutex<Option<String>>,
+    pub(super) said: Mutex<Option<String>>,
     /// What its relay was last told.
-    sent: Mutex<Option<stvtf::relay::Want>>,
+    pub(super) sent: Mutex<Option<stvtf::relay::Want>>,
     /// Its relay's port and password, for one started again.
-    was: Mutex<Option<Was>>,
+    pub(super) was: Mutex<Option<Was>>,
     /// The last relay that could not start: when, and why, so it is tried again and logged at a
     /// pace (the relay process may be away for a while).
-    failed: Mutex<Option<(Instant, String)>>,
+    pub(super) failed: Mutex<Option<(Instant, String)>>,
 }
 
 /// A room's permanent marker strokes, by the map they are on.
-struct MarkerState {
-    strokes: Mutex<Markers>,
+pub(super) struct MarkerState {
+    pub(super) strokes: Mutex<Markers>,
     /// The map whose marker the pages and the relay were last told (the one drawings land on).
-    load: AtomicUsize,
+    pub(super) load: AtomicUsize,
     /// The marker changed since the relay was last handed it.
-    dirty: AtomicBool,
+    pub(super) dirty: AtomicBool,
 }
 
 /// Who leads the view: the admin's number, their page, and the kind of view it chose. Saved as
 /// `[by, page, kind]`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(from = "(u32, String, String)", into = "(u32, String, String)")]
-struct Leader {
-    by: u32,
-    page: String,
-    kind: String,
+pub(super) struct Leader {
+    pub(super) by: u32,
+    pub(super) page: String,
+    pub(super) kind: String,
 }
 
 impl From<(u32, String, String)> for Leader {
@@ -127,32 +117,32 @@ pub(crate) struct StartAt {
 /// What a room is, saved for the next process: where playback is, who is in it, and the view.
 #[derive(Debug, Serialize, Deserialize)]
 pub(crate) struct Saved {
-    paused: bool,
-    speed: f64,
-    at: u64,
-    people: People,
-    leader: Option<Leader>,
-    view: Option<String>,
+    pub(super) paused: bool,
+    pub(super) speed: f64,
+    pub(super) at: u64,
+    pub(super) people: People,
+    pub(super) leader: Option<Leader>,
+    pub(super) view: Option<String>,
     /// Saved in a file of its own (see `Rooms::save`).
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub(crate) markers: Markers,
     /// The latest map's, in files from before maps.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    marker: Vec<Kept>,
+    pub(super) marker: Vec<Kept>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    relay: Option<Was>,
+    pub(super) relay: Option<Was>,
     /// The map of the match it is on, by number; none in files from before: the latest.
     #[serde(default, rename = "part")]
-    load: Option<usize>,
+    pub(super) load: Option<usize>,
     /// It goes on to the next map by itself (see `State::follows_live`).
     #[serde(default, rename = "follows")]
-    follows_live: bool,
+    pub(super) follows_live: bool,
     /// Its map was over, and whether it follows live decided (see `State::over`).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    decided: bool,
+    pub(super) decided: bool,
     /// Whether it played the match as it came.
     #[serde(default, skip_serializing_if = "Pace::is_own")]
-    pace: Pace,
+    pub(super) pace: Pace,
 }
 
 /// A page in the room, by its guest cookie if it is listed, until dropped.
@@ -230,7 +220,7 @@ impl Room {
         room
     }
 
-    fn run(
+    pub(super) fn run(
         id: String,
         people: People,
         leader: Option<Leader>,
@@ -321,7 +311,7 @@ impl Room {
         Ok(())
     }
 
-    fn announce_people(&self) {
+    pub(super) fn announce_people(&self) {
         let line = serde_json::json!({ "type": "people", "people": lock(&self.people).shown() });
         announce(&self.hub, "people", &line.to_string().into());
     }
@@ -367,29 +357,3 @@ impl Room {
         }
     }
 }
-
-#[cfg(test)]
-mod follow_tests;
-#[cfg(test)]
-mod gap_tests;
-#[cfg(test)]
-mod live_tests;
-#[cfg(test)]
-mod move_tests;
-#[cfg(test)]
-mod part_tests;
-#[cfg(test)]
-mod stream_tests;
-#[cfg(test)]
-mod tests;
-#[cfg(test)]
-mod voice_tests;
-pub(crate) use arc::ArcDraw;
-pub(crate) use circle::CircleDraw;
-pub(crate) use drawing::{Draw, Kept};
-pub(crate) use light::LightDraw;
-pub(crate) use markers::read_marker;
-pub(crate) use note::NoteDraw;
-pub(crate) use part::MapChoice;
-pub(crate) use play::Control;
-pub(crate) use view::ViewPost;

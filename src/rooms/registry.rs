@@ -1,20 +1,23 @@
 //! The rooms open now. With a store (`--sessions`), each is saved as it goes, so the process that
 //! replaces this one (a deploy) picks it up when its pages reconnect: a pause of a second or two.
 
-use crate::lock;
+use std::collections::{HashMap, HashSet};
+use std::path::PathBuf;
+use std::sync::{Arc, Mutex, Weak};
+use std::time::{Duration, Instant};
+
+use anyhow::{Result, bail};
+use serde::{Deserialize, Serialize};
+
 use crate::matches::live_demos;
 use crate::matches::recording::Recording;
 use crate::matches::sessions::{
     DEMO_PREFIX, LIVE_PREFIX, Session, Sessions, Store, Viewer, age, demo_dem, demo_output, is_kept_demo, logged, sweep_demos,
 };
 use crate::relays::pool::{DemoOf, Offer, Pool};
+use crate::report::fault;
 use crate::rooms::room::{Room, Saved, StartAt, read_marker};
-use anyhow::{Result, bail};
-use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
-use std::path::PathBuf;
-use std::sync::{Arc, Mutex, Weak};
-use std::time::{Duration, Instant};
+use crate::sync::lock;
 
 /// A saved room nobody came back for is dropped after this long.
 const STALE: Duration = Duration::from_hours(1);
@@ -457,10 +460,11 @@ impl Rooms {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::testing::{TempDir, free_port};
     use std::fmt::Write as _;
     use std::time::SystemTime;
+
+    use super::*;
+    use crate::testing::{TempDir, free_port};
 
     /// Sessions with a pinned demo rooms can play, and the folder its recording is in.
     fn demo() -> (Sessions, TempDir) {
@@ -485,7 +489,8 @@ mod tests {
 
     #[test]
     fn a_rooms_map_is_one_whose_geometry_may_be_built() {
-        use crate::matches::{hub::tests::snapshot, recording::tests::push_at};
+        use crate::matches::hub::tests::snapshot;
+        use crate::matches::recording::tests::push_at;
         let rec = Arc::new(Recording::live());
         push_at(&rec, &crate::testing::server("cp_a"), 1);
         push_at(&rec, &snapshot(50, None, Vec::new()), 2);

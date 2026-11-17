@@ -1,19 +1,14 @@
-//! Team voice comms: a team's Discord or Mumble brought into a match, and who is who in it.
+//! How voice is set up for a match: its channels, the bot going to them, and its comms.
 
-pub(crate) mod feed;
-pub(crate) mod hold;
-pub(crate) mod ids;
-pub(crate) mod links;
-pub(crate) mod mumble;
-pub(crate) mod who;
-
-use crate::voice::feed::VoiceFeed;
-use crate::voice::mumble::MumbleJob;
-use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::sync::atomic::AtomicBool;
 use std::sync::{Mutex, OnceLock};
 use std::time::Instant;
+
+use serde::{Deserialize, Serialize};
+
+use crate::voice::feed::VoiceFeed;
+use crate::voice::mumble::MumbleJob;
 
 /// Where the voice bot is in a channel brought into a match.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -84,14 +79,14 @@ pub(crate) struct VoiceSetup {
     /// The key the voice bot posts with (`STVTF_VOICE_KEY`); without it no voice is taken in.
     pub(crate) key: Option<String>,
     /// Discord users and the Steam accounts linked to them, for voice from Discord.
-    pub(crate) links: links::Links,
+    pub(crate) links: super::links::Links,
     /// Where the voice bot is added to a Discord server (`STVTF_VOICE_BOT`), for the invite.
     pub(crate) bot: Option<String>,
     /// The bell the voice bot waits on for Mumble channels asked for.
-    pub(crate) mumble_changes: mumble::Changes,
+    pub(crate) mumble_changes: super::mumble::Changes,
     /// Whether a Mumble server may be on this machine or its network (`STVTF_MUMBLE_ANYWHERE=1`):
     /// at a LAN.
     pub(crate) mumble_anywhere: bool,
     /// Whom people in voice channels were said to be, from one match to the next.
-    pub(crate) who: who::WhoIsWho,
+    pub(crate) who: super::who::WhoIsWho,
 }

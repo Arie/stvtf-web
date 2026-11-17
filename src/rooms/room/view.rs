@@ -1,11 +1,14 @@
 //! How everyone in a room sees the map, as an admin sets it.
 
-use super::{Leader, Room, on_map};
-use crate::lock;
-use crate::matches::hub::announce;
+use std::sync::Arc;
+
 use anyhow::{Result, bail};
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
+
+use super::Room;
+use super::state::{Leader, on_map};
+use crate::matches::hub::announce;
+use crate::sync::lock;
 
 /// How everyone in the room sees the map, as an admin sets it.
 #[derive(Debug, Deserialize, Serialize)]

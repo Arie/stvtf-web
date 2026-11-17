@@ -1,12 +1,14 @@
 //! A room at the end of its map while the server changes map: whether it goes on with the match,
 //! decided when the map ends, and the voice of the gap it hears while it waits.
 
+use std::time::Duration;
+
+use stvtf::Line;
+use stvtf::output::Status;
+
 use super::Room;
 use super::play::{Cursor, IDLE_POLL, LIVE_POLL, State};
 use crate::matches::hub::publish;
-use std::time::Duration;
-use stvtf::Line;
-use stvtf::output::Status;
 
 /// A room this close to its map's end when the map ends (in play time) is at live: it follows.
 pub(super) const FOLLOW_WITHIN: u64 = 3000;

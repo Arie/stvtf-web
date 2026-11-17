@@ -1,8 +1,9 @@
 //! Match ids: random ones, and a demo's.
 
+use std::fmt::Write as _;
+
 use aes_gcm::aead::OsRng;
 use aes_gcm::aead::rand_core::RngCore;
-use std::fmt::Write as _;
 
 /// A match id: this many random bytes, as hex in links and file names.
 pub(super) const ID_BYTES: usize = 16;

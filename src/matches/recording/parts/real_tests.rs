@@ -2,10 +2,13 @@
 //! the server's word, a long silence, one frozen frame of the new map, a disconnect, the map
 //! announced again and again, then play.
 
-use super::super::*;
+use stvtf::Line;
+use stvtf::output::Team;
+
+use super::super::Recording;
 use super::tests::{Stream, line};
 use crate::matches::hub::tests::{player, snapshot};
-use stvtf::output::Team;
+use crate::sync::lock;
 
 /// Play times of a change's lines.
 pub(crate) struct Change {

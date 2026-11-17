@@ -1,16 +1,18 @@
 //! The player: a room's recording played in time, paused, sped up and sought.
 
-use super::{Room, SPEEDS, gap};
-use crate::lock;
-use crate::matches::hub::{announce, publish, restore};
-use crate::matches::recording::Recording;
-use anyhow::{Result, bail};
-use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 use std::sync::MutexGuard;
 use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
+
+use anyhow::{Result, bail};
+use serde::{Deserialize, Serialize};
 use stvtf::Line;
+
+use super::{Room, SPEEDS, gap};
+use crate::matches::hub::{announce, publish, restore};
+use crate::matches::recording::Recording;
+use crate::sync::lock;
 
 /// How often pages hear where playback is while it plays.
 pub(super) const ANNOUNCE_EVERY: Duration = Duration::from_secs(1);

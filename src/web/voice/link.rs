@@ -3,18 +3,17 @@
 //! to the voice bot (`GET /voice/who?discord=<id>`, with its key). Linking is off without a
 //! Discord application (`STVTF_DISCORD_CLIENT_ID`, `_SECRET` and `_REDIRECT`).
 
+use axum::Json;
+use axum::http::{StatusCode, header};
+use axum::response::{IntoResponse, Redirect, Response};
+
 use super::incoming::is_key;
-use crate::App;
+use crate::app::App;
 use crate::matches::sessions::random_id;
 use crate::voice::ids::is_snowflake;
 use crate::voice::links::ask_discord;
-use crate::web::{query_of, set_cookie};
-use axum::Json;
-use axum::http::StatusCode;
-use axum::http::header;
-use axum::response::IntoResponse;
-use axum::response::Redirect;
-use axum::response::Response;
+use crate::web::answer::query_of;
+use crate::web::visitor::set_cookie;
 
 /// The cookie that says which sign-in a browser began, and how long it has to end it.
 pub(in crate::web) const STATE_COOKIE: &str = "voice_link";

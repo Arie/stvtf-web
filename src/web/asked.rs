@@ -1,11 +1,7 @@
 //! What handlers take of a request: extractors of our own, and the queries they read.
 
-use super::client::client_of;
-use super::visitor::Who;
-use super::{Answered, Early, GUEST_COOKIE, Shared, USER_COOKIE, unix_now};
-use crate::Matches;
-use crate::matches::sessions::{self, Sessions};
-use crate::rooms::people::steam_key;
+use std::net::{IpAddr, SocketAddr};
+
 use anyhow::{Result, anyhow};
 use axum::extract::{ConnectInfo, FromRequestParts, Query};
 use axum::http::header::{self, HeaderName};
@@ -14,7 +10,15 @@ use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum_extra::extract::CookieJar;
 use serde::Deserialize;
-use std::net::{IpAddr, SocketAddr};
+
+use super::answer::unix_now;
+use super::client::client_of;
+use super::limits::{GUEST_COOKIE, USER_COOKIE};
+use super::visitor::Who;
+use super::{Answered, Early, Shared};
+use crate::app::Matches;
+use crate::matches::sessions::{self, Sessions};
+use crate::rooms::people::steam_key;
 
 /// A request's visitor and where it is from: what most handlers go by.
 pub(super) struct Visit {

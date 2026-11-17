@@ -13,20 +13,22 @@
 //! By whoever is signed in (where nobody signs in, anyone). Kept as a demos.tf demo is, and of
 //! one person only one: another takes its place.
 
-use super::asked::{Visit, answer};
-use super::client::counted;
-use super::{Answered, Early, Shared};
-use crate::lock;
-use crate::matches::sessions::{self, DEMO_PREFIX, Store, demo_dem, demo_info, demo_output};
+use std::collections::HashMap;
+use std::io::{Read, Write};
+use std::sync::Mutex;
+
 use anyhow::{Context, Result, bail};
 use axum::Json;
 use axum::body::Bytes;
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Redirect, Response};
-use std::collections::HashMap;
-use std::io::{Read, Write};
-use std::sync::Mutex;
+
+use super::asked::{Visit, answer};
+use super::client::counted;
+use super::{Answered, Early, Shared};
+use crate::matches::sessions::{self, DEMO_PREFIX, Store, demo_dem, demo_info, demo_output};
+use crate::sync::lock;
 
 /// The biggest demo (sent, and unpacked), and part of one: under what Cloudflare lets through.
 pub(super) const MAX_DEMO: u64 = 512 << 20;

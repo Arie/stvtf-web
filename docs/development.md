@@ -8,14 +8,14 @@ Before pushing, run what CI runs:
 ```
 npm ci && mise install             # once: ESLint, Prettier, tsc; shellcheck, actionlint, zizmor, hadolint
 script/test                        # every check; -p in parallel
-script/test --fix                  # cargo fmt, ESLint fixes, Prettier, then the rest
+script/test --fix                  # cargo +nightly fmt, ESLint fixes, Prettier, then the rest
 script/test -s checks              # a section (checks, tests, audit); -t clippy,tsc some checks, --skip others
 script/test --list                 # each check and its command
 ```
 
 | check                                    | config                                                                                                                                                                               |
 | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| rustfmt                                  | `rustfmt.toml`                                                                                                                                                                       |
+| rustfmt                                  | `rustfmt.toml`; nightly rustfmt (`rustup toolchain install nightly --component rustfmt`) for its import grouping                                                                     |
 | clippy                                   | `[lints]` in `Cargo.toml`; functions ≤ 60 lines (`clippy.toml`)                                                                                                                      |
 | rustdoc                                  |                                                                                                                                                                                      |
 | ESLint                                   | `eslint.config.mjs`: functions ≤ 60 lines, complexity ≤ 15, files ≤ 400 lines; older code over the limits in `eslint-suppressions.json` (`npx eslint app test --prune-suppressions`) |
@@ -68,8 +68,11 @@ npm run test:browser    # after cargo build and `npx playwright-core install --o
 
 ## Layout
 
-- `src/main.rs`: start-up, match housekeeping, connections; `src/cli.rs`: the command line;
-  `src/log.rs`: what the server says of itself (`--logs`).
+- Modules are `foo/mod.rs` files that only declare their parts and what they make public; code
+  is in the parts, tests in files of their own.
+- `src/main.rs`: `main`; `app.rs`: the app all share; `start.rs`: start-up; `housekeeping.rs`:
+  what is done every so often; `src/cli.rs`: the command line; `src/log.rs`: what the server
+  says of itself (`--logs`).
 - `src/web/`: HTTP, on axum and tower-http. `server.rs`: `axum::serve` and the layers (CORS,
   CSRF, frames, limits, compression, tracing); `routes.rs`: the routes; `asked.rs`: our
   extractors and typed queries; `pages.rs`: the askama templates in `templates/`; `assets.rs`:
@@ -86,7 +89,7 @@ npm run test:browser    # after cargo build and `npx playwright-core install --o
 - `src/relays/`: `pool` (rooms as SourceTV addresses) and `daemon` (relays in their own process).
 - `src/voice/`: voice from outside a match: `feed` and `hold` (held to its tick), `mumble`
   (channels the bot is wanted in), `who` (who is who, between regions), `links` (Discord to
-  Steam), `ids`. Its routes: `web/voice.rs` and `web/voice/`.
+  Steam), `ids`. Its routes: `web/voice/`.
 - `src/maps/`: `cache` (geometry and overviews in `--cache`) and `bsp` (top-down geometry, on
   `/map/NAME`): `format` (lumps, LZMA), `entities` (bounds, packs, capture areas, spawns),
   `material` (floor kind from texture), `displacement`, `track` (payload), `reach` (flood fill),

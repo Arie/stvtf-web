@@ -1,14 +1,23 @@
 //! Rooms through map changes as a real server sends them (the recording's `Stream`, at
 //! `tv_delay 90`): whether a room goes on with the match is decided where the map ends.
+use std::sync::Arc;
+use std::sync::atomic::Ordering;
+use std::time::{Duration, Instant};
 
+use serde_json::Value;
+
+use super::drawing::Draw;
 use super::move_tests::{decided, on_map};
 use super::part_tests::{OLD_SAVED_ROOM, playback};
+use super::play::Control;
+use super::state::{Room, StartAt};
 use super::tests::until;
-use super::*;
-use crate::matches::hub::{subscribe, tests::snapshot};
+use crate::matches::hub::subscribe;
+use crate::matches::hub::tests::snapshot;
+use crate::matches::recording::Recording;
 use crate::matches::recording::part_tests::Stream;
 use crate::matches::recording::real_part_tests::viaduct;
-use serde_json::Value;
+use crate::sync::lock;
 
 /// Until the player has looked at the room since now: a pass that told its pages where it is (each
 /// second while live) is done.

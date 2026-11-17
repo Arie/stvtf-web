@@ -1,13 +1,15 @@
 //! A circle: one click puts a small ring on the floor there ("stand here"), kept with the marker.
 
+use std::f64::consts::TAU;
+
+use anyhow::{Result, bail};
+use serde::Deserialize;
+use stvtf::relay::Beam;
+
 use super::Room;
 use super::beams::{beam, hex};
 use super::drawing::Kept;
-use crate::lock;
-use anyhow::{Result, bail};
-use serde::Deserialize;
-use std::f64::consts::TAU;
-use stvtf::relay::Beam;
+use crate::sync::lock;
 
 /// The ring's radius, and its fence's height above the floor ring (as the user picked in TF2).
 const RADIUS: f64 = 38.0;

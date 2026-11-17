@@ -1,16 +1,18 @@
 //! A room's relay to TF2 clients: started while someone is on a page, told where the room is.
 
+use std::sync::atomic::Ordering;
+use std::time::{Duration, Instant};
+
+use base64::Engine;
+use stvtf::Line;
+use stvtf::relay::VoiceIn;
+
 use super::play::State;
 use super::{Room, Saved};
-use crate::lock;
 use crate::matches::hub::announce;
 use crate::matches::sessions::logged;
 use crate::relays::pool::{Offer, RoomRelay};
-use base64::Engine;
-use std::sync::atomic::Ordering;
-use std::time::{Duration, Instant};
-use stvtf::Line;
-use stvtf::relay::VoiceIn;
+use crate::sync::lock;
 
 /// A relay that could not start is tried again after this long.
 pub(super) const RELAY_RETRY: Duration = Duration::from_secs(5);

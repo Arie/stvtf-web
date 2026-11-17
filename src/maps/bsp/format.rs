@@ -2,7 +2,7 @@
 
 use anyhow::{Result, anyhow, bail};
 
-use super::Vec3;
+use super::geometry::Vec3;
 
 pub(super) const LUMP_ENTITIES: usize = 0;
 pub(super) const LUMP_PLANES: usize = 1;

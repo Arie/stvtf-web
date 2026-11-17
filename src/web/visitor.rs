@@ -1,10 +1,12 @@
 //! The visitor: signed in with the site, or a guest by cookie, and where they go back to.
 
-use super::{GUEST_COOKIE, token};
-use crate::App;
-use crate::matches::sessions;
 use cookie::time::Duration;
 use cookie::{Cookie, SameSite};
+
+use super::limits::GUEST_COOKIE;
+use super::token;
+use crate::app::App;
+use crate::matches::sessions;
 
 /// How long a guest cookie lasts: who one is in rooms, kept across visits.
 const GUEST_FOR: std::time::Duration = std::time::Duration::from_hours(365 * 24);

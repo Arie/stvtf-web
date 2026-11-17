@@ -1,19 +1,25 @@
 //! A room waiting at the end of its map hears the voice said in the gap, as it is said.
+use std::sync::Arc;
+use std::sync::atomic::Ordering;
+use std::sync::mpsc::Receiver;
 
-use super::move_tests::on_map;
-use super::move_tests::{decided, live_room_at_live_on, push_server};
-use super::part_tests::{playback, push};
-use super::stream_tests::{a_pass, at_live};
-use super::tests::until;
-use super::*;
-use crate::matches::hub::{subscribe_to, tests::snapshot};
-use crate::matches::recording::part_tests::Stream;
-use crate::matches::recording::real_part_tests::viaduct;
 use base64::Engine;
 use serde_json::Value;
-use std::sync::mpsc::Receiver;
 use stvtf::Line;
 use stvtf::output::{PlayerId, Voice};
+
+use super::move_tests::{decided, live_room_at_live_on, on_map, push_server};
+use super::part_tests::{playback, push};
+use super::play::Control;
+use super::state::Room;
+use super::stream_tests::{a_pass, at_live};
+use super::tests::until;
+use crate::matches::hub::subscribe_to;
+use crate::matches::hub::tests::snapshot;
+use crate::matches::recording::Recording;
+use crate::matches::recording::part_tests::Stream;
+use crate::matches::recording::real_part_tests::viaduct;
+use crate::sync::lock;
 
 /// Voice from outside the match, its one frame `n`; said in a pause or not.
 fn said(n: u8, pause: bool) -> Line {

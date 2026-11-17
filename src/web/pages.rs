@@ -1,12 +1,14 @@
 //! The pages: templates in `templates/`, filled in and escaped by askama.
 
-use super::app_version;
-use crate::App;
+use std::sync::OnceLock;
+
 use askama::Template;
 use axum::http::{StatusCode, header};
 use axum::response::{Html, IntoResponse, Response};
 use serde::Deserialize;
-use std::sync::OnceLock;
+
+use super::app_version;
+use crate::app::App;
 
 /// The viewer page of a match or room; preloads all modules (the import chain is 15 deep).
 #[derive(Template)]

@@ -1,37 +1,27 @@
-use super::*;
-use crate::matches::hub::{SharedHub, publish};
-use crate::testing::{TempDir, TestApp, app, server, web_server};
-use crate::web::client::{client_key, client_of, is_cloudflare, on_our_network};
-use crate::web::matches::start_view;
-use crate::{App, Matches};
-use flate2::read::GzDecoder;
-use std::collections::HashMap;
-use std::io::{BufRead, BufReader, Read, Write};
-use std::net::TcpListener;
-use std::net::TcpStream;
-use std::path::PathBuf;
-use std::sync::Arc;
-use std::time::{Duration, Instant};
-use stvtf::Line;
-use stvtf::output::{self, PlayerId};
+//! What the web tests share: apps to serve, and requests to them.
 
-mod comms;
-mod files;
-mod match_pages;
-mod room_pages;
-mod streams;
-mod uploads;
-mod voice;
+use std::collections::HashMap;
+use std::io::{Read, Write};
+use std::net::{TcpListener, TcpStream};
+use std::sync::Arc;
+use std::time::Duration;
+
+use anyhow::Result;
+
+use super::*;
+use crate::app::{App, Matches};
+use crate::matches::sessions::Sessions;
+use crate::testing::{TempDir, TestApp, app};
 
 /// The app behind a real `axum::serve` on its own port, until dropped.
-struct Served {
-    at: std::net::SocketAddr,
-    stop: Option<tokio::sync::oneshot::Sender<()>>,
-    server: Option<std::thread::JoinHandle<Result<()>>>,
+pub(super) struct Served {
+    pub(super) at: std::net::SocketAddr,
+    pub(super) stop: Option<tokio::sync::oneshot::Sender<()>>,
+    pub(super) server: Option<std::thread::JoinHandle<Result<()>>>,
 }
 
 impl Served {
-    fn start(app: Arc<App>) -> Served {
+    pub(super) fn start(app: Arc<App>) -> Served {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         listener.set_nonblocking(true).unwrap();
         let at = listener.local_addr().unwrap();
@@ -49,7 +39,7 @@ impl Served {
     }
 
     /// Stops it once what is under way is done: its result.
-    fn end(&mut self) -> Result<()> {
+    pub(super) fn end(&mut self) -> Result<()> {
         drop(self.stop.take());
         self.server.take().map_or(Ok(()), |server| server.join().unwrap())
     }
@@ -62,7 +52,7 @@ impl Drop for Served {
 }
 
 /// A response with title-cased header names (`Content-Type`), as the tests match them.
-fn named(response: &[u8]) -> Vec<u8> {
+pub(super) fn named(response: &[u8]) -> Vec<u8> {
     let Some(end) = response.windows(4).position(|w| w == b"\r\n\r\n") else { return response.to_vec() };
     let head = String::from_utf8_lossy(&response[..end]);
     let title = |name: &str| {
@@ -78,7 +68,7 @@ fn named(response: &[u8]) -> Vec<u8> {
 
 /// Sends `send` to the app, as its one request on a connection; returns the server's result and
 /// the response.
-fn exchange(app: &TestApp, send: &[u8]) -> (Result<()>, Vec<u8>) {
+pub(super) fn exchange(app: &TestApp, send: &[u8]) -> (Result<()>, Vec<u8>) {
     let mut served = Served::start(app.shared());
     let mut client = TcpStream::connect(served.at).unwrap();
     client.set_read_timeout(Some(Duration::from_secs(20))).unwrap();
@@ -91,24 +81,24 @@ fn exchange(app: &TestApp, send: &[u8]) -> (Result<()>, Vec<u8>) {
     (served.end(), named(&response))
 }
 
-fn request_to(app: &TestApp, send: &[u8]) -> (Result<()>, String) {
+pub(super) fn request_to(app: &TestApp, send: &[u8]) -> (Result<()>, String) {
     let (result, response) = exchange(app, send);
     (result, String::from_utf8_lossy(&response).into_owned())
 }
 
 /// A response's head, and its body, which may be binary.
-fn head_and_body(response: &[u8]) -> (String, &[u8]) {
+pub(super) fn head_and_body(response: &[u8]) -> (String, &[u8]) {
     let end = response.windows(4).position(|w| w == b"\r\n\r\n").unwrap();
     (String::from_utf8_lossy(&response[..end]).into_owned(), &response[end + 4..])
 }
 
 /// A query string's values, as a request's.
-fn asks(query: &str) -> HashMap<String, String> {
+pub(super) fn asks(query: &str) -> HashMap<String, String> {
     serde_urlencoded::from_str(query).unwrap()
 }
 
 /// The page's files: name under `app/`, type and body; `style.css` first.
-fn app_files() -> Vec<(&'static str, &'static str, &'static [u8])> {
+pub(super) fn app_files() -> Vec<(&'static str, &'static str, &'static [u8])> {
     let typed = |(name, body): &'static (String, Vec<u8>)| {
         let css = std::path::Path::new(name).extension().is_some_and(|e| e == "css");
         (name.as_str(), if css { CSS } else { JS }, body.as_slice())
@@ -116,13 +106,13 @@ fn app_files() -> Vec<(&'static str, &'static str, &'static [u8])> {
     assets::app_files().iter().map(typed).collect()
 }
 
-fn sessions_of(app: &TestApp) -> &Sessions {
+pub(super) fn sessions_of(app: &TestApp) -> &Sessions {
     let Matches::Many(sessions) = &app.matches else { panic!("one match, not many") };
     sessions
 }
 
 /// A server with a pinned demo rooms can play, and the folder its recording is in.
-fn demo_app() -> (TestApp, TempDir) {
+pub(super) fn demo_app() -> (TestApp, TempDir) {
     let dir = TempDir::new("rooms");
     let path = dir.join("demo.jsonl");
     std::fs::write(&path, "{\"type\":\"stalemate\",\"tick\":5}\n{\"type\":\"stalemate\",\"tick\":55}\n").unwrap();
@@ -135,7 +125,7 @@ fn demo_app() -> (TestApp, TempDir) {
 }
 
 /// The demo server behind the site, with its key: (app, key's hex, the folder).
-fn site_app() -> (TestApp, String, TempDir) {
+pub(super) fn site_app() -> (TestApp, String, TempDir) {
     let (mut app, dir) = demo_app();
     let key = "42".repeat(32);
     app.keys = Some(Arc::new(token::Keys::from_hex(&key).unwrap()));
@@ -144,7 +134,7 @@ fn site_app() -> (TestApp, String, TempDir) {
 }
 
 /// `stvtf_user` as the site's sign-in leaves it, for `json` (`{"uid", "name", "streamer"}`).
-fn signed_in(app: &TestApp, key: &str, json: &str) -> String {
+pub(super) fn signed_in(app: &TestApp, key: &str, json: &str) -> String {
     let t = token::seal(key, &format!(r#"{{"signin":{json},"exp":{}}}"#, unix_now() + 60), [5; 12]);
     // As the browser that set out: its state comes back on the return path.
     let began = get(app, "/signin?return=/r/x/", "");
@@ -159,16 +149,16 @@ fn signed_in(app: &TestApp, key: &str, json: &str) -> String {
 }
 
 /// The `page` a response's JSON sends the browser to.
-fn page_of(response: &str) -> String {
+pub(super) fn page_of(response: &str) -> String {
     response.split(r#""page":""#).nth(1).unwrap().split('"').next().unwrap().to_string()
 }
 
 /// The cookie a response sets, without its attributes.
-fn cookie_of(response: &str) -> String {
+pub(super) fn cookie_of(response: &str) -> String {
     response.split("Set-Cookie: ").nth(1).unwrap().split(';').next().unwrap().to_string()
 }
 
-fn post(app: &TestApp, path: &str, cookie: &str, body: &str) -> String {
+pub(super) fn post(app: &TestApp, path: &str, cookie: &str, body: &str) -> String {
     // As a page sends it: JSON, a form, or nothing.
     let ctype = match body {
         "" => String::new(),
@@ -180,13 +170,13 @@ fn post(app: &TestApp, path: &str, cookie: &str, body: &str) -> String {
 }
 
 /// `path`, with `cookie` unless it is empty.
-fn get(app: &TestApp, path: &str, cookie: &str) -> String {
+pub(super) fn get(app: &TestApp, path: &str, cookie: &str) -> String {
     let cookie = if cookie.is_empty() { String::new() } else { format!("Cookie: {cookie}\r\n") };
     request_to(app, format!("GET {path} HTTP/1.1\r\n{cookie}\r\n").as_bytes()).1
 }
 
 /// Opens a room on the demo: its page and the owner's cookie.
-fn open_room(app: &TestApp) -> (String, String) {
+pub(super) fn open_room(app: &TestApp) -> (String, String) {
     let opened = post(app, "/w/demo/room", "", "");
     assert!(opened.starts_with("HTTP/1.1 201"), "{opened}");
     let cookie = cookie_of(&opened);
@@ -195,7 +185,7 @@ fn open_room(app: &TestApp) -> (String, String) {
     (page, cookie)
 }
 
-fn post_watch(app: &TestApp, connect: &str) -> String {
+pub(super) fn post_watch(app: &TestApp, connect: &str) -> String {
     let body = format!("connect={connect}");
     let send = format!(
         "POST /watch HTTP/1.1\r\nHost: x\r\nContent-Type: application/x-www-form-urlencoded\r\nContent-Length: {}\r\n\r\n{body}",
@@ -205,7 +195,7 @@ fn post_watch(app: &TestApp, connect: &str) -> String {
 }
 
 /// An app that takes voice with key "k", and the id of a live match on it (watching nowhere).
-fn voice_app() -> (TestApp, String) {
+pub(super) fn voice_app() -> (TestApp, String) {
     let mut app = app(Matches::Many(Sessions::new(false, 4, 20.0)));
     app.voice.key = Some("k".into());
     let started = post_watch(&app, "connect+192.0.2.1%3A27020%3B+password+%22tv%22");
@@ -215,18 +205,18 @@ fn voice_app() -> (TestApp, String) {
 }
 
 /// The match's voice invite.
-fn invite_of(app: &TestApp, id: &str) -> String {
+pub(super) fn invite_of(app: &TestApp, id: &str) -> String {
     let Matches::Many(sessions) = &app.matches else { panic!() };
     sessions.get(id).unwrap().voice_invite().to_string()
 }
 
 /// `body` with the match's invite in it.
-fn invited(app: &TestApp, id: &str, body: &str) -> String {
+pub(super) fn invited(app: &TestApp, id: &str, body: &str) -> String {
     body.replacen('{', &format!(r#"{{"invite":"{}","#, invite_of(app, id)), 1)
 }
 
 /// The bot says how it goes in a channel brought into match `id`, and who is in it.
-fn status(app: &TestApp, id: &str, key: &str, body: &str) -> String {
+pub(super) fn status(app: &TestApp, id: &str, key: &str, body: &str) -> String {
     let body = invited(app, id, body);
     let send = format!(
         "POST /w/{id}/voice-status HTTP/1.1\r\nAuthorization: Bearer {key}\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{body}",

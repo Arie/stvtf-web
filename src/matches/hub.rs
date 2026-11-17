@@ -1,19 +1,21 @@
 //! The latest state of a match and the queues of the pages watching it.
 
-use crate::lock;
-#[cfg(test)]
-use crate::testing::watch;
-use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::sync::atomic::AtomicBool;
 use std::sync::mpsc::{Receiver, SyncSender, sync_channel};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
+
+use serde::{Deserialize, Serialize};
 use stvtf::Line;
 use stvtf::output::{Class, PlayerId, Round, Score, Status, Team, round1};
 use stvtf::watch::Watch;
 #[cfg(not(test))]
 use stvtf::watch::watch;
+
+use crate::sync::lock;
+#[cfg(test)]
+use crate::testing::watch;
 
 /// The latest match state for browsers that join late, and a queue per browser.
 #[derive(Default)]
@@ -546,10 +548,11 @@ pub(crate) fn announce(hub: &SharedHub, kind: &'static str, json: &Arc<str>) {
 
 #[cfg(test)]
 pub(crate) mod tests {
-    use super::*;
-    use crate::testing::{script, server};
     use serde_json::Value;
     use stvtf::output::{self, PlayerId, Team};
+
+    use super::*;
+    use crate::testing::{script, server};
 
     /// The types of the lines queued for a page.
     pub(crate) fn types(rx: &Receiver<Arc<str>>) -> Vec<String> {

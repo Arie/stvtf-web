@@ -18,16 +18,19 @@
 //! hold everywhere as said. What a match's starter said holds in their match, and elsewhere is a
 //! suggestion: shown as one, and it never takes the place of the surer.
 
-use super::ids::{is_snowflake, is_voice_id, parse_steamid};
-use crate::lock;
-use crate::maps::cache::write_atomic;
-use anyhow::{Context, Result};
-use serde::{Deserialize, Serialize};
 use std::collections::{BTreeSet, HashMap, VecDeque};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
+
+use anyhow::{Context, Result};
+use serde::{Deserialize, Serialize};
+
+use super::ids::{is_snowflake, is_voice_id, parse_steamid};
+use crate::maps::cache::write_atomic;
+use crate::report::fault;
+use crate::sync::lock;
 
 const FILE: &str = "voice-who.json";
 /// How often the list's home is asked what changed, and how long it gets to answer.

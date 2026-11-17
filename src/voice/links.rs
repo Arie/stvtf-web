@@ -1,13 +1,16 @@
 //! Discord users and the Steam accounts they linked, as Discord says, kept in the store.
 
-use super::ids::{STEAM64_BASE, is_snowflake};
-use crate::lock;
-use crate::maps::cache::write_atomic;
-use anyhow::{Context, Result, bail};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::Duration;
+
+use anyhow::{Context, Result, bail};
+
+use super::ids::{STEAM64_BASE, is_snowflake};
+use crate::maps::cache::write_atomic;
+use crate::report::fault;
+use crate::sync::lock;
 
 /// How long Discord gets to answer.
 const TIMEOUT: Duration = Duration::from_secs(10);

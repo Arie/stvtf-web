@@ -1,7 +1,11 @@
 //! The server: axum's routes with tower-http layers, on hyper (`axum::serve` has no header
 //! timeout); handlers work on blocking threads (`asked::answer`).
 
-use super::Shared;
+use std::future::Future;
+use std::pin::pin;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Duration;
+
 use anyhow::Result;
 use axum::Router;
 use axum::extract::{ConnectInfo, DefaultBodyLimit};
@@ -12,16 +16,14 @@ use hyper_util::rt::{TokioIo, TokioTimer};
 use hyper_util::server::graceful::GracefulShutdown;
 use hyper_util::service::TowerToHyperService;
 use sentry::integrations::tower::{NewSentryLayer, SentryHttpLayer};
-use std::future::Future;
-use std::pin::pin;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::Duration;
 use tower_http::compression::CompressionLayer;
 use tower_http::cors::{self, CorsLayer};
 use tower_http::csrf::CsrfLayer;
 use tower_http::set_header::SetResponseHeaderLayer;
 use tower_http::timeout::TimeoutLayer;
 use tower_http::trace::TraceLayer;
+
+use super::Shared;
 
 /// Serves `app` on `listen` until `stop`, then finishes requests and ends event streams.
 pub(crate) fn run(listen: &str, app: Shared, stop: &'static AtomicBool) -> Result<()> {
@@ -126,7 +128,7 @@ pub(crate) fn router(app: Shared) -> Router {
     let unframed = SetResponseHeaderLayer::overriding(header::X_FRAME_OPTIONS, HeaderValue::from_static("DENY"));
     all.merge(acting.layer(unframed))
         .with_state(app)
-        .layer(DefaultBodyLimit::max(super::MAX_REQUEST as usize))
+        .layer(DefaultBodyLimit::max(super::limits::MAX_REQUEST as usize))
         .layer(CsrfLayer::new())
         .layer(SetResponseHeaderLayer::overriding(header::X_CONTENT_TYPE_OPTIONS, HeaderValue::from_static("nosniff")))
         .layer(CorsLayer::new().allow_origin(cors::Any).allow_methods([Method::GET]))

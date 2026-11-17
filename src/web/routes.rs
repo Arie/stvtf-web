@@ -1,12 +1,7 @@
 //! The routes, and the handlers of those that belong to no part of the site in particular.
 
-use super::asked::{Back, Stream, Visit, answer};
-use super::visitor::{origin, return_to, set_cookie};
-use super::{
-    Answered, MAX_REQUEST, Shared, USER_COOKIE, assets, events, landing, matches, pages, query_of, rooms, token, unix_now, upload, voice,
-    watch,
-};
-use crate::{App, Matches};
+use std::collections::HashMap;
+
 use axum::body::Bytes;
 use axum::extract::{DefaultBodyLimit, Path, Query, State};
 use axum::http::{HeaderMap, HeaderValue, StatusCode, Uri, header};
@@ -16,11 +11,18 @@ use axum::{Form, Json, Router};
 use axum_extra::extract::CookieJar;
 use cookie::Cookie;
 use serde::Deserialize;
-use std::collections::HashMap;
 use tower::ServiceBuilder;
 use tower_http::limit::RequestBodyLimitLayer;
 use tower_http::services::ServeDir;
 use tower_http::set_header::SetResponseHeaderLayer;
+
+use super::answer::{query_of, unix_now};
+use super::asked::{Back, Stream, Visit, answer};
+use super::limits::{MAX_REQUEST, USER_COOKIE};
+use super::start::{landing, watch};
+use super::visitor::{origin, return_to, set_cookie};
+use super::{Answered, Shared, assets, events, matches, pages, rooms, token, upload, voice};
+use crate::app::{App, Matches};
 
 type Routes = Router<Shared>;
 

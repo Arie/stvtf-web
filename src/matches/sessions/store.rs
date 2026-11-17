@@ -1,18 +1,21 @@
 //! Where matches are saved for the next process, and the files kept beside them.
 
-use super::session::Session;
-use crate::lock;
-use crate::maps::cache::write_atomic;
-use crate::matches::recording::{Save, Sink};
-use crate::web::token;
-use anyhow::Result;
-use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::time::{Duration, SystemTime};
+
+use anyhow::Result;
+use serde::{Deserialize, Serialize};
+
+use super::session::Session;
+use crate::maps::cache::write_atomic;
+use crate::matches::recording::{Save, Sink};
+use crate::report::fault;
+use crate::sync::lock;
+use crate::web::token;
 
 /// A file per match, so the containers of a deploy, briefly running side by side, never write
 /// over each other's list. Encrypted with the token key when there is one.

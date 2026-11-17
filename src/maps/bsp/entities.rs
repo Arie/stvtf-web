@@ -4,7 +4,9 @@ use anyhow::Result;
 use stvtf::output::{PickupItem, PickupSize, Team, round1};
 
 use super::format::{LUMP_ENTITIES, LUMP_MODELS, MODEL_MAXS, MODEL_MINS, MODEL_SIZE, lump, vec3_at};
-use super::{Bounds, CapArea, PAD, Pack, SpawnPoint, SpawnRoom, Spawns, Vec3};
+use super::geometry::Vec3;
+use super::read::Bounds;
+use super::{CapArea, PAD, Pack, SpawnPoint, SpawnRoom, Spawns};
 
 /// Spawns frame the map when they are this near the points and packs.
 const SPAWN_REACH: f32 = 4096.0;

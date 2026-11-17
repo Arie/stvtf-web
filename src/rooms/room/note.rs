@@ -1,13 +1,14 @@
 //! Notes: a short text at a spot on the map or on a player, kept with the marker; in TF2 the
 //! game's text bubble (see `stvtf::relay::Note`).
 
-use super::Room;
-use super::beams::hex;
-use super::drawing::Kept;
-use crate::lock;
 use anyhow::{Result, bail};
 use serde::{Deserialize, Serialize};
 use stvtf::relay::Note;
+
+use super::Room;
+use super::beams::hex;
+use super::drawing::Kept;
+use crate::sync::lock;
 
 /// The most characters a note says.
 const MAX_TEXT: usize = 40;

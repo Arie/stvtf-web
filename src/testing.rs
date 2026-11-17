@@ -1,10 +1,16 @@
 //! What the tests share: temporary folders, scripted `SourceTV` servers, an app to serve from.
+use std::net::TcpListener;
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
+
+use anyhow::Result;
+use stvtf::{Line, output, watch};
 
 use super::*;
-use std::net::TcpListener;
-use std::sync::atomic::AtomicUsize;
-use stvtf::Line;
-use stvtf::output;
+use crate::app::{App, Matches};
+use crate::sync::lock;
 
 /// A new directory under the system's temporary one, removed when dropped, also when a test fails.
 pub(crate) struct TempDir(PathBuf);

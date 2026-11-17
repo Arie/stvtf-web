@@ -1,11 +1,12 @@
 //! The map of its match a room plays.
 
-use super::Room;
-use super::play::State;
-use crate::lock;
-use crate::matches::recording::Part;
 use anyhow::{Result, bail};
 use serde::Deserialize;
+
+use super::Room;
+use super::play::State;
+use crate::matches::recording::Part;
+use crate::sync::lock;
 
 /// The map an admin takes the room to, by number.
 #[derive(Debug, Deserialize)]

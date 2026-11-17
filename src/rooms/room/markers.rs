@@ -1,12 +1,13 @@
 //! A room's marker is kept per map: what was drawn on a map shows on it, and again when the room
 //! comes back to it.
 
-use super::Room;
-use super::drawing::{Kept, kept_line};
-use crate::lock;
-use crate::matches::hub::announce;
 use std::collections::BTreeMap;
 use std::sync::atomic::Ordering;
+
+use super::Room;
+use super::drawing::{Kept, kept_line};
+use crate::matches::hub::announce;
+use crate::sync::lock;
 
 /// The marker's strokes, by the number of the map (part) they were drawn on.
 pub(crate) type Markers = BTreeMap<usize, Vec<Kept>>;

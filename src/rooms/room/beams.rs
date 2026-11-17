@@ -3,14 +3,16 @@
 //! marker changes. A beam cannot be taken back, so a cleared marker goes within the relay's
 //! refresh.
 
-use super::Room;
-use super::drawing::Kept;
-use crate::lock;
-use crate::maps::drape::{self, Drape, Ground, Piece};
-use anyhow::{Result, bail};
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
+
+use anyhow::{Result, bail};
 use stvtf::relay::{Beam, Light, Note};
+
+use super::Room;
+use super::drawing::Kept;
+use crate::maps::drape::{self, Drape, Ground, Piece};
+use crate::sync::lock;
 
 /// The pages' inks for those who picked none (`app/room/telestrator.js`).
 const INKS: [[u8; 3]; 6] =

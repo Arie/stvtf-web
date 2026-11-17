@@ -1,11 +1,21 @@
 //! A recording's parts through its file: written, trimmed, resumed; and files of the versions
 //! before.
 
+use std::io::Write;
+use std::sync::{Arc, Mutex};
+
+use flate2::Compression;
+use flate2::write::GzEncoder;
+use stvtf::Line;
+
+use super::super::Recording;
+use super::super::lines::Save;
 use super::super::tests::{push_at, to};
-use super::super::*;
+use super::part::{PartState, Seed};
 use super::real_tests::viaduct;
 use super::tests::{Stream, T0, line, snapshots};
-use super::{PartState, Seed};
+use crate::matches::loads::Loads;
+use crate::sync::lock;
 use crate::testing::server;
 
 /// What the file holds now.

@@ -1,14 +1,18 @@
 //! A room at live keeps up with its recording: through a file read on in steps while a deploy's
 //! next process picks the match up, and where the room is picked up itself.
+use std::sync::atomic::Ordering;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use super::move_tests::live_room_at_live_on;
 use super::part_tests::push;
-use super::play::LIVE_SLACK;
+use super::play::{Control, LIVE_SLACK};
+use super::state::Room;
 use super::stream_tests::at_live;
 use super::tests::until;
-use super::*;
 use crate::matches::hub::tests::snapshot;
-use crate::matches::recording::Save;
+use crate::matches::recording::{Recording, Save};
+use crate::sync::lock;
 use crate::testing::server;
 
 /// The match goes on in `rec` for `ms`: a snapshot every 100 ms.

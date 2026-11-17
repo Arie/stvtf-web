@@ -1,14 +1,21 @@
 //! A room while the server changes map: the map just played stays showing.
+use std::sync::Arc;
+use std::sync::atomic::Ordering;
 
+use serde_json::Value;
+
+use super::markers::read_marker;
 use super::move_tests::{decided, live_on, live_room_at_live_on, new_map_with_play, on_map, push_server};
 use super::part::MapChoice;
 use super::part_tests::{OLD_SAVED_ROOM, playback, push, settle};
+use super::state::{Room, StartAt};
 use super::stream_tests::a_pass;
 use super::tests::until;
-use super::*;
-use crate::matches::hub::{subscribe, tests::snapshot};
+use crate::matches::hub::subscribe;
+use crate::matches::hub::tests::snapshot;
+use crate::matches::recording::Recording;
+use crate::sync::lock;
 use crate::testing::server;
-use serde_json::Value;
 
 fn status(state: &str) -> stvtf::Line {
     serde_json::from_str(&format!(r#"{{"type":"status","state":"{state}"}}"#)).unwrap()

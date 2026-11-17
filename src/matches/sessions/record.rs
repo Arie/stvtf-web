@@ -13,16 +13,19 @@
 //! or of a version that gives at once) is taken as it is, as is any [`TAKE_BY`] after. A process
 //! that gave its file and still runs when the one that took it vanishes writes it again, whole.
 
-use super::session::Session;
-use super::store::{LIVE_PREFIX, Store, live_file, to_file};
-use crate::lock;
-use crate::matches::hub::subscribe_all;
-use crate::matches::recording::Recording;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant, SystemTime};
+
 use stvtf::Line;
 use stvtf::output::Stamped;
+
+use super::session::Session;
+use super::store::{LIVE_PREFIX, Store, live_file, to_file};
+use crate::matches::hub::subscribe_all;
+use crate::matches::recording::Recording;
+use crate::report::fault;
+use crate::sync::lock;
 
 /// How long the recorder waits for a line before it looks whether to stop, and how often it looks
 /// whether its file is asked for.

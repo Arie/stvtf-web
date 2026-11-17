@@ -1,10 +1,11 @@
 //! Who is asking: the visitor's address behind our proxy and Cloudflare, and who a start counts
 //! against.
 
+use std::net::IpAddr;
+
 use super::token;
 use crate::matches::sessions;
 use crate::rooms::people::steam_key;
-use std::net::IpAddr;
 
 /// Only a proxy on our own network (kamal-proxy) is believed about who the client is.
 pub(super) fn on_our_network(ip: IpAddr) -> bool {

@@ -1,21 +1,24 @@
 //! A room's page, event stream and controls, and opening one.
 
-use super::asked::{Marks, Stream, Visit, answer};
-use super::client::counted;
-use super::events::{stream, too_many_streams};
-use super::matches::is_page;
-use super::visitor::{Who, origin};
-use super::{Answered, Early, done, marks_from, pages};
-use crate::App;
-use crate::matches::sessions::{Session, Sessions, logged};
-use crate::rooms::room::{ArcDraw, CircleDraw, Control, Draw, LightDraw, MapChoice, NoteDraw, Room, StartAt, ViewPost};
+use std::sync::Arc;
+
 use anyhow::Result;
 use axum::Json;
 use axum::extract::{Path, Query};
 use axum::http::{StatusCode, header};
 use axum::response::{IntoResponse, Redirect, Response};
 use serde::Deserialize;
-use std::sync::Arc;
+
+use super::answer::{done, marks_from};
+use super::asked::{Marks, Stream, Visit, answer};
+use super::client::counted;
+use super::events::{stream, too_many_streams};
+use super::matches::is_page;
+use super::visitor::{Who, origin};
+use super::{Answered, Early, pages};
+use crate::app::App;
+use crate::matches::sessions::{Session, Sessions, logged};
+use crate::rooms::room::{ArcDraw, CircleDraw, Control, Draw, LightDraw, MapChoice, NoteDraw, Room, StartAt, ViewPost};
 
 /// The new room's page, for the browser that opened it.
 pub(super) fn opened(app: &App, id: &str, cookie: Option<&str>) -> Response {

@@ -5,14 +5,18 @@
 //! from `props.txt.gz`: the upward faces of each stock prop model's collision mesh, made from
 //! TF2's VPKs by `script/model-bounds.mjs`. A map's own models (in its pakfile) are left out.
 
-use super::format::{I32_SIZE, LUMP_GAME_LUMP, U16_SIZE, bytes, i32_at, index_at, lump, u16_at, unpack, vec3_at};
-use super::material::Kind;
-use super::{Bounds, FLOOR_MIN_NORMAL_Z, Floor, Vec3, cross, gradient, outline};
-use anyhow::{Result, bail};
 use std::collections::HashMap;
 use std::io::Read;
 use std::sync::OnceLock;
+
+use anyhow::{Result, bail};
 use stvtf::output::round1;
+
+use super::format::{I32_SIZE, LUMP_GAME_LUMP, U16_SIZE, bytes, i32_at, index_at, lump, u16_at, unpack, vec3_at};
+use super::geometry::Vec3;
+use super::material::Kind;
+use super::read::{Bounds, FLOOR_MIN_NORMAL_Z, gradient, outline};
+use super::{Floor, cross};
 
 /// `sprp`, as the game lump directory names it.
 const SPRP: i32 = 0x7370_7270;

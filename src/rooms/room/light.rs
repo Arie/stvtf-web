@@ -2,13 +2,14 @@
 //! with the marker; in TF2 the game's dynamic light (see `stvtf::relay::Light`). There is one: the
 //! next click moves it, as a TF2 client shows one such light at a time.
 
-use super::Room;
-use super::beams::{hex, rgb};
-use super::drawing::Kept;
-use crate::lock;
 use anyhow::{Result, bail};
 use serde::Deserialize;
 use stvtf::relay::Light;
+
+use super::Room;
+use super::beams::{hex, rgb};
+use super::drawing::Kept;
+use crate::sync::lock;
 
 /// How far the light reaches in TF2 and how fast it falls off (as the user picked there), and how
 /// far above the floor it is.
