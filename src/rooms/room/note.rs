@@ -31,7 +31,7 @@ pub(crate) struct NoteDraw {
 }
 
 /// What a kept note says, and whom it follows (its `points` are its spot otherwise).
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 pub(crate) struct Label {
     pub(crate) text: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]

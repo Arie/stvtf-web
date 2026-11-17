@@ -76,7 +76,7 @@ pub(super) struct State {
 
 /// How a room goes through a live match: from where it was put, or at live, as the match comes
 /// (it got to the end of what is recorded, playing, and nobody moved it since).
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, Default, Eq, PartialEq, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum Pace {
     #[default]
@@ -133,7 +133,7 @@ pub(crate) struct Control {
 /// Where playback is as time passes, from where it was last set down: at `at` milliseconds into
 /// the match, at `speed`. Each wait measured by itself would lose what passes between waits (a
 /// long sleep, the lines sent in between), and a room would fall behind the match it plays.
-#[derive(Debug, Clone, Copy)]
+#[derive(Copy, Clone, Debug)]
 pub(super) struct Clock {
     from: Instant,
     at: u64,

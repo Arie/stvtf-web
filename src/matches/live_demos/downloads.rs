@@ -10,7 +10,7 @@ use super::sweep::KEPT_PREFIX;
 use crate::matches::sessions::LIVE_PREFIX;
 
 /// A demo to download with its comms in it.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub(crate) struct Download {
     /// What names it in the match: `<load>-<tick>` of its first frame (`<tick>` alone, for a
     /// name without a load).

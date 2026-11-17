@@ -28,7 +28,7 @@ pub(crate) struct Draw {
 }
 
 /// A marker stroke, as drawn so far.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub(crate) struct Kept {
     pub(super) stroke: u32,
     pub(super) by: u32,

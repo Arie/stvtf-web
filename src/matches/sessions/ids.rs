@@ -57,7 +57,7 @@ const KIND_BIT: u64 = 1 << KIND_SHIFT;
 const OWN_HEX: usize = 13;
 
 /// What a demo of ours is: its link says so.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub(crate) enum Own {
     /// A `SourceTV` demo uploaded here.
     Demo,

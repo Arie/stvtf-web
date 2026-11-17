@@ -11,7 +11,7 @@ use crate::voice::feed::VoiceFeed;
 use crate::voice::mumble::MumbleJob;
 
 /// Where the voice bot is in a channel brought into a match.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub(crate) enum ChannelState {
     /// Asked in, and not there yet.
@@ -50,7 +50,7 @@ impl ChannelState {
 }
 
 /// How it goes in a Discord channel the voice bot is in for a match.
-#[derive(Debug, Clone)]
+#[derive(Clone, Debug)]
 pub(crate) struct DiscordGoing {
     pub(crate) status: String,
     pub(crate) state: ChannelState,

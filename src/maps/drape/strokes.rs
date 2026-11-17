@@ -31,7 +31,7 @@ pub(super) const MAX_STEPS: usize = 20_000;
 pub(super) const MAX_LINES: usize = 16;
 
 /// A straight piece of a line in the world, and when its end was drawn (ms into the stroke).
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub(crate) struct Piece {
     pub(crate) from: [f64; 3],
     pub(crate) to: [f64; 3],

@@ -14,7 +14,7 @@ use crate::voice::ChannelState;
 /// Mumble's own port.
 pub(crate) const DEFAULT_PORT: u16 = 64738;
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 pub(crate) struct MumbleJob {
     pub(crate) host: String,
     pub(crate) port: u16,
@@ -45,7 +45,7 @@ pub(crate) struct MumbleJob {
 }
 
 /// When the bot said something of a job: no part of what the job is.
-#[derive(Debug, Clone, Copy)]
+#[derive(Copy, Clone, Debug)]
 pub(crate) struct Said(pub(crate) Instant);
 
 impl PartialEq for Said {

@@ -91,14 +91,14 @@ pub(crate) const PRIVATE_PER_PERSON: usize = 3;
 /// What a room plays: a fixed match's recording, there again in the next process; a demos.tf
 /// demo's output, saved beside the rooms on it since its match is not; or a live match's
 /// recording, which the match keeps.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 enum Source {
     Pinned(String),
     Demo(u64),
     Live(String),
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Deserialize, Serialize)]
 struct SavedRoom {
     source: Source,
     room: Saved,

@@ -34,7 +34,7 @@ pub(super) const FLOOR_MARGIN: f32 = 256.0;
 pub(super) const TOOL_TEXTURES: &str = "tools/";
 
 /// A box: its lowest and highest corner.
-#[derive(Debug, Clone, Copy)]
+#[derive(Copy, Clone, Debug)]
 pub(super) struct Bounds {
     pub(super) lo: Vec3,
     pub(super) hi: Vec3,

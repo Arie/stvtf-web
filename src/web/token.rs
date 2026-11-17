@@ -33,7 +33,7 @@ struct Claims {
 
 /// A user of the site, signed in: their Steam id, name there, and whether they are a streamer
 /// or more (who may make themselves admin in any room).
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 pub struct User {
     pub uid: String,
     pub name: String,
@@ -42,7 +42,7 @@ pub struct User {
 }
 
 /// A signed-in user as kept in their cookie, until `exp`.
-#[derive(Serialize, Deserialize)]
+#[derive(Deserialize, Serialize)]
 struct Kept {
     #[serde(flatten)]
     user: User,

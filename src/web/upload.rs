@@ -149,7 +149,7 @@ fn put_part(at: Option<u64>, body: &[u8], store: &Store, id: &str) -> Answered {
 /// Held while a part is added or an upload finished: what was checked still holds.
 static ONE_AT_A_TIME: Mutex<()> = Mutex::new(());
 
-#[derive(serde::Deserialize, Default)]
+#[derive(Default, serde::Deserialize)]
 #[serde(default)]
 pub(super) struct Finish {
     name: String,

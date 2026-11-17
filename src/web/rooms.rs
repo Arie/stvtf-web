@@ -74,7 +74,7 @@ pub(super) enum Open {
 }
 
 /// Where the one opening a room was watching the match.
-#[derive(serde::Deserialize, Default)]
+#[derive(Default, serde::Deserialize)]
 #[serde(deny_unknown_fields, default)]
 pub(super) struct Where {
     at: Option<u64>,

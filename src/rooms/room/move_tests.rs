@@ -98,7 +98,7 @@ pub(super) fn on_map(room: &Room, n: usize) {
 }
 
 /// Something someone does in a room.
-#[derive(Debug, Clone, Copy)]
+#[derive(Copy, Clone, Debug)]
 enum Touch {
     Pause,
     Speed,

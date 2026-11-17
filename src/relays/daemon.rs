@@ -69,7 +69,7 @@ const HANDED_FOR: Duration = Duration::from_secs(25);
 const STOP_POLL: Duration = Duration::from_millis(50);
 
 /// A [`Want`] on the wire.
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Deserialize, Serialize)]
 pub(crate) struct WantLine {
     demo: PathBuf,
     tick: u32,
@@ -151,7 +151,7 @@ enum Request {
 }
 
 /// A [`VoiceIn`] on the wire: its frames in base64.
-#[derive(Serialize, Deserialize)]
+#[derive(Deserialize, Serialize)]
 struct VoiceLine {
     user: Option<u16>,
     steamid: String,
@@ -225,7 +225,7 @@ impl Shows {
 type Rooms = Arc<Mutex<HashMap<String, Leased>>>;
 
 /// A room's relay with TF2 clients in, handed to the next process.
-#[derive(Serialize, Deserialize)]
+#[derive(Deserialize, Serialize)]
 struct HandedRoom {
     room: String,
     was: Was,
@@ -240,7 +240,7 @@ struct HandedRoom {
 }
 
 /// What a relay process told to stop leaves the next.
-#[derive(Serialize, Deserialize)]
+#[derive(Deserialize, Serialize)]
 struct Handed {
     /// When, in milliseconds since 1970.
     at_ms: u64,
@@ -579,7 +579,7 @@ impl Remote {
 }
 
 /// How a relay's thread stops.
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Copy, Clone, Eq, PartialEq)]
 enum Done {
     /// The relay plays on, for the next stv.tf.
     LetGo,

@@ -101,7 +101,7 @@ pub(super) struct MatchAt {
 }
 
 /// A moment a page's link asks for: `t` (`12:34`), on the map of load `map`.
-#[derive(Deserialize, Default)]
+#[derive(Default, Deserialize)]
 pub(super) struct Moment {
     t: Option<String>,
     map: Option<String>,
@@ -137,7 +137,7 @@ impl FromRequestParts<Shared> for MatchAt {
 }
 
 /// An event stream's query.
-#[derive(Deserialize, Default)]
+#[derive(Default, Deserialize)]
 pub(super) struct Stream {
     detail: Option<String>,
     voice: Option<String>,
@@ -161,7 +161,7 @@ impl Stream {
 }
 
 /// `?from=`: the marks from that one on.
-#[derive(Deserialize, Default)]
+#[derive(Default, Deserialize)]
 pub(super) struct Marks {
     from: Option<String>,
 }
@@ -173,7 +173,7 @@ impl Marks {
 }
 
 /// `?since=`: what changed since that version.
-#[derive(Deserialize, Default)]
+#[derive(Default, Deserialize)]
 pub(super) struct Since {
     since: Option<String>,
 }
@@ -185,7 +185,7 @@ impl Since {
 }
 
 /// `?return=`: a page of ours to go back to.
-#[derive(Deserialize, Default)]
+#[derive(Default, Deserialize)]
 pub(super) struct Back {
     #[serde(rename = "return")]
     pub(super) to: Option<String>,

@@ -18,7 +18,7 @@ pub(crate) fn steam_key(id: &str) -> String {
 /// The longest name, in characters.
 const MAX_NAME: usize = 32;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub(crate) struct People {
     owner: String,
     by_guest: HashMap<String, Person>,
@@ -27,7 +27,7 @@ pub(crate) struct People {
     next: u32,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 struct Person {
     id: u32,
     name: String,
@@ -42,7 +42,7 @@ struct Person {
 }
 
 /// A person as pages see them.
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(Debug, PartialEq, Serialize)]
 pub(crate) struct Shown {
     pub(crate) id: u32,
     pub(crate) name: String,

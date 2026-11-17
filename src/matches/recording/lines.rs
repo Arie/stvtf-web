@@ -81,7 +81,7 @@ pub(super) struct Inner {
 pub(super) const SCORE_WITH_WIN_MS: u64 = 2000;
 
 /// A timeline mark: a round won (with the score), an uber, a drop, or a kill (for fight heat).
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
 pub(crate) struct Mark {
     pub(crate) at: u64,
     pub(crate) kind: &'static str,

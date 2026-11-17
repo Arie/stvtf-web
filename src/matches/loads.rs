@@ -6,7 +6,7 @@
 use serde::{Deserialize, Serialize};
 
 /// Which load of the match a snapshot is of: one rule for the recording and the demos.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Deserialize, Serialize)]
 pub(crate) struct Loads {
     n: usize,
     /// The latest load's map, and the map the latest server line named.

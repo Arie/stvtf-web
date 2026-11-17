@@ -31,7 +31,7 @@ pub struct Store {
 }
 
 /// A running match as saved for the next process: what it takes to watch it again, and its feed.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub(super) struct SavedMatch {
     pub(super) server: SocketAddr,
     pub(super) password: String,

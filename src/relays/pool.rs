@@ -24,7 +24,7 @@ const SLOTS: usize = 24;
 const MAX_PASSWORD: usize = 32;
 
 /// A relay's port and password: started again on them, TF2's `retry` gets back in.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
 pub(crate) struct Was {
     pub(crate) port: u16,
     pub(crate) password: String,

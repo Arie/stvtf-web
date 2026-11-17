@@ -46,7 +46,7 @@ const MAX_KNOWN: usize = 100_000;
 pub(crate) const MAX_NAME: usize = 100;
 
 /// Whom someone was said to be.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
 pub(crate) struct Known {
     /// The `SteamID` they were put on; none for someone said to be nobody.
     pub(crate) steamid: Option<String>,
@@ -67,7 +67,7 @@ pub(crate) struct Known {
 pub(crate) const CASTER: &str = "caster";
 
 /// How sure what is known of someone is, the least first.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Copy, Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 enum Certainty {
     /// A match's starter's word: a suggestion outside their match.
     Starter,
@@ -95,7 +95,7 @@ impl Known {
 }
 
 /// Whom someone is known as from before.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum Recalled {
     /// This `SteamID`: as said (`sure`), or a suggestion.
     Player {
@@ -105,7 +105,7 @@ pub(crate) enum Recalled {
     Nobody,
 }
 
-#[derive(Default, Serialize, Deserialize)]
+#[derive(Default, Deserialize, Serialize)]
 struct WhoList {
     /// Counts what is said here.
     version: u64,

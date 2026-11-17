@@ -3,7 +3,7 @@
 use serde::Serialize;
 
 /// The material a floor is drawn as.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Kind {
     Grass,

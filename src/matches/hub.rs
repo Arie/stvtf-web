@@ -75,7 +75,7 @@ pub(crate) struct Summary {
     pub(crate) snapshot: Option<SnapshotSummary>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub(crate) struct SnapshotSummary {
     pub(crate) round: Round,
     pub(crate) round_time: Option<f64>,
@@ -91,7 +91,7 @@ struct ServerSummary {
     hostname: String,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub(crate) struct Rostered {
     pub(crate) name: String,
     pub(crate) steamid: String,
@@ -101,7 +101,7 @@ pub(crate) struct Rostered {
 
 /// What held voice goes by: the stream's tick, whether the game is paused, and how many times the
 /// stream started over.
-#[derive(Debug, Clone, Copy)]
+#[derive(Copy, Clone, Debug)]
 pub(crate) struct VoiceClock {
     pub(crate) tick: Option<u32>,
     pub(crate) paused: bool,
@@ -109,7 +109,7 @@ pub(crate) struct VoiceClock {
 }
 
 /// A player in the latest snapshot.
-#[derive(Debug, Clone)]
+#[derive(Clone, Debug)]
 pub(crate) struct NamedPlayer {
     pub(crate) steamid: String,
     pub(crate) name: String,
@@ -225,7 +225,7 @@ struct Client {
 }
 
 /// A player's name and team, as last seen in a snapshot.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 struct Seen {
     name: String,
     team: Team,
@@ -238,7 +238,7 @@ const PAGE_QUEUE: usize = 4096;
 
 /// Where a line goes besides every page: into the latest state, the feed history, or (for the
 /// high-volume detail lines) only to pages that ask for them.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
 enum Route {
     /// Kept as the latest status, server, world or snapshot.
     State,

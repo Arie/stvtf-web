@@ -85,7 +85,7 @@ pub(super) struct MarkerState {
 
 /// Who leads the view: the admin's number, their page, and the kind of view it chose. Saved as
 /// `[by, page, kind]`.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 #[serde(from = "(u32, String, String)", into = "(u32, String, String)")]
 pub(super) struct Leader {
     pub(super) by: u32,
@@ -107,7 +107,7 @@ impl From<Leader> for (u32, String, String) {
 
 /// Where a private playback starts: at `at`, at `speed` (1× unless one of [`SPEEDS`]), paused or
 /// not.
-#[derive(Debug, Clone, Copy)]
+#[derive(Copy, Clone, Debug)]
 pub(crate) struct StartAt {
     pub(crate) at: u64,
     pub(crate) speed: f64,
@@ -115,7 +115,7 @@ pub(crate) struct StartAt {
 }
 
 /// What a room is, saved for the next process: where playback is, who is in it, and the view.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub(crate) struct Saved {
     pub(super) paused: bool,
     pub(super) speed: f64,

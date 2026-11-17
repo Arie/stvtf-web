@@ -19,7 +19,7 @@ pub(super) const VOICE: &str = ".voice";
 
 /// Something said from outside the match, as the match's stream came to its tick: what writing it
 /// into a demo takes.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
 pub(crate) struct Spoken {
     /// The server's tick it was heard at.
     pub(crate) tick: u32,
@@ -30,7 +30,7 @@ pub(crate) struct Spoken {
 }
 
 /// Whose voice it was.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
 #[serde(untagged)]
 pub(crate) enum By {
     /// A player's then: their slot (their entity less one) and Steam account.

@@ -152,7 +152,7 @@ pub(crate) fn on_for_tests() {
 }
 
 /// What a page says went wrong in it.
-#[derive(serde::Deserialize, Default)]
+#[derive(Default, serde::Deserialize)]
 #[serde(default)]
 pub(crate) struct PageFault {
     /// The error's name and message.

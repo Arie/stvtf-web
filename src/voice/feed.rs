@@ -42,7 +42,7 @@ const IDLE: Duration = Duration::from_secs(60);
 const BEHIND: f64 = 5.0;
 
 /// Who said something: their `SteamID` when the bot knows it (their link), else who they are/// id and name; and the voice channel they are in.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, Deserialize, Serialize)]
 #[serde(default)]
 pub(crate) struct Speaker {
     pub(crate) steamid: Option<String>,
@@ -52,7 +52,7 @@ pub(crate) struct Speaker {
 }
 
 /// What a feed holds, as saved for the next process.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub(crate) struct SavedVoice {
     /// The stream's map and tick as it was saved.
     map: Option<String>,
@@ -79,7 +79,7 @@ pub(crate) enum Save {
 }
 
 /// What became of held voice given to a feed.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Eq, PartialEq)]
 pub(crate) enum Adopt {
     Taken,
     /// No stream to hold it against yet.
@@ -107,7 +107,7 @@ pub(crate) const UNLINKED: &str = "discord:";
 
 /// Someone in a channel brought into the match (Discord, Mumble), heard yet or not: for whoever
 /// has a say to put on a player (one with no link, or playing on another account).
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize)]
 pub(crate) struct Person {
     /// Who they are where they talk.
     #[serde(rename = "id")]
@@ -124,7 +124,7 @@ pub(crate) struct Person {
 }
 
 /// Whom someone is put on.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum Put {
     /// The player with this `SteamID`: said so by someone (`confirmed`), or guessed from names.
     Player { steamid: String, confirmed: bool },

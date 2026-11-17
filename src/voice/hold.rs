@@ -41,14 +41,14 @@ const MAX_LATE: Duration = Duration::from_secs(30);
 const MAX_ADOPTED: usize = 8;
 
 /// Frames (base64 Opus, in order) of one speaker: `who` is whatever names them.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct Said {
     pub(crate) who: String,
     pub(crate) frames: Vec<String>,
 }
 
 /// What became of frames given to the hold.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Eq, PartialEq)]
 pub(crate) enum Took {
     /// Held until the stream is at tick `due`.
     Held { due: u32 },
@@ -76,11 +76,11 @@ struct Frame {
 }
 
 /// A held frame as saved: its number, its due tick, whether it starts an utterance, the Opus.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 struct SavedFrame(u64, u32, bool, String);
 
 /// What a hold holds, as saved for another process.
-#[derive(Debug, Default, Serialize, Deserialize)]
+#[derive(Debug, Default, Deserialize, Serialize)]
 pub(crate) struct Held {
     /// Each speaker's frames, in order.
     #[serde(default)]

@@ -15,7 +15,7 @@ pub(super) const READY_S: f64 = 1.0;
 pub(super) const WENT_ON_S: f64 = 5.0;
 
 /// A map load of the match.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub(crate) struct Part {
     /// Its load's number in the match, dropped ones too.
     pub(crate) load: usize,
@@ -49,7 +49,7 @@ impl Part {
 }
 
 /// What a recording keeps of a part as it goes.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub(in crate::matches::recording) struct PartState {
     #[serde(rename = "n")]
     pub(super) load: usize,
@@ -127,7 +127,7 @@ impl PartState {
 }
 
 /// The parts as they are at a chunk's start, for a file that begins there.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub(in crate::matches::recording) struct Seed {
     pub(super) loads: Loads,
     pub(super) part: Option<PartState>,
