@@ -1,7 +1,7 @@
 //! What the tests share: temporary folders, scripted `SourceTV` servers, an app to serve from.
 use std::net::TcpListener;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -13,15 +13,11 @@ use crate::app::{App, Matches};
 use crate::sync::lock;
 
 /// A new directory under the system's temporary one, removed when dropped, also when a test fails.
-pub(crate) struct TempDir(PathBuf);
+pub(crate) struct TempDir(tempfile::TempDir);
 
 impl TempDir {
     pub(crate) fn new(name: &str) -> Self {
-        static MADE: AtomicUsize = AtomicUsize::new(0);
-        let n = MADE.fetch_add(1, Ordering::Relaxed);
-        let dir = std::env::temp_dir().join(format!("stvtf-web-{name}-{}-{n}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        TempDir(dir)
+        TempDir(tempfile::Builder::new().prefix(&format!("stvtf-web-{name}-")).tempdir().unwrap())
     }
 }
 
@@ -29,19 +25,13 @@ impl std::ops::Deref for TempDir {
     type Target = Path;
 
     fn deref(&self) -> &Path {
-        &self.0
+        self.0.path()
     }
 }
 
 impl AsRef<Path> for TempDir {
     fn as_ref(&self) -> &Path {
-        &self.0
-    }
-}
-
-impl Drop for TempDir {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_dir_all(&self.0);
+        self.0.path()
     }
 }
 

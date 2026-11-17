@@ -61,6 +61,7 @@ unimplemented = "warn"
 
 [dev-dependencies]
 sentry = { version = "0.49.5", default-features = false, features = ["test"] }
+tempfile = "3"
 
 # The map tests are nearly all this crate's own code: this makes them about 7x faster, and debug
 # assertions and overflow checks stay on.
