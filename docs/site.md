@@ -47,7 +47,7 @@ unpacked to no more than that, whatever it says of itself) from whoever is signe
 signs in, from anyone) and plays it as a match of its own at `/w/demo/<id>/` (a player's own at
 `/w/pov/<id>/`), where a room is opened on it like on any other. A `SourceTV` demo, or a player's own: that one has only what
 that player's game was sent, so players out of their sight stand where they were last seen, and
-it is not relayed to TF2. The same file sent again, by anyone, is the one kept.
+TF2 in its room watches as that player. The same file sent again, by anyone, is the one kept.
 
 Kept as a demos.tf demo is (30 days since last played, within the same 5 GB), and one of one
 person: another takes its place.

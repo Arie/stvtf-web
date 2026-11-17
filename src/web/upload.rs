@@ -1,6 +1,7 @@
 //! Demos uploaded here, to watch with a team: a `SourceTV` demo, or a player's own (which has
-//! only what that player's game was sent, and is not relayed to TF2), as it is or packed (see
-//! [`super::unpack`]). Sent in parts, a proxy in front taking only so much in one request:
+//! only what that player's game was sent, and is relayed to TF2 as that player), as it is or
+//! packed (see [`super::unpack`]). Sent in parts, a proxy in front taking only so much in one
+//! request:
 //!
 //! - `GET /upload`: to the front page, which has the form.
 //! - `POST /upload` `{"size"}`: begins one; `{"id", "part"}`, the most bytes a part may be.

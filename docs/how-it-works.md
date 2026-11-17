@@ -148,6 +148,22 @@ to 122 ms, from the moment set to the client having it.
 - **Builds**: a demo whose class tables are not the current build's is refused, and the room says
   so (an old `comp.dem`: "a TF2 build with other class tables, which a game client cannot play").
 
+### A player's own demo
+
+TF2 in the room is the player who recorded it: their view, HUD and weapon.
+
+- **String tables**: the recording starts well after its signon, with a snapshot of the tables as
+  they were then. The relay sends what it has over the signon's as `svc_UpdateStringTable`s.
+  Without it TF2 stops at "GetDynamicBaseline: FindStringIndex failed".
+- **Baselines**: entities enter on baselines the player's game acked, which TF2 in the room never
+  had. Every entity message is written anew from the decoded entities, from the frame each client
+  acked, and checkpoints keep the stream's baselines.
+- **Where they stand**: a player's origin is two props, their own game's and the others'; their
+  game is only sent the first, and TF2 takes the second. A full update gives both the first's value.
+- **Where they look**: each frame's view angles, from the demo's command info, as `svc_FixAngle`.
+  `sv_client_predict 0` keeps TF2 from moving the player itself, and the server's commands to the
+  player's game are left out.
+
 ## How this was checked
 
 On 2026-11-09, with a probe built on stvtf and tf-demo-parser:

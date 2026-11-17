@@ -155,20 +155,18 @@ impl Sessions {
     /// or starting it from the beginning; `owner` as for [`Sessions::open`], a new one counting
     /// against `by` as for [`Sessions::open_as`]. It is not saved for the next process.
     pub fn open_demo_as(&self, by: Option<&str>, demo: u64, owner: Option<&str>) -> Result<Arc<Session>> {
-        self.play_demo(by, demo, owner, None, true)
+        self.play_demo(by, demo, owner, None)
     }
 
     /// The session playing demo `demo`, uploaded here and kept (see [`Sessions::open_demo_as`]):
-    /// none when nothing is kept of it. A player's own demo is not relayed: its file goes once
-    /// decoded.
+    /// none when nothing is kept of it.
     pub fn open_upload_as(&self, by: Option<&str>, demo: u64) -> Option<Result<Arc<Session>>> {
         let store = self.store.as_ref()?;
         let info: serde_json::Value = serde_json::from_slice(&store.read(&demo_info(demo)).ok()?).ok()?;
         if !info["of"].is_null() || (!store.has(&demo_output(demo)) && !store.has(&demo_dem(demo))) {
             return None;
         }
-        let pov = info["pov"].as_bool().unwrap_or(false);
-        Some(self.play_demo(by, demo, None, None, !pov))
+        Some(self.play_demo(by, demo, None, None))
     }
 
     /// The session playing match `id`'s demo `file` with its comms in it, as a demo of its own
@@ -185,7 +183,7 @@ impl Sessions {
             Ok((built.demo, built.nobodys))
         };
         let demo = own_demo(Own::Comms, &key);
-        let s = self.play_demo(by, demo, None, Some((of.clone(), Box::new(made))), true)?;
+        let s = self.play_demo(by, demo, None, Some((of.clone(), Box::new(made))))?;
         // What it is of, for its link once it no longer plays.
         if let Some(store) = &self.store {
             let _ = std::fs::write(store.dir.join(demo_info(demo)), serde_json::json!({ "of": [of.0, of.1] }).to_string());
@@ -202,14 +200,13 @@ impl Sessions {
     }
 
     /// Plays demo `demo`: demos.tf's, or the one `made`, of a match's demo with its comms. Its
-    /// file is kept for relays only if `relayed`.
+    /// file is kept for relays.
     fn play_demo(
         &self,
         by: Option<&str>,
         demo: u64,
         owner: Option<&str>,
         made: Option<((String, String), MadeDemo)>,
-        relayed: bool,
     ) -> Result<Arc<Session>> {
         let mut map = self.lock();
         if let Some(s) = map.values().find(|s| s.demo == Some(demo) && !s.done.load(Ordering::Relaxed)) {
@@ -225,7 +222,7 @@ impl Sessions {
             let _ = session.by.set(by.to_string());
         }
         let s = Arc::new(session);
-        let kept = self.store.clone().map(|store| demostf::DemoFiles { store, dem: self.demos && relayed });
+        let kept = self.store.clone().map(|store| demostf::DemoFiles { store, dem: self.demos });
         let (player, hz) = (s.clone(), self.hz);
         let thread = std::thread::spawn(move || {
             crate::report::tag("match", &player.id);
