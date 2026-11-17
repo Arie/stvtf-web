@@ -79,6 +79,7 @@ impl FromRequestParts<Shared> for Who {
         let Ok(jar) = CookieJar::from_request_parts(parts, app).await;
         let user = app.keys.as_ref().zip(jar.get(USER_COOKIE)).and_then(|(k, c)| k.kept(c.value(), unix_now()));
         if let Some(user) = user {
+            crate::report::user(&user.uid);
             return Ok(Who { key: steam_key(&user.uid), cookie: None, user: Some(user) });
         }
         if let Some(g) = jar.get(GUEST_COOKIE).map(cookie::Cookie::value).filter(|g| sessions::is_id(g)) {

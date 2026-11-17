@@ -318,6 +318,20 @@ fn the_viewer_s_page_names_every_module_it_loads() {
 }
 
 #[test]
+fn a_fault_while_signed_in_is_that_steam_ids() {
+    use axum::extract::FromRequestParts;
+    let (app, key, _dir) = site_app();
+    let cookie = signed_in(&app, &key, r#"{"uid":"7656","name":"Arie","streamer":false}"#);
+    let runtime = tokio::runtime::Builder::new_current_thread().build().unwrap();
+    let events = sentry::test::with_captured_events(|| {
+        let mut parts = axum::http::Request::get("/").header("cookie", &cookie).body(()).unwrap().into_parts().0;
+        let _ = runtime.block_on(visitor::Who::from_request_parts(&mut parts, &app.shared()));
+        sentry::capture_message("broke", sentry::Level::Error);
+    });
+    assert_eq!(events[0].user.as_ref().and_then(|u| u.id.as_deref()), Some("7656"));
+}
+
+#[test]
 fn an_answer_has_its_trace_the_callers_if_it_sent_one() {
     crate::report::on_for_tests();
     let theirs = "0123456789abcdef0123456789abcdef";

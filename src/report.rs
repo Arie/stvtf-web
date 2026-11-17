@@ -93,6 +93,11 @@ pub(crate) fn tag(key: &str, value: &str) {
     sentry::configure_scope(|s| s.set_tag(key, value));
 }
 
+/// Whose request this is: a signed-in Steam id.
+pub(crate) fn user(steam: &str) {
+    sentry::configure_scope(|s| s.set_user(Some(User { id: Some(steam.to_string()), ..Default::default() })));
+}
+
 /// Tags a request with the room or match its path is of.
 pub(crate) fn tag_path(path: &str) {
     if let Some((key, id)) = of_path(path) {
