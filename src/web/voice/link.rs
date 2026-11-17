@@ -3,12 +3,12 @@
 //! to the voice bot (`GET /voice/who?discord=<id>`, with its key). Linking is off without a
 //! Discord application (`STVTF_DISCORD_CLIENT_ID`, `_SECRET` and `_REDIRECT`).
 
-use super::voice_in::is_key;
-use super::{query_of, set_cookie};
+use super::incoming::is_key;
 use crate::App;
 use crate::matches::sessions::random_id;
 use crate::voice::ids::is_snowflake;
 use crate::voice::links::ask_discord;
+use crate::web::{query_of, set_cookie};
 use axum::Json;
 use axum::http::StatusCode;
 use axum::http::header;
@@ -17,11 +17,11 @@ use axum::response::Redirect;
 use axum::response::Response;
 
 /// The cookie that says which sign-in a browser began, and how long it has to end it.
-pub(super) const STATE_COOKIE: &str = "voice_link";
+pub(in crate::web) const STATE_COOKIE: &str = "voice_link";
 const STATE_FOR: u64 = 600;
 
 /// `/voice/link`: off to Discord, to come back to `/voice/linked`.
-pub(super) fn link(app: &App) -> Response {
+pub(in crate::web) fn link(app: &App) -> Response {
     let Some(d) = &app.voice.links.discord else { return (StatusCode::NOT_FOUND, "No linking here").into_response() };
     let state = random_id();
     let asked = [
@@ -36,7 +36,7 @@ pub(super) fn link(app: &App) -> Response {
 }
 
 /// `/voice/linked`: back from Discord with a code, in the browser that set out.
-pub(super) fn linked(app: &App, state: &str, code: &str, began: Option<&str>) -> Response {
+pub(in crate::web) fn linked(app: &App, state: &str, code: &str, began: Option<&str>) -> Response {
     let Some(d) = &app.voice.links.discord else { return (StatusCode::NOT_FOUND, "No linking here").into_response() };
     if state.is_empty() || code.is_empty() || began != Some(state) {
         return (StatusCode::BAD_REQUEST, "Expired. Try again.").into_response();
@@ -56,7 +56,7 @@ pub(super) fn linked(app: &App, state: &str, code: &str, began: Option<&str>) ->
 }
 
 /// `/voice/who?discord=<id>`: the Steam id linked to a Discord user, to the bot.
-pub(super) fn who(app: &App, bearer: Option<&str>, discord: Option<&str>) -> Response {
+pub(in crate::web) fn who(app: &App, bearer: Option<&str>, discord: Option<&str>) -> Response {
     let Some(key) = &app.voice.key else { return StatusCode::NOT_FOUND.into_response() };
     if !is_key(key, bearer) {
         return StatusCode::UNAUTHORIZED.into_response();

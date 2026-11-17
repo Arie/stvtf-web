@@ -2,15 +2,15 @@
 //! of a Mumble server: one more (each team's, on one server or on several), or with the `id` of one
 //! it is in, to move that (with no password, the one given before for the server). `{"leave":
 //! true}` sends it away from all, with an `id` from that one. For whoever has a say in the match's
-//! voice (`voice_in::has_say`). The bot asks all that is wanted (`GET /voice/mumble`, with its
-//! key); how each goes it says to `voice_who`.
+//! voice (`incoming::has_say`). The bot asks all that is wanted (`GET /voice/mumble`, with its
+//! key); how each goes it says to `who`.
 
-use super::visitor::Who;
-use super::voice_in::{has_say, is_key};
+use super::incoming::{has_say, is_key};
 use crate::matches::sessions::{Session, Sessions};
 use crate::voice::ChannelState;
 use crate::voice::feed::{DEFAULT_DELAY, MAX_DELAY};
 use crate::voice::mumble::{DEFAULT_PORT, MumbleJob, is_host, place};
+use crate::web::visitor::Who;
 use crate::{App, lock};
 use axum::Json;
 use axum::http::StatusCode;
@@ -23,7 +23,7 @@ const MAX_TEXT: usize = 100;
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(super) struct Ask {
+pub(in crate::web) struct Ask {
     #[serde(default)]
     host: String,
     #[serde(default)]
@@ -43,7 +43,7 @@ pub(super) struct Ask {
 }
 
 /// `POST /w/<id>/voice-mumble`.
-pub(super) fn post_mumble(app: &App, m: Option<&Session>, ask: Ask, who: &Who) -> Response {
+pub(in crate::web) fn post_mumble(app: &App, m: Option<&Session>, ask: Ask, who: &Who) -> Response {
     let Some(m) = m.filter(|m| m.is_live() && app.voice.key.is_some()) else {
         return (StatusCode::NOT_FOUND, "No voice here").into_response();
     };
@@ -123,7 +123,7 @@ fn want(app: &App, m: &Session, ask: Ask) -> Result<(), &'static str> {
 /// `GET /voice/mumble`, the bot's: every channel wanted, with what it takes to sit in it and to
 /// post its voice, and the `version` of that. Asked with `?since=<version>` it waits (a while)
 /// until something changed since.
-pub(super) fn get_mumble_jobs(app: &App, sessions: &Sessions, bearer: Option<&str>, since: Option<u64>) -> Response {
+pub(in crate::web) fn get_mumble_jobs(app: &App, sessions: &Sessions, bearer: Option<&str>, since: Option<u64>) -> Response {
     let Some(key) = &app.voice.key else { return StatusCode::NOT_FOUND.into_response() };
     if !is_key(key, bearer) {
         return StatusCode::UNAUTHORIZED.into_response();

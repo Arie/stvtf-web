@@ -1,5 +1,5 @@
 //! Who is who in a channel brought into a match, and how that channel goes, for whoever has a say
-//! in the match's voice (`voice_in::has_say`): on a match's page and on a room's.
+//! in the match's voice (`incoming::has_say`): on a match's page and on a room's.
 //!
 //! - `POST <page>voice-status`, the bot's (its key and the match's invite): how it goes in the
 //!   channel it is in (`kind`: `discord` or `mumble`; `status`), who is in it (`people`), or
@@ -16,13 +16,13 @@
 //! its voices that were no player's: whose each is said to be holds for that demo (built anew
 //! with it), by its players (signed in, playing in it at the moment shown) and the streamers.
 
-use super::visitor::Who;
-use super::voice_in::{has_say, is_key};
+use super::incoming::{has_say, is_key};
 use crate::matches::sessions::Session;
 use crate::voice::feed::Put;
 use crate::voice::ids::{is_voice_id, parse_steamid};
 use crate::voice::who::Recalled;
 use crate::voice::{ChannelState, DiscordGoing};
+use crate::web::visitor::Who;
 use crate::{App, lock};
 use axum::Json;
 use axum::http::StatusCode;
@@ -45,7 +45,7 @@ struct Member {
 }
 
 #[derive(Deserialize)]
-pub(super) struct Report {
+pub(in crate::web) struct Report {
     #[serde(default)]
     invite: Option<String>,
     kind: String,
@@ -74,7 +74,7 @@ pub(super) struct Report {
 const MAX_CHANNELS: usize = 8;
 
 /// `POST <page>voice-status`, the bot's.
-pub(super) fn post_voice_status(app: &App, m: Option<&Session>, bearer: Option<&str>, said: Report) -> Response {
+pub(in crate::web) fn post_voice_status(app: &App, m: Option<&Session>, bearer: Option<&str>, said: Report) -> Response {
     let Some(key) = &app.voice.key else { return StatusCode::NOT_FOUND.into_response() };
     if !is_key(key, bearer) {
         return StatusCode::UNAUTHORIZED.into_response();
@@ -160,7 +160,7 @@ fn theirs<'a>(app: &App, m: Option<&'a Session>, who: &Who) -> Option<&'a Sessio
 
 /// `GET <page>voice-comms`: where the bot is, in Discord or Mumble, and how it goes. No content
 /// for someone with no say.
-pub(super) fn get_voice_comms(app: &App, m: Option<&Session>, who: &Who) -> Response {
+pub(in crate::web) fn get_voice_comms(app: &App, m: Option<&Session>, who: &Who) -> Response {
     let Some(m) = theirs(app, m, who) else { return StatusCode::NO_CONTENT.into_response() };
     // Each Discord channel's going, one after the other; in, unless one is not.
     let going: Vec<DiscordGoing> = lock(&m.comms.discord).values().filter(|g| g.at.elapsed() < DISCORD_SAID_FOR).cloned().collect();
@@ -188,7 +188,7 @@ fn demos_dir(app: &App) -> Option<&std::path::Path> {
 /// The match and demo `m`, a demo with comms watched here, is of, and where the demos are, if
 /// `who` may say whose its voices are: a player in it now, signed in, or a streamer; where nobody
 /// signs in, anyone.
-pub(super) fn reviewed<'a>(app: &'a App, m: Option<&'a Session>, who: &Who) -> Option<(&'a std::path::Path, &'a str, &'a str)> {
+pub(in crate::web) fn reviewed<'a>(app: &'a App, m: Option<&'a Session>, who: &Who) -> Option<(&'a std::path::Path, &'a str, &'a str)> {
     let m = m?;
     let (id, file) = m.comms_of()?;
     let plays = |uid: &str| parse_steamid(uid).is_some_and(|steamid| lock(&m.hub).player_with(&steamid).is_some());
@@ -220,7 +220,7 @@ fn review_voices(app: &App, dir: &std::path::Path, id: &str, file: &str) -> Vec<
 }
 
 /// `GET <page>voices`: those in the channel and those heard, and whom each is put on.
-pub(super) fn get_voices(app: &App, m: Option<&Session>, who: &Who) -> Response {
+pub(in crate::web) fn get_voices(app: &App, m: Option<&Session>, who: &Who) -> Response {
     if let Some((dir, id, file)) = reviewed(app, m, who) {
         return Json(serde_json::json!(review_voices(app, dir, id, file))).into_response();
     }
@@ -232,7 +232,7 @@ pub(super) fn get_voices(app: &App, m: Option<&Session>, who: &Who) -> Response 
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(super) struct Match {
+pub(in crate::web) struct Match {
     #[serde(rename = "discord")]
     voice_id: String,
     #[serde(default)]
@@ -243,7 +243,7 @@ pub(super) struct Match {
 
 /// `POST <page>voice-match`: `discord` is the match's `player`, or `steamid` (as people write
 /// them), or with neither nobody.
-pub(super) fn post_voice_match(app: &App, m: Option<&Session>, v: &Match, who: &Who) -> Response {
+pub(in crate::web) fn post_voice_match(app: &App, m: Option<&Session>, v: &Match, who: &Who) -> Response {
     if m.is_some_and(|m| m.comms_of().is_some()) {
         return post_review_match(app, m, v, who);
     }

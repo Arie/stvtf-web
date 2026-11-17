@@ -1,5 +1,5 @@
 //! A Mumble channel wanted for a match (there may be a few: each team's): where the voice bot is to
-//! sit, asked for on the match's page by whoever has a say (see `web::voice_mumble`). The bot asks
+//! sit, asked for on the match's page by whoever has a say (see `web::voice::mumble`). The bot asks
 //! what is wanted and says how it goes. Kept with the match, so a restart does not send the bot
 //! away.
 

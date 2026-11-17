@@ -310,7 +310,7 @@ fn who_is_who(options: &Options, keys: Option<&Arc<web::token::Keys>>, voice_key
     let sites = std::env::var("STVTF_LINK_SITES").ok().filter(|l| !l.is_empty()).or_else(|| options.home.clone()).unwrap_or_default();
     let sites: Vec<_> = match (keys, voice_key) {
         (Some(keys), Some(_)) => {
-            sites.split(',').map(str::trim).filter(|s| !s.is_empty()).map(|s| web::voice_who_sync::site(s, keys.clone())).collect()
+            sites.split(',').map(str::trim).filter(|s| !s.is_empty()).map(|s| web::voice::who_sync::site(s, keys.clone())).collect()
         }
         _ => Vec::new(),
     };

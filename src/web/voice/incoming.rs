@@ -19,7 +19,7 @@ const MAX_FRAMES: usize = 32;
 const MAX_FRAME: usize = 2000;
 
 #[derive(Deserialize)]
-pub(super) struct VoicePost {
+pub(in crate::web) struct VoicePost {
     /// The match's voice invite, from the link the bot was given.
     #[serde(default)]
     invite: Option<String>,
@@ -43,7 +43,7 @@ pub(super) struct VoicePost {
 }
 
 /// Whether `given` is the key, compared without stopping at the first difference.
-pub(super) fn is_key(key: &str, given: Option<&str>) -> bool {
+pub(in crate::web) fn is_key(key: &str, given: Option<&str>) -> bool {
     let Some(given) = given else { return false };
     key.len() == given.len() && key.bytes().zip(given.bytes()).fold(0, |d, (a, b)| d | (a ^ b)) == 0
 }
@@ -58,7 +58,7 @@ fn is_steamid(s: &str) -> bool {
 /// The most characters of a speaker's name kept.
 const MAX_NAME: usize = 40;
 
-pub(super) fn post_voice(app: &App, m: &Arc<Session>, bearer: Option<&str>, said: VoicePost) -> Response {
+pub(in crate::web) fn post_voice(app: &App, m: &Arc<Session>, bearer: Option<&str>, said: VoicePost) -> Response {
     let Some(key) = &app.voice.key else { return StatusCode::NOT_FOUND.into_response() };
     if !is_key(key, bearer) {
         return StatusCode::UNAUTHORIZED.into_response();
@@ -99,16 +99,16 @@ pub(super) fn post_voice(app: &App, m: &Arc<Session>, bearer: Option<&str>, said
 
 /// Whether `who` gets a match's voice invite, and says whose voice is whose: whoever started it,
 /// and the site's streamers; where nobody signs in (no site in front), anyone.
-pub(super) fn has_say(app: &App, m: &Session, who: &super::visitor::Who) -> bool {
+pub(in crate::web) fn has_say(app: &App, m: &Session, who: &crate::web::visitor::Who) -> bool {
     app.keys.is_none() || m.started_by(&who.key) || who.user.as_ref().is_some_and(|u| u.streamer)
 }
 
 /// `GET /w/<id>/voice-invite` (and a room's): the invite, and where to add the bot to a Discord
 /// server (`STVTF_VOICE_BOT`), to those with a say. Every page asks: no content for the rest, and
 /// where no voice comes in, rather than an error in everyone's console.
-pub(super) fn get_voice_invite(app: &App, m: Option<&Session>, who: &super::visitor::Who) -> Response {
+pub(in crate::web) fn get_voice_invite(app: &App, m: Option<&Session>, who: &crate::web::visitor::Who) -> Response {
     // A demo with comms watched here: no bot to bring in, only whose its voices are.
-    if super::voice_who::reviewed(app, m, who).is_some() {
+    if super::who::reviewed(app, m, who).is_some() {
         return Json(serde_json::json!({ "review": true })).into_response();
     }
     let Some(m) = m.filter(|m| m.is_live() && app.voice.key.is_some() && has_say(app, m, who)) else {

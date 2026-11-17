@@ -86,7 +86,7 @@ npm run test:browser    # after cargo build and `npx playwright-core install --o
 - `src/relays/`: `pool` (rooms as SourceTV addresses) and `daemon` (relays in their own process).
 - `src/voice/`: voice from outside a match: `feed` and `hold` (held to its tick), `mumble`
   (channels the bot is wanted in), `who` (who is who, between regions), `links` (Discord to
-  Steam), `ids`. Its routes: `web/voice_*.rs`.
+  Steam), `ids`. Its routes: `web/voice.rs` and `web/voice/`.
 - `src/maps/`: `cache` (geometry and overviews in `--cache`) and `bsp` (top-down geometry, on
   `/map/NAME`): `format` (lumps, LZMA), `entities` (bounds, packs, capture areas, spawns),
   `material` (floor kind from texture), `displacement`, `track` (payload), `reach` (flood fill),

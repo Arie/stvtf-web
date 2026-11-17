@@ -1,10 +1,10 @@
 //! The list of who is who between regions (`voice::who`): its routes, and asking a site.
 
-use super::token::Keys;
-use super::voice_in::is_key;
+use super::incoming::is_key;
 use crate::App;
 use crate::voice::ids::{is_voice_id, parse_steamid};
 use crate::voice::who::{CASTER, MAX_NAME, RegionEntry, Site, TIMEOUT};
+use crate::web::token::Keys;
 use anyhow::Context;
 use axum::Json;
 use axum::http::StatusCode;
@@ -18,7 +18,7 @@ pub(crate) fn site(home: &str, keys: Arc<Keys>) -> Site {
     let name = home.split("://").last().unwrap_or(home).split('/').next().unwrap_or_default().to_string();
     let agent = ureq::AgentBuilder::new().timeout(TIMEOUT).redirects(0).build();
     let ask = move |discord: &str| {
-        let bearer = format!("Bearer {}", keys.link_token(discord, super::unix_now()));
+        let bearer = format!("Bearer {}", keys.link_token(discord, crate::web::unix_now()));
         match agent.get(&format!("{url}{discord}")).set("Authorization", &bearer).call() {
             Ok(answer) => {
                 let said: serde_json::Value = serde_json::from_str(&answer.into_string()?)?;
@@ -32,7 +32,7 @@ pub(crate) fn site(home: &str, keys: Arc<Keys>) -> Site {
 }
 
 /// `GET /voice/known?since=<version>`, another stv.tf's: what changed since.
-pub(super) fn get_known(app: &App, bearer: Option<&str>, since: u64) -> Response {
+pub(in crate::web) fn get_known(app: &App, bearer: Option<&str>, since: u64) -> Response {
     let Some(key) = &app.voice.key else { return StatusCode::NOT_FOUND.into_response() };
     if !is_key(key, bearer) {
         return StatusCode::UNAUTHORIZED.into_response();
@@ -42,7 +42,7 @@ pub(super) fn get_known(app: &App, bearer: Option<&str>, since: u64) -> Response
 }
 
 /// `POST /voice/known`, another stv.tf's: what was said on a page there.
-pub(super) fn post_known(app: &App, bearer: Option<&str>, said: &RegionEntry) -> Response {
+pub(in crate::web) fn post_known(app: &App, bearer: Option<&str>, said: &RegionEntry) -> Response {
     let Some(key) = &app.voice.key else { return StatusCode::NOT_FOUND.into_response() };
     if !is_key(key, bearer) {
         return StatusCode::UNAUTHORIZED.into_response();
