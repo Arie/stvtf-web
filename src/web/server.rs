@@ -11,6 +11,7 @@ use hyper::server::conn::http1;
 use hyper_util::rt::{TokioIo, TokioTimer};
 use hyper_util::server::graceful::GracefulShutdown;
 use hyper_util::service::TowerToHyperService;
+use sentry::integrations::tower::{NewSentryLayer, SentryHttpLayer};
 use std::future::Future;
 use std::pin::pin;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -105,6 +106,19 @@ pub(crate) async fn serve(
 /// A request is answered in this time, its body read: an upload's part on a slow line, at most.
 const ANSWER_WITHIN: Duration = Duration::from_mins(5);
 
+/// Gives a request's trace id to its log lines and its answer (`x-trace-id`), and tags it with its
+/// room or match.
+async fn traced(req: axum::extract::Request, next: axum::middleware::Next) -> axum::response::Response {
+    let id = crate::report::trace_id();
+    crate::report::tag_path(req.uri().path());
+    let span = tracing::info_span!("trace", id = id.as_deref().unwrap_or_default());
+    let mut res = tracing::Instrument::instrument(next.run(req), span).await;
+    if let Some(v) = id.and_then(|i| HeaderValue::from_str(&i).ok()) {
+        res.headers_mut().insert("x-trace-id", v);
+    }
+    res
+}
+
 /// The routes with their layers: `nosniff`, GET readable by any site (`<stv-map>` embeds),
 /// cross-site writes refused, signed-in pages not framed.
 pub(crate) fn router(app: Shared) -> Router {
@@ -117,8 +131,12 @@ pub(crate) fn router(app: Shared) -> Router {
         .layer(SetResponseHeaderLayer::overriding(header::X_CONTENT_TYPE_OPTIONS, HeaderValue::from_static("nosniff")))
         .layer(CorsLayer::new().allow_origin(cors::Any).allow_methods([Method::GET]))
         .layer(TimeoutLayer::with_status_code(StatusCode::REQUEST_TIMEOUT, ANSWER_WITHIN))
+        .layer(axum::middleware::from_fn(traced))
         // Each request, for whoever asks to see them (`RUST_LOG=tower_http=debug`).
         .layer(TraceLayer::new_for_http())
+        // A trace per request, or the caller's (`sentry-trace`), in a Sentry scope of its own.
+        .layer(SentryHttpLayer::new().enable_transaction())
+        .layer(NewSentryLayer::<axum::extract::Request>::new_from_top())
         // Event streams compress themselves, flushing per batch (`events::stream`).
         .layer(CompressionLayer::new())
 }

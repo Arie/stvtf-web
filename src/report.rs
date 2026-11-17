@@ -77,6 +77,46 @@ macro_rules! fault {
     };
 }
 
+/// The trace of the request being answered, if any.
+pub(crate) fn trace_id() -> Option<String> {
+    sentry::configure_scope(|s| s.get_span()).map(|span| span.get_trace_context().trace_id.to_string())
+}
+
+/// Tags the events of this thread, or of the request being answered.
+pub(crate) fn tag(key: &str, value: &str) {
+    sentry::configure_scope(|s| s.set_tag(key, value));
+}
+
+/// Tags a request with the room or match its path is of.
+pub(crate) fn tag_path(path: &str) {
+    if let Some((key, id)) = of_path(path) {
+        tag(key, id);
+    }
+}
+
+fn of_path(path: &str) -> Option<(&'static str, &str)> {
+    let mut parts = path.split('/').skip(1);
+    match (parts.next(), parts.next(), parts.next()) {
+        (Some("r"), Some(id), _) if !id.is_empty() => Some(("room", id)),
+        (Some("w"), Some("demo" | "pov" | "comms"), Some(id)) | (Some("w"), Some(id), _) if !id.is_empty() => Some(("match", id)),
+        _ => None,
+    }
+}
+
+/// Sentry on, sending nowhere: for tests of what it is told.
+#[cfg(test)]
+pub(crate) fn on_for_tests() {
+    static ON: std::sync::Once = std::sync::Once::new();
+    let client = || {
+        let mut options = sentry::ClientOptions::new();
+        options.dsn = "https://public@sentry.invalid/1".parse().ok();
+        options.transport = Some(Arc::new(sentry::test::TestTransport::new()));
+        Some(Arc::new(sentry::Client::from(options)))
+    };
+    ON.call_once(|| sentry::Hub::main().bind_client(client()));
+    sentry::Hub::current().bind_client(client());
+}
+
 /// What a page says went wrong in it.
 #[derive(serde::Deserialize, Default)]
 #[serde(default)]
@@ -223,5 +263,14 @@ mod tests {
         assert!((0..PAGE_REPORTS).all(|_| page_slot(now)));
         assert!(!page_slot(now));
         assert!(page_slot(now + Duration::from_secs(61)));
+    }
+
+    #[test]
+    fn a_path_names_its_room_or_match() {
+        assert_eq!(of_path("/r/abc/events"), Some(("room", "abc")));
+        assert_eq!(of_path("/w/abc/"), Some(("match", "abc")));
+        assert_eq!(of_path("/w/demo/xyz/room"), Some(("match", "xyz")));
+        assert_eq!(of_path("/w/"), None);
+        assert_eq!(of_path("/"), None);
     }
 }

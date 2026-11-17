@@ -228,6 +228,7 @@ impl Sessions {
         let kept = self.store.clone().map(|store| demostf::DemoFiles { store, dem: self.demos && relayed });
         let (player, hz) = (s.clone(), self.hz);
         let thread = std::thread::spawn(move || {
+            crate::report::tag("match", &player.id);
             let made = made.as_deref().map(|m| m as demostf::Made);
             if let Err(e) = demostf::play(&player.hub, demo, hz, &|| player.watched(), &player.stop, kept.as_ref(), made, &|gz| {
                 *lock(&player.source) = Some(Source::Output(gz));
@@ -298,6 +299,7 @@ impl Sessions {
         record(&s, self.store.as_ref(), &self.claim, resume);
         let (watcher, hz) = (s.clone(), self.hz);
         let thread = std::thread::spawn(move || {
+            crate::report::tag("match", &watcher.id);
             let demos = demos.map(|d| d as Arc<dyn stvtf::demo::Files>);
             if let Err(e) = watch_into(&watcher.hub, &server.to_string(), &watcher.password, hz, demos, &watcher.stop) {
                 log!("match {} gave up: {e}", watcher.label());

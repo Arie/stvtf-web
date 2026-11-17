@@ -190,8 +190,30 @@ pub(super) struct Back {
 
 /// Work that may block (locks, files, a wait), off the threads that serve everyone: its answer.
 pub(super) async fn answer(work: impl FnOnce() -> Answered + Send + 'static) -> Answered {
-    match tokio::task::spawn_blocking(work).await {
+    // The request's Sentry scope and log span go along.
+    let (hub, span) = (sentry::Hub::current(), tracing::Span::current());
+    match tokio::task::spawn_blocking(move || span.in_scope(|| sentry::Hub::run(hub, work))).await {
         Ok(answered) => answered,
         Err(_) => Err(Early::from(StatusCode::INTERNAL_SERVER_ERROR.into_response())),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn work_off_the_runtime_is_in_the_requests_trace() {
+        crate::report::on_for_tests();
+        let header = "0123456789abcdef0123456789abcdef-0123456789abcdef-0";
+        let runtime = tokio::runtime::Builder::new_current_thread().build().unwrap();
+        let trace = sentry::start_transaction(sentry::TransactionContext::continue_from_headers("t", "t", [("sentry-trace", header)]));
+        sentry::configure_scope(|s| s.set_span(Some(trace.into())));
+        let seen = std::sync::Arc::new(std::sync::Mutex::new(None));
+        let s = seen.clone();
+        let _ = runtime.block_on(super::answer(move || {
+            *s.lock().unwrap() = crate::report::trace_id();
+            Ok(axum::response::IntoResponse::into_response(axum::http::StatusCode::OK))
+        }));
+        let seen = seen.lock().unwrap().take();
+        assert_eq!(seen.as_deref(), Some("0123456789abcdef0123456789abcdef"));
     }
 }

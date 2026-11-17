@@ -316,3 +316,17 @@ fn the_viewer_s_page_names_every_module_it_loads() {
     assert!(!page.contains("stv-map.js\">"), "the embed's entry is not the page's");
     assert!(page.find("modulepreload").unwrap() < page.find("</head>").unwrap());
 }
+
+#[test]
+fn an_answer_has_its_trace_the_callers_if_it_sent_one() {
+    crate::report::on_for_tests();
+    let theirs = "0123456789abcdef0123456789abcdef";
+    let answer = request(format!("GET / HTTP/1.1\r\nsentry-trace: {theirs}-0123456789abcdef-0\r\n\r\n").as_bytes()).1;
+    assert!(answer.contains(&format!("X-Trace-Id: {theirs}\r\n")), "{answer}");
+    // As the bot's SDK sends it, unsampled.
+    let answer = request(format!("GET / HTTP/1.1\r\nsentry-trace: {theirs}-0123456789abcdef\r\n\r\n").as_bytes()).1;
+    assert!(answer.contains(&format!("X-Trace-Id: {theirs}\r\n")), "{answer}");
+    let answer = request(b"GET / HTTP/1.1\r\n\r\n").1;
+    let id = answer.lines().find_map(|l| l.strip_prefix("X-Trace-Id: ")).unwrap_or_default();
+    assert!(id.len() == 32 && id != theirs, "{answer}");
+}

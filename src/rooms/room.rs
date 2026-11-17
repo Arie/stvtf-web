@@ -261,7 +261,10 @@ impl Room {
         });
         announce(&room.hub, "marker", &kept_line(&[]));
         let player = room.clone();
-        std::thread::spawn(move || player.play());
+        std::thread::spawn(move || {
+            crate::report::tag("room", &player.id);
+            player.play();
+        });
         room
     }
 
