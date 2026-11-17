@@ -1,7 +1,7 @@
 # stvtf-web
 
 The server behind [stv.tf](https://stv.tf): a live top-down view of a TF2 match in the browser.
-It links [stvtf](../stvtf) as a library: one SourceTV connection per match, fanned out to any
+It links [stvtf](https://github.com/Arie/stvtf) as a library: one SourceTV connection per match, fanned out to any
 number of browsers over Server-Sent Events.
 
 ```
