@@ -93,7 +93,7 @@ impl Keys {
     pub fn seal(&self, plain: &[u8]) -> Vec<u8> {
         let nonce = Aes256Gcm::generate_nonce(&mut OsRng);
         let mut out = nonce.to_vec();
-        out.extend(self.0.encrypt(&nonce, plain).expect("AES-GCM encryption of an in-memory buffer"));
+        out.extend(self.0.encrypt(&nonce, plain).expect("internal error: AES-GCM cannot encrypt a buffer in memory"));
         out
     }
 
@@ -151,7 +151,7 @@ impl Keys {
     /// `user`'s cookie, good for [`SIGNED_IN_FOR`] from `now`.
     pub fn keep(&self, user: &User, now: u64) -> String {
         let kept = Kept { user: user.clone(), exp: now + SIGNED_IN_FOR };
-        URL_SAFE_NO_PAD.encode(self.seal(&serde_json::to_vec(&kept).expect("a user serializes")))
+        URL_SAFE_NO_PAD.encode(self.seal(&serde_json::to_vec(&kept).expect("internal error: a user does not serialize")))
     }
 
     /// The user a cookie from [`Keys::keep`] keeps, while it lasts.

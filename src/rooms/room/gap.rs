@@ -72,7 +72,7 @@ impl Room {
                 cur.waiting = true;
                 return IDLE_POLL;
             }
-            let (_, line) = cur.lines.pop_front().expect("a front line");
+            let (_, line) = cur.lines.pop_front().expect("internal error: no line at the front though one was seen");
             cur.done += 1;
             if !first && heard_in_the_gap(&line) {
                 publish(&self.hub, &line);

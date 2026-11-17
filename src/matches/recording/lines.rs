@@ -482,13 +482,16 @@ impl Recording {
             }
         };
         let read = |text: &str| {
-            let (at, json) = text.split_once('\t').expect("our own lines");
-            let line = serde_json::from_str::<Stamped>(json).expect("read once already").line;
-            (at.parse().expect("our own number"), line)
+            let (at, json) = text.split_once('\t').expect("internal error: a kept line has no time");
+            let line = serde_json::from_str::<Stamped>(json).expect("internal error: a kept line does not read back").line;
+            (at.parse().expect("internal error: a kept line's time is not a number"), line)
         };
         Some(match text {
             Text::Open(lines) => lines.iter().map(|l| read(l)).collect(),
-            Text::Gz(gz) => BufReader::new(GzDecoder::new(gz.as_slice())).lines().map(|l| read(&l.expect("our own gzip reads"))).collect(),
+            Text::Gz(gz) => BufReader::new(GzDecoder::new(gz.as_slice()))
+                .lines()
+                .map(|l| read(&l.expect("internal error: a kept chunk does not unzip")))
+                .collect(),
         })
     }
 

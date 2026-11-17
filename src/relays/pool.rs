@@ -69,7 +69,7 @@ impl Drop for Bound {
 
 impl Bound {
     fn relay(&self) -> &Relay {
-        self.relay.as_ref().expect("a relay until dropped")
+        self.relay.as_ref().expect("internal error: no relay before it is dropped")
     }
 }
 
@@ -138,7 +138,7 @@ pub(crate) struct LocalRelay {
 
 impl LocalRelay {
     fn bound(&self) -> &Bound {
-        self.bound.as_ref().expect("bound until dropped")
+        self.bound.as_ref().expect("internal error: not bound before it is dropped")
     }
 
     /// Where the room is now.

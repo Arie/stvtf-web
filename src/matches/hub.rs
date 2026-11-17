@@ -413,7 +413,7 @@ impl Hub {
             round1(seconds).max(0.0)
         });
         let names = line.players().filter_map(|id| Some((id, self.names.get(&id)?))).collect();
-        let past = serde_json::to_string(&Past { line, history: true, names, at }).expect("a line serializes");
+        let past = serde_json::to_string(&Past { line, history: true, names, at }).expect("internal error: a line does not serialize");
         if self.history.len() == HISTORY {
             self.history.pop_front();
         }
@@ -434,14 +434,14 @@ impl Hub {
         let known = self.player_with(&v.steamid);
         let (player, team) = (v.player.or(known.map(|k| k.0)), known.map(|k| k.1).or(v.team));
         let said = Talking { r#type: "talking", player, steamid: &v.steamid, team };
-        Some(serde_json::to_string(&said).expect("a line serializes").into())
+        Some(serde_json::to_string(&said).expect("internal error: a line does not serialize").into())
     }
 }
 
 pub(crate) type SharedHub = Arc<Mutex<Hub>>;
 
 pub(crate) fn publish(hub: &SharedHub, line: &Line) {
-    let json: Arc<str> = serde_json::to_string(line).expect("a line serializes").into();
+    let json: Arc<str> = serde_json::to_string(line).expect("internal error: a line does not serialize").into();
     let route = route(line);
     let mut h = lock(hub);
     match line {
@@ -515,7 +515,7 @@ fn join_lines(h: &Hub) -> Vec<Arc<str>> {
     let mut lines: Vec<Arc<str>> = h.state().chain(&h.history).cloned().collect();
     if let Some(age) = h.data_age() {
         let age = DataAge { ms: age.as_millis() as u64 };
-        lines.push(serde_json::to_string(&age).expect("a number serializes").into());
+        lines.push(serde_json::to_string(&age).expect("internal error: a number does not serialize").into());
     }
     lines.extend(h.room.values().cloned());
     lines

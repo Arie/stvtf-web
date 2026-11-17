@@ -147,7 +147,7 @@ pub(super) fn ticks(s: f64, interval: f64) -> u32 {
 
 /// The latest part: there is one once a recording noted a line.
 pub(super) fn latest(parts: &mut [PartState]) -> &mut PartState {
-    parts.last_mut().expect("a part from the first line on")
+    parts.last_mut().expect("internal error: no part though a line came")
 }
 
 /// Whether `line` is play of the part it is in, not tail: a snapshot or an event.

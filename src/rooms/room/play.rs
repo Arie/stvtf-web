@@ -270,7 +270,7 @@ impl Room {
                 st = self.wait_until(st, t, &mut announced, &mut clock);
                 continue;
             }
-            let (_, line) = cur.lines.pop_front().expect("a front line");
+            let (_, line) = cur.lines.pop_front().expect("internal error: no line at the front though one was seen");
             (cur.done, cur.waiting) = (cur.done + 1, false);
             if gap::changes_map(&line) {
                 continue;
