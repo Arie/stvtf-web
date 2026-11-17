@@ -68,7 +68,7 @@ pub(crate) fn watch(w: &watch::Watch, stop: &AtomicBool, emit: &mut dyn FnMut(Li
     if let Some(script) = script {
         script.lines.into_iter().for_each(&mut *emit);
         if let Some(why) = script.give_up {
-            return Err(anyhow::anyhow!(why).into());
+            return Err(stvtf::Error::Invalid { reason: why }.into());
         }
     }
     while !stop.load(Ordering::Relaxed) {
