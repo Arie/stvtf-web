@@ -27,7 +27,7 @@ use stvtf::watch;
 use self::app::{App, Matches};
 use self::housekeeping::{keep_house, live_ids};
 use self::start::{keep_log, matches, prompt, relay_process, serve_until_stopped, warm, who_is_who};
-use crate::cli::{Options, USAGE};
+use crate::cli::Options;
 
 #[cfg(test)]
 mod testing;
@@ -36,10 +36,7 @@ mod tests;
 
 fn main() -> Result<()> {
     static STOP: AtomicBool = AtomicBool::new(false);
-    let Some(options) = Options::parse(std::env::args().skip(1))? else {
-        println!("{USAGE}");
-        return Ok(());
-    };
+    let options = Options::parse_from(std::env::args().skip(1)).unwrap_or_else(|e| e.exit());
     let _told = report::start(if options.relay_daemon.is_some() { "relay" } else { "web" });
     watch::stop_on_ctrl_c(&STOP)?;
     keep_log(&options);

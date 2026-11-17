@@ -50,7 +50,7 @@ fn a_server_of_many_matches_starts_with_its_demos_and_the_saved_matches() {
     std::fs::write(demos.join("notes.txt"), "").unwrap();
     let demo = demos.join("rd.jsonl");
     let args = ["--demos", demos.to_str().unwrap(), "--demo", demo.to_str().unwrap(), "--sessions", store.to_str().unwrap()];
-    let options = Options::parse(args.map(String::from)).unwrap().unwrap();
+    let options = Options::parse_from(args.map(String::from)).unwrap();
 
     let before = many(&options, None).unwrap();
     testing::script("192.0.2.77:27020", vec![server("cp_restored")], None);
@@ -76,6 +76,6 @@ fn a_server_of_many_matches_starts_with_its_demos_and_the_saved_matches() {
 fn a_missing_demo_folder_stops_the_server_from_starting() {
     let dir = TempDir::new("nodemos");
     let missing = dir.join("nothing");
-    let options = Options::parse(["--demos".to_string(), missing.to_str().unwrap().to_string()]).unwrap().unwrap();
+    let options = Options::parse_from(["--demos".to_string(), missing.to_str().unwrap().to_string()]).unwrap();
     assert!(many(&options, None).is_err());
 }

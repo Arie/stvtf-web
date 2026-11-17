@@ -8,14 +8,11 @@ use anyhow::{Context, Result};
 
 use super::app::{App, Matches, is_name};
 use super::sync::lock;
-use crate::cli::{DEFAULT_TV_PASSWORD, Options, USAGE, parse_connect};
+use crate::cli::{DEFAULT_TV_PASSWORD, Options};
 use crate::maps::cache::{demostf_maps, map_geometry_gzip, overview, warm_maps};
 use crate::matches::hub::{SharedHub, watch_into};
 use crate::matches::replay::replay;
 use crate::matches::sessions::Sessions;
-
-/// The exit status for a command line that does not say what to watch.
-pub(super) const EXIT_USAGE: i32 = 2;
 
 /// Fetches demos.tf's overviews and builds the most played maps, so their first viewer does not
 /// wait.
@@ -120,11 +117,7 @@ pub(super) fn matches(options: &Options, keys: Option<&Arc<super::web::token::Ke
                 eprintln!("replay: {e}");
             }
         });
-    } else if let Some(connect) = &options.connect {
-        let Some((target, password)) = parse_connect(connect) else {
-            eprintln!("{USAGE}");
-            std::process::exit(EXIT_USAGE);
-        };
+    } else if let Some((target, password)) = options.connect.clone() {
         let password = options.password.clone().or(password).unwrap_or_else(|| DEFAULT_TV_PASSWORD.to_string());
         let hz = options.hz;
         std::thread::spawn(move || {

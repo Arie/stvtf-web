@@ -2568,6 +2568,7 @@ dependencies = [
  "axum",
  "axum-extra",
  "base64 0.22.1",
+ "clap",
  "cookie",
  "flate2",
  "hyper",
