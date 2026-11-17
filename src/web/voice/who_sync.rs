@@ -26,7 +26,7 @@ pub(crate) fn site(home: &str, keys: Arc<Keys>) -> Site {
                 Ok(said["steam"].as_str().map(str::to_string))
             }
             Err(ureq::Error::Status(404, _)) => Ok(None),
-            Err(e) => Err(e).context("a site's Discord link"),
+            Err(e) => Err(e).context("cannot ask a site for a Discord link"),
         }
     };
     Site { name, ask: Box::new(ask) }

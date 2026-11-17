@@ -321,7 +321,7 @@ fn take_over(rooms: &Rooms, relays: &Arc<Relays>, file: &Path) {
 /// What the relay process on `socket` answers when asked for its TF2 clients: `{"clients": N}`,
 /// or an error from one that does not know the question (and hands none over).
 pub(crate) fn clients(socket: &Path) -> Result<Value> {
-    let mut conn = UnixStream::connect(socket).with_context(|| format!("the relays at {}", socket.display()))?;
+    let mut conn = UnixStream::connect(socket).with_context(|| format!("cannot reach the relays at {}", socket.display()))?;
     conn.set_read_timeout(Some(ANSWER))?;
     writeln!(conn, "{}", json!({ "op": "clients" }))?;
     let mut line = String::new();
@@ -336,7 +336,7 @@ pub(crate) fn serve(socket: &Path, relays: &Arc<Relays>, lease: Duration, stop: 
     let _ = std::fs::remove_file(socket);
     let rooms: Rooms = Arc::default();
     take_over(&rooms, relays, &handed_at(socket));
-    let listener = UnixListener::bind(socket).with_context(|| format!("listening on {}", socket.display()))?;
+    let listener = UnixListener::bind(socket).with_context(|| format!("cannot listen on {}", socket.display()))?;
     tracing::info!("relays at {}", socket.display());
     let (leaving, file) = (rooms.clone(), handed_at(socket));
     std::thread::spawn(move || {
@@ -507,7 +507,7 @@ impl Remote {
         };
         let mut conn = lock(&self.conn);
         if lock(&self.away).is_some_and(|until| Instant::now() < until) {
-            bail!("the relays at {} did not answer", self.socket.display());
+            bail!("cannot hear from the relays at {}", self.socket.display());
         }
         let answer = match self.exchange(&mut conn, request) {
             Ok(a) => a,
@@ -527,7 +527,8 @@ impl Remote {
         let mut tried = None;
         for _ in 0..2 {
             if conn.is_none() {
-                let s = UnixStream::connect(&self.socket).with_context(|| format!("the relays at {}", self.socket.display()))?;
+                let s =
+                    UnixStream::connect(&self.socket).with_context(|| format!("cannot reach the relays at {}", self.socket.display()))?;
                 s.set_read_timeout(Some(ANSWER))?;
                 s.set_write_timeout(Some(ANSWER))?;
                 *conn = Some((s.try_clone()?, BufReader::new(s)));
@@ -537,12 +538,12 @@ impl Remote {
             let sent = writeln!(w, "{request}").map_err(anyhow::Error::from).and_then(|()| Ok(r.read_line(&mut line)?));
             match sent {
                 Ok(n) if n > 0 => return Ok(serde_json::from_str(&line)?),
-                Ok(_) => tried = Some(anyhow::anyhow!("the relays hung up")),
+                Ok(_) => tried = Some(anyhow::anyhow!("cannot hear from the relays: they hung up")),
                 Err(e) => tried = Some(e),
             }
             *conn = None;
         }
-        Err(tried.unwrap_or_else(|| anyhow::anyhow!("no answer")))
+        Err(tried.unwrap_or_else(|| anyhow::anyhow!("cannot get an answer")))
     }
 
     /// Room `room`'s relay, started if it has none, playing as `want` says, on what it `was` on if

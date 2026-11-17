@@ -76,7 +76,10 @@ pub(super) const MODEL_NUM_FACES: usize = 44;
 // Maps come from fastdl and can be broken, so every read is checked: a panic would take down
 // the request and poison the lock around map loading.
 pub(super) fn bytes<const N: usize>(b: &[u8], o: usize) -> Result<[u8; N]> {
-    o.checked_add(N).and_then(|end| b.get(o..end)).and_then(|s| s.try_into().ok()).ok_or_else(|| anyhow!("BSP truncated at {o}"))
+    o.checked_add(N)
+        .and_then(|end| b.get(o..end))
+        .and_then(|s| s.try_into().ok())
+        .ok_or_else(|| anyhow!("cannot read the BSP past {o}: cut short"))
 }
 pub(super) fn u16_at(b: &[u8], o: usize) -> Result<u16> {
     Ok(u16::from_le_bytes(bytes(b, o)?))
@@ -103,7 +106,7 @@ pub(super) fn plane_at(planes: &[u8], index: usize) -> Result<[f32; 4]> {
 /// An offset, count or index stored as an i32; negative ones are an error.
 pub(super) fn index_at(b: &[u8], o: usize) -> Result<usize> {
     let v = i32_at(b, o)?;
-    usize::try_from(v).map_err(|_| anyhow!("negative index {v} at {o}"))
+    usize::try_from(v).map_err(|_| anyhow!("cannot use negative index {v} at {o}"))
 }
 
 /// Where lump `index`'s entry is in the lump directory.
@@ -114,11 +117,11 @@ pub(super) fn lump_entry(index: usize) -> usize {
 pub(super) fn lump(data: &[u8], index: usize) -> Result<Vec<u8>> {
     let h = lump_entry(index);
     let (ofs, len) = (index_at(data, h + LUMP_OFFSET)?, index_at(data, h + LUMP_LENGTH)?);
-    let Some(raw) = data.get(ofs..ofs + len) else { bail!("lump {index} out of range") };
+    let Some(raw) = data.get(ofs..ofs + len) else { bail!("cannot find lump {index}: out of range") };
     if len > MAX_LUMP {
-        bail!("lump {index}: {len} bytes");
+        bail!("cannot read lump {index} of {len} bytes");
     }
-    unpack(raw).map_err(|e| anyhow!("lump {index}: {e}"))
+    unpack(raw).map_err(|e| anyhow!("cannot read lump {index}: {e}"))
 }
 
 /// A lump's bytes as stored, unpacked if packed (Valve's LZMA header).
@@ -128,14 +131,14 @@ pub(super) fn unpack(raw: &[u8]) -> Result<Vec<u8>> {
     }
     let actual = u32::from_le_bytes(bytes(raw, LZMA_ACTUAL_SIZE)?) as usize;
     if actual > MAX_LUMP {
-        bail!("{actual} bytes unpacked");
+        bail!("cannot unpack LZMA: got {actual} bytes");
     }
     let props: [u8; 5] = bytes(raw, LZMA_PROPERTIES)?;
     let mut alone = props.to_vec();
     alone.extend_from_slice(&(actual as u64).to_le_bytes());
     alone.extend_from_slice(&raw[LZMA_HEADER..]);
     let mut out = Vec::with_capacity(actual);
-    lzma_rs::lzma_decompress(&mut &alone[..], &mut out).map_err(|e| anyhow!("{e:?}"))?;
+    lzma_rs::lzma_decompress(&mut &alone[..], &mut out).map_err(|e| anyhow!("cannot unpack LZMA: {e:?}"))?;
     out.truncate(actual);
     Ok(out)
 }

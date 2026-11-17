@@ -121,7 +121,7 @@ impl World {
         let first_edge = index_at(&self.faces, o + FACE_FIRST_EDGE)?;
         let num_edges = usize::from(u16_at(&self.faces, o + FACE_NUM_EDGES)?);
         let tex = i16_at(&self.faces, o + FACE_TEXINFO)?;
-        *edges_left = edges_left.checked_sub(num_edges).ok_or_else(|| anyhow!("faces use more edges than the map has"))?;
+        *edges_left = edges_left.checked_sub(num_edges).ok_or_else(|| anyhow!("cannot place faces' edges: more than the map has"))?;
         let Ok(tex) = usize::try_from(tex) else { return Ok(None) };
         let t = tex * TEXINFO_SIZE;
         let (flags, texture) = (i32_at(&self.texinfo, t + TEXINFO_FLAGS)?, i32_at(&self.texinfo, t + TEXINFO_TEXDATA)? as usize);
@@ -204,7 +204,7 @@ pub fn geometry(data: &[u8]) -> Result<Geometry> {
 /// `geometry`, and how many floors there were, and their area, before the playable-area filter.
 pub(super) fn geometry_counted(data: &[u8]) -> Result<(Geometry, (usize, f64))> {
     if !data.starts_with(b"VBSP") {
-        bail!("not a VBSP file");
+        bail!("cannot read a file that is not VBSP");
     }
     let world = World::read(data)?;
     let map = Entities::read(data)?;

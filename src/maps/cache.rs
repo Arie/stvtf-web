@@ -34,7 +34,7 @@ pub(crate) fn map_geometry(cache: &Path, name: &str, fetch: bool) -> Result<Vec<
 
 fn map_geometry_from(fastdl: &str, cache: &Path, name: &str, fetch: bool) -> Result<Vec<u8>> {
     if !is_name(name, b"_") {
-        bail!("bad map name");
+        bail!("cannot use that map name");
     }
     std::fs::create_dir_all(cache)?;
     let json = geometry_path(cache, name);
@@ -42,7 +42,7 @@ fn map_geometry_from(fastdl: &str, cache: &Path, name: &str, fetch: bool) -> Res
         return Ok(body);
     }
     if !fetch {
-        bail!("no match is on {name}");
+        bail!("cannot find a match on {name}");
     }
     let bsp_path = cache.join(format!("{name}.bsp"));
     let data = if let Ok(d) = std::fs::read(&bsp_path) {
@@ -52,7 +52,7 @@ fn map_geometry_from(fastdl: &str, cache: &Path, name: &str, fetch: bool) -> Res
         // One byte over the limit tells a map that is too big from one that just fits.
         ureq::get(&format!("{fastdl}{name}.bsp")).timeout(MAP_WITHIN).call()?.into_reader().take(MAX_BSP + 1).read_to_end(&mut d)?;
         if d.len() as u64 > MAX_BSP {
-            bail!("{name}.bsp is over {} MiB", MAX_BSP >> 20);
+            bail!("cannot take {name}.bsp: over {} MiB", MAX_BSP >> 20);
         }
         write_atomic(&bsp_path, &d)?;
         d
@@ -75,7 +75,7 @@ fn map_geometry_from(fastdl: &str, cache: &Path, name: &str, fetch: bool) -> Res
 /// `map_geometry` gzipped, kept next to the JSON so a map is compressed once, not on every load.
 pub(crate) fn map_geometry_gzip(cache: &Path, name: &str, fetch: bool) -> Result<Vec<u8>> {
     if !is_name(name, b"_") {
-        bail!("bad map name");
+        bail!("cannot use that map name");
     }
     let mut path = geometry_path(cache, name).into_os_string();
     path.push(".gz");
@@ -113,7 +113,7 @@ fn overview_map(file: &str) -> Result<Option<&str>> {
     match file.strip_suffix(".webp") {
         _ if file == "boundaries.json" => Ok(None),
         Some(map) if is_name(map, b"_") => Ok(Some(map)),
-        _ => bail!("no such overview"),
+        _ => bail!("cannot find that overview"),
     }
 }
 
@@ -136,7 +136,7 @@ fn overview_from(demostf: &str, cache: &Path, file: &str) -> Result<Vec<u8>> {
     let path = dir.join(file);
     // Only the maps demos.tf has: any other name would be a request to demos.tf every time.
     if image.is_some_and(|map| !demostf_maps_from(demostf, cache).iter().any(|m| m == map)) {
-        bail!("no such overview");
+        bail!("cannot find that overview");
     }
     let mut body = Vec::new();
     let fetched = ureq::get(&format!("{demostf}{remote}"))
@@ -149,7 +149,7 @@ fn overview_from(demostf: &str, cache: &Path, file: &str) -> Result<Vec<u8>> {
             write_atomic(&path, &body)?;
             Ok(body)
         }
-        Ok(_) => bail!("{file} is over {} MiB", MAX_OVERVIEW >> 20),
+        Ok(_) => bail!("cannot take {file}: over {} MiB", MAX_OVERVIEW >> 20),
         Err(e) => std::fs::read(&path).map_err(|_| e),
     }
 }
@@ -230,7 +230,7 @@ mod tests {
     fn only_maps_being_watched_are_built_from_fastdl() {
         let cache = TempDir::new("onmap");
         // Not cached and not being watched: an error, without asking fastdl.
-        assert!(map_geometry(&cache, "cp_nothere", false).unwrap_err().to_string().contains("no match"));
+        assert!(map_geometry(&cache, "cp_nothere", false).unwrap_err().to_string().contains("cannot find a match"));
         std::fs::write(geometry_path(&cache, "cp_cached"), b"{}").unwrap();
         assert_eq!(map_geometry(&cache, "cp_cached", false).unwrap(), b"{}");
     }

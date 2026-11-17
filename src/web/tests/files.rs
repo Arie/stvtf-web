@@ -217,13 +217,13 @@ fn with_many_matches_only_a_map_being_watched_is_built() {
     let mut app = app(Matches::Many(sessions));
     app.cache = dir.to_path_buf();
     let refused = get(&app, "/map/cp_watched", "");
-    assert!(refused.starts_with("HTTP/1.1 404") && refused.contains("no match is on"), "{refused}");
+    assert!(refused.starts_with("HTTP/1.1 404") && refused.contains("cannot find a match on"), "{refused}");
     assert!(bsp.exists(), "not built");
     publish(&m.hub, &server("cp_elsewhere"));
-    assert!(get(&app, "/map/cp_watched", "").contains("no match is on"));
+    assert!(get(&app, "/map/cp_watched", "").contains("cannot find a match on"));
     publish(&m.hub, &server("cp_watched"));
     let tried = get(&app, "/map/cp_watched", "");
-    assert!(tried.starts_with("HTTP/1.1 404") && !tried.contains("no match is on"), "{tried}");
+    assert!(tried.starts_with("HTTP/1.1 404") && !tried.contains("cannot find a match on"), "{tried}");
     assert!(!bsp.exists(), "built, and dropped when it turned out broken");
 }
 

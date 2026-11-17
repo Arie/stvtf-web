@@ -185,7 +185,7 @@ fn over_http(url: &str, key: &str) -> HomeClient {
             Some(body) => ask.set("Content-Type", "application/json").send_string(body),
             None => ask.call(),
         };
-        Ok(answer.context("the list of who is who")?.into_string()?)
+        Ok(answer.context("cannot read the list of who is who")?.into_string()?)
     })
 }
 

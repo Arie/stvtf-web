@@ -73,10 +73,10 @@ impl Room {
             View::Follow { .. } => false,
         };
         if !fits {
-            bail!("a view must be on a map");
+            bail!("cannot set a view off the map");
         }
         if post.page.len() > MAX_PAGE {
-            bail!("a page name is at most {MAX_PAGE} bytes");
+            bail!("cannot take a page name over {MAX_PAGE} bytes");
         }
         let by = lock(&self.people).id(guest);
         let mut leader = lock(&self.leader);

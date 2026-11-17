@@ -90,7 +90,7 @@ fn props(data: &[u8]) -> Result<Vec<Prop>> {
         }
         let (flags, version) = (u16_at(&dir, e + GAME_LUMP_FLAGS)?, u16_at(&dir, e + GAME_LUMP_VERSION)?);
         let (ofs, len) = (index_at(&dir, e + GAME_LUMP_OFFSET)?, index_at(&dir, e + GAME_LUMP_LENGTH)?);
-        let Some(raw) = data.get(ofs..ofs.saturating_add(len)) else { bail!("static props out of range") };
+        let Some(raw) = data.get(ofs..ofs.saturating_add(len)) else { bail!("cannot read static props: out of range") };
         let lump = if flags & COMPRESSED != 0 { unpack(raw)? } else { raw.to_vec() };
         return read_props(&lump, version);
     }
@@ -113,7 +113,7 @@ fn read_props(b: &[u8], version: u16) -> Result<Vec<Prop>> {
     let rest = b.len().saturating_sub(props_at + I32_SIZE);
     let size = match rest.checked_div(count) {
         Some(s) if s >= MIN_PROP_SIZE && rest.is_multiple_of(count) => s,
-        _ => prop_size(version).ok_or_else(|| anyhow::anyhow!("static props of version {version}"))?,
+        _ => prop_size(version).ok_or_else(|| anyhow::anyhow!("cannot read static props of version {version}"))?,
     };
     let mut out = Vec::new();
     for i in 0..count {

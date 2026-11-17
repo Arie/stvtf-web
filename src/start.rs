@@ -75,7 +75,7 @@ pub(super) fn pin_demo(sessions: &Sessions, id: &str, file: PathBuf) {
 /// `_` and `-`), by NAME, sorted.
 pub(super) fn demo_files(dir: &Path) -> Result<Vec<(String, PathBuf)>> {
     let mut found = Vec::new();
-    for entry in std::fs::read_dir(dir).with_context(|| format!("--demos {}", dir.display()))? {
+    for entry in std::fs::read_dir(dir).with_context(|| format!("cannot read --demos {}", dir.display()))? {
         let path = entry?.path();
         let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
         let Some(id) = name.strip_suffix(".jsonl.gz").or_else(|| name.strip_suffix(".jsonl")) else { continue };

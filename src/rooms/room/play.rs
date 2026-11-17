@@ -166,7 +166,7 @@ impl Room {
         if let Some(speed) = c.speed
             && !SPEEDS.contains(&speed)
         {
-            bail!("speed {speed} is not one of {SPEEDS:?}");
+            bail!("cannot play at speed {speed}: not one of {SPEEDS:?}");
         }
         let mut st = lock(&self.state);
         (st.follows_live, st.pace) = (false, Pace::Own);

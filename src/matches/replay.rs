@@ -44,7 +44,7 @@ fn play_once(hub: &SharedHub, path: &Path, play: &dyn Fn() -> bool) -> Result<us
 
 /// A saved stvtf output's lines, gunzipped if it ends in `.gz`.
 pub(crate) fn open(path: &Path) -> Result<Box<dyn Read>> {
-    let file = std::fs::File::open(path).with_context(|| format!("opening {}", path.display()))?;
+    let file = std::fs::File::open(path).with_context(|| format!("cannot open {}", path.display()))?;
     Ok(if path.extension().is_some_and(|e| e == "gz") { Box::new(flate2::read::GzDecoder::new(file)) } else { Box::new(file) })
 }
 
@@ -68,7 +68,7 @@ pub(crate) fn play_lines(hub: &SharedHub, reader: impl Read, name: &str, play: &
     }
     // Without any, the loop would replay the file as fast as it can, forever.
     if !clock.timed {
-        bail!("{name}: no line has a time or tick");
+        bail!("cannot play {name}: no line has a time or tick");
     }
     Ok(skipped)
 }
@@ -238,7 +238,7 @@ mod tests {
             true
         };
         let err = replay(&hub, &path, &play).unwrap_err();
-        assert!(format!("{err:#}").contains("opening"), "{err:#}");
+        assert!(format!("{err:#}").contains("cannot open"), "{err:#}");
         let status = crate::matches::hub::subscribe(&hub, false).try_recv().unwrap();
         assert!(status.contains("map_change"), "{status}");
     }

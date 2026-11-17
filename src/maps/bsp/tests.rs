@@ -154,7 +154,7 @@ fn faces_sharing_edges_are_an_error() {
         face[FACE_NUM_EDGES..FACE_TEXINFO].copy_from_slice(&u16::MAX.to_le_bytes());
     }
     replace_lump(&mut data, LUMP_FACES, &faces);
-    assert!(geometry(&data).unwrap_err().to_string().contains("more edges"));
+    assert!(geometry(&data).unwrap_err().to_string().contains("more than the map has"));
 }
 
 #[test]

@@ -198,7 +198,7 @@ impl Inner {
     /// and chunks as a sink got them.
     pub(super) fn read_lines(&mut self, text: &str) -> Result<()> {
         for text in text.lines() {
-            let Some((key, value)) = text.split_once('\t') else { bail!("not a recording") };
+            let Some((key, value)) = text.split_once('\t') else { bail!("cannot read a file that is not a recording") };
             let heads = self.header.is_some();
             match key {
                 "marks" if heads => self.marks_dropped = value.parse()?,
@@ -270,7 +270,7 @@ impl Recording {
         let mut inner = lock(&r.inner);
         inner.close()?;
         if !inner.clock.timed {
-            bail!("{name}: no line has a time or tick");
+            bail!("cannot play {name}: no line has a time or tick");
         }
         drop(inner);
         Ok(r)
@@ -301,7 +301,7 @@ impl Recording {
         {
             let mut inner = lock(&r.inner);
             if inner.count == 0 && !file.is_empty() {
-                bail!("not a recording");
+                bail!("cannot read a file that is not a recording");
             }
             // A file trimmed as it was read, with lines skipped, or torn: its remains are the file.
             if std::mem::take(&mut inner.rewrite) || !whole {

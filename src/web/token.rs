@@ -80,13 +80,13 @@ impl Keys {
         let hex = hex.trim();
         // Checked first: slicing a non-ASCII key into pairs of bytes would panic.
         if hex.len() != 2 * KEY_BYTES || !hex.bytes().all(|b| b.is_ascii_hexdigit()) {
-            bail!("the token key must be {} hex digits ({KEY_BYTES} bytes)", 2 * KEY_BYTES);
+            bail!("cannot use the token key: it must be {} hex digits ({KEY_BYTES} bytes)", 2 * KEY_BYTES);
         }
         let bytes = (0..KEY_BYTES)
             .map(|i| u8::from_str_radix(&hex[i * 2..i * 2 + 2], 16))
             .collect::<Result<Vec<u8>, _>>()
-            .map_err(|_| anyhow!("the token key must be hex"))?;
-        Ok(Keys(Aes256Gcm::new_from_slice(&bytes).map_err(|_| anyhow!("bad token key"))?))
+            .map_err(|_| anyhow!("cannot use the token key: it must be hex"))?;
+        Ok(Keys(Aes256Gcm::new_from_slice(&bytes).map_err(|_| anyhow!("cannot use the token key"))?))
     }
 
     /// 12-byte random nonce | ciphertext | tag, the layout of the tokens.

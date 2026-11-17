@@ -74,7 +74,7 @@ fn demo_url_from(agent: &ureq::Agent, api: &str, id: u64) -> Result<String> {
 /// Where demos.tf's answer `body` says demo `id` is: on one of its own hosts, so a token cannot
 /// make us fetch anything else.
 fn file_url(id: u64, body: &str) -> Result<String> {
-    let info: Info = serde_json::from_str(body).with_context(|| format!("demos.tf's answer about demo {id}"))?;
+    let info: Info = serde_json::from_str(body).with_context(|| format!("cannot read demos.tf's answer about demo {id}"))?;
     let host = info.url.strip_prefix("https://").and_then(|rest| rest.split('/').next()).unwrap_or_default();
     // Only a plain name: anything else (`?`, `#`, `@`, a port) can put the real host elsewhere.
     if !is_name(host, b".-") || (host != "demos.tf" && !host.ends_with(".demos.tf")) {
@@ -274,7 +274,7 @@ fn decode(id: u64, demo: &[u8], snapshot_hz: f32, extra: Vec<Voice>) -> Result<V
         }
         write(line);
     })
-    .with_context(|| format!("decoding demo {id}"))?;
+    .with_context(|| format!("cannot decode demo {id}"))?;
     for said in extra {
         write(Line::Voice(said));
     }
@@ -404,7 +404,7 @@ mod tests {
     #[test]
     fn a_file_that_is_no_demo_is_an_error() {
         let err = decode(7, b"not a demo", 20.0, Vec::new()).unwrap_err();
-        assert!(format!("{err:#}").contains("decoding demo 7"), "{err:#}");
+        assert!(format!("{err:#}").contains("cannot decode demo 7"), "{err:#}");
     }
 
     #[test]

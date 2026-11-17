@@ -106,7 +106,7 @@ impl Relays {
             Err(e) => {
                 // Something else has it: the others first, next time.
                 lock(&self.free).push_back(port);
-                return Err(e).with_context(|| format!("relay port {port}"));
+                return Err(e).with_context(|| format!("cannot bind relay port {port}"));
             }
         };
         if let Some(h) = handed

@@ -48,7 +48,7 @@ fn main() -> Result<()> {
     let matches = matches(&options, keys.as_ref(), &STOP)?;
     let store = if let Matches::Many(sessions) = &matches { sessions.store.clone() } else { None };
     let relays = match (&options.relays, &options.relay_socket) {
-        (Some(_), _) | (_, Some(_)) if store.is_none() => bail!("relays need --sessions"),
+        (Some(_), _) | (_, Some(_)) if store.is_none() => bail!("cannot relay rooms without --sessions"),
         (Some((host, ports)), _) => Some(Arc::new(relays::pool::Pool::Local(relays::pool::Relays::new(host, ports.clone())))),
         (None, Some(socket)) => Some(Arc::new(relays::pool::Pool::Remote(relays::daemon::Remote::new(socket)))),
         (None, None) => None,

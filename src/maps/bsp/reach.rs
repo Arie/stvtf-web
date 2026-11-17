@@ -246,7 +246,7 @@ impl Lumps {
         let (mut stack, mut out) = (vec![head], Vec::new());
         while let Some(n) = stack.pop() {
             if let Ok(node) = usize::try_from(n) {
-                let seen = nodes_seen.get_mut(node).ok_or_else(|| anyhow!("node {node} out of range"))?;
+                let seen = nodes_seen.get_mut(node).ok_or_else(|| anyhow!("cannot follow node {node}: out of range"))?;
                 if !std::mem::replace(seen, true) {
                     stack.extend([
                         i32_at(&self.nodes, node * NODE_SIZE + NODE_CHILDREN)?,
@@ -256,22 +256,23 @@ impl Lumps {
                 continue;
             }
             let leaf = (-1 - i64::from(n)) as usize;
-            let seen = leafs_seen.get_mut(leaf).ok_or_else(|| anyhow!("leaf {leaf} out of range"))?;
+            let seen = leafs_seen.get_mut(leaf).ok_or_else(|| anyhow!("cannot follow leaf {leaf}: out of range"))?;
             if std::mem::replace(seen, true) {
                 continue;
             }
             let first = usize::from(u16_at(&self.leafs, leaf * LEAF_SIZE + LEAF_FIRST_LEAFBRUSH)?);
             let num = usize::from(u16_at(&self.leafs, leaf * LEAF_SIZE + LEAF_NUM_LEAFBRUSHES)?);
-            leafbrushes_left = leafbrushes_left.checked_sub(num).ok_or_else(|| anyhow!("leaves use more brushes than the map lists"))?;
+            leafbrushes_left =
+                leafbrushes_left.checked_sub(num).ok_or_else(|| anyhow!("cannot place leaves' brushes: more than the map lists"))?;
             for i in first..first + num {
                 let b = usize::from(u16_at(&self.leafbrushes, i * LEAFBRUSH_SIZE)?);
-                let seen = brushes_seen.get_mut(b).ok_or_else(|| anyhow!("brush {b} out of range"))?;
+                let seen = brushes_seen.get_mut(b).ok_or_else(|| anyhow!("cannot find brush {b}: out of range"))?;
                 if !std::mem::replace(seen, true) {
                     out.push(b);
                 }
             }
             if out.len() > MAX_BRUSHES {
-                bail!("more than {MAX_BRUSHES} brushes");
+                bail!("cannot take more than {MAX_BRUSHES} brushes");
             }
         }
         Ok(out)
@@ -281,7 +282,7 @@ impl Lumps {
     fn brush(&self, b: usize, sides_left: &mut usize) -> Result<Brush> {
         let o = b * BRUSH_SIZE;
         let (first, num) = (index_at(&self.brushes, o + BRUSH_FIRST_SIDE)?, index_at(&self.brushes, o + BRUSH_NUM_SIDES)?);
-        *sides_left = sides_left.checked_sub(num).ok_or_else(|| anyhow!("brushes have more than {MAX_BRUSH_SIDES} sides"))?;
+        *sides_left = sides_left.checked_sub(num).ok_or_else(|| anyhow!("cannot take brushes of more than {MAX_BRUSH_SIDES} sides"))?;
         let planes = (first..first + num)
             .map(|s| plane_at(&self.planes, usize::from(u16_at(&self.sides, s * BRUSHSIDE_SIZE + BRUSHSIDE_PLANE)?)))
             .collect::<Result<_>>()?;
@@ -359,7 +360,7 @@ impl Blocker<'_> {
         let last = [0, 1, 2].map(|a| grid.clamped(a, f64::from(hi[a])));
         let (wide, deep) = (last[0] - first[0] + 1, last[1] - first[1] + 1);
         let work = wide * deep * (brush.planes.len() + 1);
-        self.work_left = self.work_left.checked_sub(work).ok_or_else(|| anyhow!("brushes too big to voxelise"))?;
+        self.work_left = self.work_left.checked_sub(work).ok_or_else(|| anyhow!("cannot voxelise brushes that big"))?;
 
         let tops: Vec<&Displacement> = if brush.contents & CONTENTS_PLAYERCLIP == 0 {
             self.disps.iter().filter(|d| d.plane[2] > FLOOR_MIN_NORMAL_Z && on(d, brush, lo, hi)).collect()
@@ -370,7 +371,7 @@ impl Blocker<'_> {
         let mut surface = vec![f32::NEG_INFINITY; if tops.is_empty() { 0 } else { wide * deep }];
         for d in &tops {
             let samples = d.samples(SAMPLE_STEP);
-            self.work_left = self.work_left.checked_sub(samples.len()).ok_or_else(|| anyhow!("brushes carry too much terrain"))?;
+            self.work_left = self.work_left.checked_sub(samples.len()).ok_or_else(|| anyhow!("cannot voxelise that much terrain"))?;
             for p in samples {
                 let (Some(x), Some(y)) = (grid.at(0, f64::from(p[0])), grid.at(1, f64::from(p[1]))) else { continue };
                 if (first[0]..=last[0]).contains(&x) && (first[1]..=last[1]).contains(&y) {
@@ -440,11 +441,11 @@ pub(super) fn reach(data: &[u8], disps: &[Displacement], bounds: &Bounds, seeds:
         return Ok(None);
     }
     if !bounds.lo.iter().chain(&bounds.hi).all(|v| v.is_finite()) {
-        bail!("bounds {bounds:?}");
+        bail!("cannot size bounds {bounds:?}");
     }
     let (vox, dims) = grid_for(bounds);
     if dims.iter().product::<usize>() > MAX_VOXELS {
-        bail!("grid of {dims:?} voxels");
+        bail!("cannot make a grid of {dims:?} voxels");
     }
     let grid = Grid { origin: bounds.lo.map(|v| f64::from(v - MARGIN)), vox: f64::from(vox), dims };
     let blocked = blocked(data, disps, &grid)?;

@@ -68,10 +68,10 @@ impl Room {
     /// Adds a piece of a stroke by `guest` to the marker, and passes it on to every page.
     pub(crate) fn draw(&self, d: &Draw, guest: &str) -> Result<()> {
         if (d.points.is_empty() && !d.end) || d.points.len() > MAX_POINTS {
-            bail!("1 to {MAX_POINTS} points, or none at a stroke's end");
+            bail!("cannot draw: 1 to {MAX_POINTS} points, or none at a stroke's end");
         }
         if !d.points.iter().all(|&[x, y, t]| on_map(x) && on_map(y) && (0.0..=MAX_STROKE_MS).contains(&t)) {
-            bail!("points must be on a map, in a stroke's time");
+            bail!("cannot draw points off the map or out of the stroke's time");
         }
         let by = lock(&self.people).id(guest);
         let mut line = serde_json::to_value(d)?;

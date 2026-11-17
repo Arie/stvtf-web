@@ -142,10 +142,10 @@ fn read(
     let first = index_at(info, o + DISPINFO_VERTEX_START)?;
     let power = usize::try_from(i32_at(info, o + DISPINFO_POWER)?).unwrap_or(0);
     if !(MIN_POWER..=MAX_POWER).contains(&power) {
-        bail!("displacement power {power}");
+        bail!("cannot take displacement power {power}");
     }
     let n = (1 << power) + 1;
-    *points_left = points_left.checked_sub(n * n).ok_or_else(|| anyhow!("displacements use more points than allowed"))?;
+    *points_left = points_left.checked_sub(n * n).ok_or_else(|| anyhow!("cannot take displacements of that many points"))?;
     // The grid starts at the corner nearest `startPosition`, and runs on in the face's order.
     let dist2 = |p: &Vec3| (0..3).map(|k| (p[k] - start[k]).powi(2)).sum::<f32>();
     let nearest = (0..4).min_by(|&a, &b| dist2(&base[a]).total_cmp(&dist2(&base[b]))).unwrap_or(0);
