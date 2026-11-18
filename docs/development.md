@@ -57,9 +57,10 @@ npm run test:browser    # after cargo build and `npx playwright-core install --o
 
 - `npm test` runs the page's modules in Node (`test/js/`, `test/js/setup.js` standing in for the
   browser).
-- `npm run test:browser` (`test/browser/`) watches 25 s of `match.jsonl.gz` (players renamed) in
-  headless Chromium: page, overlay, iframe and `<stv-map>`, each without an error. Offline, on
-  `testdata/maps/cp_gullywash_f9.bsp`.
+- `npm run test:browser` (`test/browser/`) watches 25 s of `match.jsonl.gz` and of
+  `payload.jsonl.gz` (players renamed) in headless Chromium: page, overlay, iframe and
+  `<stv-map>`, each without an error. Offline, on `testdata/maps/cp_gullywash_f9.bsp` and
+  `pl_upward_f12.bsp`.
 - BSP tests use `testdata/maps/` (`cp_process_f12`, `cp_gullywash_f9`, `pl_upward_f12`,
   `pl_swiftwater_final1`, `mge_training_v8_beta4b`, `cp_sunshine`). A missing map skips its test,
   except with `CI` set. Download one with

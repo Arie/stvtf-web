@@ -155,11 +155,13 @@ jobs:
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: stvtf-web/testdata/maps
-          key: browser-maps-v1
-      - name: Download the test's map
+          key: browser-maps-v2
+      - name: Download the test's maps
         run: |
           mkdir -p testdata/maps
-          [ -f testdata/maps/cp_gullywash_f9.bsp ] || curl -fsSL -o testdata/maps/cp_gullywash_f9.bsp https://fastdl.serveme.tf/maps/cp_gullywash_f9.bsp
+          for map in cp_gullywash_f9 pl_upward_f12; do
+            [ -f "testdata/maps/$map.bsp" ] || curl -fsSL -o "testdata/maps/$map.bsp" "https://fastdl.serveme.tf/maps/$map.bsp"
+          done
       - run: script/test -v -t browser
 
   deny:

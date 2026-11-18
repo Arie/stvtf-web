@@ -1,6 +1,6 @@
 // Headless Chromium watches a recording: the page, the overlay, an iframe and <stv-map>, each
-// without an error. match.jsonl.gz is 25 s of cp_gullywash, players renamed. Offline: the map
-// comes from testdata/maps, demos.tf's overview list is empty.
+// without an error. match.jsonl.gz is 25 s of cp_gullywash, payload.jsonl.gz 25 s of pl_upward,
+// players renamed. Offline: the maps come from testdata/maps, demos.tf's overview list is empty.
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
@@ -20,6 +20,7 @@ async function choose(page, mode) {
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const MAP = "cp_gullywash_f9";
+const PAYLOAD_MAP = "pl_upward_f12";
 const BIN = path.join(ROOT, "target/debug/stvtf-web");
 const WAIT = 20_000;
 
@@ -28,7 +29,8 @@ let server;
 /** @type {import("playwright-core").Browser} */
 let browser;
 let root = "",
-  base = "";
+  base = "",
+  payload = "";
 const cache = mkdtempSync(path.join(tmpdir(), "stvtf-browser-"));
 
 const freePort = () =>
@@ -40,15 +42,19 @@ const freePort = () =>
   });
 
 before(async () => {
-  copyFileSync(path.join(ROOT, `testdata/maps/${MAP}.bsp`), path.join(cache, `${MAP}.bsp`));
+  for (const map of [MAP, PAYLOAD_MAP])
+    copyFileSync(path.join(ROOT, `testdata/maps/${map}.bsp`), path.join(cache, `${map}.bsp`));
   mkdirSync(path.join(cache, "demostf"));
   writeFileSync(path.join(cache, "demostf/boundaries.json"), "{}");
   const listen = `127.0.0.1:${await freePort()}`;
   root = `http://${listen}/`;
   base = `${root}w/demo/`;
+  payload = `${root}w/payload/`;
   const args = [
     "--demo",
     path.join(ROOT, "test/browser/match.jsonl.gz"),
+    "--demos",
+    path.join(ROOT, "test/browser"),
     "--listen",
     listen,
     "--cache",
@@ -649,6 +655,35 @@ test("a link to a moment watches from there", async () => {
   assert.match(clock, /^0:(1[3-9]|[2-9]\d) \//);
   assert.deepEqual(errors, []);
   await page.close();
+});
+
+test("a payload match shows its cart, buildings, airblasts, über and capture", async () => {
+  // Two pages, so the test takes half as long: one from the start, one from just before the über.
+  const [early, late] = await Promise.all([open(), open()]);
+  await Promise.all([early.page.goto(`${payload}?t=0:00`), late.page.goto(`${payload}?t=0:10`)]);
+  for (const { page } of [early, late])
+    await until(page, m => document.getElementById("map").textContent === m, PAYLOAD_MAP);
+  const drawn = (/** @type {import("playwright-core").Page} */ page, /** @type {string} */ kind) =>
+    until(page, k => window.viewState.effects.some(e => e.kind === k), kind);
+  const fed = (/** @type {string} */ text) =>
+    until(late.page, t => document.getElementById("feed").textContent.includes(t), text);
+  await drawn(early.page, "airblast");
+  await until(early.page, () => {
+    const snap = window.viewState.snaps.at(-1);
+    return snap?.objectives?.some(o => o.kind === "cart") && snap.buildings?.some(b => b.kind === "sentry");
+  });
+  assert.ok((await colours(early.page)) > 20, "the map is drawn");
+  await drawn(late.page, "uber");
+  await fed("ÜBER");
+  await until(late.page, () =>
+    window.viewState.snaps.at(-1)?.objectives?.some(o => o.kind === "cart" && o.cappers > 0),
+  );
+  await fed("sapped");
+  await fed("destroyed");
+  await fed("BLU captured point 1");
+  assert.deepEqual([...early.errors, ...late.errors], []);
+  await early.page.close();
+  await late.page.close();
 });
 
 test("h hides the player HUD and s the scores, each on its own", async () => {

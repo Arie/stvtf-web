@@ -9,7 +9,10 @@ import { parseArgs } from "node:util";
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const CI = process.env.CI === "true";
 const NPM = { file: "node_modules", hint: "npm ci" };
-const GULLYWASH = { file: "testdata/maps/cp_gullywash_f9.bsp", hint: "see docs/development.md, Tests" };
+const MAPS = ["cp_gullywash_f9", "pl_upward_f12"].map(map => ({
+  file: `testdata/maps/${map}.bsp`,
+  hint: "see docs/development.md, Tests",
+}));
 
 /**
  * Each check: its section, the command, the one that fixes what it finds (if there is one) and
@@ -37,7 +40,7 @@ const TASKS = {
   browser: {
     section: "tests",
     cmd: "cargo build --locked --quiet && npm run --silent test:browser",
-    needs: [NPM, GULLYWASH],
+    needs: [NPM, ...MAPS],
   },
   // Fetches the advisory database.
   "cargo-deny": { section: "audit", cmd: "cargo deny --locked check" },
