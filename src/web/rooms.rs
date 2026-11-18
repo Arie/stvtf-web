@@ -17,8 +17,9 @@ use super::matches::is_page;
 use super::visitor::{Who, origin};
 use super::{Answered, Early, pages};
 use crate::app::App;
+use crate::leagues::{Asked, MAX_PLAYERS};
 use crate::matches::sessions::{Session, Sessions, logged};
-use crate::rooms::room::{ArcDraw, CircleDraw, Control, Draw, LightDraw, MapChoice, NoteDraw, Room, StartAt, ViewPost};
+use crate::rooms::room::{ArcDraw, CircleDraw, Control, Draw, LightDraw, MapChoice, Names, NoteDraw, Room, StartAt, ViewPost};
 
 /// The new room's page, for the browser that opened it.
 pub(super) fn opened(app: &App, id: &str, cookie: Option<&str>) -> Response {
@@ -218,6 +219,25 @@ pub(super) async fn name(v: Visit, Path(at): Path<RoomAt>, Json(n): Json<Name>) 
     .await
 }
 
+/// The match's players, as a page sees them.
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct Players {
+    players: Vec<Asked>,
+}
+
+/// `POST /r/<id>/leagues`: how the leagues know `players`, for an admin to name them by.
+pub(super) async fn leagues(v: Visit, Path(at): Path<RoomAt>, Json(p): Json<Players>) -> Answered {
+    answer(move || {
+        changing(&v, &at.id, true)?;
+        if p.players.len() > MAX_PLAYERS {
+            return Ok((StatusCode::BAD_REQUEST, format!("At most {MAX_PLAYERS} players.")).into_response());
+        }
+        Ok(Json(serde_json::json!({ "leagues": v.app.leagues.look_up(&p.players) })).into_response())
+    })
+    .await
+}
+
 /// `POST /r/<id>/clear`.
 pub(super) async fn clear(v: Visit, Path(at): Path<RoomAt>) -> Answered {
     answer(move || {
@@ -256,6 +276,8 @@ by_admins! {
     light(LightDraw) => |room, guest, l| room.light(&l, guest);
     /// `POST /r/<id>/note`.
     note(NoteDraw) => |room, guest, n| room.note(&n, guest);
+    /// `POST /r/<id>/names`.
+    names(Names) => |room, _guest, n| room.set_names(&n);
     /// `POST /r/<id>/control`.
     control(Control) => |room, _guest, c| room.control(&c);
     /// `POST /r/<id>/map`.

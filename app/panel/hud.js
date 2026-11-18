@@ -1,6 +1,7 @@
 import { msPerTick, TEAM, CLASS, byClass, ICONS, $, OVERLAY, OPT, state, teamColour, clock } from "../core/core.js";
 import { asset } from "../core/env.js";
 import { layerOn } from "../core/layers.js";
+import { teamLabel } from "../core/names.js";
 import { esc } from "./feed.js";
 import { renderStopwatch } from "./stopwatch.js";
 /** @typedef {import("../../types/stream").GameEvent} GameEvent */
@@ -274,7 +275,7 @@ export function renderBoard(players, snap) {
       `<table><thead><tr><th></th><th class="bn">Name</th>${BOARD_COLUMNS.map(([, h]) => `<th>${h}</th>`).join("")}<th>Ping</th></tr></thead><tbody>${body}</tbody></table></div>`
     );
   };
-  setHTML($("board"), team("blue", "BLU") + team("red", "RED"));
+  setHTML($("board"), team("blue", esc(teamLabel("blue", "BLU"))) + team("red", esc(teamLabel("red", "RED"))));
 }
 
 // ---------- TF2-style scoreboard: team scores, round timer, control points

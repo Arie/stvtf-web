@@ -130,6 +130,11 @@ impl Keys {
         URL_SAFE_NO_PAD.encode(self.seal(serde_json::json!({ "link": discord, "exp": now + 60 }).to_string().as_bytes()))
     }
 
+    /// A token that asks a site how its league knows players, good for a minute from `now`.
+    pub fn league_token(&self, now: u64) -> String {
+        URL_SAFE_NO_PAD.encode(self.seal(serde_json::json!({ "league": true, "exp": now + 60 }).to_string().as_bytes()))
+    }
+
     /// Whether `token` lets its holder list the matches.
     pub fn open_list(&self, token: &str, now: u64) -> Result<()> {
         let claims = self.claims(token, now)?;

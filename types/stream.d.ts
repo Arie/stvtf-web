@@ -32,6 +32,8 @@ type PlayerFields = {
   id: number;
   ent: number;
   name: string;
+  /** The game's own name, where a room names them otherwise (core/names.js). */
+  own?: string;
   steamid: string;
   team: Team;
   /** Lower-case class name, or "unknown". */
@@ -248,6 +250,11 @@ export type TalkingLine = { type: "talking"; player: number | null; steamid: str
 export type ClearLine = { type: "clear"; by: number };
 
 /** Who is in a room, in the order they came; `id` is their number in it. */
+export type NamesLine = {
+  type: "names";
+  players: Record<string, string>;
+  teams: Record<string, string>;
+};
 export type PeopleLine = {
   type: "people";
   people: {
@@ -293,6 +300,7 @@ export type StreamMessage =
   | TalkingLine
   | ClearLine
   | PeopleLine
+  | NamesLine
   | ViewLine
   | RelayLine
   | { type: "data_age"; ms: number }

@@ -15,6 +15,7 @@ import {
 } from "./core.js";
 import { embedMap, embedStatus } from "../embed/embed.js";
 import { asset } from "./env.js";
+import { named, onNames } from "./names.js";
 import { killiconsLoaded, CHAT_TYPES, chat, feedEvent } from "../panel/feed.js";
 import { hudNodes } from "../panel/hud.js";
 import { setFollow } from "./input.js";
@@ -171,6 +172,7 @@ const ON_LINE = {
   talking: m => onTalking(/** @type {import("../../types/stream").TalkingLine} */ (m)),
   clear: () => onClear(),
   view: m => viewListeners.forEach(f => f(/** @type {import("../../types/stream").ViewLine} */ (m))),
+  names: m => onNames(/** @type {import("../../types/stream").NamesLine} */ (m)),
   people: m => peopleListeners.forEach(f => f(/** @type {import("../../types/stream").PeopleLine} */ (m))),
   relay: m => relayListeners.forEach(f => f(/** @type {import("../../types/stream").RelayLine} */ (m))),
   playback: m => onPlayback(/** @type {import("../../types/stream").PlaybackLine} */ (m)),
@@ -251,7 +253,7 @@ function onSnapshot(snap) {
   observeTick(snap.tick);
   state.snaps.push(snap);
   if (state.snaps.length > SNAPS_KEPT) state.snaps.shift();
-  for (const p of snap.players) state.players.set(p.id, p);
+  for (const p of snap.players) state.players.set(p.id, named(p));
   $("empty").style.display = "none";
   $("empty").classList.remove("holding");
 }

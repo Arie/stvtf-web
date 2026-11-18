@@ -7,6 +7,7 @@
 mod app;
 mod cli;
 mod housekeeping;
+mod leagues;
 mod log;
 mod maps;
 mod matches;
@@ -62,6 +63,7 @@ fn main() -> Result<()> {
         maps: Mutex::default(),
         overviews: Mutex::new(()),
         base: options.base_path.clone(),
+        leagues: start::leagues(&options, keys.as_ref()),
         keys,
         home: options.home.clone(),
         streams: Arc::default(),

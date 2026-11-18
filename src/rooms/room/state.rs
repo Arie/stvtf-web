@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 pub(crate) use super::drawing::Kept;
 use super::drawing::kept_line;
 use super::markers::Markers;
+use super::names::Names;
 use super::play::{Pace, State};
 use crate::matches::hub::{SharedHub, announce};
 use crate::matches::recording::Recording;
@@ -53,6 +54,8 @@ pub(crate) struct Room {
     pub(super) camera: Mutex<Option<u16>>,
     /// The permanent marker, and which map's the pages and the relay were last told.
     pub(super) marker: MarkerState,
+    /// The names its admins gave the players and teams.
+    pub(super) names: Mutex<Names>,
     /// The voice handed to its relay, whether it has one or not.
     #[cfg(test)]
     pub(super) relayed: Mutex<Vec<stvtf::relay::VoiceIn>>,
@@ -143,6 +146,8 @@ pub(crate) struct Saved {
     /// Whether it played the match as it came.
     #[serde(default, skip_serializing_if = "Pace::is_own")]
     pub(super) pace: Pace,
+    #[serde(default, skip_serializing_if = "Names::is_empty")]
+    pub(super) names: Names,
 }
 
 /// A page in the room, by its guest cookie if it is listed, until dropped.
@@ -209,6 +214,9 @@ impl Room {
         if let Some(view) = lock(&room.view).clone() {
             announce(&room.hub, "view", &view);
         }
+        if !saved.names.is_empty() {
+            room.keep_names(saved.names);
+        }
         *lock(&room.relay.was) = saved.relay;
         let mut markers = saved.markers;
         if !saved.marker.is_empty() {
@@ -246,6 +254,7 @@ impl Room {
             relay: RelayState::default(),
             camera: Mutex::new(None),
             marker: MarkerState { strokes: Mutex::new(Markers::new()), load: AtomicUsize::new(load), dirty: AtomicBool::new(true) },
+            names: Mutex::default(),
             #[cfg(test)]
             relayed: Mutex::new(Vec::new()),
         });
@@ -275,6 +284,7 @@ impl Room {
             follows_live: st.follows_live,
             decided: st.over == Some(st.load),
             pace: st.pace,
+            names: lock(&self.names).clone(),
         }
     }
 

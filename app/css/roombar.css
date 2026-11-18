@@ -353,6 +353,86 @@
 .stvtf.room #follow {
   bottom: 70px;
 }
+/* The names panel, over the bar: a column a side. */
+#roombar #rb-names {
+  width: auto;
+  padding: 0 6px;
+  font-size: 12px;
+}
+#names {
+  position: absolute;
+  bottom: 52px;
+  left: 50%;
+  z-index: 30;
+  transform: translateX(-50%);
+  max-height: calc(100% - 80px);
+  padding: 10px 12px;
+  overflow-y: auto;
+  border-radius: 6px;
+  background: var(--shade-95);
+  color: var(--text);
+  font-size: 12px;
+}
+#names .nhead {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+  margin-bottom: 8px;
+}
+#names .nhead select {
+  margin-right: auto;
+}
+#names .ncols {
+  display: flex;
+  gap: 16px;
+}
+#names .nteam {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 280px;
+}
+#names label {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+#names label span {
+  flex: 1;
+  overflow: hidden;
+  color: var(--dim);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#names input,
+#names select,
+#names button {
+  height: 24px;
+  padding: 0 6px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--panel);
+  color: var(--text);
+  font: inherit;
+}
+#names label input {
+  width: 150px;
+}
+#names .nteam > input {
+  font-weight: 700;
+}
+#names .nteam.blue > input {
+  border-color: var(--blue);
+}
+#names .nteam.red > input {
+  border-color: var(--red);
+}
+#names button {
+  cursor: pointer;
+}
+#names .napply {
+  border-color: var(--good);
+}
 /* A match page's own timeline: playback only, no room controls. */
 .stvtf.watch #rb-marker,
 .stvtf.watch #rb-arc,
@@ -360,6 +440,7 @@
 .stvtf.watch #rb-light,
 .stvtf.watch #rb-text,
 .stvtf.watch #rb-clear,
+.stvtf.watch #rb-names,
 .stvtf.watch #rb-view,
 .stvtf.watch #rb-lead {
   display: none;

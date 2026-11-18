@@ -22,6 +22,7 @@ import { pushMirror } from "../map/camera.js";
 import { HOME, IN_ROOM, me, names, post, watched } from "./home.js";
 import { copyLink, copyText } from "./copy.js";
 import { inkKey, people, signedIn } from "./people.js";
+import { namesTool } from "./names.js";
 import { inTf2 } from "./intf2.js";
 import { RoomView, latestView, morePoints, sender } from "./roomview.js";
 import { focusOf, viewArea } from "../map/view.js";
@@ -158,7 +159,8 @@ function roomBar() {
     circle = /** @type {HTMLButtonElement} */ ($("rb-circle")),
     light = /** @type {HTMLButtonElement} */ ($("rb-light")),
     text = /** @type {HTMLButtonElement} */ ($("rb-text")),
-    clear = /** @type {HTMLButtonElement} */ ($("rb-clear"));
+    clear = /** @type {HTMLButtonElement} */ ($("rb-clear")),
+    naming = /** @type {HTMLButtonElement} */ ($("rb-names"));
   const control = (/** @type {import("./playbar.js").Control} */ c) => post("control", c);
   const { bar, maps, moveToMap } = roomPlayback(control);
   const whoKnown = linkedRoomMoment(bar, control, moveToMap);
@@ -169,7 +171,8 @@ function roomBar() {
     if (bar.last) maps(bar.last, on);
     // A tool in hand is let go, while its button still takes the click.
     for (const t of [marker, arc, circle, light, text]) if (!on && t.classList.contains("on")) t.click();
-    for (const c of [marker, arc, circle, light, text, clear, $("rb-view")])
+    if (!on) $("names").hidden = true;
+    for (const c of [marker, arc, circle, light, text, clear, naming, $("rb-view")])
       /** @type {HTMLButtonElement} */ (c).disabled = !on;
     $("roombar").title = on ? "" : "The room's admins control playback";
     if (on) $("claim").hidden = true;
@@ -191,6 +194,7 @@ function roomBar() {
   const showPeople = people(allow, showLead);
   inTf2();
   wireTools({ marker, arc, circle, light, text, clear });
+  namesTool(naming);
 }
 
 /** @typedef {Record<"marker" | "arc" | "circle" | "light" | "text" | "clear", HTMLButtonElement>} Tools */

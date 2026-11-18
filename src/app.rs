@@ -42,6 +42,8 @@ pub(super) struct App {
     pub(super) keys: Option<Arc<super::web::token::Keys>>,
     /// The site in front: where people sign in.
     pub(super) home: Option<String>,
+    /// The leagues' names for a room's players.
+    pub(super) leagues: super::leagues::Leagues,
     /// Open event streams by client address.
     pub(super) streams: Arc<Mutex<HashMap<IpAddr, usize>>>,
     pub(super) rooms: super::rooms::registry::Rooms,

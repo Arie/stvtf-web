@@ -154,6 +154,15 @@ pub(super) fn who_is_who(
     super::voice::who::WhoIsWho::new(options.sessions.as_deref(), home.as_deref().zip(voice_key), sites)
 }
 
+/// The sites asked how their league knows players: those asked who a Discord user is.
+pub(super) fn leagues(options: &Options, keys: Option<&Arc<super::web::token::Keys>>) -> super::leagues::Leagues {
+    let sites = std::env::var("STVTF_LINK_SITES").ok().filter(|l| !l.is_empty()).or_else(|| options.home.clone()).unwrap_or_default();
+    let Some(keys) = keys else { return super::leagues::Leagues::default() };
+    super::leagues::Leagues::new(
+        sites.split(',').map(str::trim).filter(|s| !s.is_empty()).map(|s| super::leagues::site(s, keys.clone())).collect(),
+    )
+}
+
 /// Logs to stderr and, with `--logs`, to files per process.
 pub(super) fn keep_log(options: &Options) {
     super::log::start(options.logs.as_deref(), if options.relay_daemon.is_some() { "relay" } else { "web" });

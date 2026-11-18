@@ -1037,3 +1037,78 @@ test("who talks shows on their HUD card and in the speakers list, and a click th
   assert.deepEqual(errors, []);
   await page.close();
 });
+
+test("an admin names the players and teams, from a league's names, for everyone in the room", async () => {
+  const { page, errors } = await open();
+  await page.goto(base);
+  await page.click("#roomopen");
+  await page.waitForURL(/\/r\/[0-9a-f]{32}\/$/, { timeout: WAIT });
+  await until(page, () => !(/** @type {HTMLButtonElement} */ (document.getElementById("rb-names")).disabled));
+  await until(page, () => ["blue", "red"].every(t => document.getElementById(`hud-${t}`).children.length >= 6));
+  const viewer = await open();
+  await viewer.page.goto(page.url());
+  assert.ok(await viewer.page.$eval("#rb-names", el => /** @type {HTMLButtonElement} */ (el).disabled));
+  // What the leagues would say: one knows two of BLU and their team.
+  /** @type {any} */
+  let asked;
+  await page.route("**/leagues", route => {
+    asked = route.request().postDataJSON();
+    return route.fulfill({
+      json: {
+        leagues: [
+          { league: "ETF2L", players: { "[U:1:1001]": "Uno", "[U:1:1005]": "Cinco" }, teams: { blue: "The Blues" } },
+          { league: "RGL", players: { "[U:1:1001]": "One" }, teams: {} },
+        ],
+      },
+    });
+  });
+  await page.click("#rb-names");
+  const field = (/** @type {string} */ key) => `#names input[data-name="${key}"]`;
+  await until(
+    page,
+    f => /** @type {HTMLInputElement} */ (document.querySelector(f))?.value === "Uno",
+    field("[U:1:1001]"),
+  );
+  assert.equal(asked.players.length, 12);
+  assert.deepEqual(
+    asked.players.find((/** @type {any} */ p) => p.steamid === "[U:1:1001]"),
+    { steamid: "[U:1:1001]", team: "blue" },
+  );
+  assert.equal(await page.inputValue(field("team:blue")), "The Blues");
+  assert.equal(await page.inputValue(field("team:red")), "");
+  assert.equal(await page.getAttribute(field("[U:1:1002]"), "placeholder"), "Player 2");
+  // Another league's names, then one's own on top.
+  await page.selectOption("#names select", "1");
+  assert.equal(await page.inputValue(field("[U:1:1001]")), "One");
+  await page.selectOption("#names select", "0");
+  await page.fill(field("[U:1:1002]"), "Dos");
+  await page.fill(field("team:red"), "Reds");
+  if (process.env.SHOTS) await page.screenshot({ path: `${process.env.SHOTS}/names-panel.png` });
+  await page.click("#names .napply");
+  await until(page, () => document.getElementById("names").hidden);
+  for (const p of [page, viewer.page]) {
+    await until(p, () => document.getElementById("hud-blue").textContent.includes("Uno"));
+    await until(p, () => document.getElementById("hud-red").textContent.includes("Dos"));
+    assert.equal(await p.textContent("#scoreboard .sb-team.blue .sb-name"), "The Blues");
+    assert.equal(await p.textContent("#scoreboard .sb-team.red .sb-name"), "Reds");
+    assert.equal(await p.$eval("#hud-blue", el => el.textContent.includes("Player 1 ")), false);
+  }
+  if (process.env.SHOTS) await viewer.page.screenshot({ path: `${process.env.SHOTS}/names-applied.png` });
+  // Who comes later sees them too; the panel shows what is set.
+  const later = await open();
+  await later.page.goto(page.url());
+  await until(later.page, () => document.getElementById("hud-blue").textContent.includes("Cinco"));
+  await page.click("#rb-names");
+  await until(
+    page,
+    f => /** @type {HTMLInputElement} */ (document.querySelector(f))?.value === "Dos",
+    field("[U:1:1002]"),
+  );
+  await page.click("#names button:not(.napply)");
+  for (const p of [page, viewer.page]) {
+    await until(p, () => document.getElementById("hud-red").textContent.includes("Player 2"));
+    assert.equal(await p.textContent("#scoreboard .sb-team.blue .sb-name"), "BLU");
+  }
+  assert.deepEqual([...errors, ...viewer.errors, ...later.errors], []);
+  for (const p of [page, viewer.page, later.page]) await p.close();
+});
