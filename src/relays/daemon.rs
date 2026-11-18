@@ -14,6 +14,8 @@
 //!   before, each `[x1, y1, z1, x2, y2, z2, r, g, b, seconds, width, speed]`.
 //! - `{"op": "voice", "room", "voice"}`: voice from outside the match to send them as players'
 //!   own, each `{user, steamid, rate, frames}` (frames in base64), in order.
+//! - `{"op": "names", "room", "names"}`: the names they see for players and teams, in place of
+//!   the game's (a [`stvtf::relay::Names`]).
 //! - `{"op": "notes", "room", "notes"}`: text bubbles they keep seeing, in place of those before,
 //!   each a [`stvtf::relay::Note`].
 //! - `{"op": "light", "room", "light"}`: the light they keep seeing, in place of the one before, a
@@ -44,7 +46,7 @@ use anyhow::{Context, Result, bail};
 use base64::Engine;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use stvtf::relay::{Beam, Handover, Light, Note, VoiceIn, Want};
+use stvtf::relay::{Beam, Handover, Light, Names, Note, VoiceIn, Want};
 
 use crate::matches::sessions::logged;
 use crate::relays::pool::{LocalRelay, Relays, Was};
@@ -136,6 +138,10 @@ enum Request {
         room: String,
         notes: Vec<Note>,
     },
+    Names {
+        room: String,
+        names: Names,
+    },
     Voice {
         room: String,
         voice: Vec<VoiceLine>,
@@ -214,11 +220,12 @@ struct Shows {
     beams: Vec<BeamLine>,
     notes: Vec<Note>,
     light: Option<Light>,
+    names: Names,
 }
 
 impl Shows {
     fn of(want: Want) -> Shows {
-        Shows { want, beams: Vec::new(), notes: Vec::new(), light: None }
+        Shows { want, beams: Vec::new(), notes: Vec::new(), light: None, names: Names::default() }
     }
 }
 
@@ -236,6 +243,8 @@ struct HandedRoom {
     notes: Vec<Note>,
     #[serde(default)]
     light: Option<Light>,
+    #[serde(default)]
+    names: Names,
     clients: Handover,
 }
 
@@ -266,8 +275,9 @@ fn hand_over(rooms: &Rooms, file: &Path) -> Result<usize> {
             .map(|(room, l)| {
                 s.spawn(move || {
                     let clients = l.relay.hand_over(HAND_OVER).filter(|h| h.clients() > 0)?;
-                    let Shows { want, beams, notes, light } = l.shows.clone();
-                    Some(HandedRoom { room: room.clone(), was: l.relay.was(), want: WantLine::of(&want), beams, notes, light, clients })
+                    let Shows { want, beams, notes, light, names } = l.shows.clone();
+                    let want = WantLine::of(&want);
+                    Some(HandedRoom { room: room.clone(), was: l.relay.was(), want, beams, notes, light, names, clients })
                 })
             })
             .collect();
@@ -294,9 +304,9 @@ fn take_over(rooms: &Rooms, relays: &Arc<Relays>, file: &Path) {
     if ago > HANDED_FOR {
         return tracing::info!("clients handed over {} s ago are gone", ago.as_secs());
     }
-    for HandedRoom { room, was, mut want, beams, notes, light, clients } in handed.rooms {
+    for HandedRoom { room, was, mut want, beams, notes, light, names, clients } in handed.rooms {
         want.age_ms += ago.as_millis() as u64;
-        let shows = Shows { want: want.want(), beams, notes, light };
+        let shows = Shows { want: want.want(), beams, notes, light, names };
         let started = relays.start_with(shows.want.clone(), Some(&was), Some(&clients));
         match started {
             Ok(Some(relay)) if relay.was() == was => {
@@ -310,6 +320,7 @@ fn take_over(rooms: &Rooms, relays: &Arc<Relays>, file: &Path) {
                 relay.keep(shows.beams.iter().map(beam).collect());
                 relay.keep_notes(shows.notes.clone());
                 relay.keep_light(shows.light);
+                relay.keep_names(shows.names.clone());
                 lock(rooms).insert(room, Leased { relay, seen: Instant::now(), shows });
             }
             Ok(_) => fault!("relay of room {} not taken over: port {} is not free", logged(&room), was.port),
@@ -452,6 +463,11 @@ fn handle(r: Request, rooms: &Rooms, relays: &Arc<Relays>) -> Value {
             l.relay.keep_notes(notes);
             json!({})
         }),
+        Request::Names { room, names } => in_room(rooms, &room, |l| {
+            l.shows.names.clone_from(&names);
+            l.relay.keep_names(names);
+            json!({})
+        }),
         Request::Voice { room, voice } => in_room(rooms, &room, |l| {
             for v in voice.iter().filter_map(VoiceLine::voice) {
                 l.relay.voice(v);
@@ -562,6 +578,7 @@ impl Remote {
                 want: None,
                 kept: None,
                 notes: None,
+                names: None,
                 voice: VecDeque::new(),
                 notes_given: Vec::new(),
                 light: None,
@@ -597,6 +614,8 @@ struct Inner {
     kept: Option<Vec<Beam>>,
     /// The notes to hand over, the latest only.
     notes: Option<Vec<Note>>,
+    /// The names to hand over, the latest only.
+    names: Option<Names>,
     /// Voice to hand over, all of it, in order.
     voice: VecDeque<VoiceLine>,
     /// The notes last given to hand over: the marker gives them with its every piece.
@@ -619,13 +638,34 @@ struct Shared {
 }
 
 impl Shared {
+    /// Hands the relay what its clients keep seeing, of what changed: beams, notes, names.
+    fn hand_kept<R>(&self, call: &impl Fn(&Value) -> R, kept: Option<Vec<Beam>>, notes: Option<Vec<Note>>, names: Option<Names>) {
+        if let Some(kept) = kept {
+            let kept: Vec<BeamLine> = kept.iter().map(beam_line).collect();
+            call(&json!({ "op": "keep", "room": self.room, "beams": kept }));
+        }
+        if let Some(notes) = notes {
+            call(&json!({ "op": "notes", "room": self.room, "notes": notes }));
+        }
+        if let Some(names) = names {
+            call(&json!({ "op": "names", "room": self.room, "names": names }));
+        }
+    }
+
     /// Sends where the room is, and asks how the relay is, until let go of or ended.
     fn tend(&self) {
         let mut asked = Instant::now();
         loop {
-            let (want, kept, notes, voice, light, done, trace) = {
+            let (want, kept, notes, names, voice, light, done, trace) = {
                 let mut i = lock(&self.inner);
-                while i.want.is_none() && i.kept.is_none() && i.notes.is_none() && i.voice.is_empty() && !i.light_due && i.done.is_none() {
+                while i.want.is_none()
+                    && i.kept.is_none()
+                    && i.notes.is_none()
+                    && i.names.is_none()
+                    && i.voice.is_empty()
+                    && !i.light_due
+                    && i.done.is_none()
+                {
                     let left = STATUS_EVERY.saturating_sub(asked.elapsed());
                     if left.is_zero() {
                         break;
@@ -637,6 +677,7 @@ impl Shared {
                     i.want.take(),
                     i.kept.take(),
                     i.notes.take(),
+                    i.names.take(),
                     voice,
                     std::mem::take(&mut i.light_due).then_some(i.light),
                     i.done,
@@ -658,13 +699,7 @@ impl Shared {
                     lock(&self.inner).stopped = true;
                 }
             }
-            if let Some(kept) = kept {
-                let kept: Vec<BeamLine> = kept.iter().map(beam_line).collect();
-                let _ = call(&json!({ "op": "keep", "room": self.room, "beams": kept }));
-            }
-            if let Some(notes) = notes {
-                let _ = call(&json!({ "op": "notes", "room": self.room, "notes": notes }));
-            }
+            self.hand_kept(&call, kept, notes, names);
             if !voice.is_empty() {
                 let _ = call(&json!({ "op": "voice", "room": self.room, "voice": voice }));
             }
@@ -754,6 +789,15 @@ impl RemoteRelay {
         self.0.wake.notify_all();
     }
 
+    /// The names the TF2 clients in see for players and teams; only the latest is sent.
+    pub(crate) fn keep_names(&self, names: Names) {
+        let mut i = lock(&self.0.inner);
+        i.names = Some(names);
+        traced(&mut i);
+        drop(i);
+        self.0.wake.notify_all();
+    }
+
     /// Voice from outside the match for the TF2 clients in; all of it goes, in order.
     pub(crate) fn voice(&self, v: &VoiceIn) {
         let mut i = lock(&self.0.inner);
@@ -805,6 +849,17 @@ mod tests {
     use crate::testing::{TempDir, free_port};
 
     /// A request asked while answering one of stv.tf's goes in its trace.
+    #[test]
+    fn names_go_to_the_relay_process_as_they_were() {
+        let names = Names {
+            players: [("[U:1:5]".to_string(), "Five".to_string())].into(),
+            teams: [("red".to_string(), "Reds".to_string())].into(),
+        };
+        let line = json!({ "op": "names", "room": "r", "names": names });
+        let Ok(Request::Names { room, names: asked }) = serde_json::from_value(line) else { panic!("not a names request") };
+        assert_eq!((room.as_str(), asked), ("r", names));
+    }
+
     #[test]
     fn a_request_carries_the_trace_it_was_asked_in() {
         crate::report::on_for_tests();
@@ -948,6 +1003,7 @@ mod tests {
                 beams: vec![[0.0; 12]],
                 notes: Vec::new(),
                 light: None,
+                names: Names::default(),
                 clients: Handover::default(),
             }],
         };

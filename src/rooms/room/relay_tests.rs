@@ -275,3 +275,23 @@ fn voice_from_outside_the_match_goes_to_the_relay_process() {
     assert_eq!(said["voice"], json!([{ "user": 7, "steamid": "[U:1:5]", "rate": 24000, "frames": ["aAEC"] }]));
     room.stop();
 }
+
+#[test]
+fn the_rooms_names_go_to_the_relay_process_as_they_change_and_to_a_relay_started_later() {
+    let relays = RelayProcess::new();
+    let (room, _page, _dir) = relayed_room(&relays);
+    let names = |player: &str| super::names::Names {
+        players: [("[U:1:5]".to_string(), player.to_string())].into(),
+        teams: [("red".to_string(), "Reds".to_string())].into(),
+    };
+    room.set_names(&names("Five")).unwrap();
+    let said = relays.hears("names", |r| r["names"]["players"]["[U:1:5]"] == "Five");
+    assert_eq!(said["names"]["teams"], json!({ "red": "Reds" }));
+    // Its relay stopped: the next one is told the names as it starts.
+    relays.stopped.store(true, Ordering::Relaxed);
+    until("the room to hear its relay stopped", || lock(&room.relay.current).as_ref().is_some_and(RoomRelay::stopped));
+    relays.stopped.store(false, Ordering::Relaxed);
+    room.tend_relay();
+    until("the names again", || relays.asked("names").len() == 2);
+    room.stop();
+}

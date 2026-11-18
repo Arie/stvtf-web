@@ -154,6 +154,9 @@ speed with it.
 | `POST /r/<id>/circle` | admin: `{"at": [x, y]}`, a circle on the floor under it; 400 with why when there is no floor there or the map is not built |
 | `POST /r/<id>/light` | admin: `{"at": [x, y]}`, the spotlight on the floor under it, from where it was; 400 with why when there is no floor there or the map is not built |
 | `POST /r/<id>/note` | admin: `{"text", "at": [x, y]}` (on the floor there) or `{"text", "player": <id>}` (following them); 400 with why when it is empty or too long, there is no floor there, the map is not built or the room has its 10 notes |
+| `POST /r/<id>/leagues` | admin: `{"players": [{"steamid", "team"}]}` (up to 40): `leagues`, each a `league`, its `players`' names by SteamID and the `teams` (by side) most of a side is on, the one knowing most first; asked of the sites (`<site>/league_players`), kept an hour |
+| `POST /r/<id>/names` | admin: `{"players": {<SteamID>: name}, "teams": {"red", "blue"}}`, in place of the names before; an empty name is the game's own; 400 with why for a name over 32 characters |
+| `POST /r/<id>/score` | admin: `{"team": "red" or "blue", "score": 0 to 99}`: the score that team shows now, kept as what to add to the game's for this game (the map, up to its score's next reset) |
 | `POST /r/<id>/clear` | admin: clears the marker of the room's map |
 | `POST /r/<id>/draw` | admin: `{"stroke": <id>, "points": [[x, y, ms], …]}`, up to 256, ms into the stroke; later points continue it; pages draw at that pace, 40 ms behind |
 
@@ -171,6 +174,8 @@ The room's event stream adds:
 | `note` | a note put down: `stroke`, `by`, `ink`, `text`, and `at` (`[x, y, z]`, on the floor) or `player` |
 | `clear` | `by` |
 | `view` | as posted, with `by` |
+| `names` | the room's names: `players` by SteamID, `teams` by side; on join too |
+| `score` | what the room adds to the game's score where it is now: `blue`, `red`; on join too |
 | `people` | `id`, `name`, `admin`, `owner`, `signed`, and `ink`, `steamid` when set |
 | `draw` | as posted, with `by` |
 | `playback` | of the room's map: `paused`, `speed`, `at`, `length` (ms), `start` (first moment kept), `origin` (map start), `rounds`; `live` (the newest map, not over); `load` (its map's number); `over`; `maps` (`load`, `map`, `ready` of each map with play, and the room's own); `marks` (how many the match has); on change and every second while playing |

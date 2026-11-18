@@ -12,7 +12,7 @@ use std::time::Duration;
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
-use stvtf::relay::{Beam, Handover, Light, Note, Playback, Relay, RelayConfig, VoiceIn, Want};
+use stvtf::relay::{Beam, Handover, Light, Names, Note, Playback, Relay, RelayConfig, VoiceIn, Want};
 
 use crate::relays::daemon::{Remote, RemoteRelay};
 use crate::report::fault;
@@ -161,6 +161,11 @@ impl LocalRelay {
         self.playback.keep_notes(notes);
     }
 
+    /// The names the TF2 clients in see for players and teams, in place of the game's.
+    pub(crate) fn keep_names(&self, names: Names) {
+        self.playback.keep_names(names);
+    }
+
     /// Voice from outside the match, sent to the TF2 clients in as a player's (or `SourceTV`'s).
     pub(crate) fn voice(&self, v: VoiceIn) {
         self.playback.push_voice(v);
@@ -264,6 +269,14 @@ impl RoomRelay {
         match self {
             RoomRelay::Local(r) => r.keep_notes(notes),
             RoomRelay::Remote(r) => r.keep_notes(notes),
+        }
+    }
+
+    /// The names the TF2 clients in see for players and teams, in place of the game's.
+    pub(crate) fn keep_names(&self, names: Names) {
+        match self {
+            RoomRelay::Local(r) => r.keep_names(names),
+            RoomRelay::Remote(r) => r.keep_names(names),
         }
     }
 

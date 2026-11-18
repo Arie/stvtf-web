@@ -1,5 +1,5 @@
 //! The names a room's admins give the match's players and teams (a league's, say), in place of
-//! the game's: told to every page.
+//! the game's: told to every page, and to its relay for those watching in TF2.
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -29,6 +29,11 @@ pub(crate) struct Names {
 impl Names {
     pub(super) fn is_empty(&self) -> bool {
         self.players.is_empty() && self.teams.is_empty()
+    }
+
+    /// As a relay shows them in TF2.
+    pub(super) fn for_tf2(&self) -> stvtf::relay::Names {
+        stvtf::relay::Names { players: self.players.clone(), teams: self.teams.clone() }
     }
 
     fn line(&self) -> Arc<str> {
@@ -79,6 +84,9 @@ impl Room {
     /// The room's names are `names`: every page is told.
     pub(super) fn keep_names(&self, names: Names) {
         announce(&self.hub, "names", &names.line());
+        if let Some(r) = &*lock(&self.relay.current) {
+            r.keep_names(names.for_tf2());
+        }
         *lock(&self.names) = names;
     }
 }
@@ -100,7 +108,8 @@ mod tests {
         let page = subscribe(&r.hub, false);
         let _joined: Vec<_> = page.try_iter().collect();
         r.set_names(&names(&[("[U:1:5]", "  Five\u{7} "), ("[U:1:6]", " ")], &[("red", "Reds"), ("blue", "")])).unwrap();
-        let line: serde_json::Value = serde_json::from_str(&page.try_recv().unwrap()).unwrap();
+        let line = page.try_iter().find(|l| l.contains(r#""type":"names""#)).unwrap();
+        let line: serde_json::Value = serde_json::from_str(&line).unwrap();
         assert_eq!(line, serde_json::json!({ "type": "names", "players": { "[U:1:5]": "Five" }, "teams": { "red": "Reds" } }));
         let later: Vec<_> = subscribe(&r.hub, false).try_iter().collect();
         assert!(later.iter().any(|l| l.contains(r#""type":"names""#) && l.contains("Five")));
