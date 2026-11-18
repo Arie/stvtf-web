@@ -658,7 +658,7 @@ test("a link to a moment watches from there", async () => {
 });
 
 test("a payload match shows its cart, buildings, airblasts, über and capture", async () => {
-  // Two pages, so the test takes half as long: one from the start, one from just before the über.
+  // Two pages, to take half as long: from the start, and from just before the über.
   const [early, late] = await Promise.all([open(), open()]);
   await Promise.all([early.page.goto(`${payload}?t=0:00`), late.page.goto(`${payload}?t=0:10`)]);
   for (const { page } of [early, late])
@@ -706,8 +706,8 @@ test("h hides the player HUD and s the scores, each on its own", async () => {
   await page.close();
 });
 
-// The speakers list, opened, on a page that may set up comms (as whoever started the match may).
-// What stv.tf would answer is `site`'s to say; what the page posts is kept in `posted`.
+// The speakers list, open, on a page that may set up comms. `site` answers for stv.tf; `posted`
+// keeps what the page posts.
 /** @param {{ comms?: object; voices?: object[]; demos?: object[]; refuse?: string }} site */
 async function openSpeakers(site) {
   const { page, errors } = await open();
@@ -922,7 +922,7 @@ test("who is who: those in the channel are put on players, by choice or by Steam
   await shows("Who is who");
   assert.equal(await page.textContent("#voicelist .vteam .vhint"), "2/3");
   const row = (/** @type {number} */ n) => `#voicelist .vwho:nth-child(${n} of .vwho)`;
-  // Whose name looks like theirs comes first; a guess shows as one until it is confirmed.
+  // A look-alike name comes first; a guess shows as one until confirmed.
   assert.equal(await page.textContent(`${row(1)} option:nth-child(2)`), "Player 3");
   assert.equal(await page.$eval(`${row(2)} select`, el => el.className), "maybe");
   assert.equal(
@@ -974,7 +974,7 @@ test("demos with comms in them are listed under the speakers, to watch or downlo
   await shows("With comms");
   assert.equal(await page.textContent("#voicelist a.vwatch"), "▶ cp_gullywash_f9");
   assert.equal(await page.textContent("#voicelist a.vdemo"), "12 MB ↓");
-  // Built when asked for, once: the server says it is by a cookie of the mark it was asked with.
+  // Built once asked: the server says so by a cookie of the mark.
   await page.$eval("#voicelist", list =>
     list.addEventListener("click", e => {
       const a = /** @type {Element} */ (e.target).closest("a.vdemo");

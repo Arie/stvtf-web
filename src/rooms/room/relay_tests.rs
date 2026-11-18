@@ -1,6 +1,4 @@
-//! A room and its relay: started for whoever is on a page, told where the room goes, handed its
-//! marker and voice, ended with it. The relay process here is a stand-in that keeps what it is
-//! asked.
+//! A room and its relay. The relay process is a stand-in that keeps what it is asked.
 use std::fmt::Write as _;
 use std::io::{BufRead, BufReader, Write as _};
 use std::os::unix::net::UnixListener;
@@ -28,8 +26,7 @@ use crate::relays::pool::{Offer, Pool, Relays, RoomRelay};
 use crate::sync::lock;
 use crate::testing::{TempDir, free_port};
 
-/// Stands in for the relay process: a relay for every room that asks, with as many TF2 clients
-/// and as stopped as it is set to say.
+/// Stands in for the relay process: a relay for every room, its TF2 clients and end as set.
 struct RelayProcess {
     pool: Arc<Pool>,
     asked: Arc<Mutex<Vec<Value>>>,
