@@ -295,3 +295,13 @@ fn the_rooms_names_go_to_the_relay_process_as_they_change_and_to_a_relay_started
     until("the names again", || relays.asked("names").len() == 2);
     room.stop();
 }
+
+#[test]
+fn a_score_set_right_goes_to_the_relay_process() {
+    let relays = RelayProcess::new();
+    let (room, _page, _dir) = relayed_room(&relays);
+    room.set_score(&super::scores::ScoreEdit { team: stvtf::output::Team::Blue, score: 2 }).unwrap();
+    let said = relays.hears("score", |r| r["score"] == json!([2, 0]));
+    assert_eq!(said["score"], json!([2, 0]));
+    room.stop();
+}

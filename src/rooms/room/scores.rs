@@ -1,7 +1,8 @@
 //! The score a room's admins say a game stands at, where the game's own is off (a first half
 //! played before, a restart): kept as what to add to the game's, for that game only. A game is a
 //! map from one reset of its score to the next: the next map and a restart start from the game's
-//! own again. Every page is told what to add where the room is now.
+//! own again. Every page is told what to add where the room is now, and so is its relay, for
+//! those watching in TF2.
 
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -113,6 +114,9 @@ impl Room {
         if add != scores.told {
             scores.told = add;
             announce(&self.hub, "score", &score_line(add));
+            if let Some(r) = &*lock(&self.relay.current) {
+                r.keep_score(add);
+            }
         }
     }
 
@@ -149,6 +153,11 @@ impl Room {
     /// The scores from before (a room picked up again).
     pub(super) fn keep_scores(&self, added: Vec<Added>) {
         lock(&self.scores).added = added;
+    }
+
+    /// What the pages were last told to add, for a relay just started.
+    pub(super) fn score_told(&self) -> [i64; 2] {
+        lock(&self.scores).told
     }
 
     pub(super) fn scores_added(&self) -> Vec<Added> {

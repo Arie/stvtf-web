@@ -16,6 +16,8 @@
 //!   own, each `{user, steamid, rate, frames}` (frames in base64), in order.
 //! - `{"op": "names", "room", "names"}`: the names they see for players and teams, in place of
 //!   the game's (a [`stvtf::relay::Names`]).
+//! - `{"op": "score", "room", "score"}`: what they see added to the teams' scores, BLU's then
+//!   RED's.
 //! - `{"op": "notes", "room", "notes"}`: text bubbles they keep seeing, in place of those before,
 //!   each a [`stvtf::relay::Note`].
 //! - `{"op": "light", "room", "light"}`: the light they keep seeing, in place of the one before, a
@@ -142,6 +144,10 @@ enum Request {
         room: String,
         names: Names,
     },
+    Score {
+        room: String,
+        score: [i64; 2],
+    },
     Voice {
         room: String,
         voice: Vec<VoiceLine>,
@@ -221,11 +227,12 @@ struct Shows {
     notes: Vec<Note>,
     light: Option<Light>,
     names: Names,
+    score: [i64; 2],
 }
 
 impl Shows {
     fn of(want: Want) -> Shows {
-        Shows { want, beams: Vec::new(), notes: Vec::new(), light: None, names: Names::default() }
+        Shows { want, beams: Vec::new(), notes: Vec::new(), light: None, names: Names::default(), score: [0, 0] }
     }
 }
 
@@ -245,6 +252,8 @@ struct HandedRoom {
     light: Option<Light>,
     #[serde(default)]
     names: Names,
+    #[serde(default)]
+    score: [i64; 2],
     clients: Handover,
 }
 
@@ -275,9 +284,9 @@ fn hand_over(rooms: &Rooms, file: &Path) -> Result<usize> {
             .map(|(room, l)| {
                 s.spawn(move || {
                     let clients = l.relay.hand_over(HAND_OVER).filter(|h| h.clients() > 0)?;
-                    let Shows { want, beams, notes, light, names } = l.shows.clone();
+                    let Shows { want, beams, notes, light, names, score } = l.shows.clone();
                     let want = WantLine::of(&want);
-                    Some(HandedRoom { room: room.clone(), was: l.relay.was(), want, beams, notes, light, names, clients })
+                    Some(HandedRoom { room: room.clone(), was: l.relay.was(), want, beams, notes, light, names, score, clients })
                 })
             })
             .collect();
@@ -304,9 +313,9 @@ fn take_over(rooms: &Rooms, relays: &Arc<Relays>, file: &Path) {
     if ago > HANDED_FOR {
         return tracing::info!("clients handed over {} s ago are gone", ago.as_secs());
     }
-    for HandedRoom { room, was, mut want, beams, notes, light, names, clients } in handed.rooms {
+    for HandedRoom { room, was, mut want, beams, notes, light, names, score, clients } in handed.rooms {
         want.age_ms += ago.as_millis() as u64;
-        let shows = Shows { want: want.want(), beams, notes, light, names };
+        let shows = Shows { want: want.want(), beams, notes, light, names, score };
         let started = relays.start_with(shows.want.clone(), Some(&was), Some(&clients));
         match started {
             Ok(Some(relay)) if relay.was() == was => {
@@ -321,6 +330,7 @@ fn take_over(rooms: &Rooms, relays: &Arc<Relays>, file: &Path) {
                 relay.keep_notes(shows.notes.clone());
                 relay.keep_light(shows.light);
                 relay.keep_names(shows.names.clone());
+                relay.keep_score(shows.score);
                 lock(rooms).insert(room, Leased { relay, seen: Instant::now(), shows });
             }
             Ok(_) => fault!("relay of room {} not taken over: port {} is not free", logged(&room), was.port),
@@ -468,6 +478,11 @@ fn handle(r: Request, rooms: &Rooms, relays: &Arc<Relays>) -> Value {
             l.relay.keep_names(names);
             json!({})
         }),
+        Request::Score { room, score } => in_room(rooms, &room, |l| {
+            l.shows.score = score;
+            l.relay.keep_score(score);
+            json!({})
+        }),
         Request::Voice { room, voice } => in_room(rooms, &room, |l| {
             for v in voice.iter().filter_map(VoiceLine::voice) {
                 l.relay.voice(v);
@@ -579,6 +594,7 @@ impl Remote {
                 kept: None,
                 notes: None,
                 names: None,
+                score: None,
                 voice: VecDeque::new(),
                 notes_given: Vec::new(),
                 light: None,
@@ -616,6 +632,8 @@ struct Inner {
     notes: Option<Vec<Note>>,
     /// The names to hand over, the latest only.
     names: Option<Names>,
+    /// What is added to the scores, to hand over, the latest only.
+    score: Option<[i64; 2]>,
     /// Voice to hand over, all of it, in order.
     voice: VecDeque<VoiceLine>,
     /// The notes last given to hand over: the marker gives them with its every piece.
@@ -638,8 +656,15 @@ struct Shared {
 }
 
 impl Shared {
-    /// Hands the relay what its clients keep seeing, of what changed: beams, notes, names.
-    fn hand_kept<R>(&self, call: &impl Fn(&Value) -> R, kept: Option<Vec<Beam>>, notes: Option<Vec<Note>>, names: Option<Names>) {
+    /// Hands the relay what its clients keep seeing, of what changed: beams, notes, names and
+    /// what is added to the scores.
+    fn hand_kept<R>(
+        &self,
+        call: &impl Fn(&Value) -> R,
+        kept: Option<Vec<Beam>>,
+        notes: Option<Vec<Note>>,
+        (names, score): (Option<Names>, Option<[i64; 2]>),
+    ) {
         if let Some(kept) = kept {
             let kept: Vec<BeamLine> = kept.iter().map(beam_line).collect();
             call(&json!({ "op": "keep", "room": self.room, "beams": kept }));
@@ -650,18 +675,22 @@ impl Shared {
         if let Some(names) = names {
             call(&json!({ "op": "names", "room": self.room, "names": names }));
         }
+        if let Some(score) = score {
+            call(&json!({ "op": "score", "room": self.room, "score": score }));
+        }
     }
 
     /// Sends where the room is, and asks how the relay is, until let go of or ended.
     fn tend(&self) {
         let mut asked = Instant::now();
         loop {
-            let (want, kept, notes, names, voice, light, done, trace) = {
+            let (want, kept, notes, names, score, voice, light, done, trace) = {
                 let mut i = lock(&self.inner);
                 while i.want.is_none()
                     && i.kept.is_none()
                     && i.notes.is_none()
                     && i.names.is_none()
+                    && i.score.is_none()
                     && i.voice.is_empty()
                     && !i.light_due
                     && i.done.is_none()
@@ -678,6 +707,7 @@ impl Shared {
                     i.kept.take(),
                     i.notes.take(),
                     i.names.take(),
+                    i.score.take(),
                     voice,
                     std::mem::take(&mut i.light_due).then_some(i.light),
                     i.done,
@@ -699,7 +729,7 @@ impl Shared {
                     lock(&self.inner).stopped = true;
                 }
             }
-            self.hand_kept(&call, kept, notes, names);
+            self.hand_kept(&call, kept, notes, (names, score));
             if !voice.is_empty() {
                 let _ = call(&json!({ "op": "voice", "room": self.room, "voice": voice }));
             }
@@ -793,6 +823,15 @@ impl RemoteRelay {
     pub(crate) fn keep_names(&self, names: Names) {
         let mut i = lock(&self.0.inner);
         i.names = Some(names);
+        traced(&mut i);
+        drop(i);
+        self.0.wake.notify_all();
+    }
+
+    /// What the TF2 clients in see added to the teams' scores; only the latest is sent.
+    pub(crate) fn keep_score(&self, add: [i64; 2]) {
+        let mut i = lock(&self.0.inner);
+        i.score = Some(add);
         traced(&mut i);
         drop(i);
         self.0.wake.notify_all();
@@ -1004,6 +1043,7 @@ mod tests {
                 notes: Vec::new(),
                 light: None,
                 names: Names::default(),
+                score: [0, 0],
                 clients: Handover::default(),
             }],
         };

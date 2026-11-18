@@ -74,6 +74,7 @@ impl Room {
         match offer.relays.start(&self.id, want.clone(), was.as_ref(), known) {
             Ok(Some(r)) => {
                 *lock(&self.relay.failed) = None;
+                let score = self.score_told();
                 let mut relay = lock(&self.relay.current);
                 // Another page started one meanwhile: this one goes.
                 if relay.is_none() {
@@ -84,6 +85,7 @@ impl Room {
                     *lock(&self.relay.sent) = known.then_some(want);
                     // A new relay has no marker yet, nor the room's names.
                     r.keep_names(lock(&self.names).for_tf2());
+                    r.keep_score(score);
                     *relay = Some(r);
                     self.marker.dirty.store(true, Ordering::Relaxed);
                 }

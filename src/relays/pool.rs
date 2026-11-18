@@ -166,6 +166,11 @@ impl LocalRelay {
         self.playback.keep_names(names);
     }
 
+    /// What the TF2 clients in see added to the teams' scores, BLU's then RED's.
+    pub(crate) fn keep_score(&self, add: [i64; 2]) {
+        self.playback.keep_score(add);
+    }
+
     /// Voice from outside the match, sent to the TF2 clients in as a player's (or `SourceTV`'s).
     pub(crate) fn voice(&self, v: VoiceIn) {
         self.playback.push_voice(v);
@@ -277,6 +282,14 @@ impl RoomRelay {
         match self {
             RoomRelay::Local(r) => r.keep_names(names),
             RoomRelay::Remote(r) => r.keep_names(names),
+        }
+    }
+
+    /// What the TF2 clients in see added to the teams' scores, BLU's then RED's.
+    pub(crate) fn keep_score(&self, add: [i64; 2]) {
+        match self {
+            RoomRelay::Local(r) => r.keep_score(add),
+            RoomRelay::Remote(r) => r.keep_score(add),
         }
     }
 

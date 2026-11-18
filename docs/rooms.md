@@ -156,7 +156,7 @@ speed with it.
 | `POST /r/<id>/note` | admin: `{"text", "at": [x, y]}` (on the floor there) or `{"text", "player": <id>}` (following them); 400 with why when it is empty or too long, there is no floor there, the map is not built or the room has its 10 notes |
 | `POST /r/<id>/leagues` | admin: `{"players": [{"steamid", "team"}]}` (up to 40): `leagues`, each a `league`, its `players`' names by SteamID and the `teams` (by side) most of a side is on, the one knowing most first; asked of the sites (`<site>/league_players`), kept an hour |
 | `POST /r/<id>/names` | admin: `{"players": {<SteamID>: name}, "teams": {"red", "blue"}}`, in place of the names before; an empty name is the game's own; 400 with why for a name over 32 characters |
-| `POST /r/<id>/score` | admin: `{"team": "red" or "blue", "score": 0 to 99}`: the score that team shows now, kept as what to add to the game's for this game (the map, up to its score's next reset) |
+| `POST /r/<id>/score` | admin: `{"team": "red" or "blue", "score": 0 to 99}`: the score that team shows now, kept as what to add to the game's for this game (the map, up to its score's next reset); those watching in TF2 see it too |
 | `POST /r/<id>/clear` | admin: clears the marker of the room's map |
 | `POST /r/<id>/draw` | admin: `{"stroke": <id>, "points": [[x, y, ms], …]}`, up to 256, ms into the stroke; later points continue it; pages draw at that pace, 40 ms behind |
 
