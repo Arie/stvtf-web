@@ -13,6 +13,7 @@ use super::drawing::kept_line;
 use super::markers::Markers;
 use super::names::Names;
 use super::play::{Pace, State};
+use super::scores::{Added, Scores};
 use crate::matches::hub::{SharedHub, announce};
 use crate::matches::recording::Recording;
 use crate::relays::pool::{Offer, RoomRelay, Was};
@@ -56,6 +57,8 @@ pub(crate) struct Room {
     pub(super) marker: MarkerState,
     /// The names its admins gave the players and teams.
     pub(super) names: Mutex<Names>,
+    /// The scores its admins gave its games.
+    pub(super) scores: Mutex<Scores>,
     /// The voice handed to its relay, whether it has one or not.
     #[cfg(test)]
     pub(super) relayed: Mutex<Vec<stvtf::relay::VoiceIn>>,
@@ -148,6 +151,8 @@ pub(crate) struct Saved {
     pub(super) pace: Pace,
     #[serde(default, skip_serializing_if = "Names::is_empty")]
     pub(super) names: Names,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(super) scores: Vec<Added>,
 }
 
 /// A page in the room, by its guest cookie if it is listed, until dropped.
@@ -214,6 +219,7 @@ impl Room {
         if let Some(view) = lock(&room.view).clone() {
             announce(&room.hub, "view", &view);
         }
+        room.keep_scores(saved.scores);
         if !saved.names.is_empty() {
             room.keep_names(saved.names);
         }
@@ -255,6 +261,7 @@ impl Room {
             camera: Mutex::new(None),
             marker: MarkerState { strokes: Mutex::new(Markers::new()), load: AtomicUsize::new(load), dirty: AtomicBool::new(true) },
             names: Mutex::default(),
+            scores: Mutex::default(),
             #[cfg(test)]
             relayed: Mutex::new(Vec::new()),
         });
@@ -285,6 +292,7 @@ impl Room {
             decided: st.over == Some(st.load),
             pace: st.pace,
             names: lock(&self.names).clone(),
+            scores: self.scores_added(),
         }
     }
 

@@ -1112,3 +1112,48 @@ test("an admin names the players and teams, from a league's names, for everyone 
   assert.deepEqual([...errors, ...viewer.errors, ...later.errors], []);
   for (const p of [page, viewer.page, later.page]) await p.close();
 });
+
+test("an admin clicks a score on the HUD to set it right, for everyone in the room", async () => {
+  const { page, errors } = await open();
+  await page.goto(base);
+  await page.click("#roomopen");
+  await page.waitForURL(/\/r\/[0-9a-f]{32}\/$/, { timeout: WAIT });
+  await until(page, () => document.getElementById("scoreboard").classList.contains("scoring"));
+  const viewer = await open();
+  await viewer.page.goto(page.url());
+  await until(viewer.page, () => !document.getElementById("scoreboard").hidden);
+  // A viewer's click does nothing.
+  await viewer.page.click("#score-blue", { force: true });
+  assert.equal(await viewer.page.$(".sb-edit"), null);
+  await page.click("#score-blue");
+  if (process.env.SHOTS) await page.screenshot({ path: `${process.env.SHOTS}/score-edit.png` });
+  await page.fill(".sb-edit", "3");
+  await page.press(".sb-edit", "Enter");
+  await page.click("#score-red");
+  await page.keyboard.press("Escape");
+  await page.click("#score-red");
+  await page.fill(".sb-edit", "2");
+  await page.press(".sb-edit", "Enter");
+  for (const p of [page, viewer.page]) {
+    await until(p, () => document.getElementById("score-blue").textContent === "3");
+    await until(p, () => document.getElementById("score-red").textContent === "2");
+  }
+  if (process.env.SHOTS) await viewer.page.screenshot({ path: `${process.env.SHOTS}/score-set.png` });
+  // Kept through a jump within the game, and for who comes later.
+  await page.$eval("#rb-time", el => {
+    /** @type {HTMLInputElement} */ (el).value = "0";
+    el.dispatchEvent(new Event("change"));
+  });
+  const later = await open();
+  await later.page.goto(page.url());
+  await until(later.page, () => document.getElementById("score-blue").textContent === "3");
+  await page.click("#score-blue");
+  await page.fill(".sb-edit", "100");
+  await page.press(".sb-edit", "Enter");
+  await until(page, () => document.getElementById("rb-note").textContent === "From 0 to 99.");
+  assert.deepEqual(
+    [...errors, ...viewer.errors, ...later.errors].filter(e => !e.includes("400")),
+    [],
+  );
+  for (const p of [page, viewer.page, later.page]) await p.close();
+});

@@ -27,3 +27,14 @@ export function onNames(m) {
       el.textContent = teamLabel(team, team === "blue" ? "BLU" : "RED");
   state.lastPanel = 0;
 }
+
+// What the room adds to the game's score, where its admins say the game's own is off.
+export const added = { blue: 0, red: 0 };
+/** @param {import("../../types/stream").ScoreLine} m */
+export function onScore(m) {
+  Object.assign(added, { blue: m.blue, red: m.red });
+  state.lastPanel = 0;
+}
+// A team's score as the room has it.
+/** @param {"blue" | "red"} team @param {number} own */
+export const scoreOf = (team, own) => Math.max(0, own + added[team]);

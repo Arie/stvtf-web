@@ -278,10 +278,16 @@ impl Room {
             publish(&self.hub, &line);
             self.relay_line(&line);
             if let Line::Snapshot(snap) = &line {
-                st.tick = Some(snap.tick);
-                self.steer_relay(&st);
+                self.snapshot_played(&mut st, snap);
             }
         }
+    }
+
+    /// A snapshot was played: where the room is, for its relay and its score.
+    fn snapshot_played(&self, st: &mut State, snap: &stvtf::output::Snapshot) {
+        st.tick = Some(snap.tick);
+        self.score_played(st, snap);
+        self.steer_relay(st);
     }
 
     /// A room at live that lags goes to its recording's end, to be there again: when that is
@@ -314,9 +320,13 @@ impl Room {
         let (hub, chunk, done) = rec.seek(target, self.reach(st).1);
         // Where it went, paused or not: the relay follows at once.
         st.tick = hub.tick();
+        let score = hub.summary().snapshot.map(|s| s.score);
         restore(&self.hub, hub);
         *cur = Cursor { chunk, done, ..Cursor::default() };
         st.at = target;
+        if let Some(score) = score {
+            self.score_at(st, [score.blue, score.red]);
+        }
         // Every move between maps ends here: a follow of a player ends, the marker goes with it.
         let n = self.part(st).load;
         if self.marker.load.load(Ordering::Relaxed) != n {

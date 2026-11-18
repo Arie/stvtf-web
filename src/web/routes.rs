@@ -79,6 +79,7 @@ fn of_room(router: Routes) -> Routes {
         .route("/r/{id}/note", post(rooms::note))
         .route("/r/{id}/leagues", post(rooms::leagues))
         .route("/r/{id}/names", post(rooms::names))
+        .route("/r/{id}/score", post(rooms::score))
         .route("/r/{id}/control", post(rooms::control))
         .route("/r/{id}/map", post(rooms::map))
         .route("/r/{id}/admin", post(rooms::admin))

@@ -1,7 +1,7 @@
 import { msPerTick, TEAM, CLASS, byClass, ICONS, $, OVERLAY, OPT, state, teamColour, clock } from "../core/core.js";
 import { asset } from "../core/env.js";
 import { layerOn } from "../core/layers.js";
-import { teamLabel } from "../core/names.js";
+import { scoreOf, teamLabel } from "../core/names.js";
 import { esc } from "./feed.js";
 import { renderStopwatch } from "./stopwatch.js";
 /** @typedef {import("../../types/stream").GameEvent} GameEvent */
@@ -269,7 +269,7 @@ export function renderBoard(players, snap) {
         return `<tr class="${p.alive ? "" : "dead"}"><td class="bc">${icon}</td><td class="bn">${esc(p.name)}${status}</td>${BOARD_COLUMNS.map(([k]) => `<td>${s[k] ?? ""}</td>`).join("")}<td>${p.ping ?? ""}</td></tr>`;
       })
       .join("");
-    const score = /** @type {Partial<TeamScore>} */ (snap.score || {})[t] ?? 0;
+    const score = scoreOf(t, /** @type {Partial<TeamScore>} */ (snap.score || {})[t] ?? 0);
     return (
       `<div class="bteam ${t}"><div class="bhead"><b>${label}</b><span>${score}</span><i>${rows.length} players</i></div>` +
       `<table><thead><tr><th></th><th class="bn">Name</th>${BOARD_COLUMNS.map(([, h]) => `<th>${h}</th>`).join("")}<th>Ping</th></tr></thead><tbody>${body}</tbody></table></div>`
@@ -370,8 +370,8 @@ function watchedTimeLeft(main, mapLeft, left) {
 function renderScores(snap) {
   $("scoreboard").hidden = OVERLAY && OPT.get("score") !== "1";
   const scores = shownScore(snap);
-  setText("score-blue", String(scores?.blue ?? 0));
-  setText("score-red", String(scores?.red ?? 0));
+  setText("score-blue", String(scoreOf("blue", scores?.blue ?? 0)));
+  setText("score-red", String(scoreOf("red", scores?.red ?? 0)));
 }
 /** @param {Snapshot} snap @param {number} tick */
 export function renderScoreboard(snap, tick) {

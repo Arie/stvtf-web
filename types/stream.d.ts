@@ -255,6 +255,8 @@ export type NamesLine = {
   players: Record<string, string>;
   teams: Record<string, string>;
 };
+/** What a room adds to the game's score. */
+export type ScoreLine = { type: "score"; blue: number; red: number };
 export type PeopleLine = {
   type: "people";
   people: {
@@ -301,6 +303,7 @@ export type StreamMessage =
   | ClearLine
   | PeopleLine
   | NamesLine
+  | ScoreLine
   | ViewLine
   | RelayLine
   | { type: "data_age"; ms: number }

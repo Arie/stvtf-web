@@ -13,6 +13,7 @@ mod note;
 mod part;
 mod play;
 mod relay;
+mod scores;
 mod state;
 mod view;
 
@@ -25,6 +26,7 @@ pub(crate) use self::names::Names;
 pub(crate) use self::note::NoteDraw;
 pub(crate) use self::part::MapChoice;
 pub(crate) use self::play::Control;
+pub(crate) use self::scores::ScoreEdit;
 pub(crate) use self::state::{Room, SPEEDS, Saved, StartAt};
 pub(crate) use self::view::ViewPost;
 

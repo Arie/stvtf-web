@@ -23,6 +23,7 @@ import { HOME, IN_ROOM, me, names, post, watched } from "./home.js";
 import { copyLink, copyText } from "./copy.js";
 import { inkKey, people, signedIn } from "./people.js";
 import { namesTool } from "./names.js";
+import { scoreTool } from "./scores.js";
 import { inTf2 } from "./intf2.js";
 import { RoomView, latestView, morePoints, sender } from "./roomview.js";
 import { focusOf, viewArea } from "../map/view.js";
@@ -172,6 +173,7 @@ function roomBar() {
     // A tool in hand is let go, while its button still takes the click.
     for (const t of [marker, arc, circle, light, text]) if (!on && t.classList.contains("on")) t.click();
     if (!on) $("names").hidden = true;
+    $("scoreboard").classList.toggle("scoring", on);
     for (const c of [marker, arc, circle, light, text, clear, naming, $("rb-view")])
       /** @type {HTMLButtonElement} */ (c).disabled = !on;
     $("roombar").title = on ? "" : "The room's admins control playback";
@@ -195,6 +197,7 @@ function roomBar() {
   inTf2();
   wireTools({ marker, arc, circle, light, text, clear });
   namesTool(naming);
+  scoreTool();
 }
 
 /** @typedef {Record<"marker" | "arc" | "circle" | "light" | "text" | "clear", HTMLButtonElement>} Tools */

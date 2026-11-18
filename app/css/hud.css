@@ -347,6 +347,33 @@
   text-shadow: 0 2px 0 #0006;
   font-variant-numeric: tabular-nums;
 }
+/* A room's admins click a score to set it right. */
+#scoreboard.scoring .sb-team b {
+  pointer-events: auto;
+  cursor: pointer;
+}
+.sb-team b.editing {
+  display: none;
+}
+.sb-edit {
+  width: 2.4ch;
+  padding: 0;
+  border: 0;
+  border-bottom: 2px solid #fff;
+  background: none;
+  color: #fff;
+  font: inherit;
+  font-size: 38px;
+  font-weight: 800;
+  line-height: 1;
+  text-align: center;
+  pointer-events: auto;
+  appearance: textfield;
+  outline: 0;
+}
+.sb-edit::-webkit-inner-spin-button {
+  appearance: none;
+}
 .sb-name {
   font-size: 12px;
   font-weight: 800;
