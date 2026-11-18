@@ -705,3 +705,275 @@ test("h hides the player HUD and s the scores, each on its own", async () => {
   assert.deepEqual(errors, []);
   await page.close();
 });
+
+// The speakers list, opened, on a page that may set up comms (as whoever started the match may).
+// What stv.tf would answer is `site`'s to say; what the page posts is kept in `posted`.
+/** @param {{ comms?: object; voices?: object[]; demos?: object[]; refuse?: string }} site */
+async function openSpeakers(site) {
+  const { page, errors } = await open();
+  /** @type {{ path: string; body: any }[]} */
+  const posted = [];
+  const json = (/** @type {string} */ at, /** @type {() => unknown} */ body) =>
+    page.route(`**/w/demo/${at}`, route => {
+      const request = route.request();
+      if (request.method() !== "POST") return route.fulfill({ json: body() });
+      posted.push({ path: at, body: request.postDataJSON() });
+      return site.refuse ? route.fulfill({ status: 400, body: site.refuse }) : route.fulfill({ status: 204 });
+    });
+  await json("voice-invite", () => ({ invite: "0123456789abcdef", bot: "https://discord.test/bot" }));
+  await json("voice-comms", () => site.comms ?? { discord: null, mumble: [] });
+  await json("voices", () => site.voices ?? []);
+  await json("demos", () => site.demos ?? []);
+  await json("voice-mumble", () => ({}));
+  await json("voice-match", () => ({}));
+  await page.goto(base);
+  await until(page, () => ["blue", "red"].every(t => document.getElementById(`hud-${t}`).children.length >= 6));
+  await page.click("#voicetoggle");
+  await page.waitForSelector("#voicelist .vrow[data-steamid]");
+  const shows = (/** @type {string} */ text) =>
+    until(page, t => document.getElementById("voicelist").textContent.includes(t), text);
+  // What the `n`th post to `at` said.
+  const sent = async (/** @type {string} */ at, /** @type {number} */ n = 1) => {
+    const there = () => posted.filter(p => p.path === at);
+    for (let i = 0; i < 100 && there().length < n; i++) await page.waitForTimeout(50);
+    return there()[n - 1]?.body;
+  };
+  return { page, errors, shows, sent };
+}
+
+test("the speakers list mutes a player, a team and everyone, and turns voice off", async () => {
+  const { page, errors } = await openSpeakers({});
+  assert.equal(await page.textContent("#voicetoggle"), "🔊");
+  assert.deepEqual(await page.$$eval("#voicelist .vtname", els => els.map(e => e.textContent)), ["RED", "BLU"]);
+  assert.equal(await page.$$eval("#voicelist .vrow[data-steamid]", els => els.length), 12);
+  const muted = () => page.$$eval("#voicelist [data-mute].muted", els => els.length);
+  // By name: the list keeps the HUD's order, which changes as players die.
+  const one = `#voicelist [data-mute="${await page.getAttribute("#voicelist [data-mute]", "data-mute")}"]`;
+  await page.click(one);
+  assert.equal(await muted(), 1);
+  await page.click(one);
+  assert.equal(await muted(), 0);
+  await page.click('#voicelist button[data-team="red"]');
+  assert.equal(await page.textContent('#voicelist button[data-team="red"]'), "Unmute team");
+  assert.equal(await muted(), 6);
+  await page.click('#voicelist [data-act="swap"]');
+  assert.equal(await page.textContent('#voicelist button[data-team="blue"]'), "Unmute team");
+  assert.equal(await page.textContent('#voicelist button[data-team="red"]'), "Mute team");
+  await page.click('#voicelist [data-act="all"]');
+  assert.equal(await page.textContent('#voicelist [data-act="all"]'), "Unmute all");
+  assert.equal(await muted(), 12);
+  await page.click('#voicelist [data-act="all"]');
+  assert.equal(await muted(), 0);
+  // A volume is kept while the list is drawn anew.
+  await page.$eval("#voicelist input[type=range]", (/** @type {HTMLInputElement} */ el) => {
+    el.value = "40";
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await page.click('#voicelist button[data-team="red"]');
+  assert.equal(
+    await page.$eval("#voicelist input[type=range]", (/** @type {HTMLInputElement} */ el) => el.value),
+    "40",
+  );
+  await page.click('#voicelist [data-act="off"]');
+  assert.equal(await page.$eval("#voicelist", el => el.hidden), true);
+  assert.equal(await page.textContent("#voicetoggle"), "🔇");
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+test("comms for Discord: the command to paste is copied, with the delay asked for", async () => {
+  /** @type {{ comms?: object }} */
+  const site = {};
+  const { page, errors, shows } = await openSpeakers(site);
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+  await page.click('#voicelist [data-action="go:home"]');
+  assert.deepEqual(await page.$$eval("#voicelist .vcopy", els => els.map(e => e.textContent)), ["Discord", "Mumble"]);
+  assert.ok(await page.$eval("#voicelist", el => el.classList.contains("wide")));
+  await page.click('#voicelist [data-action="go:discord"]');
+  await shows("Waiting for bot…");
+  assert.equal(await page.getAttribute("#voicelist .vhint a", "href"), "https://discord.test/bot");
+  await page.fill('#voicelist [data-action="delay"]', "0");
+  await page.press('#voicelist [data-action="delay"]', "Tab");
+  await page.click('#voicelist [data-action="copy"]');
+  await shows("✓ Copied");
+  assert.equal(
+    await page.evaluate(() => navigator.clipboard.readText()),
+    `/stv join link:${base}?voice=0123456789abcdef delay:0`,
+  );
+  // The bot came: on to where it is.
+  site.comms = { discord: { status: "In General", state: "in" }, mumble: [] };
+  await shows("Discord: In General");
+  await shows("Nobody there");
+  await page.click('#voicelist [data-action="go:"]');
+  await shows("🎧 Comms");
+  assert.equal(await page.$eval("#voicelist", el => el.classList.contains("wide")), false);
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+test("comms for Mumble: a channel is joined, moved and left, and what will not do says why", async () => {
+  /** @type {{ comms?: object; refuse?: string }} */
+  const site = {};
+  const { page, errors, shows, sent } = await openSpeakers(site);
+  const field = (/** @type {string} */ name) => `#voicelist [data-mumble="${name}"]`;
+  await page.click('#voicelist [data-action="go:home"]');
+  await page.click('#voicelist [data-action="go:mumble"]');
+  await page.click('#voicelist [data-action="join"]');
+  await shows("Invalid server");
+  await page.fill(field("server"), "mumble.test:1234");
+  await page.click('#voicelist [data-action="join"]');
+  await shows("Channel name required");
+  await page.fill(field("channel"), "Team A");
+  await page.fill(field("password"), "secret");
+  site.refuse = "Server full";
+  await page.click('#voicelist [data-action="join"]');
+  await shows("Server full");
+  site.refuse = "";
+  site.comms = {
+    discord: null,
+    mumble: [{ id: 1, host: "mumble.test", port: 1234, channel: "Team A", delay: 90, status: "connecting" }],
+  };
+  await page.click('#voicelist [data-action="join"]');
+  assert.deepEqual(await sent("voice-mumble", 2), {
+    host: "mumble.test",
+    port: 1234,
+    password: "secret",
+    channel: "Team A",
+    delay: 90,
+  });
+  await shows("Mumble: connecting");
+  assert.ok(await page.$("#voicelist .vdot.wait"));
+  const inTeamA = {
+    id: 1,
+    host: "mumble.test",
+    port: 1234,
+    channel: "Team A",
+    delay: 90,
+    status: "In Team A",
+    state: "in",
+  };
+  site.comms = { discord: null, mumble: [inTeamA] };
+  await shows("Mumble: In Team A");
+  await shows("tv_delay 90 s");
+  assert.ok(await page.$("#voicelist .vdot.good"));
+  // Another channel is most likely on the same server, its password known.
+  await page.click('#voicelist [data-action="go:mumble"]');
+  assert.equal(await page.inputValue(field("server")), "mumble.test:1234");
+  assert.equal(await page.getAttribute(field("password"), "placeholder"), "unchanged");
+  await page.click('#voicelist [data-action="go:home"]');
+  await page.click('#voicelist [data-action="go:reconnect:1"]');
+  assert.equal(await page.inputValue(field("channel")), "Team A");
+  await page.fill(field("channel"), "Team B");
+  site.comms = { discord: null, mumble: [{ ...inTeamA, channel: "Team B", status: "In Team B" }] };
+  await page.click('#voicelist [data-action="join"]');
+  assert.deepEqual(await sent("voice-mumble", 3), {
+    id: 1,
+    host: "mumble.test",
+    port: 1234,
+    channel: "Team B",
+    delay: 90,
+  });
+  await shows("Mumble: In Team B");
+  await page.click('#voicelist [data-action="go:reconnect:1"]');
+  site.comms = { discord: null, mumble: [] };
+  await page.click('#voicelist [data-action="leave"]');
+  assert.deepEqual(await sent("voice-mumble", 4), { leave: true, id: 1 });
+  await until(page, () => document.querySelectorAll("#voicelist .vcopy").length === 2);
+  // The only channel, and the bot would not join it: its form again, with why.
+  site.comms = {
+    discord: null,
+    mumble: [
+      {
+        id: 2,
+        host: "mumble.test",
+        port: 64738,
+        channel: "Gone",
+        delay: 30,
+        status: "Could not join: no such channel",
+      },
+    ],
+  };
+  await shows("Could not join: no such channel");
+  await page.click('#voicelist [data-action="go:home"]');
+  assert.equal(await page.inputValue(field("server")), "mumble.test");
+  assert.equal(await page.inputValue('#voicelist [data-action="delay"]'), "30");
+  assert.ok(await page.$("#voicelist .vdot.bad"));
+  // The browser tells of what was refused itself.
+  assert.deepEqual(
+    errors.filter(e => !e.includes("400")),
+    [],
+  );
+  await page.close();
+});
+
+test("who is who: those in the channel are put on players, by choice or by Steam ID", async () => {
+  const person = { steamid: null, linked: null, heard: true, confirmed: false };
+  /** @type {{ comms: object; voices: object[]; refuse?: string }} */
+  const site = {
+    comms: { discord: { status: "In General", state: "in" }, mumble: [] },
+    voices: [
+      { ...person, id: "71", name: "player 3 :)" },
+      { ...person, id: "72", name: "coach", steamid: "[U:1:1001]" },
+      { ...person, id: "73", name: "caster", confirmed: true },
+    ],
+  };
+  const { page, errors, shows, sent } = await openSpeakers(site);
+  await page.click('#voicelist [data-action="go:home"]');
+  await shows("Who is who");
+  assert.equal(await page.textContent("#voicelist .vteam .vhint"), "2/3");
+  const row = (/** @type {number} */ n) => `#voicelist .vwho:nth-child(${n} of .vwho)`;
+  // Whose name looks like theirs comes first; a guess shows as one until it is confirmed.
+  assert.equal(await page.textContent(`${row(1)} option:nth-child(2)`), "Player 3");
+  assert.equal(await page.$eval(`${row(2)} select`, el => el.className), "maybe");
+  assert.equal(
+    await page.$eval(`${row(2)} select`, (/** @type {HTMLSelectElement} */ el) => el.selectedOptions[0].text),
+    "Player 1",
+  );
+  const three = await page.$eval(`${row(1)} option:nth-child(2)`, (/** @type {HTMLOptionElement} */ o) => o.value);
+  await page.selectOption(`${row(1)} select`, three);
+  assert.deepEqual(await sent("voice-match", 1), { discord: "71", player: Number(three) });
+  await page.click(`${row(2)} [data-action="who-ok:72"]`);
+  assert.deepEqual(await sent("voice-match", 2), { discord: "72", steamid: "[U:1:1001]" });
+  site.voices = [
+    site.voices[0],
+    { ...person, id: "72", name: "coach", steamid: "[U:1:1001]", confirmed: true },
+    site.voices[2],
+  ];
+  await until(page, () => !document.querySelector('#voicelist [data-action^="who-ok"]'));
+  assert.equal(await page.$eval(`${row(2)} select`, el => el.className), "set");
+  await page.selectOption(`${row(3)} select`, "steamid");
+  await page.fill(`${row(3)} input`, "[U:1:5]");
+  await page.click('#voicelist [data-action="who-cancel"]');
+  await page.selectOption(`${row(3)} select`, "steamid");
+  await page.fill(`${row(3)} input`, "[U:1:99]");
+  await page.press(`${row(3)} input`, "Enter");
+  assert.deepEqual(await sent("voice-match", 3), { discord: "73", steamid: "[U:1:99]" });
+  // One not in the match is kept by their Steam ID.
+  site.voices = [
+    site.voices[0],
+    site.voices[1],
+    { ...person, id: "73", name: "caster", steamid: "[U:1:99]", confirmed: true },
+  ];
+  await until(page, () => [...document.querySelectorAll("#voicelist option")].some(o => o.textContent === "[U:1:99]"));
+  site.refuse = "Not a Steam ID";
+  await page.selectOption(`${row(1)} select`, "none");
+  assert.deepEqual(await sent("voice-match", 4), { discord: "71" });
+  await shows("Not a Steam ID");
+  // The browser tells of what was refused itself.
+  assert.deepEqual(
+    errors.filter(e => !e.includes("400")),
+    [],
+  );
+  await page.close();
+});
+
+test("demos with comms in them are listed under the speakers, to watch or download", async () => {
+  const { page, errors, shows } = await openSpeakers({
+    demos: [{ map: "cp_gullywash_f9", mb: 12, href: `${base}demos/1.dem`, watch: `${root}w/d1/` }],
+  });
+  await shows("With comms");
+  assert.equal(await page.textContent("#voicelist a.vwatch"), "▶ cp_gullywash_f9");
+  assert.equal(await page.textContent("#voicelist a.vdemo"), "12 MB ↓");
+  assert.deepEqual(errors, []);
+  await page.close();
+});
