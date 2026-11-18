@@ -37,6 +37,8 @@ mod move_tests;
 #[cfg(test)]
 mod part_tests;
 #[cfg(test)]
+mod relay_tests;
+#[cfg(test)]
 mod stream_tests;
 #[cfg(test)]
 mod tests;
