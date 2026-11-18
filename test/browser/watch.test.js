@@ -974,6 +974,66 @@ test("demos with comms in them are listed under the speakers, to watch or downlo
   await shows("With comms");
   assert.equal(await page.textContent("#voicelist a.vwatch"), "▶ cp_gullywash_f9");
   assert.equal(await page.textContent("#voicelist a.vdemo"), "12 MB ↓");
+  // Built when asked for, once: the server says it is by a cookie of the mark it was asked with.
+  await page.$eval("#voicelist", list =>
+    list.addEventListener("click", e => {
+      const a = /** @type {Element} */ (e.target).closest("a.vdemo");
+      if (a) (window.asked ??= []).push(/** @type {HTMLAnchorElement} */ (a).href);
+    }),
+  );
+  await page.click("#voicelist a.vdemo");
+  await shows("building…");
+  await page.click("#voicelist a.vdemo");
+  const asked = await page.evaluate(() => window.asked);
+  const mark = new URL(asked[0]).searchParams.get("built");
+  assert.match(mark ?? "", /^[0-9a-z]+$/);
+  assert.equal(asked[1], `${base}demos/1.dem`, "not asked for again while it is built");
+  await page.evaluate(m => (document.cookie = `built=${m}; Path=/`), mark);
+  await shows("12 MB ↓");
+  assert.equal(await page.evaluate(() => document.cookie.includes("built=")), false);
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+// 20 ms of someone's voice, as stvtf writes it.
+const FRAME = "aAxxLkNKtQnFTYqZHNAoDzcHeDUBBonRxudGf/k+Clm/zqvyYQ1a6eNr+BpHPKBKCewIjR5wCTYEg+6a";
+
+test("who talks shows on their HUD card and in the speakers list, and a click there mutes them", async () => {
+  const { page, errors } = await openSpeakers({});
+  await page.waitForSelector("#hud-red .card");
+  // A RED player says something, for as long as `talking` is set.
+  const who = await page.evaluate(async frame => {
+    const main = /** @type {HTMLScriptElement} */ ([...document.scripts].find(s => s.src.includes("main.js")));
+    const voice = await import(main.src.replace("main.js", "core/voice.js"));
+    const card = /** @type {HTMLElement} */ (document.querySelector("#hud-red .card"));
+    const id = Number(card.dataset.id);
+    const { steamid } = window.viewState.players.get(id);
+    window.talking = true;
+    setInterval(() => {
+      if (window.talking) voice.onVoice({ type: "voice", tick: 0, player: id, steamid, rate: 24000, frames: [frame] });
+    }, 20);
+    return { id, steamid };
+  }, FRAME);
+  const mark = `#hud-red .card[data-id="${who.id}"] > .vc`;
+  await until(page, m => document.querySelector(m)?.matches(".wave:not(.quiet)"), mark);
+  await until(page, m => [...document.querySelectorAll(`${m} > i`)].some(i => i.style.height), mark);
+  await until(
+    page,
+    steamid =>
+      document.querySelector(`#voicelist .vrow[data-steamid="${steamid}"]`)?.classList.contains("talking") &&
+      document.querySelector('#voicelist .vteam[data-team="red"]')?.classList.contains("talking"),
+    who.steamid,
+  );
+  assert.equal(await page.$eval('#voicelist .vteam[data-team="blue"]', el => el.classList.contains("talking")), false);
+  // Silent again: a faint 🔊, there to mute them by.
+  await page.evaluate(() => (window.talking = false));
+  await until(page, m => document.querySelector(m)?.matches(".quiet:not(.wave)"), mark);
+  assert.equal(await page.textContent(mark), "🔊");
+  await page.click(mark);
+  await until(page, m => document.querySelector(m)?.textContent === "🔇", mark);
+  assert.equal(await page.$eval("#follow", el => el.hidden), true, "muting follows nobody");
+  await page.click(mark);
+  await until(page, m => document.querySelector(m)?.textContent === "🔊", mark);
   assert.deepEqual(errors, []);
   await page.close();
 });
