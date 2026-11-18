@@ -1,10 +1,10 @@
-// A room's names, for its admins: each player's and team's, filled in with a league's where the
+// A room's names, for its admins, from a click on a team's name: each player's and team's, filled in with a league's where the
 // leagues know them, to adjust and apply for everyone (see core/names.js).
 import { $, byClass, state } from "../core/core.js";
 import { env } from "../core/env.js";
 import { given } from "../core/names.js";
 import { el } from "../panel/voicebits.js";
-import { post } from "./home.js";
+import { me, post } from "./home.js";
 import { note } from "./tools.js";
 
 /** @typedef {{ league: string; players: Record<string, string>; teams: Record<string, string> }} League */
@@ -114,14 +114,17 @@ function send(panel, names) {
   });
 }
 
-// The names button of the room bar opens the panel, and closes it.
-/** @param {HTMLButtonElement} button */
-export function namesTool(button) {
+// An admin's click on a team's name on the scoreboard opens the panel, and closes it.
+export function namesTool() {
   const panel = $("names");
-  button.onclick = () => {
-    panel.hidden = !panel.hidden;
-    if (!panel.hidden) show(panel);
-  };
+  for (const name of /** @type {NodeListOf<HTMLElement>} */ ($("scoreboard").querySelectorAll(".sb-name"))) {
+    name.title = "Names";
+    name.addEventListener("click", () => {
+      if (!me.admin) return;
+      panel.hidden = !panel.hidden;
+      if (!panel.hidden) show(panel);
+    });
+  }
   env.keys.addEventListener("keydown", e => {
     if (e.key === "Escape") panel.hidden = true;
   });

@@ -1043,11 +1043,14 @@ test("an admin names the players and teams, from a league's names, for everyone 
   await page.goto(base);
   await page.click("#roomopen");
   await page.waitForURL(/\/r\/[0-9a-f]{32}\/$/, { timeout: WAIT });
-  await until(page, () => !(/** @type {HTMLButtonElement} */ (document.getElementById("rb-names")).disabled));
+  await until(page, () => document.getElementById("scoreboard").classList.contains("scoring"));
   await until(page, () => ["blue", "red"].every(t => document.getElementById(`hud-${t}`).children.length >= 6));
   const viewer = await open();
   await viewer.page.goto(page.url());
-  assert.ok(await viewer.page.$eval("#rb-names", el => /** @type {HTMLButtonElement} */ (el).disabled));
+  // A viewer's click on a team's name opens nothing.
+  await until(viewer.page, () => !document.getElementById("scoreboard").hidden);
+  await viewer.page.click(".sb-team.blue .sb-name", { force: true });
+  assert.ok(await viewer.page.$eval("#names", el => el.hidden));
   // What the leagues would say: one knows two of BLU and their team.
   /** @type {any} */
   let asked;
@@ -1062,7 +1065,7 @@ test("an admin names the players and teams, from a league's names, for everyone 
       },
     });
   });
-  await page.click("#rb-names");
+  await page.click(".sb-team.blue .sb-name");
   const field = (/** @type {string} */ key) => `#names input[data-name="${key}"]`;
   await until(
     page,
@@ -1098,7 +1101,7 @@ test("an admin names the players and teams, from a league's names, for everyone 
   const later = await open();
   await later.page.goto(page.url());
   await until(later.page, () => document.getElementById("hud-blue").textContent.includes("Cinco"));
-  await page.click("#rb-names");
+  await page.click(".sb-team.red .sb-name");
   await until(
     page,
     f => /** @type {HTMLInputElement} */ (document.querySelector(f))?.value === "Dos",

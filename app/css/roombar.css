@@ -353,19 +353,14 @@
 .stvtf.room #follow {
   bottom: 70px;
 }
-/* The names panel, over the bar: a column a side. */
-#roombar #rb-names {
-  width: auto;
-  padding: 0 6px;
-  font-size: 12px;
-}
+/* The names panel, under the scoreboard: a column a side. */
 #names {
   position: absolute;
-  bottom: 52px;
+  top: 96px;
   left: 50%;
   z-index: 30;
   transform: translateX(-50%);
-  max-height: calc(100% - 80px);
+  max-height: calc(100% - 160px);
   padding: 10px 12px;
   overflow-y: auto;
   border-radius: 6px;
@@ -440,7 +435,6 @@
 .stvtf.watch #rb-light,
 .stvtf.watch #rb-text,
 .stvtf.watch #rb-clear,
-.stvtf.watch #rb-names,
 .stvtf.watch #rb-view,
 .stvtf.watch #rb-lead {
   display: none;

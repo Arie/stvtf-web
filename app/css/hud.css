@@ -347,10 +347,14 @@
   text-shadow: 0 2px 0 #0006;
   font-variant-numeric: tabular-nums;
 }
-/* A room's admins click a score to set it right. */
-#scoreboard.scoring .sb-team b {
+/* A room's admins click a score to set it right, a team's name to name the teams and players. */
+#scoreboard.scoring .sb-team b,
+#scoreboard.scoring .sb-name {
   pointer-events: auto;
   cursor: pointer;
+}
+#scoreboard.scoring .sb-name:hover::after {
+  content: " ✎";
 }
 .sb-team b.editing {
   display: none;
