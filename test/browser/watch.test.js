@@ -1160,3 +1160,22 @@ test("an admin clicks a score on the HUD to set it right, for everyone in the ro
   );
   for (const p of [page, viewer.page, later.page]) await p.close();
 });
+
+test("a long status is cut short, not the buttons after it pushed off the page", async () => {
+  const { page } = await open();
+  // No stream: the status stays as it is put.
+  await page.route("**/events*", r => r.abort());
+  await page.goto(base);
+  await page.waitForSelector("#status");
+  const [button, title, status] = await page.evaluate(() => {
+    const s = /** @type {HTMLElement} */ (document.getElementById("status"));
+    s.textContent = "gave up: disconnected by server: Bad spectator password";
+    for (const id of ["roomopen", "copylink"]) /** @type {HTMLElement} */ (document.getElementById(id)).hidden = false;
+    const right = (/** @type {string} */ id) =>
+      /** @type {HTMLElement} */ (document.getElementById(id)).getBoundingClientRect().right;
+    return [right("roomopen"), right("title"), s.scrollWidth > s.clientWidth];
+  });
+  assert.ok(button <= title, `Watch together ends at ${button}, the panel at ${title}`);
+  assert.ok(status, "the status is cut short");
+  await page.close();
+});
