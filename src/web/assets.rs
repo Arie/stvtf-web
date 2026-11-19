@@ -66,14 +66,19 @@ pub(super) fn app_files() -> &'static [(String, Vec<u8>)] {
         // No part of a stylesheet (`css/`) by itself, nor what is no file of the page.
         names.retain(|n| is(n, "js") || (is(n, "css") && !n.contains('/')));
         names.sort_by_key(|n| (n != "style.css", !is(n, "css"), n.clone()));
-        let served = |name: String| {
-            let body = data::<AppFiles>(&name)?;
-            let body = if is(&name, "css") { inline_imports(&String::from_utf8_lossy(&body)).into_bytes() } else { body };
-            Some((name, body))
-        };
-        names.into_iter().filter_map(served).collect()
+        names.into_iter().filter_map(|name| Some((served(&name)?, name))).map(|(body, name)| (name, body)).collect()
     })
 }
+
+/// Page file `name` as served: a stylesheet with its imports inlined.
+fn served(name: &str) -> Option<Vec<u8>> {
+    let body = data::<AppFiles>(name)?;
+    Some(if is(name, "css") { inline_imports(&String::from_utf8_lossy(&body)).into_bytes() } else { body })
+}
+
+/// A debug build reads the page's files anew and has browsers ask again: an edit shows on a
+/// reload.
+const FRESH: bool = cfg!(all(debug_assertions, not(test)));
 
 /// A stylesheet with each `@import "x";` line replaced by the file it names.
 fn inline_imports(sheet: &str) -> String {
@@ -90,7 +95,8 @@ pub(super) fn site_file(path: &str) -> Response {
     let (body, kept) = match name.split_once('/') {
         Some(("app", versioned)) => {
             let file = versioned.split_once('/').map_or("", |(_, file)| file);
-            (app_files().iter().find(|(name, _)| name == file).map(|(_, body)| body.clone()), true)
+            let known = app_files().iter().find(|(name, _)| name == file);
+            (known.and_then(|(name, body)| if FRESH { served(name) } else { Some(body.clone()) }), !FRESH)
         }
         Some(("fonts", font)) => (data::<Fonts>(font), true),
         Some(("icons", icon)) if !icon.contains('/') => (data::<Icons>(icon), false),
@@ -107,7 +113,9 @@ pub(super) fn site_file(path: &str) -> Response {
     let Some(body) = body else { return StatusCode::NOT_FOUND.into_response() };
     let mime = mime_guess::from_path(name).first_or_octet_stream();
     let ctype = if mime.type_() == "text" { format!("{mime}; charset=utf-8") } else { mime.to_string() };
-    let cache = kept.then(|| [(header::CACHE_CONTROL, format!("max-age={}", CACHE_FOR.as_secs()))]);
+    let fresh = FRESH && name.starts_with("app/");
+    let cache = (kept || fresh)
+        .then(|| [(header::CACHE_CONTROL, if fresh { "no-cache".into() } else { format!("max-age={}", CACHE_FOR.as_secs()) })]);
     ([(header::CONTENT_TYPE, ctype)], cache, body).into_response()
 }
 
