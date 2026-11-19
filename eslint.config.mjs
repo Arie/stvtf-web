@@ -2,6 +2,7 @@ import js from "@eslint/js";
 import globals from "globals";
 
 export default [
+  { ignores: ["app/vendor/"] },
   js.configs.recommended,
   {
     files: ["app/**/*.js", "test/**/*.js", "script/**/*.mjs"],

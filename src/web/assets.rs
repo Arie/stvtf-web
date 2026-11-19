@@ -181,12 +181,14 @@ pub(super) fn sight(app: &App, name: &str, gzip: bool) -> Response {
 
 /// Changes whenever a page file does, so browsers holding `/app/` files for a day fetch new ones
 /// after a deploy; the modules' relative imports carry it along.
-/// The viewer's modules, without the embed's and upload page's entries.
+/// The viewer's modules, without the embed's and upload page's entries and what is loaded when
+/// needed (`vendor/`).
 pub(super) fn page_modules() -> &'static [String] {
     static MODULES: OnceLock<Vec<String>> = OnceLock::new();
     MODULES.get_or_init(|| {
         let modules = app_files().iter().map(|(name, _)| name.clone());
-        modules.filter(|name| is(name, "js") && !["stv-map.js", "upload.js"].contains(&name.as_str())).collect()
+        let entry = |name: &str| ["stv-map.js", "upload.js"].contains(&name) || name.starts_with("vendor/");
+        modules.filter(|name| is(name, "js") && !entry(name)).collect()
     })
 }
 

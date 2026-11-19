@@ -1195,9 +1195,19 @@ test("a camera is placed on the map and an admin's click puts the room's relay t
   await until(page, () => document.getElementById("cam-shows").textContent !== "");
   await page.fill("#cam-name", "Mid");
   await page.fill("#cam-z", "1400");
+  // Its picture, in the corner: more than a sky.
+  await until(page, () => {
+    const view = /** @type {HTMLCanvasElement} */ (document.getElementById("cam-view")),
+      c = Object.assign(document.createElement("canvas"), { width: 64, height: 36 }).getContext("2d");
+    if (view.hidden || !view.width || !c) return false;
+    c.drawImage(view, 0, 0, 64, 36);
+    const px = new Uint32Array(c.getImageData(0, 0, 64, 36).data.buffer);
+    return new Set(px).size > 8;
+  });
   if (process.env.SHOTS) await page.screenshot({ path: `${process.env.SHOTS}/camera-placing.png` });
   await page.click("#cam-save");
   await until(page, () => document.querySelector("#cam-list button")?.textContent === "Mid");
+  assert.ok(await page.$eval("#cam-view", el => el.hidden), "put away with the camera placed");
   const kept = await page.evaluate(map => fetch(`../../cameras/${map}`).then(r => r.json()), MAP);
   assert.equal(kept.cameras.length, 1);
   const { pos, aim } = kept.cameras[0];

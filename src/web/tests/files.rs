@@ -115,9 +115,9 @@ fn serves_the_page_and_its_modules_under_the_version() {
         imported.extend(imports(name, &file));
     }
     for (name, ctype, _) in app_files() {
-        // The page's entries, the upload page's, and the one /embed/v1/stv-map.js loads for
-        // other sites.
-        let entry = ["main.js", "core/faults.js", "stv-map.js", "upload.js"].contains(&name);
+        // The page's entries, the upload page's, the one /embed/v1/stv-map.js loads for other
+        // sites, and what is loaded by its address when needed.
+        let entry = ["main.js", "core/faults.js", "stv-map.js", "upload.js"].contains(&name) || name.starts_with("vendor/");
         assert!(ctype != JS || entry || imported.contains(name), "nothing imports {name}");
     }
     // And everything imported is served: a module missing from APP would 404 in the browser.

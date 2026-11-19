@@ -67,6 +67,21 @@ export function blind(g, c) {
   const overGround = floorsOf(g, cell(g, c.pos[0], 0), cell(g, c.pos[1], 1)).some(z => z <= c.pos[2]);
   return solidAt(g, c.pos) || !overGround || !clear(g, c.pos, [c.aim[0], c.aim[1], c.aim[2] + CHEST]);
 }
+// Where the solid under a wall's top ends, going down: on either side of its middle, the lower.
+/** @param {Grid} g @param {number[]} ends @param {number} top */
+export function footOf(g, [x1, y1, x2, y2], top) {
+  const long = Math.hypot(x2 - x1, y2 - y1) || 1,
+    [nx, ny] = [((y1 - y2) / long) * g.vox * 0.5, ((x2 - x1) / long) * g.vox * 0.5],
+    k0 = cell(g, top - 1, 2);
+  let low = k0;
+  for (const side of [-1, 1]) {
+    const [i, j] = [cell(g, (x1 + x2) / 2 + side * nx, 0), cell(g, (y1 + y2) / 2 + side * ny, 1)];
+    let k = k0;
+    while (solid(g, i, j, k)) k--;
+    low = Math.min(low, k + 1);
+  }
+  return Math.min(top - g.vox, g.origin[2] + low * g.vox);
+}
 // The highest floor under `z` at a spot, for an aim put there.
 /** @param {Grid} g @param {number} x @param {number} y @param {number} z */
 export function floorUnder(g, x, y, z) {

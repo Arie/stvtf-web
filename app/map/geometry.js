@@ -16,7 +16,7 @@ const MIN_UNITS_PER_PIXEL = 4,
   ROOF_ABOVE = 400,
   WALL_BASE = 64;
 // Floor colours by surface kind (src/maps/bsp.rs's material words); anything else, or none, is "other".
-const KIND_COLOURS = {
+export const KIND_COLOURS = {
   __proto__: null,
   grass: "#56703d",
   dirt: "#86704f",

@@ -149,6 +149,8 @@ looks at. In a room, the Cameras layer (behind ⚙) shows them as markers on the
   show is green, what is in the picture but hidden red, and the panel says how much of each
   capture area shows. A camera in something solid, out over the void, or with something between
   it and its aim is red.
+- While one is placed, a picture in the corner shows what it would see: the map's floors and
+  walls flat shaded, players as pills (three.js, `app/vendor/`, loaded then).
 - A room's other admins place cameras the same way, for that room alone: on its map, shown to
   everyone in it, kept as long as the room.
 - The map's cameras show to the site's streamers only; the room's own to everyone in it.

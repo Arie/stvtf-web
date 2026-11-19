@@ -7,6 +7,7 @@ import { setAutoZoom } from "../core/input.js";
 import { layerOn } from "../core/layers.js";
 import { focusOf, label, toScreen } from "../map/view.js";
 import { HOME, me, post } from "./home.js";
+import { preview } from "./preview.js";
 import { blind, floorUnder, loadSight, lookFrom } from "./sight.js";
 import { note, worldAt } from "./tools.js";
 /** @typedef {[number, number, number]} Vec3 */
@@ -114,12 +115,14 @@ function drawLook(c, grid) {
   ctx.restore();
   if ($("cam-shows").textContent !== look.says) $("cam-shows").textContent = look.says;
 }
+const isEdited = (/** @type {Camera} */ c) => c.id !== undefined && c.id === editing?.id && !c.room === !editing?.room;
 export function drawCameras() {
-  if (!layerOn("cameras") || !state.map) return;
-  if (asked !== asking(state.map)) load(state.map);
+  const map = layerOn("cameras") ? state.map : null;
+  preview(map ? editing : null, sight);
+  if (!map) return;
+  if (asked !== asking(map)) load(map);
   if (editing && sight) drawLook(editing, sight);
-  for (const c of [...ofMap(), ...stray()])
-    if (c.id === undefined || c.id !== editing?.id || !c.room !== !editing?.room) mark(c, colourOf(c), false);
+  for (const c of [...ofMap(), ...stray()]) if (!isEdited(c)) mark(c, colourOf(c), false);
   if (editing) mark(editing, sight && blind(sight, editing) ? COLOUR.bad : COLOUR.mark, true);
 }
 

@@ -493,6 +493,17 @@
   color: var(--text);
   font-size: 12px;
 }
+/* What the camera being placed would show. */
+#cam-view {
+  position: absolute;
+  top: 96px;
+  left: 206px;
+  z-index: 30;
+  width: min(360px, calc(100vw - 218px));
+  aspect-ratio: 16 / 9;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
 #cam-list,
 #cam-edit {
   display: flex;
@@ -536,4 +547,7 @@
 #cameras .cbuttons {
   display: flex;
   gap: 4px;
+}
+#cameras .cbuttons button {
+  padding: 0 4px;
 }
