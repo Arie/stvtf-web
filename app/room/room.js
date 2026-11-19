@@ -22,6 +22,7 @@ import { pushMirror } from "../map/camera.js";
 import { HOME, IN_ROOM, me, names, post, watched } from "./home.js";
 import { copyLink, copyText } from "./copy.js";
 import { inkKey, people, signedIn } from "./people.js";
+import { camerasTool } from "./cameras.js";
 import { namesTool } from "./names.js";
 import { scoreTool } from "./scores.js";
 import { inTf2 } from "./intf2.js";
@@ -185,6 +186,7 @@ function roomBar() {
     .then(
       m => {
         me.id = m.id;
+        me.cameras = m.cameras === true;
         allow(m.admin === true);
         whoKnown();
         signedIn(m);
@@ -197,6 +199,7 @@ function roomBar() {
   wireTools({ marker, arc, circle, light, text, clear });
   namesTool();
   scoreTool();
+  camerasTool();
 }
 
 /** @typedef {Record<"marker" | "arc" | "circle" | "light" | "text" | "clear", HTMLButtonElement>} Tools */

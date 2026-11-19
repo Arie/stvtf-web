@@ -44,6 +44,8 @@ pub(super) struct App {
     pub(super) home: Option<String>,
     /// The leagues' names for a room's players.
     pub(super) leagues: super::leagues::Leagues,
+    /// The cameras casters placed on maps.
+    pub(super) cameras: super::cameras::Cameras,
     /// Open event streams by client address.
     pub(super) streams: Arc<Mutex<HashMap<IpAddr, usize>>>,
     pub(super) rooms: super::rooms::registry::Rooms,

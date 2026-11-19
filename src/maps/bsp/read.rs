@@ -201,6 +201,18 @@ pub fn geometry(data: &[u8]) -> Result<Geometry> {
     geometry_counted(data).map(|g| g.0)
 }
 
+/// What blocks a camera's sight on the map (see [`super::reach::sight`]): of one with points or
+/// pickups to frame it.
+pub fn sight(data: &[u8]) -> Result<Vec<u8>> {
+    if !data.starts_with(b"VBSP") {
+        bail!("cannot read a file that is not VBSP");
+    }
+    let world = World::read(data)?;
+    let Some(bounds) = playable_bounds(&Entities::read(data)?.list) else { bail!("cannot frame a map without points or pickups") };
+    let disps = super::displacement::displacements(data, &world).unwrap_or_default();
+    super::reach::sight(data, &disps, &bounds)
+}
+
 /// `geometry`, and how many floors there were, and their area, before the playable-area filter.
 pub(super) fn geometry_counted(data: &[u8]) -> Result<(Geometry, (usize, f64))> {
     if !data.starts_with(b"VBSP") {

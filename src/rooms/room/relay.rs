@@ -115,7 +115,7 @@ impl Room {
             paused: st.paused,
             speed: st.speed,
             from_start: false,
-            camera: lock(&self.camera).map(|player| stvtf::relay::Camera::Follow { player }),
+            camera: self.relay_camera(),
         })
     }
 

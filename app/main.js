@@ -16,6 +16,7 @@ import { initRoom } from "./room/room.js";
 import { drawSpawnRooms } from "./map/spawns.js";
 import { openStream } from "./core/stream.js";
 import { initVoice } from "./panel/speakers.js";
+import { drawCameras } from "./room/cameras.js";
 import { drawStrokes } from "./room/telestrator.js";
 import { frameMap, drawBackground, viewArea } from "./map/view.js";
 
@@ -122,6 +123,7 @@ function draw() {
   drawBackground(r);
   if (f) drawFrame(f, tick);
   drawStrokes();
+  drawCameras();
 }
 // Before the background: frame the map, follow the action or a player, and show the score.
 /** @param {Frame} f @param {number} tick */

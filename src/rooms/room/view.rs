@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use super::Room;
 use super::state::{Leader, on_map};
+use crate::cameras::Spot;
 use crate::matches::hub::announce;
 use crate::sync::lock;
 
@@ -58,6 +59,16 @@ pub(crate) struct ViewPost {
     pub(crate) page: String,
 }
 
+/// Where an admin puts the relay's camera: with neither, nowhere.
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct SpotPost {
+    #[serde(default)]
+    pub(crate) pos: Option<[i32; 3]>,
+    #[serde(default)]
+    pub(crate) aim: Option<[i32; 3]>,
+}
+
 /// The longest page name.
 pub(super) const MAX_PAGE: usize = 32;
 
@@ -103,7 +114,9 @@ impl Room {
             View::Follow { player, .. } => Some(player),
             _ => None,
         };
-        if std::mem::replace(&mut *lock(&self.camera), camera) != camera {
+        // A player chosen takes the relay's camera off its spot.
+        let off_spot = post.take && camera.is_some() && self.leave_spot();
+        if std::mem::replace(&mut *lock(&self.camera), camera) != camera || off_spot {
             self.steer_relay(&lock(&self.state));
         }
         // Chosen, or moved by hand (a page does not send what it does by itself, such as a follow
@@ -128,5 +141,45 @@ impl Room {
         announce(&self.hub, "view", &line);
         drop(leader);
         *lock(&self.camera) = None;
+    }
+
+    /// An admin puts the relay's camera at a spot of the map, or (none) back with the director.
+    pub(crate) fn set_spot(&self, post: &SpotPost) -> Result<()> {
+        let spot = match (post.pos, post.aim) {
+            (Some(pos), Some(aim)) => Some(Spot { pos, aim }),
+            (None, None) => None,
+            _ => bail!("Invalid camera."),
+        };
+        if spot.is_some_and(|s| !s.fits()) {
+            bail!("Invalid camera.");
+        }
+        if std::mem::replace(&mut *lock(&self.spot), spot) != spot {
+            self.tell_spot(spot);
+            self.steer_relay(&lock(&self.state));
+        }
+        Ok(())
+    }
+
+    /// The relay's camera leaves its spot, as on another map. Whether it was at one.
+    pub(super) fn leave_spot(&self) -> bool {
+        let was = lock(&self.spot).take().is_some();
+        if was {
+            self.tell_spot(None);
+        }
+        was
+    }
+
+    fn tell_spot(&self, spot: Option<Spot>) {
+        let line = match spot {
+            Some(s) => serde_json::json!({ "type": "camera", "pos": s.pos, "aim": s.aim }),
+            None => serde_json::json!({ "type": "camera" }),
+        };
+        announce(&self.hub, "camera", &Arc::from(line.to_string()));
+    }
+
+    /// The relay's camera: at the spot, else on the player followed.
+    pub(super) fn relay_camera(&self) -> Option<stvtf::relay::Camera> {
+        let follow = lock(&self.camera).map(|player| stvtf::relay::Camera::Follow { player });
+        lock(&self.spot).map(|s| s.for_tf2()).or(follow)
     }
 }

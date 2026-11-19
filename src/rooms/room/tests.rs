@@ -396,3 +396,27 @@ fn who_leads_the_view_is_saved_as_by_page_and_kind() {
     assert_eq!(leader, Leader { by: 3, page: "main".into(), kind: "follow".into() });
     assert_eq!(serde_json::to_string(&leader).unwrap(), r#"[3,"main","follow"]"#);
 }
+
+#[test]
+fn the_relays_camera_is_at_the_spot_an_admin_put_it_until_a_player_is_followed() {
+    use stvtf::relay::Camera;
+
+    use super::view::SpotPost;
+    let r = room(1);
+    let follow = |player| ViewPost { view: View::Follow { player, w: None, h: None }, take: true, page: "a".into() };
+    r.set_view(&follow(4), "me").unwrap();
+    assert_eq!(r.relay_camera(), Some(Camera::Follow { player: 4 }));
+    r.set_spot(&SpotPost { pos: Some([0, 0, 1500]), aim: Some([0, 0, 400]) }).unwrap();
+    assert_eq!(r.relay_camera(), Some(Camera::Fixed { pos: [0, 0, 1500], pitch: 90, yaw: 0 }));
+    // The admin's own view moving is not a player chosen.
+    r.set_view(&ViewPost { view: View::Follow { player: 4, w: Some(3000.0), h: Some(2000.0) }, take: false, page: "a".into() }, "me")
+        .unwrap();
+    assert!(matches!(r.relay_camera(), Some(Camera::Fixed { .. })));
+    r.set_view(&follow(5), "me").unwrap();
+    assert_eq!(r.relay_camera(), Some(Camera::Follow { player: 5 }));
+    let told: Vec<_> = subscribe(&r.hub, false).try_iter().filter(|l| l.contains(r#""type":"camera""#)).collect();
+    assert_eq!(&*told[0], r#"{"type":"camera"}"#);
+    assert!(r.set_spot(&SpotPost { pos: Some([0, 0, 99_999]), aim: Some([0, 0, 400]) }).is_err());
+    assert!(r.set_spot(&SpotPost::default()).is_ok() && !r.leave_spot());
+    r.stop();
+}

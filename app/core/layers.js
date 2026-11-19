@@ -1,4 +1,4 @@
-import { $, OVERLAY, optOn } from "./core.js";
+import { $, OVERLAY, PAGE, optOn } from "./core.js";
 import { env } from "./env.js";
 import { openStream } from "./stream.js";
 
@@ -15,9 +15,12 @@ const LAYERS = {
   loadout: { label: "Weapon in hand", key: "l", def: true, detail: false },
   effects: { label: "Status effects", key: "", def: true, detail: false },
 };
+// Not overkill: a room's own, off until asked for.
+const ROOM_LAYERS = { cameras: { label: "Cameras", key: "", def: false, detail: false } };
+const IN_ROOM = /\/r\/[0-9a-f]{32}\/$/.test(PAGE);
 /** @type {{ [name: string]: boolean }} */
 const layerState = {};
-for (const [name, l] of Object.entries(LAYERS)) {
+for (const [name, l] of Object.entries({ ...LAYERS, ...(IN_ROOM ? ROOM_LAYERS : {}) })) {
   layerState[name] = OVERLAY ? name === "caps" : l.def;
   try {
     const v = !OVERLAY && env.storage && localStorage.getItem("layer." + name);
@@ -61,5 +64,6 @@ export function renderSettings() {
     row("*", "Overkill (all)", "x", overkillOn(), "master") +
     Object.entries(LAYERS)
       .map(([n, l]) => row(n, l.label, l.key, layerState[n], ""))
-      .join("");
+      .join("") +
+    (IN_ROOM ? Object.entries(ROOM_LAYERS).map(([n, l]) => row(n, l.label, l.key, layerState[n], "own")) : []).join("");
 }

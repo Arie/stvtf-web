@@ -157,6 +157,28 @@ pub(super) fn map(app: &App, name: &str, gzip: bool) -> Response {
     }
 }
 
+/// `/sight/<name>`: what blocks a camera's sight on a map, cached; built on a miss for a live map.
+pub(super) fn sight(app: &App, name: &str, gzip: bool) -> Response {
+    let fetch = app.on_map(name);
+    let map_lock = fetch.then(|| app.map_lock(name));
+    let _one_at_a_time = map_lock.as_deref().map(lock);
+    let body = crate::maps::cache::map_sight(&app.cache, name, fetch).and_then(|gz| {
+        if gzip {
+            return Ok(gz);
+        }
+        let mut plain = Vec::new();
+        std::io::Read::read_to_end(&mut flate2::read::GzDecoder::new(&gz[..]), &mut plain)?;
+        Ok(plain)
+    });
+    match body {
+        Ok(body) => {
+            let headers = [(header::CONTENT_TYPE, "application/octet-stream"), (header::VARY, "Accept-Encoding")];
+            (headers, gzip.then_some([(header::CONTENT_ENCODING, "gzip")]), body).into_response()
+        }
+        Err(e) => (StatusCode::NOT_FOUND, e.to_string()).into_response(),
+    }
+}
+
 /// Changes whenever a page file does, so browsers holding `/app/` files for a day fetch new ones
 /// after a deploy; the modules' relative imports carry it along.
 /// The viewer's modules, without the embed's and upload page's entries.

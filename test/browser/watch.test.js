@@ -1179,3 +1179,58 @@ test("a long status is cut short, not the buttons after it pushed off the page",
   assert.ok(status, "the status is cut short");
   await page.close();
 });
+
+test("a camera is placed on the map and an admin's click puts the room's relay there", async () => {
+  const { page, errors } = await open();
+  await page.goto(base);
+  await page.click("#roomopen");
+  await page.waitForURL(/\/r\/[0-9a-f]{32}\/$/, { timeout: WAIT });
+  await until(page, () => window.viewState?.framed);
+  assert.ok(await page.$eval("#cameras", el => el.hidden));
+  await page.click("#settingstoggle");
+  await page.check('#settings input[data-layer="cameras"]');
+  await page.click("#settingstoggle");
+  await page.click('#cam-list button[data-id="new"]');
+  // What it would show is said once the map's voxels are in.
+  await until(page, () => document.getElementById("cam-shows").textContent !== "");
+  await page.fill("#cam-name", "Mid");
+  await page.fill("#cam-z", "1400");
+  if (process.env.SHOTS) await page.screenshot({ path: `${process.env.SHOTS}/camera-placing.png` });
+  await page.click("#cam-save");
+  await until(page, () => document.querySelector("#cam-list button")?.textContent === "Mid");
+  const kept = await page.evaluate(map => fetch(`../../cameras/${map}`).then(r => r.json()), MAP);
+  assert.equal(kept.cameras.length, 1);
+  const { pos, aim } = kept.cameras[0];
+  assert.equal(pos[2], 1400);
+  // Its marker, clicked: the relay's camera goes there, and back with the director on the next.
+  const [x, y] = await page.evaluate(async ([wx, wy]) => {
+    const main = [...document.scripts].find(s => s.src.includes("main.js"));
+    const view = await import(main.src.replace("main.js", "map/view.js"));
+    const r = document.getElementById("c").getBoundingClientRect(),
+      [sx, sy] = view.toScreen(wx, wy);
+    return [sx + r.left, sy + r.top];
+  }, pos);
+  for (const sent of [{ pos, aim }, {}]) {
+    const [asked] = await Promise.all([page.waitForRequest(r => r.url().endsWith("/camera")), page.mouse.click(x, y)]);
+    assert.deepEqual(asked.postDataJSON(), sent);
+    assert.equal((await (await asked.response())?.status()) ?? 0, 204);
+    await page.waitForTimeout(200);
+  }
+  // Placed anew by dragging it, then taken away.
+  await page.click("#cam-list button");
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  await page.mouse.move(x + 40, y + 10);
+  await page.mouse.move(x + 80, y + 20);
+  await page.mouse.up();
+  await page.click("#cam-save");
+  await until(page, () => !document.getElementById("cam-list").hidden);
+  const moved = await page.evaluate(map => fetch(`../../cameras/${map}`).then(r => r.json()), MAP);
+  assert.notDeepEqual(moved.cameras[0].pos.slice(0, 2), pos.slice(0, 2));
+  assert.equal(moved.cameras[0].id, kept.cameras[0].id);
+  await page.click("#cam-list button");
+  await page.click("#cam-remove");
+  await until(page, () => document.querySelectorAll("#cam-list button").length === 1);
+  assert.deepEqual(errors, []);
+  await page.close();
+});

@@ -21,7 +21,7 @@ use super::asked::{Back, Stream, Visit, answer};
 use super::limits::{MAX_REQUEST, USER_COOKIE};
 use super::start::{landing, watch};
 use super::visitor::{origin, return_to, set_cookie};
-use super::{Answered, Shared, assets, events, matches, pages, rooms, token, upload, voice};
+use super::{Answered, Shared, assets, cameras, events, matches, pages, rooms, token, upload, voice};
 use crate::app::{App, Matches};
 
 type Routes = Router<Shared>;
@@ -80,6 +80,7 @@ fn of_room(router: Routes) -> Routes {
         .route("/r/{id}/leagues", post(rooms::leagues))
         .route("/r/{id}/names", post(rooms::names))
         .route("/r/{id}/score", post(rooms::score))
+        .route("/r/{id}/camera", post(rooms::camera))
         .route("/r/{id}/control", post(rooms::control))
         .route("/r/{id}/map", post(rooms::map))
         .route("/r/{id}/admin", post(rooms::admin))
@@ -94,6 +95,8 @@ pub(super) fn routes(app: &App) -> (Routes, Routes) {
         .route("/embed/v1/stv-map.js", get(|| async { assets::embed_loader() }))
         .route("/overview/{file}", get(overview))
         .route("/map/{name}", get(map))
+        .route("/sight/{name}", get(cameras::sight))
+        .route("/cameras/{map}", get(cameras::on_map).post(cameras::change))
         .nest_service("/backpack", ServiceBuilder::new().layer(day).service(ServeDir::new(&app.backpack)))
         .fallback(get(file));
     if matches!(app.matches, Matches::One(_)) {
@@ -123,6 +126,7 @@ pub(super) fn routes(app: &App) -> (Routes, Routes) {
         .route("/voice/who", get(voice::who))
         .route("/voice/mumble", get(voice::mumble_jobs))
         .route("/voice/known", get(voice::known).post(voice::told))
+        .route("/cameras", get(cameras::all))
         .route("/start", any(started))
         .route("/fault", post(fault));
     // Ids are one or two segments: routes cover both, `MatchAt` reads the id.

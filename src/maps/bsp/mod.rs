@@ -19,7 +19,7 @@ pub(crate) use self::geometry::PAD;
 pub use self::geometry::{CapArea, Floor, Geometry, Pack, SpawnPoint, SpawnRoom, Spawns, Wall};
 pub(super) use self::polygon::{contains_point, crosses, outline_box};
 pub(super) use self::read::cross;
-pub use self::read::geometry;
+pub use self::read::{geometry, sight};
 
 #[cfg(test)]
 pub(crate) mod tests;

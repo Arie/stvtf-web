@@ -154,6 +154,13 @@ pub(super) fn who_is_who(
     super::voice::who::WhoIsWho::new(options.sessions.as_deref(), home.as_deref().zip(voice_key), sites)
 }
 
+/// The cameras casters placed on maps: kept in the store, the same as the stv.tf that holds who
+/// is who (`STVTF_VOICE_HOME`).
+pub(super) fn cameras(options: &Options, voice_key: Option<&str>) -> super::cameras::Cameras {
+    let home = std::env::var("STVTF_VOICE_HOME").ok().filter(|u| !u.is_empty());
+    super::cameras::Cameras::new(options.sessions.as_deref(), home.as_deref().zip(voice_key))
+}
+
 /// The sites asked how their league knows players: those asked who a Discord user is.
 pub(super) fn leagues(options: &Options, keys: Option<&Arc<super::web::token::Keys>>) -> super::leagues::Leagues {
     let sites = std::env::var("STVTF_LINK_SITES").ok().filter(|l| !l.is_empty()).or_else(|| options.home.clone()).unwrap_or_default();

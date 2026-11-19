@@ -217,6 +217,9 @@ export type CircleLine = { type: "circle"; by: number; stroke: number; ink: stri
 /** The spotlight an admin put down, in place of where it was: its spot on the floor, in the drawer's ink. */
 export type LightLine = { type: "light"; by: number; stroke: number; ink: string; at: [number, number, number] };
 
+/** Where an admin put the relay's camera and the spot it looks at; with neither, back with the director. */
+export type CameraLine = { type: "camera"; pos?: [number, number, number]; aim?: [number, number, number] };
+
 /** A note an admin put down: at a spot on the floor, or on a player (user id), in the drawer's ink. */
 export type NoteLine = {
   type: "note";
@@ -297,6 +300,7 @@ export type StreamMessage =
   | ArcLine
   | CircleLine
   | LightLine
+  | CameraLine
   | NoteLine
   | VoiceLine
   | TalkingLine

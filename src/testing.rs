@@ -141,6 +141,7 @@ pub(crate) fn app(matches: Matches) -> TestApp {
         keys: None,
         home: None,
         leagues: leagues::Leagues::default(),
+        cameras: cameras::Cameras::default(),
         streams: Arc::default(),
         rooms: rooms::registry::Rooms::default(),
         voice: voice::VoiceSetup::default(),

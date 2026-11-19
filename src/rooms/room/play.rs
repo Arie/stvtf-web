@@ -331,6 +331,7 @@ impl Room {
         let n = self.part(st).load;
         if self.marker.load.load(Ordering::Relaxed) != n {
             self.end_follow();
+            self.leave_spot();
         }
         self.announce(st);
         self.show_marker(n);

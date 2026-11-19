@@ -44,6 +44,14 @@ fn map_geometry_from(fastdl: &str, cache: &Path, name: &str, fetch: bool) -> Res
     if !fetch {
         bail!("cannot find a match on {name}");
     }
+    let body = built_from_bsp(fastdl, cache, name, |data| Ok(serde_json::to_vec(&bsp::geometry(data)?)?))?;
+    write_atomic(&json, &body)?;
+    Ok(body)
+}
+
+/// What `build` makes of the map's BSP, the cache's or fastdl's. The BSP does not stay: only a
+/// bump of a suffix needs it again, and the most played maps add up to GBs.
+fn built_from_bsp(fastdl: &str, cache: &Path, name: &str, build: impl Fn(&[u8]) -> Result<Vec<u8>>) -> Result<Vec<u8>> {
     let bsp_path = cache.join(format!("{name}.bsp"));
     let data = if let Ok(d) = std::fs::read(&bsp_path) {
         d
@@ -57,18 +65,37 @@ fn map_geometry_from(fastdl: &str, cache: &Path, name: &str, fetch: bool) -> Res
         write_atomic(&bsp_path, &d)?;
         d
     };
-    let body = match bsp::geometry(&data) {
-        Ok(g) => serde_json::to_vec(&g)?,
-        Err(e) => {
-            // A broken download would otherwise fail every request for this map; the next one
-            // fetches it again.
-            let _ = std::fs::remove_file(&bsp_path);
-            return Err(e);
-        }
-    };
-    write_atomic(&json, &body)?;
-    // Only a bump of the suffix needs the BSP again, and the most played maps add up to GBs.
+    // A broken download would otherwise fail every request for this map; the next one fetches
+    // it again.
+    let made = build(&data);
     let _ = std::fs::remove_file(&bsp_path);
+    made
+}
+
+/// What blocks a camera's sight on a map (`bsp::sight`), gzipped: built like its geometry, when
+/// first asked for.
+pub(crate) fn map_sight(cache: &Path, name: &str, fetch: bool) -> Result<Vec<u8>> {
+    map_sight_from(FASTDL, cache, name, fetch)
+}
+
+fn map_sight_from(fastdl: &str, cache: &Path, name: &str, fetch: bool) -> Result<Vec<u8>> {
+    if !is_name(name, b"_") {
+        bail!("cannot use that map name");
+    }
+    let path = cache.join(format!("{name}.sight.v1.gz"));
+    if let Ok(body) = std::fs::read(&path) {
+        return Ok(body);
+    }
+    if !fetch {
+        bail!("cannot find a match on {name}");
+    }
+    std::fs::create_dir_all(cache)?;
+    let body = built_from_bsp(fastdl, cache, name, |data| {
+        let mut gz = GzEncoder::new(Vec::new(), Compression::best());
+        gz.write_all(&bsp::sight(data)?)?;
+        Ok(gz.finish()?)
+    })?;
+    write_atomic(&path, &body)?;
     Ok(body)
 }
 
@@ -347,5 +374,19 @@ mod tests {
         assert_eq!(unzipped, json);
         std::fs::remove_file(geometry_path(&cache, "cp_built")).unwrap();
         assert_eq!(map_geometry_gzip(&cache, "cp_built", false).unwrap(), gz, "the gzipped copy is kept");
+
+        // What blocks sight on it: built from the BSP fetched again, and kept.
+        assert!(map_sight_from(&base, &cache, "cp_built", false).is_err(), "not without a match on it");
+        let sight = map_sight_from(&base, &cache, "cp_built", true).unwrap();
+        assert!(!cache.join("cp_built.bsp").exists());
+        let mut body = Vec::new();
+        flate2::read::GzDecoder::new(&sight[..]).read_to_end(&mut body).unwrap();
+        let head = body.iter().position(|b| *b == b'\n').unwrap();
+        let said: serde_json::Value = serde_json::from_slice(&body[..head]).unwrap();
+        let voxels: u64 = said["dims"].as_array().unwrap().iter().map(|d| d.as_u64().unwrap()).product();
+        assert_eq!((body.len() - head - 1) as u64, voxels.div_ceil(8), "a bit per voxel");
+        assert!(body[head + 1..].iter().any(|b| *b != 0) && said["vox"].as_f64().unwrap() >= 32.0);
+        assert_eq!(map_sight_from(&base, &cache, "cp_built", false).unwrap(), sight);
+        assert_eq!(lock(&asked).len(), 2);
     }
 }

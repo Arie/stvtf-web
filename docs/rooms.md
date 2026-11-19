@@ -135,13 +135,40 @@ speed with it.
 - `--demo`/`--demos` rooms are relayed if the `.dem` is beside them under the same name
   (`demo.dem` for `demo.jsonl.gz`).
 
+## Cameras
+
+Cameras are placed on a map once and used in every room on it: where each is and the spot it
+looks at. In a room, the Cameras layer (behind ⚙) shows them as markers on the map.
+
+- An admin's click on a marker puts the room's relay there for those watching in TF2 (on
+  `spec_autodirector 1`); a click on it again, or following a player, gives the camera back: the
+  clients go to a player's eyes, and on with the demo's own director from there. Another map
+  ends it too. TF2 takes no field of view from it.
+- The site's streamers (anyone, where nobody signs in) place them: Add in the panel, drag the
+  camera and its aim, the wheel over either (or the panel) for its height. The ground it would
+  show is green, what is in the picture but hidden red, and the panel says how much of each
+  capture area shows. A camera in something solid, out over the void, or with something between
+  it and its aim is red.
+- They are kept by map name in `cameras.json` in `--sessions`. A map with none has those of the
+  same map under another version's name (`cp_gullywash_f9` on `cp_gullywash_final1`), the
+  latest changed, listed as from there; the first change made keeps them under its own name.
+- One stv.tf holds them for all regions, the one that holds who is who
+  ([deploy](deploy.md#voice-from-discord)): the others pass each change on to it and ask it
+  every half minute what changed, with the bot's key (`GET /cameras?since=<version>`).
+
+| | |
+|---|---|
+| `GET /cameras/<map>` | `{"map", "cameras": [{"id", "name", "pos", "aim"}]}`: `map` is the name they are kept under |
+| `POST /cameras/<map>` | a streamer: `{"name", "pos", "aim"}` places one, with `id` it is changed, `{"id", "remove": true}` takes it away; up to 32 on a map; 400 with why |
+| `GET /sight/<map>` | what blocks sight there, for the page to tell what a camera shows: a line of JSON (`origin`, `vox`, `dims`), then a bit per voxel that something solid fills, `(x * ny + y) * nz + z`; built when first asked for, on a map being watched |
+
 ## Routes
 
 | route | |
 |---|---|
 | `GET /w/<id>/room` | 200 when a room can open, 409 when not (demo still fetching), 410 when it never will |
 | `POST /w/<id>/room` | opens one: `{"page": "/r/<id>/"}` |
-| `GET /r/<id>/me` | `{"id", "admin", "signed", "streamer", "signin"}`: caller's number, admin, signed in, streamer, sign-in offered |
+| `GET /r/<id>/me` | `{"id", "admin", "signed", "streamer", "cameras", "signin"}`: caller's number, admin, signed in, streamer, places cameras, sign-in offered |
 | `POST /r/<id>/claim` | a signed-in streamer makes themselves admin |
 | `POST /r/<id>/name` | `{"name"}` |
 | `POST /r/<id>/ink` | admin: `{"ink": "#rrggbb"}` |
@@ -157,6 +184,7 @@ speed with it.
 | `POST /r/<id>/leagues` | admin: `{"players": [{"steamid", "team"}]}` (up to 40): `leagues`, each a `league`, its `players`' names by SteamID and the `teams` (by side) most of a side is on, the one knowing most first; asked of the sites (`<site>/league_players`), kept an hour |
 | `POST /r/<id>/names` | admin: `{"players": {<SteamID>: name}, "teams": {"red", "blue"}}`, in place of the names before; an empty name is the game's own; 400 with why for a name over 32 characters |
 | `POST /r/<id>/score` | admin: `{"team": "red" or "blue", "score": 0 to 99}`: the score that team shows now, kept as what to add to the game's for this game (the map, up to its score's next reset); those watching in TF2 see it too |
+| `POST /r/<id>/camera` | admin: `{"pos": [x, y, z], "aim": [x, y, z]}` puts the relay's camera there, `{}` gives it back ([cameras](#cameras)) |
 | `POST /r/<id>/clear` | admin: clears the marker of the room's map |
 | `POST /r/<id>/draw` | admin: `{"stroke": <id>, "points": [[x, y, ms], …]}`, up to 256, ms into the stroke; later points continue it; pages draw at that pace, 40 ms behind |
 
@@ -176,6 +204,7 @@ The room's event stream adds:
 | `view` | as posted, with `by` |
 | `names` | the room's names: `players` by SteamID, `teams` by side; on join too |
 | `score` | what the room adds to the game's score where it is now: `blue`, `red`; on join too |
+| `camera` | where the relay's camera was put: `pos`, `aim`; neither when it is the director's; on join too |
 | `people` | `id`, `name`, `admin`, `owner`, `signed`, and `ink`, `steamid` when set |
 | `draw` | as posted, with `by` |
 | `playback` | of the room's map: `paused`, `speed`, `at`, `length` (ms), `start` (first moment kept), `origin` (map start), `rounds`; `live` (the newest map, not over); `load` (its map's number); `over`; `maps` (`load`, `map`, `ready` of each map with play, and the room's own); `marks` (how many the match has); on change and every second while playing |

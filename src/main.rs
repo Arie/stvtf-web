@@ -5,6 +5,7 @@
 //! Map geometry comes from the map's BSP on fastdl.
 
 mod app;
+mod cameras;
 mod cli;
 mod housekeeping;
 mod leagues;
@@ -64,6 +65,7 @@ fn main() -> Result<()> {
         overviews: Mutex::new(()),
         base: options.base_path.clone(),
         leagues: start::leagues(&options, keys.as_ref()),
+        cameras: start::cameras(&options, voice_key.as_deref()),
         keys,
         home: options.home.clone(),
         streams: Arc::default(),
@@ -78,6 +80,7 @@ fn main() -> Result<()> {
         },
     });
     app.voice.who.keep_up();
+    app.cameras.keep_up();
     app.rooms.sweep(&live_ids(&app.matches));
     let mut keeper = None;
     if let Matches::Many(_) = app.matches {

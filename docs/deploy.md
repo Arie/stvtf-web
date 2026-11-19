@@ -33,6 +33,9 @@ them on) is kept on Europe too, in `/data/sessions/voice-who.json`: the other re
 with `STVTF_VOICE_HOME` (in their `config/deploy.<region>.yml`), tell it what is said on their
 pages and ask it every half minute what changed, with the bot's key.
 
+The cameras casters place on maps ([rooms](rooms.md#cameras)) are kept there the same way, in
+`/data/sessions/cameras.json`.
+
 A Discord user in a channel whom nothing is known of is looked up at the serveme.tf sites
 (`STVTF_LINK_SITES` in `config/deploy.yml`; all four, by every region): each is asked in turn
 who that one user is (`<site>/discord_links/<id>`, with a token for that user sealed with

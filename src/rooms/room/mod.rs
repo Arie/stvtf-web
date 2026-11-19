@@ -28,7 +28,7 @@ pub(crate) use self::part::MapChoice;
 pub(crate) use self::play::Control;
 pub(crate) use self::scores::ScoreEdit;
 pub(crate) use self::state::{Room, SPEEDS, Saved, StartAt};
-pub(crate) use self::view::ViewPost;
+pub(crate) use self::view::{SpotPost, ViewPost};
 
 #[cfg(test)]
 mod follow_tests;

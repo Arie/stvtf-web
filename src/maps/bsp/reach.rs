@@ -457,13 +457,41 @@ pub(super) fn reach(data: &[u8], disps: &[Displacement], bounds: &Bounds, seeds:
 
 /// The voxels the world's solid brushes and terrain fill.
 fn blocked(data: &[u8], disps: &[Displacement], grid: &Grid) -> Result<Bits> {
+    blocked_by(data, disps, grid, BLOCKING)
+}
+
+/// What a camera cannot see through: the voxels the world's solid brushes and terrain fill, at
+/// twice the voxel size. A line of JSON (`origin`, `vox`, `dims`), then a bit per voxel,
+/// `(x * ny + y) * nz + z`.
+pub(super) fn sight(data: &[u8], disps: &[Displacement], bounds: &Bounds) -> Result<Vec<u8>> {
+    let (vox, dims) = grid_for(bounds);
+    let grid = Grid { origin: bounds.lo.map(|v| f64::from(v - MARGIN)), vox: f64::from(vox), dims };
+    let solid = blocked_by(data, disps, &grid, CONTENTS_SOLID)?;
+    let half = dims.map(|d| d.div_ceil(2));
+    let mut bits = vec![0u8; (half[0] * half[1] * half[2]).div_ceil(8)];
+    for x in 0..dims[0] {
+        for y in 0..dims[1] {
+            let col = grid.column(x, y);
+            for z in (0..dims[2]).filter(|z| solid.get(col + z)) {
+                let i = (x / 2 * half[1] + y / 2) * half[2] + z / 2;
+                bits[i / 8] |= 1 << (i % 8);
+            }
+        }
+    }
+    let mut out = serde_json::json!({ "origin": grid.origin, "vox": grid.vox * 2.0, "dims": half }).to_string().into_bytes();
+    out.push(b'\n');
+    out.extend(bits);
+    Ok(out)
+}
+
+fn blocked_by(data: &[u8], disps: &[Displacement], grid: &Grid, contents: i32) -> Result<Bits> {
     let lumps = Lumps::read(data)?;
     let head = i32_at(&lump(data, LUMP_MODELS)?, MODEL_HEADNODE)?;
     let mut marks = Blocker { grid, disps, blocked: Bits::new(grid.len()), work_left: MAX_BRUSH_WORK };
     let mut sides_left = MAX_BRUSH_SIDES;
     for b in lumps.world_brushes(head)? {
         let brush = lumps.brush(b, &mut sides_left)?;
-        if brush.contents & BLOCKING != 0 {
+        if brush.contents & contents != 0 {
             marks.brush(&brush)?;
         }
     }

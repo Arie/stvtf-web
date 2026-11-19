@@ -48,7 +48,7 @@ use anyhow::{Context, Result, bail};
 use base64::Engine;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use stvtf::relay::{Beam, Handover, Light, Names, Note, VoiceIn, Want};
+use stvtf::relay::{Beam, Camera, Handover, Light, Names, Note, VoiceIn, Want};
 
 use crate::matches::sessions::logged;
 use crate::relays::pool::{LocalRelay, Relays, Was};
@@ -84,6 +84,9 @@ pub(crate) struct WantLine {
     /// The player (user id) the camera follows.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     follow: Option<u16>,
+    /// The spot it is at instead: where, its pitch and its yaw.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    fixed: Option<([i32; 3], i16, i16)>,
 }
 
 impl WantLine {
@@ -95,7 +98,14 @@ impl WantLine {
             paused: w.paused,
             speed: w.speed,
             from_start: w.from_start,
-            follow: w.camera.map(|stvtf::relay::Camera::Follow { player }| player),
+            follow: match w.camera {
+                Some(Camera::Follow { player }) => Some(player),
+                _ => None,
+            },
+            fixed: match w.camera {
+                Some(Camera::Fixed { pos, pitch, yaw }) => Some((pos, pitch, yaw)),
+                _ => None,
+            },
         }
     }
 
@@ -108,7 +118,10 @@ impl WantLine {
             paused: self.paused,
             speed: self.speed,
             from_start: self.from_start,
-            camera: self.follow.map(|player| stvtf::relay::Camera::Follow { player }),
+            camera: self
+                .fixed
+                .map(|(pos, pitch, yaw)| Camera::Fixed { pos, pitch, yaw })
+                .or(self.follow.map(|player| Camera::Follow { player })),
         }
     }
 }

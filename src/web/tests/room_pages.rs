@@ -29,7 +29,7 @@ fn someone_signed_in_is_their_steam_id_in_a_room_and_a_streamer_makes_themselves
     let opened = post(&app, "/w/demo/room", &owner, "");
     let page = page_of(&opened);
     let me = get(&app, &format!("{page}me"), &owner);
-    assert!(me.ends_with(r#"{"admin":true,"id":1,"signed":true,"signin":true,"streamer":false}"#), "{me}");
+    assert!(me.ends_with(r#"{"admin":true,"cameras":false,"id":1,"signed":true,"signin":true,"streamer":false}"#), "{me}");
     // The same user from another browser (no guest cookie) is still the owner.
     let elsewhere = format!("{owner}; stvtf_guest={}", "3".repeat(32));
     assert!(get(&app, &format!("{page}me"), &elsewhere).contains(r#""admin":true"#));
@@ -68,7 +68,10 @@ fn a_demo_opens_a_room_for_its_owner() {
     assert!(get(&app, &page, "").contains("<canvas"));
     assert!(get(&app, &page, "").contains("Cache-Control: no-cache"));
     assert!(get(&app, &format!("{page}marks?from=0"), "").ends_with(r#"{"all":0,"marks":[]}"#), "what its timeline shows");
-    assert!(get(&app, &format!("{page}me"), &cookie).ends_with(r#"{"admin":true,"id":1,"signed":false,"signin":false,"streamer":false}"#));
+    assert!(
+        get(&app, &format!("{page}me"), &cookie)
+            .ends_with(r#"{"admin":true,"cameras":true,"id":1,"signed":false,"signin":false,"streamer":false}"#)
+    );
     assert!(get(&app, &format!("{page}me"), "").contains(r#""admin":false"#));
     assert!(get(&app, &page, "").contains("Set-Cookie: stvtf_guest="), "everyone in a room gets a cookie");
     let again = post(&app, "/w/demo/room", &cookie, "");
@@ -135,7 +138,7 @@ fn admins_make_others_admin() {
     assert!(get(&app, "/", &owner).contains(&format!(r#"<a href="{page}"><b>Room</b> "#)));
     assert!(!get(&app, "/", &viewer).contains("<b>Room</b>"));
     let me = get(&app, &format!("{page}me"), &viewer);
-    assert!(me.ends_with(r#"{"admin":false,"id":2,"signed":false,"signin":false,"streamer":false}"#), "{me}");
+    assert!(me.ends_with(r#"{"admin":false,"cameras":true,"id":2,"signed":false,"signin":false,"streamer":false}"#), "{me}");
     assert!(post(&app, &format!("{page}name"), &viewer, r#"{"name":"caster"}"#).starts_with("HTTP/1.1 204"));
     let pause = r#"{"paused":true}"#;
     assert!(post(&app, &format!("{page}control"), &viewer, pause).starts_with("HTTP/1.1 403"));
@@ -175,4 +178,57 @@ fn a_live_match_opens_a_room_that_records_it_from_then_on() {
     assert_eq!(room.hub.lock().unwrap().map.as_deref(), Some("cp_process_f12"));
     room.stop();
     sessions.stop_all();
+}
+
+/// A map's cameras: placed by the site's streamers, another stv.tf with the bot's key, anyone
+/// where nobody signs in; taken by a room's relay as its admin puts it there.
+#[test]
+fn cameras_are_placed_by_streamers_and_a_rooms_admin_puts_its_relay_at_one() {
+    let (mut app, key, _dir) = site_app();
+    app.voice.key = Some("k".into());
+    let placed = r#"{"name":"Mid","pos":[735,424,1348],"aim":[0,0,428]}"#;
+    assert!(post(&app, "/cameras/cp_gullywash_f9", "", placed).starts_with("HTTP/1.1 403"));
+    let guest = signed_in(&app, &key, r#"{"uid":"7656","name":"Guest","streamer":false}"#);
+    assert!(post(&app, "/cameras/cp_gullywash_f9", &guest, placed).starts_with("HTTP/1.1 403"));
+    let caster = signed_in(&app, &key, r#"{"uid":"7657","name":"Caster","streamer":true}"#);
+    assert!(post(&app, "/cameras/cp_gullywash_f9", &caster, placed).starts_with("HTTP/1.1 204"));
+    assert!(
+        post(&app, "/cameras/cp_gullywash_f9", &caster, r#"{"name":"Off","pos":[99999,0,0],"aim":[0,0,0]}"#).starts_with("HTTP/1.1 400")
+    );
+    // Anyone sees them, on the map's next version too.
+    let on = get(&app, "/cameras/cp_gullywash_final1", "");
+    assert!(on.contains(r#"{"cameras":[{"aim":[0,0,428],"id":1,"name":"Mid","pos":[735,424,1348]}],"map":"cp_gullywash_f9"}"#), "{on}");
+    assert!(get(&app, "/cameras/..%2Fetc", "").starts_with("HTTP/1.1 404"));
+    // Another stv.tf: all of them when changed, and a change passed on.
+    let keyed = |bearer: &str, method: &str, path: &str, body: &str| {
+        let send = format!(
+            "{method} {path} HTTP/1.1\r\nAuthorization: Bearer {bearer}\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{body}",
+            body.len()
+        );
+        request_to(&app, send.as_bytes()).1
+    };
+    assert!(keyed("wrong", "GET", "/cameras?since=0", "").starts_with("HTTP/1.1 401"));
+    assert!(keyed("k", "GET", "/cameras?since=0", "").contains(r#""version":1"#));
+    assert!(keyed("k", "GET", "/cameras?since=1", "").starts_with("HTTP/1.1 204"));
+    assert!(keyed("k", "POST", "/cameras/cp_gullywash_f9", r#"{"id":1,"remove":true}"#).starts_with("HTTP/1.1 204"));
+    assert!(get(&app, "/cameras/cp_gullywash_f9", "").contains(r#""cameras":[]"#));
+    // In a room: its admins only, and those joining later hear where the camera is.
+    let (page, owner) = open_room(&app);
+    let me = get(&app, &format!("{page}me"), &owner);
+    assert!(me.contains(r#""cameras":false"#), "{me}");
+    assert!(get(&app, &format!("{page}me"), &format!("{owner}; {caster}")).contains(r#""cameras":true"#));
+    let spot = r#"{"pos":[735,424,1348],"aim":[0,0,428]}"#;
+    assert!(post(&app, &format!("{page}camera"), "", spot).starts_with("HTTP/1.1 403"));
+    assert!(post(&app, &format!("{page}camera"), &owner, r#"{"pos":[1,1,1]}"#).starts_with("HTTP/1.1 400"));
+    assert!(post(&app, &format!("{page}camera"), &owner, spot).starts_with("HTTP/1.1 204"));
+    let id = page.trim_matches('/').rsplit('/').next().unwrap();
+    let room = app.rooms.get(id, sessions_of(&app)).unwrap();
+    let heard = |room: &crate::rooms::room::Room| {
+        let lines: Vec<_> =
+            crate::matches::hub::subscribe(&room.hub, false).try_iter().filter(|l| l.contains(r#""type":"camera""#)).collect();
+        lines.last().map(ToString::to_string)
+    };
+    assert_eq!(heard(&room).as_deref(), Some(r#"{"aim":[0,0,428],"pos":[735,424,1348],"type":"camera"}"#));
+    assert!(post(&app, &format!("{page}camera"), &owner, "{}").starts_with("HTTP/1.1 204"));
+    assert_eq!(heard(&room).as_deref(), Some(r#"{"type":"camera"}"#));
 }

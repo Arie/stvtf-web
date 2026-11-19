@@ -7,6 +7,7 @@ pub(crate) mod voice;
 mod answer;
 mod asked;
 mod assets;
+mod cameras;
 mod client;
 mod content;
 mod events;

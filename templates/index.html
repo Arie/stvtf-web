@@ -42,6 +42,20 @@
     <div id="settings" hidden></div>
     <div id="board" hidden></div>
     <div id="names" hidden></div>
+    <div id="cameras" hidden>
+      <div id="cam-list"></div>
+      <div id="cam-edit" hidden>
+        <input id="cam-name" maxlength="24" placeholder="Name" aria-label="Name">
+        <label>Height<input id="cam-z" type="number" step="50"></label>
+        <label>Aim height<input id="cam-aim-z" type="number" step="50"></label>
+        <div id="cam-shows"></div>
+        <div class="cbuttons">
+          <button id="cam-save">Save</button>
+          <button id="cam-remove">Remove</button>
+          <button id="cam-cancel">Cancel</button>
+        </div>
+      </div>
+    </div>
     <div id="help" hidden>
       <table>
         <tr><td><kbd>Tab</kbd></td><td>Hold for the scoreboard</td></tr>

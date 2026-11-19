@@ -19,7 +19,9 @@ use super::{Answered, Early, pages};
 use crate::app::App;
 use crate::leagues::{Asked, MAX_PLAYERS};
 use crate::matches::sessions::{Session, Sessions, logged};
-use crate::rooms::room::{ArcDraw, CircleDraw, Control, Draw, LightDraw, MapChoice, Names, NoteDraw, Room, ScoreEdit, StartAt, ViewPost};
+use crate::rooms::room::{
+    ArcDraw, CircleDraw, Control, Draw, LightDraw, MapChoice, Names, NoteDraw, Room, ScoreEdit, SpotPost, StartAt, ViewPost,
+};
 
 /// The new room's page, for the browser that opened it.
 pub(super) fn opened(app: &App, id: &str, cookie: Option<&str>) -> Response {
@@ -183,6 +185,7 @@ fn me(app: &App, room: &Room, who: &Who) -> Response {
         "admin": admin,
         "signed": who.user.is_some(),
         "streamer": who.user.as_ref().is_some_and(|u| u.streamer),
+        "cameras": app.keys.is_none() || who.user.as_ref().is_some_and(|u| u.streamer),
         "signin": app.keys.is_some() && app.home.as_deref().and_then(origin).is_some(),
     });
     Json(me).into_response()
@@ -280,6 +283,8 @@ by_admins! {
     names(Names) => |room, _guest, n| room.set_names(&n);
     /// `POST /r/<id>/score`.
     score(ScoreEdit) => |room, _guest, s| room.set_score(&s);
+    /// `POST /r/<id>/camera`.
+    camera(SpotPost) => |room, _guest, s| room.set_spot(&s);
     /// `POST /r/<id>/control`.
     control(Control) => |room, _guest, c| room.control(&c);
     /// `POST /r/<id>/map`.
