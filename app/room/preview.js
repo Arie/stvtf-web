@@ -125,12 +125,23 @@ async function load() {
   }
 }
 
+// What of the map is under a spot of the picture (shares of its width and height), if anything.
+/** @param {number} x @param {number} y @returns {[number, number, number] | null} */
+export function pointAt(x, y) {
+  if (!stage?.world) return null;
+  const ray = new THREE.Raycaster();
+  ray.setFromCamera(new THREE.Vector2(2 * x - 1, 1 - 2 * y), stage.camera);
+  const hit = ray.intersectObject(stage.world)[0]?.point;
+  return hit ? [Math.round(hit.x), Math.round(hit.y), Math.round(hit.z)] : null;
+}
+
 // Draws what `c` would show, or (null) puts the preview away.
 /** @param {Spot | null} c @param {Grid | null} grid */
 export function preview(c, grid) {
   const view = /** @type {HTMLCanvasElement} */ ($("cam-view")),
+    pane = $("cam-pane"),
     on = c !== null && !failed && Boolean(state.geometry);
-  if (view.hidden === on) view.hidden = !on;
+  if (pane.hidden === on) pane.hidden = !on;
   if (!on || !c) return;
   if (!asked) load();
   if (!stage) return;

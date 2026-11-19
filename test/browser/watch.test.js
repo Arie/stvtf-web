@@ -1199,15 +1199,47 @@ test("a camera is placed on the map and an admin's click puts the room's relay t
   await until(page, () => {
     const view = /** @type {HTMLCanvasElement} */ (document.getElementById("cam-view")),
       c = Object.assign(document.createElement("canvas"), { width: 64, height: 36 }).getContext("2d");
-    if (view.hidden || !view.width || !c) return false;
+    if (!view.clientWidth || !view.width || !c) return false;
     c.drawImage(view, 0, 0, 64, 36);
     const px = new Uint32Array(c.getImageData(0, 0, 64, 36).data.buffer);
     return new Set(px).size > 8;
   });
+  // Steered from the picture: E lifts it, a drag down looks down, Ctrl+Z takes each back.
+  const heights = () =>
+    page.evaluate(() =>
+      ["cam-z", "cam-aim-z"].map(id => Number(/** @type {HTMLInputElement} */ (document.getElementById(id)).value)),
+    );
+  const [z, aimZ] = await heights();
+  const box = await page.locator("#cam-view").boundingBox();
+  assert.ok(box);
+  const [mx, my] = [box.x + box.width / 2, box.y + box.height / 2];
+  await page.focus("#cam-view");
+  await page.keyboard.down("e");
+  await page.waitForTimeout(300);
+  await page.keyboard.up("e");
+  await until(page, z0 => Number(/** @type {HTMLInputElement} */ (document.getElementById("cam-z")).value) > z0, z);
+  await page.waitForTimeout(100);
+  const [lifted, liftedAim] = await heights();
+  assert.equal(liftedAim - aimZ, lifted - z, "what it looks at moves with it");
+  await page.mouse.move(mx, my);
+  await page.mouse.down();
+  await page.mouse.move(mx, my + 30, { steps: 3 });
+  await page.mouse.up();
+  assert.ok((await heights())[1] < liftedAim, "looks down");
+  assert.equal((await heights())[0], lifted);
+  await page.keyboard.press("Control+z");
+  assert.deepEqual(await heights(), [lifted, liftedAim]);
+  await page.keyboard.press("Control+z");
+  assert.deepEqual(await heights(), [z, aimZ]);
+  // A click aims at what is under it; the slider is its height.
+  await page.mouse.click(mx + 40, my + 40);
+  await page.locator("#cam-z-slide").fill("1300");
+  assert.deepEqual((await heights())[0], 1300);
+  await page.fill("#cam-z", "1400");
   if (process.env.SHOTS) await page.screenshot({ path: `${process.env.SHOTS}/camera-placing.png` });
   await page.click("#cam-save");
   await until(page, () => document.querySelector("#cam-list button")?.textContent === "Mid");
-  assert.ok(await page.$eval("#cam-view", el => el.hidden), "put away with the camera placed");
+  assert.ok(await page.$eval("#cam-pane", el => el.hidden), "put away with the camera placed");
   const kept = await page.evaluate(map => fetch(`../../cameras/${map}`).then(r => r.json()), MAP);
   assert.equal(kept.cameras.length, 1);
   const { pos, aim } = kept.cameras[0];

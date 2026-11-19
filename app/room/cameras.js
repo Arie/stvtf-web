@@ -5,6 +5,7 @@ import { $, canvas, ctx, state, uiScale } from "../core/core.js";
 import { asset } from "../core/env.js";
 import { setAutoZoom } from "../core/input.js";
 import { layerOn } from "../core/layers.js";
+import { flyTool } from "./fly.js";
 import { focusOf, label, toScreen } from "../map/view.js";
 import { HOME, me, post } from "./home.js";
 import { preview } from "./preview.js";
@@ -14,11 +15,14 @@ import { note, worldAt } from "./tools.js";
 /** @typedef {{ id?: number; name: string; pos: Vec3; aim: Vec3; room?: boolean }} Camera */
 /** @typedef {{ clientX: number; clientY: number }} Pointer */
 
-// Map units: a wheel step, a new camera's height and distance, how far over the players its floor is.
+// Map units: a wheel step, a new camera's height and distance, how far over the players its floor
+// is, an arrow's nudge, and how far over the map the slider goes.
 const STEP = 50,
   NEW_UP = 900,
   NEW_BACK = 500,
-  NEW_REACH = 300;
+  NEW_REACH = 300,
+  NUDGE = 16,
+  OVER = 1500;
 // A marker's size and how near a click takes it, in pixels at the 1080p size.
 const MARK_PX = 9,
   PICK_PX = 14;
@@ -37,6 +41,12 @@ let active = {};
 let editing = null;
 /** @type {"pos" | "aim" | null} */
 let held = null;
+// The part last held: the arrows nudge it.
+/** @type {"pos" | "aim"} */
+let picked = "pos";
+// Where the camera being placed was after each change, for Ctrl+Z: the first as it started.
+/** @type {{ pos: Vec3; aim: Vec3 }[]} */
+let past = [];
 /** @type {import("./sight.js").Grid | null} */
 let sight = null;
 /** @type {string | null} */
@@ -145,6 +155,14 @@ function panel() {
   if (editing) {
     /** @type {HTMLInputElement} */ ($("cam-name")).value = editing.name;
     $("cam-remove").hidden = editing.id === undefined;
+    const [lo, hi] = state.geometry?.bounds ?? [
+      [0, 0, -2000],
+      [0, 0, 2000],
+    ];
+    Object.assign($("cam-z-slide"), {
+      min: Math.floor(lo[2] / STEP) * STEP,
+      max: Math.ceil(hi[2] / STEP) * STEP + OVER,
+    });
     return heights();
   }
   const from = Object.assign(document.createElement("div"), { className: "cfrom", textContent: `From ${known.from}` }),
@@ -162,7 +180,55 @@ function panel() {
 function heights() {
   if (!editing) return;
   /** @type {HTMLInputElement} */ ($("cam-z")).value = String(editing.pos[2]);
+  /** @type {HTMLInputElement} */ ($("cam-z-slide")).value = String(editing.pos[2]);
   /** @type {HTMLInputElement} */ ($("cam-aim-z")).value = String(editing.aim[2]);
+}
+// The camera being placed moved: what it shows is worked out again.
+function changed() {
+  look = null;
+  heights();
+}
+// A change to it is done: kept, to go back to.
+function done() {
+  const last = past[past.length - 1];
+  if (!editing || (last && same(last.pos, editing.pos) && same(last.aim, editing.aim))) return;
+  past.push({ pos: [...editing.pos], aim: [...editing.aim] });
+}
+function undo() {
+  if (!editing || past.length < 2) return;
+  past.pop();
+  const was = past[past.length - 1];
+  [editing.pos, editing.aim] = [[...was.pos], [...was.aim]];
+  changed();
+}
+/** @param {Camera | null} c */
+function edit(c) {
+  [editing, past, picked, look] = [c, [], "pos", null];
+  done();
+  panel();
+}
+// An arrow moves the part last held a little, the way it points on the screen.
+/** @param {KeyboardEvent} e */
+function nudge(e) {
+  if (!editing) return;
+  const far = e.shiftKey ? NUDGE * 4 : NUDGE,
+    [dx, dy] = { ArrowLeft: [-far, 0], ArrowRight: [far, 0], ArrowUp: [0, -far], ArrowDown: [0, far] }[e.key] ?? [0, 0],
+    [cos, sin] = [Math.cos(state.view.rot), Math.sin(state.view.rot)];
+  editing[picked][0] += Math.round(cos * dx - sin * dy);
+  editing[picked][1] += Math.round(-sin * dx - cos * dy);
+  changed();
+  done();
+}
+// The keys of placing one, before the page's own.
+/** @param {KeyboardEvent} e */
+function key(e) {
+  if (!editing || e.target instanceof HTMLInputElement) return;
+  if (e.key === "Escape") edit(null);
+  else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") undo();
+  else if (e.key.startsWith("Arrow")) nudge(e);
+  else return;
+  e.preventDefault();
+  e.stopImmediatePropagation();
 }
 // A camera over the middle of the view, looking down at it from one side.
 /** @returns {Camera} */
@@ -182,8 +248,7 @@ async function save(change) {
     : post("cameras", change, HOME));
   if (!r.ok) return note(await r.text());
   if (me.cameras && state.map) return load(state.map);
-  editing = null;
-  panel();
+  edit(null);
 }
 /** @param {Vec3} p @param {Pointer} e */
 function near(p, e) {
@@ -204,24 +269,25 @@ function wirePanel() {
     const id = /** @type {HTMLElement} */ (e.target).dataset.id;
     if (!id || !known) return;
     const kept = mine().find(c => String(c.id) === id);
-    editing = kept ? { ...kept, pos: [...kept.pos], aim: [...kept.aim] } : fresh();
     // The view stays put under what is dragged.
     setAutoZoom(false);
-    look = null;
-    panel();
+    edit(kept ? { ...kept, pos: [...kept.pos], aim: [...kept.aim] } : fresh());
   });
   $("cam-name").addEventListener("input", e => {
     if (editing) editing.name = /** @type {HTMLInputElement} */ (e.target).value;
   });
   for (const [id, part] of /** @type {const} */ ([
     ["cam-z", "pos"],
+    ["cam-z-slide", "pos"],
     ["cam-aim-z", "aim"],
-  ]))
+  ])) {
     $(id).addEventListener("input", e => {
       if (!editing) return;
       editing[part][2] = Math.round(Number(/** @type {HTMLInputElement} */ (e.target).value)) || 0;
-      look = null;
+      changed();
     });
+    $(id).addEventListener("change", done);
+  }
   // Typing in it is not the page's keys.
   $("cameras").addEventListener("keydown", e => e.stopPropagation());
   $("cam-save").addEventListener("click", () => {
@@ -230,10 +296,7 @@ function wirePanel() {
     save({ id, name, pos, aim });
   });
   $("cam-remove").addEventListener("click", () => editing && save({ id: editing.id, remove: true }));
-  $("cam-cancel").addEventListener("click", () => {
-    editing = null;
-    panel();
-  });
+  $("cam-cancel").addEventListener("click", () => edit(null));
   $("settings").addEventListener("change", () => panel());
 }
 // A press: takes hold of the camera being placed, or puts the relay at a marker (again: back).
@@ -242,6 +305,7 @@ function press(e) {
   if (!layerOn("cameras") || e.button !== 0) return;
   const hit = editing ? null : [...ofMap(), ...stray()].find(c => near(c.pos, e));
   held = handleAt(e);
+  picked = held ?? picked;
   if (!held && !hit) return;
   e.preventDefault();
   e.stopImmediatePropagation();
@@ -259,10 +323,14 @@ export function camerasTool() {
     [editing[held][0], editing[held][1]] = [x, y];
     // The aim lies on the floor under it.
     if (held === "aim" && sight) editing.aim[2] = floorUnder(sight, x, y, editing.pos[2]) ?? editing.aim[2];
-    look = null;
-    heights();
+    changed();
   });
-  addEventListener("pointerup", () => (held = null));
+  addEventListener("pointerup", () => {
+    if (held) done();
+    held = null;
+  });
+  addEventListener("keydown", key, { capture: true });
+  flyTool(() => editing, changed, done);
   canvas.addEventListener(
     "wheel",
     e => {
@@ -271,8 +339,8 @@ export function camerasTool() {
       e.preventDefault();
       e.stopImmediatePropagation();
       editing[part][2] -= Math.sign(e.deltaY) * STEP;
-      look = null;
-      heights();
+      changed();
+      done();
     },
     { capture: true, passive: false },
   );

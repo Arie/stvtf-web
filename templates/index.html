@@ -47,6 +47,7 @@
       <div id="cam-edit" hidden>
         <input id="cam-name" maxlength="24" placeholder="Name" aria-label="Name">
         <label>Height<input id="cam-z" type="number" step="50"></label>
+        <input id="cam-z-slide" type="range" step="10" aria-label="Height">
         <label>Aim height<input id="cam-aim-z" type="number" step="50"></label>
         <div id="cam-shows"></div>
         <div class="cbuttons">
@@ -56,7 +57,7 @@
         </div>
       </div>
     </div>
-    <canvas id="cam-view" hidden></canvas>
+    <div id="cam-pane" hidden><canvas id="cam-view" tabindex="0" title="Drag: look · Click: aim · WASD QE: move"></canvas></div>
     <div id="help" hidden>
       <table>
         <tr><td><kbd>Tab</kbd></td><td>Hold for the scoreboard</td></tr>

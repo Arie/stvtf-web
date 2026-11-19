@@ -150,6 +150,9 @@ looks at. In a room, the Cameras layer (behind ⚙) shows them as markers on the
   it and its aim is red.
 - While one is placed, a picture in the corner shows what it would see: the map's floors and
   walls flat shaded, players as pills (three.js, `app/vendor/`, loaded then).
+  It steers from there: a drag looks round, a click aims at what is under it, the wheel and
+  WASD move it (Q down, E or Space up, Shift faster); the picture's corner resizes it. The arrows
+  nudge the part last held on the map, Ctrl+Z takes a change back, Esc cancels.
 - A room's other admins place cameras the same way, for that room alone: on its map, shown to
   everyone in it, kept as long as the room.
 - The map's cameras show to the site's streamers only; the room's own to everyone in it.
