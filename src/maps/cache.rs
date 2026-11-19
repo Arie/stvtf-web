@@ -121,7 +121,7 @@ pub(crate) fn map_geometry_gzip(cache: &Path, name: &str, fetch: bool) -> Result
 /// Where a map's geometry is cached. Bump the version in its name when the extracted data
 /// changes, so cached maps are redone.
 pub(crate) fn geometry_path(cache: &Path, name: &str) -> PathBuf {
-    cache.join(format!("{name}.v9.json"))
+    cache.join(format!("{name}.v10.json"))
 }
 
 /// demos.tf's map overviews, `boundaries.json` and `<map>.webp`, kept in the cache so viewers do

@@ -25,10 +25,10 @@ let asked = false,
 let stage = null;
 
 // A floor's triangles: its outline fanned from its first corner, at its height and slope.
-/** @param {{ z: number; p: number[]; k?: string; g?: [number, number] }} f @param {number[]} at @param {number[]} tint */
+/** @param {{ z: number; p: number[]; k?: string; g?: [number, number]; c?: string }} f @param {number[]} at @param {number[]} tint */
 function floorInto(f, at, tint) {
   const n = f.p.length / 2,
-    c = new THREE.Color(KIND_COLOURS[/** @type {"other"} */ (f.k && f.k in KIND_COLOURS ? f.k : "other")]);
+    c = new THREE.Color(f.c ?? KIND_COLOURS[/** @type {"other"} */ (f.k && f.k in KIND_COLOURS ? f.k : "other")]);
   let [mx, my] = [0, 0];
   for (let i = 0; i < n; i++) [mx, my] = [mx + f.p[2 * i] / n, my + f.p[2 * i + 1] / n];
   const z = (/** @type {number} */ x, /** @type {number} */ y) =>
@@ -41,10 +41,10 @@ function floorInto(f, at, tint) {
     }
 }
 // A wall's: from its top down to where the solid under it ends (a voxel, where nothing is known).
-/** @param {{ z: number; p: number[] }} w @param {Grid | null} grid @param {number[]} at @param {number[]} tint */
+/** @param {{ z: number; p: number[]; c?: string }} w @param {Grid | null} grid @param {number[]} at @param {number[]} tint */
 function wallInto(w, grid, at, tint) {
   const [x1, y1, x2, y2] = w.p,
-    c = new THREE.Color(WALL),
+    c = new THREE.Color(w.c ?? WALL),
     foot = grid ? footOf(grid, w.p, w.z) : w.z - 64;
   for (const [x, y, z] of [
     [x1, y1, w.z],

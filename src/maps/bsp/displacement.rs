@@ -17,6 +17,7 @@ const DISPINFO_VERTEX_START: usize = 12;
 const DISPINFO_POWER: usize = 20;
 const DISP_VERT_SIZE: usize = 20;
 const DISP_VERT_DIST: usize = 12;
+const DISP_VERT_ALPHA: usize = 16;
 /// A displacement's grid is `2^power + 1` points wide, and its power is 2 to 4.
 const MIN_POWER: usize = 2;
 const MAX_POWER: usize = 4;
@@ -40,6 +41,8 @@ pub(super) struct Displacement {
     pub base: [Vec3; 4],
     pub n: usize,
     pub grid: Vec<Vec3>,
+    /// How much of its second texture shows at each grid point, 0 to 1.
+    pub blend: Vec<f32>,
     pub texture: usize,
     /// The base face's index in the faces lump.
     pub face: usize,
@@ -54,6 +57,14 @@ impl Displacement {
     pub fn cells(&self) -> impl Iterator<Item = [Vec3; 4]> + '_ {
         let (n, g) = (self.n, &self.grid);
         (0..n - 1).flat_map(move |i| (0..n - 1).map(move |j| [g[i * n + j], g[i * n + j + 1], g[(i + 1) * n + j + 1], g[(i + 1) * n + j]]))
+    }
+
+    /// How much of its second texture each cell shows, in the cells' order.
+    pub fn blends(&self) -> impl Iterator<Item = f32> + '_ {
+        let (n, b) = (self.n, &self.blend);
+        (0..n - 1).flat_map(move |i| {
+            (0..n - 1).map(move |j| (b[i * n + j] + b[i * n + j + 1] + b[(i + 1) * n + j + 1] + b[(i + 1) * n + j]) / 4.0)
+        })
     }
 
     /// Points on the surface that are no more than `step` apart (a step of 0 gives the grid's
@@ -150,7 +161,7 @@ fn read(
     let dist2 = |p: &Vec3| (0..3).map(|k| (p[k] - start[k]).powi(2)).sum::<f32>();
     let nearest = (0..4).min_by(|&a, &b| dist2(&base[a]).total_cmp(&dist2(&base[b]))).unwrap_or(0);
     let [c0, c3, c2, c1] = [0, 1, 2, 3].map(|i| base[(nearest + i) % 4]);
-    let mut grid = Vec::with_capacity(n * n);
+    let (mut grid, mut blend) = (Vec::with_capacity(n * n), Vec::with_capacity(n * n));
     for i in 0..n {
         let s = i as f32 / (n - 1) as f32;
         let (from, to) = (lerp(c0, c3, s), lerp(c1, c2, s));
@@ -159,9 +170,10 @@ fn read(
             let (dir, height) = (vec3_at(verts, v)?, f32_at(verts, v + DISP_VERT_DIST)?);
             let flat = lerp(from, to, j as f32 / (n - 1) as f32);
             grid.push([0, 1, 2].map(|c| flat[c] + dir[c] * height));
+            blend.push((f32_at(verts, v + DISP_VERT_ALPHA)? / 255.0).clamp(0.0, 1.0));
         }
     }
-    Ok(Displacement { plane: face.plane, base, n, grid, texture: face.texture, face: 0 })
+    Ok(Displacement { plane: face.plane, base, n, grid, blend, texture: face.texture, face: 0 })
 }
 
 #[cfg(test)]
@@ -233,7 +245,8 @@ mod tests {
     fn samples_of_absurd_extents_are_bounded() {
         let n = 17;
         let grid = (0..n * n).map(|k| [(k / n) as f32 * 1e9, (k % n) as f32 * 1e9, 0.0]).collect::<Vec<_>>();
-        let d = Displacement { plane: [0.0, 0.0, 1.0, 0.0], base: [[0.0; 3]; 4], n, grid, texture: 0, face: 0 };
+        let d =
+            Displacement { plane: [0.0, 0.0, 1.0, 0.0], base: [[0.0; 3]; 4], n, blend: vec![0.0; grid.len()], grid, texture: 0, face: 0 };
         let len = d.samples(1.0).len();
         assert!(len <= 2 * MAX_SAMPLES, "{len}");
     }

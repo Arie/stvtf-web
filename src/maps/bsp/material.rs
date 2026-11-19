@@ -33,6 +33,57 @@ const KINDS: [(Kind, &[&str]); 9] = [
     (Kind::Concrete, &["concrete", "cement", "plaster", "wall", "floor"]),
 ];
 
+/// A surface's colour, served as `#rrggbb`.
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub struct Tint(pub [u8; 3]);
+
+impl Serialize for Tint {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        let [r, g, b] = self.0;
+        s.serialize_str(&format!("#{r:02x}{g:02x}{b:02x}"))
+    }
+}
+
+impl Tint {
+    /// A texture's reflectivity (its mean colour, linear, as the map's compiler kept it) as it
+    /// looks; None for one without (black).
+    pub(super) fn of(reflectivity: [f32; 3]) -> Option<Tint> {
+        let seen = |v: f32| (v.clamp(0.0, 1.0).powf(1.0 / 2.2) * 255.0).round() as u8;
+        (reflectivity.iter().all(|v| v.is_finite()) && reflectivity.iter().any(|v| *v > 0.0)).then(|| Tint(reflectivity.map(seen)))
+    }
+
+    /// `share` (0 to 1) of the way to `other`.
+    pub(super) fn towards(self, other: Tint, share: f32) -> Tint {
+        Tint(std::array::from_fn(|i| (f32::from(self.0[i]) + (f32::from(other.0[i]) - f32::from(self.0[i])) * share).round() as u8))
+    }
+
+    fn far_from(self, other: Tint) -> i32 {
+        (0..3).map(|i| (i32::from(self.0[i]) - i32::from(other.0[i])).pow(2)).sum()
+    }
+}
+
+/// What the materials a blend's name has look like in TF2: a blend's reflectivity is its first
+/// texture's alone, and its second is not in the map.
+const BLENDS: [(&[&str], Tint); 8] = [
+    (&["grass"], Tint([0x62, 0x59, 0x2a])),
+    (&["snow"], Tint([0xba, 0xcd, 0xda])),
+    (&["gravel"], Tint([0x79, 0x66, 0x4e])),
+    (&["ground", "dirt"], Tint([0x7c, 0x68, 0x4f])),
+    (&["rock", "cliff"], Tint([0x6b, 0x67, 0x63])),
+    (&["concrete"], Tint([0x83, 0x74, 0x65])),
+    (&["cobble"], Tint([0x55, 0x53, 0x54])),
+    (&["leaf"], Tint([0x91, 0x56, 0x3f])),
+];
+
+/// What the second texture of blend `texture` looks like, its first being `first`: of the
+/// materials its name has, the one least like the first. None for a texture that is no blend.
+pub(super) fn blended_with(texture: &str, first: Tint) -> Option<Tint> {
+    let name = original(texture);
+    let file = name.rsplit('/').next().unwrap_or(name);
+    let named = BLENDS.iter().filter(|(words, _)| words.iter().any(|w| file.contains(w))).map(|(_, tint)| *tint);
+    named.filter(|_| file.contains("blend")).max_by_key(|t| t.far_from(first))
+}
+
 /// The suffix a patched copy of a texture gets in the map's own pak: its position.
 const PATCH_SUFFIX: &str = "_wvt_patch";
 
@@ -68,6 +119,19 @@ pub(super) fn kind(texture: &str) -> Kind {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_textures_colour_is_its_reflectivity_and_a_blends_second_the_material_its_name_has() {
+        // concrete/concretewall011 and nature/blendgroundtograss001, as cp_gullywash_f9 has them.
+        assert_eq!(serde_json::to_string(&Tint::of([0.486, 0.431, 0.376])).unwrap(), "\"#b8aea3\"");
+        assert_eq!(Tint::of([0.0, 0.0, 0.0]), None);
+        let ground = Tint::of([0.421, 0.262, 0.119]).unwrap();
+        let grass = blended_with("nature/blendgroundtograss001", ground).unwrap();
+        assert_eq!(grass, Tint([0x62, 0x59, 0x2a]));
+        assert_eq!(blended_with("maps/cp_x/snowtower/blendmetalroofsnow_026_wvt_patch", ground), Some(Tint([0xba, 0xcd, 0xda])));
+        assert_eq!(blended_with("nature/grass_03", ground), None);
+        assert_eq!(ground.towards(grass, 0.5), Tint([0x87, 0x72, 0x46]));
+    }
 
     #[test]
     fn kinds_from_texture_names() {

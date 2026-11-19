@@ -229,11 +229,12 @@ function heightRange(floors) {
   return [zlo, zhi];
 }
 
-// A floor's colour at height share t: a flat shade with bg=flat, else its kind's colour, darker low down.
-/** @param {Kind} k @param {number} t */
-function floorColour(k, t) {
+// A floor's colour at height share t: a flat shade with bg=flat, else its texture's colour (its
+// kind's, without), darker low down.
+/** @param {Floor} f @param {Kind} k @param {number} t */
+function floorColour(f, k, t) {
   if (PLAIN_BG) return FLAT_SHADES[Math.min(FLAT_SHADES.length - 1, Math.floor(t * FLAT_SHADES.length))];
-  return scaled(KIND_COLOURS[k], 0.7 + 0.4 * t);
+  return f.c ? scaled(f.c, 0.8 + 0.4 * t) : scaled(KIND_COLOURS[k], 0.7 + 0.4 * t);
 }
 
 /** @param {Drawing} at @param {Floor[]} floors */
@@ -262,7 +263,7 @@ function drawFloors(at, floors) {
 function drawFloor({ c, X, Y }, f, t, patterns) {
   const k = /** @type {Kind} */ (f.k && f.k in KIND_COLOURS ? f.k : "other"),
     water = k === "water";
-  c.fillStyle = c.strokeStyle = floorColour(k, t);
+  c.fillStyle = c.strokeStyle = floorColour(f, k, t);
   c.beginPath();
   for (let i = 0; i < f.p.length; i += 2) (i ? c.lineTo : c.moveTo).call(c, X(f.p[i]), Y(f.p[i + 1]));
   c.closePath();

@@ -148,7 +148,7 @@ pub(super) fn prop_floors(data: &[u8], bounds: Option<Bounds>, stands: impl Fn(f
             let corners = [place(&t[0..3]), place(&t[3..6]), place(&t[6..9])];
             let Some(normal) = upward_normal(&corners) else { continue };
             let z = corners.iter().map(|q| q[2]).sum::<f32>() / 3.0;
-            out.push(Floor { z: round1(z), p: outline(&corners), k: Kind::Other, d: false, g: gradient(normal) });
+            out.push(Floor { z: round1(z), p: outline(&corners), k: Kind::Other, d: false, g: gradient(normal), c: None });
             if out.len() >= MAX_FLOORS {
                 return out;
             }

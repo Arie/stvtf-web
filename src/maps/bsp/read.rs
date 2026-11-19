@@ -12,7 +12,7 @@ use super::format::{
     TEXINFO_TEXDATA, U16_SIZE, VERTEX_SIZE, bytes, i16_at, i32_at, index_at, lump, plane_at, u16_at, vec3_at,
 };
 use super::geometry::{Position, Vec3};
-use super::material::Kind;
+use super::material::{Kind, Tint, blended_with};
 use super::{CapArea, Floor, Geometry, PAD, Wall};
 
 /// A face is a floor when its normal points up at least this much (within about 45°), a wall
@@ -62,6 +62,12 @@ impl Bounds {
     }
 }
 
+/// Each texture's colour, in the texture table's order.
+fn texture_tints(data: &[u8]) -> Result<Vec<Option<Tint>>> {
+    let texdata = lump(data, LUMP_TEXDATA)?;
+    Ok((0..texdata.len() / TEXDATA_SIZE).map(|i| Tint::of(vec3_at(&texdata, i * TEXDATA_SIZE).ok()?)).collect())
+}
+
 pub(super) fn texture_names(data: &[u8]) -> Result<Vec<String>> {
     let table = lump(data, LUMP_TEXDATA_STRING_TABLE)?;
     let strings = lump(data, LUMP_TEXDATA_STRING_DATA)?;
@@ -88,6 +94,7 @@ pub(super) struct World {
     pub(super) edges: Vec<u8>,
     pub(super) surfedges: Vec<u8>,
     pub(super) textures: Vec<String>,
+    pub(super) tints: Vec<Option<Tint>>,
 }
 
 /// A face of the world as seen from above: its corners, its plane (normal and distance, facing
@@ -109,6 +116,7 @@ impl World {
             edges: lump(data, LUMP_EDGES)?,
             surfedges: lump(data, LUMP_SURFEDGES)?,
             textures: texture_names(data)?,
+            tints: texture_tints(data)?,
         })
     }
 
@@ -140,6 +148,14 @@ impl World {
             })
             .collect::<Result<_>>()?;
         Ok(Some(Face { pts, plane, texture, disp }))
+    }
+
+    /// The colour of texture `texture` where `blend` (0 to 1) of it is its second texture; None
+    /// for one without, and for water and lava, which are drawn as what they are.
+    pub(super) fn tint(&self, texture: usize, blend: f32) -> Option<Tint> {
+        let first = self.tints.get(texture).copied().flatten().filter(|_| !matches!(self.kind(texture), Kind::Water | Kind::Lava))?;
+        let second = self.textures.get(texture).and_then(|name| blended_with(name, first)).filter(|_| blend > 0.0);
+        Some(second.map_or(first, |second| first.towards(second, blend.min(1.0))))
     }
 
     /// What texture `texture` is made of; Other for one not in the table.
@@ -183,7 +199,7 @@ pub(super) fn gradient(n: Vec3) -> Option<[f64; 2]> {
 }
 
 /// A wall's top and ends seen from above, or None for one too short to draw.
-pub(super) fn wall(pts: &[Vec3]) -> Option<Wall> {
+pub(super) fn wall(pts: &[Vec3], c: Option<Tint>) -> Option<Wall> {
     // total_cmp: a broken map can have NaN coordinates.
     let key = |a: &&Vec3, b: &&Vec3| a[0].total_cmp(&b[0]).then(a[1].total_cmp(&b[1]));
     let lo = pts.iter().min_by(key)?;
@@ -192,7 +208,7 @@ pub(super) fn wall(pts: &[Vec3]) -> Option<Wall> {
         return None;
     }
     let top = pts.iter().map(|p| p[2]).fold(f32::MIN, f32::max);
-    Some(Wall { z: round1(top), p: [round1(lo[0]), round1(lo[1]), round1(hi[0]), round1(hi[1])] })
+    Some(Wall { z: round1(top), p: [round1(lo[0]), round1(lo[1]), round1(hi[0]), round1(hi[1])], c })
 }
 
 /// The map's spawns, packs, capture areas, playable bounds, floors (sorted from low to high) and
@@ -292,27 +308,30 @@ pub(super) fn faces(world: &World, map: &Entities, bounds: Option<Bounds>, disps
         }
         if let Some(d) = disps.iter().find(|d| d.face == f) {
             let k = world.kind(d.texture);
-            for cell in d.cells() {
+            for (cell, blend) in d.cells().zip(d.blends()) {
+                let tint = world.tint(d.texture, blend);
                 match cell_normal_z(&cell, &d.plane) {
                     z if z > FLOOR_MIN_NORMAL_Z => {
-                        let c = cell.map(|p| p[2]).iter().sum::<f32>() / 4.0;
-                        floors.push((c, Floor { z: round1(c), p: outline(&cell), k, d: true, g: gradient(cell_normal(&cell)) }));
+                        let height = cell.map(|p| p[2]).iter().sum::<f32>() / 4.0;
+                        let slope = gradient(cell_normal(&cell));
+                        floors.push((height, Floor { z: round1(height), p: outline(&cell), k, d: true, g: slope, c: tint }));
                         if bounds.is_none() {
                             floor_pts.extend(cell);
                         }
                     }
-                    z if z.abs() < WALL_MAX_NORMAL_Z => walls.extend(wall(&cell)),
+                    z if z.abs() < WALL_MAX_NORMAL_Z => walls.extend(wall(&cell, tint)),
                     _ => {}
                 }
             }
         } else if face.plane[2] > FLOOR_MIN_NORMAL_Z {
             let g = gradient([face.plane[0], face.plane[1], face.plane[2]]);
-            floors.push((centre[2], Floor { z: round1(centre[2]), p: outline(&face.pts), k: world.kind(face.texture), d: false, g }));
+            let (kind, tint) = (world.kind(face.texture), world.tint(face.texture, 0.0));
+            floors.push((centre[2], Floor { z: round1(centre[2]), p: outline(&face.pts), k: kind, d: false, g, c: tint }));
             if bounds.is_none() {
                 floor_pts.extend(face.pts);
             }
         } else if face.plane[2].abs() < WALL_MAX_NORMAL_Z {
-            walls.extend(wall(&face.pts));
+            walls.extend(wall(&face.pts, world.tint(face.texture, 0.0)));
         }
     }
     floors.sort_by(|a, b| a.0.total_cmp(&b.0));

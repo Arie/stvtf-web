@@ -12,8 +12,8 @@ export type Geometry = {
   spawns?: Spawns;
   packs?: { kind: "health" | "ammo"; size: string; pos: Vec3 }[];
   cap_areas?: { point: number; min: Vec3; max: Vec3 }[];
-  floors?: { z: number; p: number[]; k?: string; d?: boolean; g?: [number, number] }[];
-  walls?: { z: number; p: number[] }[];
+  floors?: { z: number; p: number[]; k?: string; d?: boolean; g?: [number, number]; c?: string }[];
+  walls?: { z: number; p: number[]; c?: string }[];
   /** The payload track's segments: x y z of one end, then of the other. */
   track?: [number, number, number, number, number, number][];
   playable?: { origin: [number, number]; cell: number; w: number; h: number; bits: string };

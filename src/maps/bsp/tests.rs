@@ -226,7 +226,7 @@ fn swiftwater_trench_has_no_water() {
 
 /// A 256-unit square floor at height `z`.
 fn sq(z: f64, k: Kind) -> Floor {
-    Floor { z, p: vec![0.0, 0.0, 256.0, 0.0, 256.0, 256.0, 0.0, 256.0], k, d: false, g: None }
+    Floor { z, p: vec![0.0, 0.0, 256.0, 0.0, 256.0, 256.0, 0.0, 256.0], k, d: false, g: None, c: None }
 }
 
 #[test]
@@ -275,14 +275,14 @@ fn a_fill_keeping_almost_nothing_keeps_every_floor() {
 fn many_big_water_floors_are_bounded() {
     // Thousands of map-sized water faces over as many shallow beds: every sample would scan
     // every bed, for hours. The budget runs out instead, and the water left is kept.
-    let big = |z: f64, k: Kind| Floor { z, p: vec![0.0, 0.0, 30000.0, 0.0, 30000.0, 30000.0, 0.0, 30000.0], k, d: false, g: None };
+    let big = |z: f64, k: Kind| Floor { z, p: vec![0.0, 0.0, 30000.0, 0.0, 30000.0, 30000.0, 0.0, 30000.0], k, d: false, g: None, c: None };
     let mut floors: Vec<Floor> = (0..4000).map(|i| if i % 2 == 0 { big(-10.0, Kind::Dirt) } else { big(0.0, Kind::Water) }).collect();
     // And one water face with a million outline points, which every sample is tested against.
     let ring = (0..1_000_000).flat_map(|i| {
         let a = f64::from(i) / 1_000_000.0 * std::f64::consts::TAU;
         [15000.0 + 15000.0 * a.cos(), 15000.0 + 15000.0 * a.sin()]
     });
-    floors.insert(0, Floor { z: 0.0, p: ring.collect(), k: Kind::Water, d: false, g: None });
+    floors.insert(0, Floor { z: 0.0, p: ring.collect(), k: Kind::Water, d: false, g: None, c: None });
     let t = std::time::Instant::now();
     let kept = without_shallow_water(floors);
     eprintln!("{:.2?}", t.elapsed());

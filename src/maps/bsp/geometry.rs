@@ -3,7 +3,7 @@
 use serde::Serialize;
 use stvtf::output::{PickupItem, PickupSize, Team};
 
-use super::material::Kind;
+use super::material::{Kind, Tint};
 use super::read::SPAWN_SLACK;
 
 /// Room around the points, packs and spawns that frame the playable area.
@@ -48,6 +48,9 @@ pub struct Floor {
     /// How much the height rises per unit along x and y; absent on a flat floor.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub g: Option<[f64; 2]>,
+    /// Its texture's colour; absent where the map has none for it, and on water and lava.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub c: Option<Tint>,
 }
 
 /// A wall seen from above: its top and its two ends (`x1, y1, x2, y2`).
@@ -55,6 +58,9 @@ pub struct Floor {
 pub struct Wall {
     pub z: f64,
     pub p: [f64; 4],
+    /// Its texture's colour, as a floor's.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub c: Option<Tint>,
 }
 
 /// A health or ammo pack.

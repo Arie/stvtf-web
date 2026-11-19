@@ -120,8 +120,9 @@ npm run test:browser    # after cargo build and `npx playwright-core install --o
   uses (`maps.demos.tf`), looked up its way; about 50 competitive maps. Fetched once into
   `--cache` (default `cache/`) and served from there. Misaligned bounds are corrected in
   `app/map/view.js`.
-- **map geometry**: any map, from its BSP on `fastdl.serveme.tf/maps/`. Upward faces coloured by
-  material (grass, dirt, concrete, metal, wood, tile, water, lava, snow), displacements at real
+- **map geometry**: any map, from its BSP on `fastdl.serveme.tf/maps/`. Upward faces and walls in their
+  texture's colour (its reflectivity in the map; a terrain blend's second texture by its name),
+  with their material (grass, dirt, concrete, metal, wood, tile, water, lava, snow), displacements at real
   height, wall outlines, the payload track. Only the reachable area: a flood fill from spawns,
   capture areas, pickups and the track, without buried and shallow water; maps without points or
   pickups (MGE, jump) draw every floor. Framed by points, pickups and nearby spawns (or the
@@ -130,7 +131,7 @@ npm run test:browser    # after cargo build and `npx playwright-core install --o
   The JSON: floors with kind `k` (and `d` for terrain, `g` the slope along x and y), `props` (the
   tops of solid static props, from `props.txt.gz`), `track` segments, `playable` (a mask of
   16-unit cells), `packs` (health and ammo by size), `cap_areas` (trigger bounds and point).
-  Cached as `<map>.v9.json` and `<map>.v9.json.gz`.
+  Cached as `<map>.v10.json` and `<map>.v10.json.gz`.
 
 ## Backpack
 
