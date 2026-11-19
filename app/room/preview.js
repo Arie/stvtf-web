@@ -1,6 +1,5 @@
-// What the camera being placed would show, in a corner: the map's floors and walls flat shaded,
-// players as pills in their team's colour. Drawn with three.js (app/vendor), loaded when first
-// needed.
+// What the camera being placed would show: floors and walls flat shaded, players as pills.
+// Drawn with three.js (app/vendor), loaded when first needed.
 import { $, state, TEAM } from "../core/core.js";
 import { KIND_COLOURS } from "../map/geometry.js";
 import { footOf } from "./sight.js";
