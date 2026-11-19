@@ -209,21 +209,23 @@ fn goes_on(hub: &SharedHub, ticks: std::ops::RangeInclusive<u32>) {
 /// A match on `target` an old release records up to tick 1700, and a new release whose stream
 /// begins with a frame at `first`: a real `SourceTV` sends one who just connected a frame some
 /// 11 s ahead of its stream, then nothing until the stream is there.
-fn asked_for_at(dir: &TempDir, target: &str, first: u32) -> (Sessions, Arc<Session>, Sessions, Arc<Session>) {
+fn asked_for_at(dir: &TempDir, target: &str, first: u32) -> (Sessions, Arc<Session>, Sessions, Arc<Session>, Instant) {
     script(target, stream("cp_a", 1000..=1700), None);
     let (old, _) = start_on(dir);
     let m = old.open(&format!("{target} tv"), None, None).unwrap();
     until("the old release's lines", || ticks_of(&m.ready().unwrap()).last() == Some(&1700));
     script(target, stream("cp_a", first..=first), None);
+    // When the new release asks: a slow machine takes a while from here.
+    let asked = Instant::now();
     let (new, _) = start_on(dir);
     let n = new.get(&m.id).unwrap();
-    (old, m, new, n)
+    (old, m, new, n, asked)
 }
 
 #[test]
 fn a_recording_asked_for_ahead_of_its_stream_is_written_on_to_the_tick_asked_at() {
     let dir = TempDir::new("handover");
-    let (old, m, new, n) = asked_for_at(&dir, "192.0.2.47:27020", 2500);
+    let (old, m, new, n, _) = asked_for_at(&dir, "192.0.2.47:27020", 2500);
     let (before, rec) = (m.ready().unwrap(), n.ready().unwrap());
     std::thread::sleep(GIVE_WAIT * 2);
     assert!(before.is_written() && !rec.is_written(), "the old release writes on: its stream is not there yet");
@@ -242,9 +244,8 @@ fn a_recording_asked_for_ahead_of_its_stream_is_written_on_to_the_tick_asked_at(
 #[test]
 fn a_recording_whose_stream_does_not_get_to_the_tick_asked_at_is_given_as_it_is() {
     let dir = TempDir::new("handover");
-    let (old, m, new, n) = asked_for_at(&dir, "192.0.2.48:27020", 9000);
+    let (old, m, new, n, asked) = asked_for_at(&dir, "192.0.2.48:27020", 9000);
     let (before, rec) = (m.ready().unwrap(), n.ready().unwrap());
-    let asked = Instant::now();
     goes_on(&m.hub, 1800..=2000);
     until("the file to be the new release's", || rec.is_written());
     assert!(asked.elapsed() >= GIVE_BY / 2 && !before.is_written(), "written on for a while, not for ever");
@@ -274,7 +275,7 @@ fn a_recording_asked_for_at_no_tick_is_given_at_once() {
 #[test]
 fn a_recording_picked_up_goes_on_with_its_file_while_it_waits_for_it() {
     let dir = TempDir::new("handover");
-    let (old, m, new, n) = asked_for_at(&dir, "192.0.2.50:27020", 2500);
+    let (old, m, new, n, _) = asked_for_at(&dir, "192.0.2.50:27020", 2500);
     let rec = n.ready().unwrap();
     for upto in [2000, 2300] {
         goes_on(&m.hub, upto - 200..=upto);
@@ -292,7 +293,7 @@ fn a_recording_picked_up_goes_on_with_its_file_while_it_waits_for_it() {
 #[test]
 fn a_release_told_to_stop_records_on_until_the_recording_asked_for_is_at_the_tick_asked_at() {
     let dir = TempDir::new("handover");
-    let (old, m, new, n) = asked_for_at(&dir, "192.0.2.51:27020", 2500);
+    let (old, m, new, n, _) = asked_for_at(&dir, "192.0.2.51:27020", 2500);
     let (before, rec) = (m.ready().unwrap(), n.ready().unwrap());
     until("the old release to hear", || m.giving.load(Ordering::Relaxed));
     std::thread::scope(|scope| {
@@ -310,7 +311,7 @@ fn a_release_told_to_stop_records_on_until_the_recording_asked_for_is_at_the_tic
 #[test]
 fn a_release_told_to_stop_does_not_wait_long_for_a_tick_asked_at() {
     let dir = TempDir::new("handover");
-    let (old, m, new, _) = asked_for_at(&dir, "192.0.2.52:27020", 9000);
+    let (old, m, new, _, _) = asked_for_at(&dir, "192.0.2.52:27020", 9000);
     until("the old release to hear", || m.giving.load(Ordering::Relaxed));
     let told = Instant::now();
     old.stop_all();
@@ -379,7 +380,7 @@ fn a_release_taken_over_closes_its_recording_into_the_file_as_it_goes_for_the_ne
 #[test]
 fn a_release_gone_while_it_writes_a_file_on_is_not_waited_for() {
     let dir = TempDir::new("handover");
-    let (old, m, new, n) = asked_for_at(&dir, "192.0.2.56:27020", 9000);
+    let (old, m, new, n, _) = asked_for_at(&dir, "192.0.2.56:27020", 9000);
     let rec = n.ready().unwrap();
     until("the old release to hear", || m.giving.load(Ordering::Relaxed));
     // The old release crashes: its recorders stop, and nothing is said.
