@@ -1,5 +1,5 @@
 // What blocks sight on a map (`/sight/<map>`, src/maps/bsp/reach.rs): a bit per voxel that
-// something solid fills. Tells what a camera at a spot would show of the ground.
+// something solid fills. Tells what a camera at a spot would show.
 import { state } from "../core/core.js";
 import { asset } from "../core/env.js";
 /** @typedef {[number, number, number]} Vec3 */
@@ -12,9 +12,6 @@ const TAN_H = Math.tan((53.13 * Math.PI) / 180),
 // How far round the aim the ground is looked at, and a player's chest above a floor, in map units.
 const RANGE = 3200,
   CHEST = 48;
-// Ground that shows, and ground in the picture but hidden: red, green, blue, alpha.
-const SHOWN = [124, 255, 138, 110],
-  HIDDEN = [255, 107, 90, 70];
 
 /** @param {string} map @returns {Promise<Grid | null>} */
 export async function loadSight(map) {
@@ -129,35 +126,18 @@ function pointsShown(g, shown) {
   });
   return said.join(" · ") || "No point";
 }
-// What a camera would show of the ground round its aim: an image of it, a pixel per column and
-// rows running with the map's y, where it lies on the map, and what to say of it.
+// What to say of a camera: how much of each point round its aim shows.
 /** @param {Grid} g @param {Spot} c */
-export function lookFrom(g, c) {
+export function showsOf(g, c) {
+  if (solidAt(g, c.pos)) return "In a wall";
   const n = Math.ceil(RANGE / g.vox),
     [ci, cj] = [cell(g, c.aim[0], 0), cell(g, c.aim[1], 1)],
     f = unit(sub(c.aim, c.pos)),
     // Straight down any right will do.
     r = Math.abs(f[2]) > 0.999 ? [0, -1, 0] : unit(cross(f, [0, 0, 1])),
-    lost = solidAt(g, c.pos);
-  const image = document.createElement("canvas");
-  image.width = image.height = 2 * n;
-  const pen = /** @type {CanvasRenderingContext2D} */ (image.getContext("2d")),
-    data = pen.createImageData(2 * n, 2 * n),
     shown = new Set();
-  for (let a = 0; a < 2 * n; a++)
-    for (let b = 0; b < 2 * n; b++) {
-      const [i, j] = [ci - n + a, cj - n + b],
-        shows = columnShows(g, c, [f, r, cross(r, f)], i, j);
-      if (shows === null) continue;
-      if (shows && !lost) shown.add(i * g.dims[1] + j);
-      data.data.set(shows && !lost ? SHOWN : HIDDEN, (b * 2 * n + a) * 4);
-    }
-  pen.putImageData(data, 0, 0);
-  return {
-    image,
-    x: g.origin[0] + (ci - n) * g.vox,
-    y: g.origin[1] + (cj - n) * g.vox,
-    size: 2 * n * g.vox,
-    says: lost ? "In a wall" : pointsShown(g, shown),
-  };
+  for (let i = ci - n; i < ci + n; i++)
+    for (let j = cj - n; j < cj + n; j++)
+      if (columnShows(g, c, [f, r, cross(r, f)], i, j)) shown.add(i * g.dims[1] + j);
+  return pointsShown(g, shown);
 }

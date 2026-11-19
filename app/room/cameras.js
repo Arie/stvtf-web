@@ -8,7 +8,7 @@ import { layerOn } from "../core/layers.js";
 import { focusOf, label, toScreen } from "../map/view.js";
 import { HOME, me, post } from "./home.js";
 import { preview } from "./preview.js";
-import { blind, floorUnder, loadSight, lookFrom } from "./sight.js";
+import { blind, floorUnder, loadSight, showsOf } from "./sight.js";
 import { note, worldAt } from "./tools.js";
 /** @typedef {[number, number, number]} Vec3 */
 /** @typedef {{ id?: number; name: string; pos: Vec3; aim: Vec3; room?: boolean }} Camera */
@@ -39,7 +39,7 @@ let editing = null;
 let held = null;
 /** @type {import("./sight.js").Grid | null} */
 let sight = null;
-/** @type {ReturnType<typeof lookFrom> | null} */
+/** @type {string | null} */
 let look = null;
 
 /** @param {import("../../types/stream").CameraLine} m */
@@ -100,20 +100,11 @@ function mark(c, colour, placing) {
   ctx.restore();
   if (c.name) label(c.name, x, y - r - 12 * uiScale(), 11 * uiScale(), { colour });
 }
-// The ground the camera being placed would show, laid on the map.
+// What the camera being placed shows of the points, said in the panel.
 /** @param {Camera} c @param {import("./sight.js").Grid} grid */
-function drawLook(c, grid) {
-  look ??= lookFrom(grid, c);
-  // The map's units to the canvas's, as toScreen.
-  const v = state.view,
-    r = canvas.getBoundingClientRect(),
-    [cos, sin] = [Math.cos(v.rot) * v.scale, Math.sin(v.rot) * v.scale];
-  ctx.save();
-  ctx.imageSmoothingEnabled = false;
-  ctx.transform(cos, -sin, -sin, -cos, r.width / 2 - v.cx * cos + v.cy * sin, r.height / 2 + v.cx * sin + v.cy * cos);
-  ctx.drawImage(look.image, look.x, look.y, look.size, look.size);
-  ctx.restore();
-  if ($("cam-shows").textContent !== look.says) $("cam-shows").textContent = look.says;
+function sayLook(c, grid) {
+  look ??= showsOf(grid, c);
+  if ($("cam-shows").textContent !== look) $("cam-shows").textContent = look;
 }
 const isEdited = (/** @type {Camera} */ c) => c.id !== undefined && c.id === editing?.id && !c.room === !editing?.room;
 export function drawCameras() {
@@ -121,7 +112,7 @@ export function drawCameras() {
   preview(map ? editing : null, sight);
   if (!map) return;
   if (asked !== asking(map)) load(map);
-  if (editing && sight) drawLook(editing, sight);
+  if (editing && sight) sayLook(editing, sight);
   for (const c of [...ofMap(), ...stray()]) if (!isEdited(c)) mark(c, colourOf(c), false);
   if (editing) mark(editing, sight && blind(sight, editing) ? COLOUR.bad : COLOUR.mark, true);
 }

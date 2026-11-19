@@ -145,9 +145,8 @@ looks at. In a room, the Cameras layer (behind ⚙) shows them as markers on the
   clients go to a player's eyes, and on with the demo's own director from there. Another map
   ends it too. TF2 takes no field of view from it.
 - The site's streamers (anyone, where nobody signs in) place them: Add in the panel, drag the
-  camera and its aim, the wheel over either (or the panel) for its height. The ground it would
-  show is green, what is in the picture but hidden red, and the panel says how much of each
-  capture area shows. A camera in something solid, out over the void, or with something between
+  camera and its aim, the wheel over either (or the panel) for its height. The panel says how much of
+  each capture area shows. A camera in something solid, out over the void, or with something between
   it and its aim is red.
 - While one is placed, a picture in the corner shows what it would see: the map's floors and
   walls flat shaded, players as pills (three.js, `app/vendor/`, loaded then).
