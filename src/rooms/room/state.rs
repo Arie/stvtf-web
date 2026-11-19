@@ -14,7 +14,7 @@ use super::markers::Markers;
 use super::names::Names;
 use super::play::{Pace, State};
 use super::scores::{Added, Scores};
-use crate::cameras::Spot;
+use crate::cameras::{self, Spot};
 use crate::matches::hub::{SharedHub, announce};
 use crate::matches::recording::Recording;
 use crate::relays::pool::{Offer, RoomRelay, Was};
@@ -56,6 +56,8 @@ pub(crate) struct Room {
     pub(super) camera: Mutex<Option<u16>>,
     /// The spot of the map the relay's camera is at instead, as an admin put it.
     pub(super) spot: Mutex<Option<Spot>>,
+    /// The room's own cameras, as its admins placed them.
+    pub(super) cameras: Mutex<cameras::Kept>,
     /// The permanent marker, and which map's the pages and the relay were last told.
     pub(super) marker: MarkerState,
     /// The names its admins gave the players and teams.
@@ -156,6 +158,9 @@ pub(crate) struct Saved {
     pub(super) names: Names,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(super) scores: Vec<Added>,
+    /// Its own cameras.
+    #[serde(default)]
+    pub(super) cameras: cameras::Kept,
 }
 
 /// A page in the room, by its guest cookie if it is listed, until dropped.
@@ -223,6 +228,7 @@ impl Room {
             announce(&room.hub, "view", &view);
         }
         room.keep_scores(saved.scores);
+        room.keep_cameras(saved.cameras);
         if !saved.names.is_empty() {
             room.keep_names(saved.names);
         }
@@ -263,6 +269,7 @@ impl Room {
             relay: RelayState::default(),
             camera: Mutex::new(None),
             spot: Mutex::new(None),
+            cameras: Mutex::default(),
             marker: MarkerState { strokes: Mutex::new(Markers::new()), load: AtomicUsize::new(load), dirty: AtomicBool::new(true) },
             names: Mutex::default(),
             scores: Mutex::default(),
@@ -297,6 +304,7 @@ impl Room {
             pace: st.pace,
             names: lock(&self.names).clone(),
             scores: self.scores_added(),
+            cameras: lock(&self.cameras).clone(),
         }
     }
 

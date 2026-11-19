@@ -420,3 +420,19 @@ fn the_relays_camera_is_at_the_spot_an_admin_put_it_until_a_player_is_followed()
     assert!(r.set_spot(&SpotPost::default()).is_ok() && !r.leave_spot());
     r.stop();
 }
+
+#[test]
+fn a_rooms_own_cameras_are_on_its_map_told_to_its_pages_and_saved_with_it() {
+    let r = room(1);
+    let placed = serde_json::from_str(r#"{"name":"Mid","pos":[0,0,900],"aim":[0,0,0]}"#).unwrap();
+    assert_eq!(r.change_cameras(&placed).unwrap_err().to_string(), "No map yet.");
+    lock(&r.hub).map = Some("cp_process_f12".into());
+    r.change_cameras(&placed).unwrap();
+    let line = r#"{"on":{"cp_process_f12":[{"aim":[0,0,0],"id":1,"name":"Mid","pos":[0,0,900]}]},"type":"cameras"}"#;
+    assert_eq!(subscribe(&r.hub, false).try_iter().find(|l| l.contains(r#""type":"cameras""#)).as_deref(), Some(line));
+    let saved = serde_json::to_value(r.saved()).unwrap();
+    assert_eq!(saved["cameras"]["maps"]["cp_process_f12"]["cameras"][0]["name"], "Mid");
+    r.change_cameras(&serde_json::from_str(r#"{"id":1,"remove":true}"#).unwrap()).unwrap();
+    assert_eq!(lock(&r.cameras).by_map()["cp_process_f12"], []);
+    r.stop();
+}

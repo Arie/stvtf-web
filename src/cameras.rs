@@ -10,6 +10,8 @@
 //!
 //! - `GET /cameras?since=<version>`: all of them, when changed since.
 //! - `POST /cameras/<map>`: a change, as a streamer's page posts it.
+//!
+//! A room keeps its own besides (`Room::change_cameras`), placed by its admins.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -155,7 +157,12 @@ impl Kept {
         Some(Found { map: name, cameras: &on.cameras })
     }
 
-    fn change(&mut self, map: &str, change: &Change) -> Result<()> {
+    /// Each map's own, by its name.
+    pub(crate) fn by_map(&self) -> BTreeMap<&str, &[Camera]> {
+        self.maps.iter().map(|(map, on)| (map.as_str(), on.cameras.as_slice())).collect()
+    }
+
+    pub(crate) fn change(&mut self, map: &str, change: &Change) -> Result<()> {
         if !is_name(map, b"_") {
             bail!("Invalid map.");
         }

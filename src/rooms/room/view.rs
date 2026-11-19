@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use super::Room;
 use super::state::{Leader, on_map};
-use crate::cameras::Spot;
+use crate::cameras::{Change, Kept, Spot};
 use crate::matches::hub::announce;
 use crate::sync::lock;
 
@@ -158,6 +158,27 @@ impl Room {
             self.steer_relay(&lock(&self.state));
         }
         Ok(())
+    }
+
+    /// An admin's change to the room's own cameras on its map.
+    pub(crate) fn change_cameras(&self, change: &Change) -> Result<()> {
+        let Some(map) = lock(&self.hub).map.clone() else { bail!("No map yet.") };
+        let mut own = lock(&self.cameras);
+        own.change(&map, change)?;
+        self.tell_cameras(&own);
+        Ok(())
+    }
+
+    /// The room's own cameras, as saved.
+    pub(super) fn keep_cameras(&self, saved: Kept) {
+        let mut own = lock(&self.cameras);
+        *own = saved;
+        self.tell_cameras(&own);
+    }
+
+    fn tell_cameras(&self, own: &Kept) {
+        let line = serde_json::json!({ "type": "cameras", "on": own.by_map() });
+        announce(&self.hub, "cameras", &Arc::from(line.to_string()));
     }
 
     /// The relay's camera leaves its spot, as on another map. Whether it was at one.

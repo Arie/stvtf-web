@@ -1234,3 +1234,33 @@ test("a camera is placed on the map and an admin's click puts the room's relay t
   assert.deepEqual(errors, []);
   await page.close();
 });
+
+test("an admin who is no streamer places a camera for the room alone", async () => {
+  const { page, errors } = await open();
+  await page.route("**/me", async r => {
+    const answer = await r.fetch();
+    await r.fulfill({ response: answer, json: { ...(await answer.json()), cameras: false } });
+  });
+  await page.goto(base);
+  await page.click("#roomopen");
+  await page.waitForURL(/\/r\/[0-9a-f]{32}\/$/, { timeout: WAIT });
+  await until(page, () => window.viewState?.framed);
+  await page.click("#settingstoggle");
+  await page.check('#settings input[data-layer="cameras"]');
+  await page.click("#settingstoggle");
+  await page.click('#cam-list button[data-id="new"]');
+  await page.fill("#cam-name", "Ours");
+  const [asked] = await Promise.all([
+    page.waitForRequest(r => r.method() === "POST" && r.url().endsWith("/cameras")),
+    page.click("#cam-save"),
+  ]);
+  assert.match(asked.url(), /\/r\/[0-9a-f]{32}\/cameras$/);
+  await until(page, () => document.querySelector("#cam-list button")?.textContent === "Ours");
+  const kept = await page.evaluate(map => fetch(`../../cameras/${map}`).then(r => r.json()), MAP);
+  assert.deepEqual(kept.cameras, [], "not the map's");
+  await page.click("#cam-list button");
+  await page.click("#cam-remove");
+  await until(page, () => document.querySelectorAll("#cam-list button").length === 1);
+  assert.deepEqual(errors, []);
+  await page.close();
+});

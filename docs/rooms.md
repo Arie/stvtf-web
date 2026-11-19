@@ -149,6 +149,8 @@ looks at. In a room, the Cameras layer (behind ⚙) shows them as markers on the
   show is green, what is in the picture but hidden red, and the panel says how much of each
   capture area shows. A camera in something solid, out over the void, or with something between
   it and its aim is red.
+- A room's other admins place cameras the same way, for that room alone: on its map, shown to
+  everyone in it, kept as long as the room.
 - They are kept by map name in `cameras.json` in `--sessions`. A map with none has those of the
   same map under another version's name (`cp_gullywash_f9` on `cp_gullywash_final1`), the
   latest changed, listed as from there; the first change made keeps them under its own name.
@@ -185,6 +187,7 @@ looks at. In a room, the Cameras layer (behind ⚙) shows them as markers on the
 | `POST /r/<id>/names` | admin: `{"players": {<SteamID>: name}, "teams": {"red", "blue"}}`, in place of the names before; an empty name is the game's own; 400 with why for a name over 32 characters |
 | `POST /r/<id>/score` | admin: `{"team": "red" or "blue", "score": 0 to 99}`: the score that team shows now, kept as what to add to the game's for this game (the map, up to its score's next reset); those watching in TF2 see it too |
 | `POST /r/<id>/camera` | admin: `{"pos": [x, y, z], "aim": [x, y, z]}` puts the relay's camera there, `{}` gives it back ([cameras](#cameras)) |
+| `POST /r/<id>/cameras` | admin: a change to the room's own cameras on its map, as `POST /cameras/<map>` takes |
 | `POST /r/<id>/clear` | admin: clears the marker of the room's map |
 | `POST /r/<id>/draw` | admin: `{"stroke": <id>, "points": [[x, y, ms], …]}`, up to 256, ms into the stroke; later points continue it; pages draw at that pace, 40 ms behind |
 
@@ -205,6 +208,7 @@ The room's event stream adds:
 | `names` | the room's names: `players` by SteamID, `teams` by side; on join too |
 | `score` | what the room adds to the game's score where it is now: `blue`, `red`; on join too |
 | `camera` | where the relay's camera was put: `pos`, `aim`; neither when it is the director's; on join too |
+| `cameras` | the room's own cameras: `on`, by map, each `[{"id", "name", "pos", "aim"}]`; on join too |
 | `people` | `id`, `name`, `admin`, `owner`, `signed`, and `ink`, `steamid` when set |
 | `draw` | as posted, with `by` |
 | `playback` | of the room's map: `paused`, `speed`, `at`, `length` (ms), `start` (first moment kept), `origin` (map start), `rounds`; `live` (the newest map, not over); `load` (its map's number); `over`; `maps` (`load`, `map`, `ready` of each map with play, and the room's own); `marks` (how many the match has); on change and every second while playing |

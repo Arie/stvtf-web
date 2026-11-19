@@ -81,6 +81,7 @@ fn of_room(router: Routes) -> Routes {
         .route("/r/{id}/names", post(rooms::names))
         .route("/r/{id}/score", post(rooms::score))
         .route("/r/{id}/camera", post(rooms::camera))
+        .route("/r/{id}/cameras", post(rooms::cameras))
         .route("/r/{id}/control", post(rooms::control))
         .route("/r/{id}/map", post(rooms::map))
         .route("/r/{id}/admin", post(rooms::admin))

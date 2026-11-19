@@ -219,6 +219,11 @@ export type LightLine = { type: "light"; by: number; stroke: number; ink: string
 
 /** Where an admin put the relay's camera and the spot it looks at; with neither, back with the director. */
 export type CameraLine = { type: "camera"; pos?: [number, number, number]; aim?: [number, number, number] };
+/** The room's own cameras, by map. */
+export type CamerasLine = {
+  type: "cameras";
+  on: Record<string, { id: number; name: string; pos: [number, number, number]; aim: [number, number, number] }[]>;
+};
 
 /** A note an admin put down: at a spot on the floor, or on a player (user id), in the drawer's ink. */
 export type NoteLine = {
@@ -301,6 +306,7 @@ export type StreamMessage =
   | CircleLine
   | LightLine
   | CameraLine
+  | CamerasLine
   | NoteLine
   | VoiceLine
   | TalkingLine

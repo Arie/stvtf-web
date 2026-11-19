@@ -1,5 +1,6 @@
 // A map's cameras (src/cameras.rs), behind a room's Cameras layer: an admin's click on one puts
-// the relay there, again gives it back. The site's streamers place them.
+// the relay there, again gives it back. The site's streamers place them; a room's other admins
+// place the room's own.
 import { $, canvas, ctx, state, uiScale } from "../core/core.js";
 import { asset } from "../core/env.js";
 import { setAutoZoom } from "../core/input.js";
@@ -9,7 +10,7 @@ import { HOME, me, post } from "./home.js";
 import { blind, floorUnder, loadSight, lookFrom } from "./sight.js";
 import { note, worldAt } from "./tools.js";
 /** @typedef {[number, number, number]} Vec3 */
-/** @typedef {{ id?: number; name: string; pos: Vec3; aim: Vec3 }} Camera */
+/** @typedef {{ id?: number; name: string; pos: Vec3; aim: Vec3; room?: boolean }} Camera */
 /** @typedef {{ clientX: number; clientY: number }} Pointer */
 
 // Map units: a wheel step, a new camera's height and distance, how far over the players its floor is.
@@ -24,6 +25,9 @@ const COLOUR = { mark: "#ffd23f", on: "#7cff8a", bad: "#ff6b5a" };
 
 /** @type {{ map: string; from: string; cameras: Camera[] } | null} */
 let known = null;
+// The room's own, by map.
+/** @type {Record<string, Camera[]>} */
+let own = {};
 // The map asked about: its answer may come late.
 let asked = "";
 /** @type {{ pos?: Vec3; aim?: Vec3 }} */
@@ -41,6 +45,15 @@ let look = null;
 export function onCamera(m) {
   active = { pos: m.pos, aim: m.aim };
 }
+/** @param {import("../../types/stream").CamerasLine} m */
+export function onCameras(m) {
+  own = m.on;
+  panel();
+}
+const ofRoom = () => (own[state.map ?? ""] ?? []).map(c => ({ ...c, room: true }));
+const ofMap = () => [...(known?.cameras ?? []), ...ofRoom()];
+// Those this page places: the site's for its streamers, the room's for its other admins.
+const mine = () => (me.cameras ? (known?.cameras ?? []) : ofRoom());
 
 const same = (/** @type {Vec3 | undefined} */ a, /** @type {Vec3 | undefined} */ b) =>
   a !== undefined && b !== undefined && a.every((v, i) => v === b[i]);
@@ -49,7 +62,7 @@ const isActive = (/** @type {{ pos: Vec3; aim: Vec3 }} */ c) => same(c.pos, acti
 /** @returns {Camera[]} */
 function stray() {
   const { pos, aim } = active;
-  return pos && aim && !known?.cameras.some(isActive) ? [{ name: "", pos, aim }] : [];
+  return pos && aim && !ofMap().some(isActive) ? [{ name: "", pos, aim }] : [];
 }
 /** @param {Camera} c */
 function colourOf(c) {
@@ -105,8 +118,8 @@ export function drawCameras() {
   if (!layerOn("cameras") || !state.map) return;
   if (asked !== state.map) load(state.map);
   if (editing && sight) drawLook(editing, sight);
-  for (const c of [...(known?.cameras ?? []), ...stray()])
-    if (c.id === undefined || c.id !== editing?.id) mark(c, colourOf(c), false);
+  for (const c of [...ofMap(), ...stray()])
+    if (c.id === undefined || c.id !== editing?.id || !c.room !== !editing?.room) mark(c, colourOf(c), false);
   if (editing) mark(editing, sight && blind(sight, editing) ? COLOUR.bad : COLOUR.mark, true);
 }
 
@@ -129,7 +142,7 @@ async function load(map) {
 // ---------- placing them
 function panel() {
   const box = $("cameras");
-  box.hidden = !layerOn("cameras") || !me.cameras || !known;
+  box.hidden = !layerOn("cameras") || !(me.cameras || me.admin) || !known;
   if (box.hidden || !known) return;
   $("cam-edit").hidden = editing === null;
   $("cam-list").hidden = editing !== null;
@@ -145,8 +158,8 @@ function panel() {
       return b;
     };
   $("cam-list").replaceChildren(
-    ...(known.from === known.map ? [] : [from]),
-    ...known.cameras.map(c => button(String(c.id), c.name)),
+    ...(known.from === known.map || !me.cameras ? [] : [from]),
+    ...mine().map(c => button(String(c.id), c.name)),
     button("new", "Add"),
   );
 }
@@ -168,9 +181,13 @@ function fresh() {
 }
 /** @param {object} change */
 async function save(change) {
-  const r = await post(asset(`cameras/${encodeURIComponent(state.map ?? "")}`), change);
+  const r = await (me.cameras
+    ? post(asset(`cameras/${encodeURIComponent(state.map ?? "")}`), change)
+    : post("cameras", change, HOME));
   if (!r.ok) return note(await r.text());
-  if (state.map) await load(state.map);
+  if (me.cameras && state.map) return load(state.map);
+  editing = null;
+  panel();
 }
 /** @param {Vec3} p @param {Pointer} e */
 function near(p, e) {
@@ -190,7 +207,7 @@ function wirePanel() {
   $("cam-list").addEventListener("click", e => {
     const id = /** @type {HTMLElement} */ (e.target).dataset.id;
     if (!id || !known) return;
-    const kept = known.cameras.find(c => String(c.id) === id);
+    const kept = mine().find(c => String(c.id) === id);
     editing = kept ? { ...kept, pos: [...kept.pos], aim: [...kept.aim] } : fresh();
     // The view stays put under what is dragged.
     setAutoZoom(false);
@@ -211,7 +228,11 @@ function wirePanel() {
     });
   // Typing in it is not the page's keys.
   $("cameras").addEventListener("keydown", e => e.stopPropagation());
-  $("cam-save").addEventListener("click", () => editing && save(editing));
+  $("cam-save").addEventListener("click", () => {
+    if (!editing) return;
+    const { id, name, pos, aim } = editing;
+    save({ id, name, pos, aim });
+  });
   $("cam-remove").addEventListener("click", () => editing && save({ id: editing.id, remove: true }));
   $("cam-cancel").addEventListener("click", () => {
     editing = null;
@@ -223,7 +244,7 @@ function wirePanel() {
 /** @param {PointerEvent} e */
 function press(e) {
   if (!layerOn("cameras") || e.button !== 0) return;
-  const hit = editing ? null : [...(known?.cameras ?? []), ...stray()].find(c => near(c.pos, e));
+  const hit = editing ? null : [...ofMap(), ...stray()].find(c => near(c.pos, e));
   held = handleAt(e);
   if (!held && !hit) return;
   e.preventDefault();

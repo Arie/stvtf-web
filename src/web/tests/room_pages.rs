@@ -104,6 +104,9 @@ fn only_admins_control_a_room() {
     let stroke = r#"{"stroke":1,"points":[[0,0,0],[10,10,16]]}"#;
     assert!(post(&app, &draw, "", stroke).starts_with("HTTP/1.1 403"));
     assert!(post(&app, &draw, &cookie, stroke).starts_with("HTTP/1.1 204"));
+    let (cameras, placed) = (format!("{page}cameras"), r#"{"name":"Mid","pos":[0,0,900],"aim":[0,0,0]}"#);
+    assert!(post(&app, &cameras, "", placed).starts_with("HTTP/1.1 403"));
+    assert!(!post(&app, &cameras, &cookie, placed).starts_with("HTTP/1.1 403"));
     assert!(get(&app, "/r/0123/", "").starts_with("HTTP/1.1 404"));
 }
 

@@ -17,6 +17,7 @@ use super::matches::is_page;
 use super::visitor::{Who, origin};
 use super::{Answered, Early, pages};
 use crate::app::App;
+use crate::cameras::Change;
 use crate::leagues::{Asked, MAX_PLAYERS};
 use crate::matches::sessions::{Session, Sessions, logged};
 use crate::rooms::room::{
@@ -285,6 +286,8 @@ by_admins! {
     score(ScoreEdit) => |room, _guest, s| room.set_score(&s);
     /// `POST /r/<id>/camera`.
     camera(SpotPost) => |room, _guest, s| room.set_spot(&s);
+    /// `POST /r/<id>/cameras`.
+    cameras(Change) => |room, _guest, c| room.change_cameras(&c);
     /// `POST /r/<id>/control`.
     control(Control) => |room, _guest, c| room.control(&c);
     /// `POST /r/<id>/map`.
