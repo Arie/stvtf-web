@@ -1241,6 +1241,9 @@ test("an admin who is no streamer places a camera for the room alone", async () 
     const answer = await r.fetch();
     await r.fulfill({ response: answer, json: { ...(await answer.json()), cameras: false } });
   });
+  /** @type {string[]} */
+  const shared = [];
+  page.on("request", r => /\/cameras\/\w+$/.test(r.url()) && r.method() === "GET" && shared.push(r.url()));
   await page.goto(base);
   await page.click("#roomopen");
   await page.waitForURL(/\/r\/[0-9a-f]{32}\/$/, { timeout: WAIT });
@@ -1256,6 +1259,7 @@ test("an admin who is no streamer places a camera for the room alone", async () 
   ]);
   assert.match(asked.url(), /\/r\/[0-9a-f]{32}\/cameras$/);
   await until(page, () => document.querySelector("#cam-list button")?.textContent === "Ours");
+  assert.deepEqual(shared, [], "the map's are not asked for");
   const kept = await page.evaluate(map => fetch(`../../cameras/${map}`).then(r => r.json()), MAP);
   assert.deepEqual(kept.cameras, [], "not the map's");
   await page.click("#cam-list button");

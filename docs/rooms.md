@@ -151,6 +151,7 @@ looks at. In a room, the Cameras layer (behind ⚙) shows them as markers on the
   it and its aim is red.
 - A room's other admins place cameras the same way, for that room alone: on its map, shown to
   everyone in it, kept as long as the room.
+- The map's cameras show to the site's streamers only; the room's own to everyone in it.
 - They are kept by map name in `cameras.json` in `--sessions`. A map with none has those of the
   same map under another version's name (`cp_gullywash_f9` on `cp_gullywash_final1`), the
   latest changed, listed as from there; the first change made keeps them under its own name.

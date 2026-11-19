@@ -28,7 +28,7 @@ let known = null;
 // The room's own, by map.
 /** @type {Record<string, Camera[]>} */
 let own = {};
-// The map asked about: its answer may come late.
+// The map asked about, and as whom: its answer may come late.
 let asked = "";
 /** @type {{ pos?: Vec3; aim?: Vec3 }} */
 let active = {};
@@ -116,27 +116,29 @@ function drawLook(c, grid) {
 }
 export function drawCameras() {
   if (!layerOn("cameras") || !state.map) return;
-  if (asked !== state.map) load(state.map);
+  if (asked !== asking(state.map)) load(state.map);
   if (editing && sight) drawLook(editing, sight);
   for (const c of [...ofMap(), ...stray()])
     if (c.id === undefined || c.id !== editing?.id || !c.room !== !editing?.room) mark(c, colourOf(c), false);
   if (editing) mark(editing, sight && blind(sight, editing) ? COLOUR.bad : COLOUR.mark, true);
 }
 
+const asking = (/** @type {string} */ map) => `${map} ${me.cameras}`;
 /** @param {string} map */
 async function load(map) {
-  asked = map;
+  const as = (asked = asking(map));
   [known, sight, look, editing] = [null, null, null, null];
   panel();
-  const r = await fetch(asset(`cameras/${encodeURIComponent(map)}`)).catch(() => null);
-  if (!r?.ok || asked !== map) return;
-  const said = await r.json();
+  // The map's are its streamers' to see.
+  const r = me.cameras ? await fetch(asset(`cameras/${encodeURIComponent(map)}`)).catch(() => null) : null;
+  if (asked !== as || (me.cameras && !r?.ok)) return;
+  const said = r ? await r.json() : { map, cameras: [] };
   known = { map, from: said.map, cameras: said.cameras };
   panel();
   // Only for those who can act on a blind camera.
   if (!me.admin && !me.cameras) return;
   const grid = await loadSight(map);
-  if (asked === map) [sight, look] = [grid, null];
+  if (asked === as) [sight, look] = [grid, null];
 }
 
 // ---------- placing them
