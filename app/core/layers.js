@@ -61,7 +61,7 @@ export function renderSettings() {
   const row = (id, label, key, on, cls) =>
     `<label class="${cls}"><input type="checkbox" data-layer="${id}"${on ? " checked" : ""}>${label}${key ? `<kbd>${key}</kbd>` : ""}</label>`;
   box.innerHTML =
-    row("*", "Overkill (all)", "x", overkillOn(), "master") +
+    row("*", "All", "x", overkillOn(), "master") +
     Object.entries(LAYERS)
       .map(([n, l]) => row(n, l.label, l.key, layerState[n], ""))
       .join("") +
