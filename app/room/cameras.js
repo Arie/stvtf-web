@@ -70,11 +70,13 @@ const mine = () => (me.cameras ? (known?.cameras ?? []) : ofRoom());
 const same = (/** @type {Vec3 | undefined} */ a, /** @type {Vec3 | undefined} */ b) =>
   a !== undefined && b !== undefined && a.every((v, i) => v === b[i]);
 const isActive = (/** @type {{ pos: Vec3; aim: Vec3 }} */ c) => same(c.pos, active.pos) && same(c.aim, active.aim);
-// Where the relay is, when no camera of the map's is there (any more).
+// The relay is where no camera known here is: at one taken away, or one of the map's unseen.
+const elsewhere = () => active.pos !== undefined && !ofMap().some(isActive);
+// Marked for the site's streamers: to others it may be one of the map's.
 /** @returns {Camera[]} */
 function stray() {
   const { pos, aim } = active;
-  return pos && aim && !ofMap().some(isActive) ? [{ name: "", pos, aim }] : [];
+  return me.cameras && pos && aim && elsewhere() ? [{ name: "", pos, aim }] : [];
 }
 /** @param {Camera} c */
 function colourOf(c) {
@@ -183,6 +185,8 @@ function panel() {
   $("cam-list").replaceChildren(
     ...(known.from === known.map || !me.cameras ? [] : [from]),
     ...mine().map(row),
+    // No marker to give the relay back with.
+    ...(elsewhere() && me.admin && !me.cameras ? [button("go", "back", "Director")] : []),
     button("id", "new", "Add"),
   );
 }
@@ -278,6 +282,7 @@ function wirePanel() {
     const { id, go } = /** @type {HTMLElement} */ (e.target).dataset;
     if (!known) return;
     const kept = mine().find(c => String(c.id) === (id ?? go));
+    if (go === "back") return put(null);
     if (go && kept) return put(kept);
     if (!id) return;
     // The view stays put under what is dragged.
@@ -310,10 +315,12 @@ function wirePanel() {
   $("cam-cancel").addEventListener("click", () => edit(null));
   $("settings").addEventListener("change", () => panel());
 }
-// Puts the relay at a camera (again: back).
-/** @param {Camera} c */
+// Puts the relay at a camera (again, or none: back).
+/** @param {Camera | null} c */
 function put(c) {
-  post("camera", isActive(c) ? {} : { pos: c.pos, aim: c.aim }, HOME).then(async r => r.ok || note(await r.text()));
+  post("camera", !c || isActive(c) ? {} : { pos: c.pos, aim: c.aim }, HOME).then(
+    async r => r.ok || note(await r.text()),
+  );
 }
 // A press: takes hold of the camera being placed, or puts the relay at a marker (again: back).
 /** @param {PointerEvent} e */

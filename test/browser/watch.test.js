@@ -1314,6 +1314,18 @@ test("an admin who is no streamer places a camera for the room alone", async () 
   assert.deepEqual(shared, [], "the map's are not asked for");
   const kept = await page.evaluate(map => fetch(`../../cameras/${map}`).then(r => r.json()), MAP);
   assert.deepEqual(kept.cameras, [], "not the map's");
+  // The relay at one not listed here, as the map's are: a button gives it back.
+  const spot = { pos: [100, 200, 900], aim: [0, 0, 0] };
+  await page.evaluate(
+    ([to, at]) => fetch(to, { method: "POST", headers: { "Content-Type": "application/json" }, body: at }),
+    [asked.url().replace(/s$/, ""), JSON.stringify(spot)],
+  );
+  const [back] = await Promise.all([
+    page.waitForRequest(r => r.url().endsWith("/camera") && r.postData() === "{}"),
+    page.click('#cam-list button[data-go="back"]'),
+  ]);
+  assert.equal((await back.response())?.status(), 204);
+  await until(page, () => !document.querySelector('#cam-list button[data-go="back"]'));
   await page.click("#cam-list button[data-id]");
   await page.click("#cam-remove");
   await until(page, () => document.querySelectorAll("#cam-list button").length === 1);
