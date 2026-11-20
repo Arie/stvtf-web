@@ -1,5 +1,6 @@
 //! A live match's recording from one process to the next: its file has one writer, and the next
-//! goes on at a tick.
+//! goes on at a tick. Each test's server address is no other test's: a script goes to the first
+//! watcher of its target.
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
@@ -275,7 +276,7 @@ fn a_recording_asked_for_at_no_tick_is_given_at_once() {
 #[test]
 fn a_recording_picked_up_goes_on_with_its_file_while_it_waits_for_it() {
     let dir = TempDir::new("handover");
-    let (old, m, new, n, _) = asked_for_at(&dir, "192.0.2.50:27020", 2500);
+    let (old, m, new, n, _) = asked_for_at(&dir, "192.0.2.150:27020", 2500);
     let rec = n.ready().unwrap();
     for upto in [2000, 2300] {
         goes_on(&m.hub, upto - 200..=upto);
@@ -283,8 +284,8 @@ fn a_recording_picked_up_goes_on_with_its_file_while_it_waits_for_it() {
         assert!(rec.is_catching_up() && !rec.is_written(), "the file is the old release's still");
     }
     goes_on(&m.hub, 2400..=2500);
-    until("the file to be the new release's", || rec.is_written());
-    assert!(!rec.is_catching_up());
+    // Written from the take's start, caught up at its end.
+    until("the file to be the new release's", || rec.is_written() && !rec.is_catching_up());
     assert_eq!(ticks_of(&rec), every_100(1000..=2500), "none missing, none twice");
     old.stop_all();
     new.stop_all();
@@ -293,7 +294,7 @@ fn a_recording_picked_up_goes_on_with_its_file_while_it_waits_for_it() {
 #[test]
 fn a_release_told_to_stop_records_on_until_the_recording_asked_for_is_at_the_tick_asked_at() {
     let dir = TempDir::new("handover");
-    let (old, m, new, n, _) = asked_for_at(&dir, "192.0.2.51:27020", 2500);
+    let (old, m, new, n, _) = asked_for_at(&dir, "192.0.2.151:27020", 2500);
     let (before, rec) = (m.ready().unwrap(), n.ready().unwrap());
     until("the old release to hear", || m.giving.load(Ordering::Relaxed));
     std::thread::scope(|scope| {
@@ -311,7 +312,7 @@ fn a_release_told_to_stop_records_on_until_the_recording_asked_for_is_at_the_tic
 #[test]
 fn a_release_told_to_stop_does_not_wait_long_for_a_tick_asked_at() {
     let dir = TempDir::new("handover");
-    let (old, m, new, _, _) = asked_for_at(&dir, "192.0.2.52:27020", 9000);
+    let (old, m, new, _, _) = asked_for_at(&dir, "192.0.2.152:27020", 9000);
     until("the old release to hear", || m.giving.load(Ordering::Relaxed));
     let told = Instant::now();
     old.stop_all();
@@ -336,7 +337,7 @@ fn statuses_in(r: &Recording) -> usize {
 fn a_recording_taken_has_none_of_the_next_release_s_signon() {
     let dir = TempDir::new("handover");
     // Its stream goes on from the old release's.
-    let target = "192.0.2.53:27020";
+    let target = "192.0.2.153:27020";
     script(target, stream("cp_a", 1000..=1700), None);
     let (old, _) = start_on(&dir);
     let m = old.open(&format!("{target} tv"), None, None).unwrap();
@@ -400,7 +401,7 @@ fn a_release_gone_while_it_writes_a_file_on_is_not_waited_for() {
 #[test]
 fn a_release_stopped_before_it_is_asked_waits_for_the_next_one_s_stream() {
     let dir = TempDir::new("handover");
-    let target = "192.0.2.47:27020";
+    let target = "192.0.2.57:27020";
     script(target, stream("cp_a", 1000..=1700), None);
     let (old, _) = start_on(&dir);
     let m = old.open(&format!("{target} tv"), None, None).unwrap();
@@ -433,8 +434,7 @@ fn a_recording_left_by_a_crash_is_taken_though_its_server_never_answers() {
     let (new, _) = start_on(&dir);
     let rec = new.get(&id).unwrap().ready().unwrap();
     assert!(rec.is_catching_up() && !rec.is_written(), "its writer may write it still");
-    until("the file to be the new process's", || rec.is_written());
-    assert!(!rec.is_catching_up());
+    until("the file to be the new process's", || rec.is_written() && !rec.is_catching_up());
     assert_eq!(ticks_of(&rec), had);
     new.stop_all();
 }
