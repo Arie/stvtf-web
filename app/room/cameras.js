@@ -55,6 +55,7 @@ let look = null;
 /** @param {import("../../types/stream").CameraLine} m */
 export function onCamera(m) {
   active = { pos: m.pos, aim: m.aim };
+  if (!editing) panel();
 }
 /** @param {import("../../types/stream").CamerasLine} m */
 export function onCameras(m) {
@@ -166,15 +167,23 @@ function panel() {
     return heights();
   }
   const from = Object.assign(document.createElement("div"), { className: "cfrom", textContent: `From ${known.from}` }),
-    button = (/** @type {string} */ id, /** @type {string} */ text) => {
+    button = (/** @type {"go" | "id"} */ does, /** @type {string} */ id, /** @type {string} */ text) => {
       const b = Object.assign(document.createElement("button"), { textContent: text });
-      b.dataset.id = id;
+      b.dataset[does] = id;
       return b;
+    },
+    // A camera's name puts the relay there, Edit places it anew.
+    row = (/** @type {Camera} */ c) => {
+      const at = Object.assign(button("go", String(c.id), c.name), { disabled: !me.admin }),
+        div = Object.assign(document.createElement("div"), { className: "crow" });
+      at.classList.toggle("on", isActive(c));
+      div.append(at, button("id", String(c.id), "Edit"));
+      return div;
     };
   $("cam-list").replaceChildren(
     ...(known.from === known.map || !me.cameras ? [] : [from]),
-    ...mine().map(c => button(String(c.id), c.name)),
-    button("new", "Add"),
+    ...mine().map(row),
+    button("id", "new", "Add"),
   );
 }
 function heights() {
@@ -266,9 +275,11 @@ function handleAt(e) {
 
 function wirePanel() {
   $("cam-list").addEventListener("click", e => {
-    const id = /** @type {HTMLElement} */ (e.target).dataset.id;
-    if (!id || !known) return;
-    const kept = mine().find(c => String(c.id) === id);
+    const { id, go } = /** @type {HTMLElement} */ (e.target).dataset;
+    if (!known) return;
+    const kept = mine().find(c => String(c.id) === (id ?? go));
+    if (go && kept) return put(kept);
+    if (!id) return;
     // The view stays put under what is dragged.
     setAutoZoom(false);
     edit(kept ? { ...kept, pos: [...kept.pos], aim: [...kept.aim] } : fresh());
@@ -299,6 +310,11 @@ function wirePanel() {
   $("cam-cancel").addEventListener("click", () => edit(null));
   $("settings").addEventListener("change", () => panel());
 }
+// Puts the relay at a camera (again: back).
+/** @param {Camera} c */
+function put(c) {
+  post("camera", isActive(c) ? {} : { pos: c.pos, aim: c.aim }, HOME).then(async r => r.ok || note(await r.text()));
+}
 // A press: takes hold of the camera being placed, or puts the relay at a marker (again: back).
 /** @param {PointerEvent} e */
 function press(e) {
@@ -309,10 +325,7 @@ function press(e) {
   if (!held && !hit) return;
   e.preventDefault();
   e.stopImmediatePropagation();
-  if (!hit || !me.admin) return;
-  post("camera", isActive(hit) ? {} : { pos: hit.pos, aim: hit.aim }, HOME).then(
-    async r => r.ok || note(await r.text()),
-  );
+  if (hit && me.admin) put(hit);
 }
 export function camerasTool() {
   wirePanel();

@@ -563,9 +563,16 @@
   white-space: nowrap;
   cursor: pointer;
 }
-#cameras .cbuttons {
+#cameras .cbuttons,
+#cameras .crow {
   display: flex;
   gap: 4px;
+}
+#cameras .crow [data-go] {
+  flex: 1;
+}
+#cameras .crow .on {
+  border-color: var(--pen);
 }
 #cameras .cbuttons button {
   padding: 0 4px;

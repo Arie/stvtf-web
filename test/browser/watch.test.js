@@ -1258,8 +1258,18 @@ test("a camera is placed on the map and an admin's click puts the room's relay t
     assert.equal((await (await asked.response())?.status()) ?? 0, 204);
     await page.waitForTimeout(200);
   }
+  // Its name in the list does the same, with no picture of it.
+  for (const sent of [{ pos, aim }, {}]) {
+    const [asked] = await Promise.all([
+      page.waitForRequest(r => r.url().endsWith("/camera")),
+      page.click("#cam-list button[data-go]"),
+    ]);
+    assert.deepEqual(asked.postDataJSON(), sent);
+    await until(page, on => (document.querySelector("#cam-list .on") !== null) === on, "pos" in sent);
+  }
+  assert.ok(await page.$eval("#cam-pane", el => el.hidden));
   // Placed anew by dragging it, then taken away.
-  await page.click("#cam-list button");
+  await page.click("#cam-list button[data-id]");
   await page.mouse.move(x, y);
   await page.mouse.down();
   await page.mouse.move(x + 40, y + 10);
@@ -1270,7 +1280,7 @@ test("a camera is placed on the map and an admin's click puts the room's relay t
   const moved = await page.evaluate(map => fetch(`../../cameras/${map}`).then(r => r.json()), MAP);
   assert.notDeepEqual(moved.cameras[0].pos.slice(0, 2), pos.slice(0, 2));
   assert.equal(moved.cameras[0].id, kept.cameras[0].id);
-  await page.click("#cam-list button");
+  await page.click("#cam-list button[data-id]");
   await page.click("#cam-remove");
   await until(page, () => document.querySelectorAll("#cam-list button").length === 1);
   assert.deepEqual(errors, []);
@@ -1304,7 +1314,7 @@ test("an admin who is no streamer places a camera for the room alone", async () 
   assert.deepEqual(shared, [], "the map's are not asked for");
   const kept = await page.evaluate(map => fetch(`../../cameras/${map}`).then(r => r.json()), MAP);
   assert.deepEqual(kept.cameras, [], "not the map's");
-  await page.click("#cam-list button");
+  await page.click("#cam-list button[data-id]");
   await page.click("#cam-remove");
   await until(page, () => document.querySelectorAll("#cam-list button").length === 1);
   assert.deepEqual(errors, []);
