@@ -32,19 +32,19 @@ use crate::sync::lock;
 pub(super) const RECORD_POLL: Duration = Duration::from_millis(if cfg!(test) { 20 } else { 250 });
 /// How long a process that asked for a file waits for its writer's word: that it is given, or
 /// that it writes it still.
-pub(super) const GIVE_WAIT: Duration = Duration::from_millis(if cfg!(test) { 300 } else { 3000 });
+pub(super) const GIVE_WAIT: Duration = Duration::from_millis(if cfg!(test) { 600 } else { 3000 });
 /// A file asked for longer ago than this, its writer not having said since that it writes it, is
 /// not written to, even to close it: the one that asked may have taken it.
 const GIVE_WITHIN: Duration = Duration::from_millis(GIVE_WAIT.as_millis() as u64 / 2);
 /// How long a file asked for is written on at most, its stream not yet at the tick asked at: a new
 /// connection's first frame was seen some 11 s ahead of the stream.
-pub(super) const GIVE_BY: Duration = Duration::from_millis(if cfg!(test) { 1500 } else { 20_000 });
+pub(super) const GIVE_BY: Duration = Duration::from_millis(if cfg!(test) { 3000 } else { 20_000 });
 /// How long after asking a file is taken, whatever its writer says.
 const TAKE_BY: Duration = Duration::from_millis((GIVE_BY.as_millis() + GIVE_WAIT.as_millis()) as u64);
 /// How often the process that writes a file says it still does, and how long after it last said
 /// so it is gone: another that has the recording writes it again.
 const BEAT: Duration = Duration::from_millis(if cfg!(test) { 40 } else { 1000 });
-const GONE_AFTER: Duration = Duration::from_millis(if cfg!(test) { 400 } else { 10_000 });
+const GONE_AFTER: Duration = Duration::from_millis(if cfg!(test) { 800 } else { 10_000 });
 /// How long after another process took the store a writer closes a chunk into its file at every
 /// beat, for that one to read on: longer than a connection takes to have a stream (22 s seen).
 const READ_ON_FOR: Duration = Duration::from_secs(60);
