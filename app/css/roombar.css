@@ -556,6 +556,13 @@
 #cameras label input {
   width: 70px;
 }
+#cameras label input[type="checkbox"] {
+  width: auto;
+  height: auto;
+}
+#cameras label[hidden] {
+  display: none;
+}
 #cameras button {
   overflow: hidden;
   text-align: left;

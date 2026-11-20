@@ -140,12 +140,13 @@ speed with it.
 Cameras are placed on a map once and used in every room on it: where each is and the spot it
 looks at. In a room, the Cameras layer (behind ⚙) shows them as markers on the map.
 
-- An admin's click on a marker puts the room's relay there for those watching in TF2 (on
-  `spec_autodirector 1`); a click on it again, or following a player, gives the camera back: the
+- An admin's click on a marker, or on a camera's name in the panel, puts the room's relay there
+  for those watching in TF2 (on `spec_autodirector 1`); a click on it again, or following a player,
+  gives the camera back: the
   clients go to a player's eyes, and on with the demo's own director from there. Another map
   ends it too. TF2 takes no field of view from it.
-- The site's streamers (anyone, where nobody signs in) place them: Add in the panel, drag the
-  camera and its aim, the wheel over either (or the panel) for its height. The panel says how much of
+- The site's streamers (anyone, where nobody signs in) place them: Add or Edit in the panel, drag
+  the camera and its aim, the wheel over either (or the panel) for its height. The panel says how much of
   each capture area shows. A camera in something solid, out over the void, or with something between
   it and its aim is red.
 - While one is placed, a picture in the corner shows what it would see: the map's floors and
@@ -154,8 +155,10 @@ looks at. In a room, the Cameras layer (behind ⚙) shows them as markers on the
   WASD move it (Q down, E or Space up, Shift faster); the picture's corner resizes it. The arrows
   nudge the part last held on the map, Ctrl+Z takes a change back, Esc cancels.
 - A room's other admins place cameras the same way, for that room alone: on its map, shown to
-  everyone in it, kept as long as the room.
-- The map's cameras show to the site's streamers only; the room's own to everyone in it.
+  everyone in it, kept as long as the room. A streamer who is an admin does too, with Room only
+  on a new one.
+- The map's cameras show to the site's streamers only; the room's own to everyone in it. Where the
+  relay is otherwise is marked for streamers alone; another admin gives it back with Director.
 - They are kept by map name in `cameras.json` in `--sessions`. A map with none has those of the
   same map under another version's name (`cp_gullywash_f9` on `cp_gullywash_final1`), the
   latest changed, listed as from there; the first change made keeps them under its own name.

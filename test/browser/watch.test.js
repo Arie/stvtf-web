@@ -1283,6 +1283,21 @@ test("a camera is placed on the map and an admin's click puts the room's relay t
   await page.click("#cam-list button[data-id]");
   await page.click("#cam-remove");
   await until(page, () => document.querySelectorAll("#cam-list button").length === 1);
+  // A streamer's for the room alone, listed with the map's.
+  await page.click('#cam-list button[data-id="new"]');
+  await page.fill("#cam-name", "Ours");
+  await page.check("#cam-room");
+  await Promise.all([
+    page.waitForRequest(r => r.method() === "POST" && /\/r\/[0-9a-f]{32}\/cameras$/.test(r.url())),
+    page.click("#cam-save"),
+  ]);
+  await until(page, () => document.querySelector('#cam-list button[data-go="r1"]')?.textContent === "Ours");
+  const shared = await page.evaluate(map => fetch(`../../cameras/${map}`).then(r => r.json()), MAP);
+  assert.deepEqual(shared.cameras, [], "not the map's");
+  await page.click('#cam-list button[data-id="r1"]');
+  assert.ok(await page.$eval("#cam-own", el => el.hidden), "one kept stays whose it is");
+  await page.click("#cam-remove");
+  await until(page, () => document.querySelectorAll("#cam-list button").length === 1);
   assert.deepEqual(errors, []);
   await page.close();
 });

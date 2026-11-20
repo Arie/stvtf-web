@@ -64,8 +64,10 @@ export function onCameras(m) {
 }
 const ofRoom = () => (own[state.map ?? ""] ?? []).map(c => ({ ...c, room: true }));
 const ofMap = () => [...(known?.cameras ?? []), ...ofRoom()];
-// Those this page places: the site's for its streamers, the room's for its other admins.
-const mine = () => (me.cameras ? (known?.cameras ?? []) : ofRoom());
+// Those listed: the room's, and the map's for the site's streamers.
+const mine = () => (me.cameras ? ofMap() : ofRoom());
+// One's name in the list: the room's are numbered apart from the map's.
+const keyOf = (/** @type {Camera} */ c) => `${c.room ? "r" : ""}${c.id}`;
 
 const same = (/** @type {Vec3 | undefined} */ a, /** @type {Vec3 | undefined} */ b) =>
   a !== undefined && b !== undefined && a.every((v, i) => v === b[i]);
@@ -149,25 +151,31 @@ async function load(map) {
 }
 
 // ---------- placing them
+// The panel of the one being placed.
+/** @param {Camera} c */
+function fields(c) {
+  /** @type {HTMLInputElement} */ ($("cam-name")).value = c.name;
+  $("cam-remove").hidden = c.id === undefined;
+  // A streamer's new one is the map's, or the room's alone.
+  $("cam-own").hidden = c.id !== undefined || !me.cameras || !me.admin;
+  /** @type {HTMLInputElement} */ ($("cam-room")).checked = Boolean(c.room);
+  const [lo, hi] = state.geometry?.bounds ?? [
+    [0, 0, -2000],
+    [0, 0, 2000],
+  ];
+  Object.assign($("cam-z-slide"), {
+    min: Math.floor(lo[2] / STEP) * STEP,
+    max: Math.ceil(hi[2] / STEP) * STEP + OVER,
+  });
+  heights();
+}
 function panel() {
   const box = $("cameras");
   box.hidden = !layerOn("cameras") || !(me.cameras || me.admin) || !known;
   if (box.hidden || !known) return;
   $("cam-edit").hidden = editing === null;
   $("cam-list").hidden = editing !== null;
-  if (editing) {
-    /** @type {HTMLInputElement} */ ($("cam-name")).value = editing.name;
-    $("cam-remove").hidden = editing.id === undefined;
-    const [lo, hi] = state.geometry?.bounds ?? [
-      [0, 0, -2000],
-      [0, 0, 2000],
-    ];
-    Object.assign($("cam-z-slide"), {
-      min: Math.floor(lo[2] / STEP) * STEP,
-      max: Math.ceil(hi[2] / STEP) * STEP + OVER,
-    });
-    return heights();
-  }
+  if (editing) return fields(editing);
   const from = Object.assign(document.createElement("div"), { className: "cfrom", textContent: `From ${known.from}` }),
     button = (/** @type {"go" | "id"} */ does, /** @type {string} */ id, /** @type {string} */ text) => {
       const b = Object.assign(document.createElement("button"), { textContent: text });
@@ -176,10 +184,11 @@ function panel() {
     },
     // A camera's name puts the relay there, Edit places it anew.
     row = (/** @type {Camera} */ c) => {
-      const at = Object.assign(button("go", String(c.id), c.name), { disabled: !me.admin }),
+      const at = Object.assign(button("go", keyOf(c), c.name), { disabled: !me.admin }),
         div = Object.assign(document.createElement("div"), { className: "crow" });
       at.classList.toggle("on", isActive(c));
-      div.append(at, button("id", String(c.id), "Edit"));
+      if (c.room && me.cameras) at.title = "Room only";
+      div.append(at, Object.assign(button("id", keyOf(c), "Edit"), { disabled: Boolean(c.room) && !me.admin }));
       return div;
     };
   $("cam-list").replaceChildren(
@@ -252,15 +261,17 @@ function fresh() {
     zs = state.lastPlayers.flatMap(p => (p.pos ? [p.pos[2]] : [])),
     about = zs.length ? zs.reduce((a, b) => a + b, 0) / zs.length : 0,
     z = (sight && floorUnder(sight, x, y, about + NEW_REACH)) ?? Math.round(about);
-  return { name: "", pos: [x + NEW_BACK, y, z + NEW_UP], aim: [x, y, z] };
+  return { name: "", pos: [x + NEW_BACK, y, z + NEW_UP], aim: [x, y, z], room: !me.cameras };
 }
+// A change to the camera being placed: to the room's own, or the map's.
 /** @param {object} change */
 async function save(change) {
-  const r = await (me.cameras
-    ? post(asset(`cameras/${encodeURIComponent(state.map ?? "")}`), change)
-    : post("cameras", change, HOME));
+  const room = Boolean(editing?.room),
+    r = await (room
+      ? post("cameras", change, HOME)
+      : post(asset(`cameras/${encodeURIComponent(state.map ?? "")}`), change));
   if (!r.ok) return note(await r.text());
-  if (me.cameras && state.map) return load(state.map);
+  if (!room && state.map) return load(state.map);
   edit(null);
 }
 /** @param {Vec3} p @param {Pointer} e */
@@ -281,13 +292,16 @@ function wirePanel() {
   $("cam-list").addEventListener("click", e => {
     const { id, go } = /** @type {HTMLElement} */ (e.target).dataset;
     if (!known) return;
-    const kept = mine().find(c => String(c.id) === (id ?? go));
+    const kept = mine().find(c => keyOf(c) === (id ?? go));
     if (go === "back") return put(null);
     if (go && kept) return put(kept);
     if (!id) return;
     // The view stays put under what is dragged.
     setAutoZoom(false);
     edit(kept ? { ...kept, pos: [...kept.pos], aim: [...kept.aim] } : fresh());
+  });
+  $("cam-room").addEventListener("change", e => {
+    if (editing) editing.room = /** @type {HTMLInputElement} */ (e.target).checked;
   });
   $("cam-name").addEventListener("input", e => {
     if (editing) editing.name = /** @type {HTMLInputElement} */ (e.target).value;
