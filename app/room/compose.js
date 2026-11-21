@@ -193,7 +193,7 @@ function badge(c, now) {
   }
   const secs = flying ? (now - flying.from) / 1000 : 0,
     text = flying
-      ? `● ${Math.floor(secs / 60)}:${String(Math.floor(secs % 60)).padStart(2, "0")}`
+      ? `● ${Math.floor(secs / 60)}:${String(Math.floor(secs % 60)).padStart(2, "0")} · Click: stop`
       : String(Math.ceil(left));
   el.hidden = !flying && counting === null;
   el.classList.toggle("rec", flying !== null);
