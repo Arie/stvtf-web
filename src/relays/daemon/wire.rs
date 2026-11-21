@@ -84,6 +84,16 @@ impl WantLine {
         }
     }
 
+    /// As it is `ago` later: its moment and its camera's path that much older.
+    pub(super) fn aged(mut self, ago: Duration) -> WantLine {
+        let ms = ago.as_millis() as u64;
+        self.age_ms += ms;
+        if let Some(path) = &mut self.path {
+            path.age_ms += ms;
+        }
+        self
+    }
+
     pub(super) fn want(self) -> Want {
         let at = Instant::now().checked_sub(Duration::from_millis(self.age_ms)).unwrap_or_else(Instant::now);
         Want {

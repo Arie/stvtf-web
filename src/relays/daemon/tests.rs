@@ -18,6 +18,10 @@ fn a_cameras_path_goes_to_the_relay_process_and_an_old_spot_is_one_too() {
     assert_eq!((got.id, &got.steps), (7, &path.steps));
     let age = got.began.elapsed();
     assert!(age >= Duration::from_secs(2) && age < Duration::from_secs(3), "{age:?}");
+    // Handed to the next process a while later, the path is that much older too.
+    let later = serde_json::from_str::<WantLine>(&sent).unwrap().aged(Duration::from_secs(5)).want();
+    let Some(Camera::Along(handed)) = later.camera else { panic!() };
+    assert!(handed.began.elapsed() >= Duration::from_secs(7) && later.at.elapsed() >= Duration::from_secs(5));
     // As a stv.tf from before paths says a spot: where, pitch and yaw.
     let old = |fixed: &str| {
         let line = sent.split_once(r#","path""#).unwrap().0.to_string() + &format!(r#","fixed":{fixed}}}"#);

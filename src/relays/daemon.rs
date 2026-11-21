@@ -178,9 +178,8 @@ fn take_over(rooms: &Rooms, relays: &Arc<Relays>, file: &Path) {
     if ago > HANDED_FOR {
         return tracing::info!("clients handed over {} s ago are gone", ago.as_secs());
     }
-    for HandedRoom { room, was, mut want, beams, notes, light, names, score, clients } in handed.rooms {
-        want.age_ms += ago.as_millis() as u64;
-        let shows = Shows { want: want.want(), beams, notes, light, names, score };
+    for HandedRoom { room, was, want, beams, notes, light, names, score, clients } in handed.rooms {
+        let shows = Shows { want: want.aged(ago).want(), beams, notes, light, names, score };
         let started = relays.start_with(shows.want.clone(), Some(&was), Some(&clients));
         match started {
             Ok(Some(relay)) if relay.was() == was => {
