@@ -7,12 +7,14 @@ import { pointAt } from "./preview.js";
 /** @typedef {{ pos: Vec3; aim: Vec3 }} Spot */
 
 // Radians a pixel of drag turns it, map units a second and a wheel notch move it, how much faster
-// with Shift, and how far a press may stray and still be a click, in pixels.
+// with Shift, how far a press may stray and still be a click, and how far the pointer held by the
+// picture moves at once at most, in pixels.
 const TURN = 0.004,
   SPEED = 500,
   NOTCH = 100,
   FAST = 3,
   CLICK_PX = 4,
+  LEAP_PX = 400,
   STEEP = 1.55;
 // A key's way: forward, right, up.
 /** @type {Record<string, Vec3>} */
@@ -106,7 +108,8 @@ export function flyTool(spot, changed, done) {
   const held = () => document.pointerLockElement === view;
   view.addEventListener("mousemove", e => {
     const c = spot();
-    if (!c || !held()) return;
+    // Not a leap: a browser may say one as it takes hold of the pointer.
+    if (!c || !held() || Math.hypot(e.movementX, e.movementY) > LEAP_PX) return;
     c.aim = turned(c, e.movementX * TURN, e.movementY * TURN);
     changed();
   });
