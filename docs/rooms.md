@@ -149,7 +149,8 @@ looks at. In a room, the Cameras layer (behind ⚙) shows them as markers on the
   sets off along it from there, and stays at its end; the game itself moves it between frames.
 - A camera may have a move: placing it, **+ End** (or an orbit round what it looks at) gives it
   an end frame, reached straight or in an arc round what it looks at over the seconds set; or
-  **Record** keeps a flight flown in the picture, evened out. The bar under the picture plays it
+  **Record** counts down, then keeps a flight flown in the picture (the mouse looks round as in the
+  game, held by the picture; a click or Esc ends it), evened out. The bar under the picture plays it
   there, and **TF2** in the room's relay. Saved, it is kept with the camera; its way and its end
   show on the map, and ▶ by its name sets the relay's camera off on it. The pages work out its
   moments; the relay takes them as they are.

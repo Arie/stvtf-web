@@ -1,5 +1,6 @@
 // Steering the camera being placed from its picture: a drag looks round, a click aims at what is
-// under it, the wheel and WASD move it (Q down, E or Space up), Shift faster.
+// under it, the wheel and WASD move it (Q down, E or Space up), Shift faster. With the pointer
+// held by the picture (a flight being flown) the mouse looks round as it moves, as in the game.
 import { $ } from "../core/core.js";
 import { pointAt } from "./preview.js";
 /** @typedef {[number, number, number]} Vec3 */
@@ -98,9 +99,16 @@ export function flyTool(spot, changed, done) {
   const view = $("cam-view");
   /** @type {{ x: number; y: number; from: Spot; dragged: boolean } | null} */
   let press = null;
+  const held = () => document.pointerLockElement === view;
+  view.addEventListener("mousemove", e => {
+    const c = spot();
+    if (!c || !held()) return;
+    c.aim = turned(c, e.movementX * TURN, e.movementY * TURN);
+    changed();
+  });
   view.addEventListener("pointerdown", e => {
     const c = spot();
-    if (!c || e.button !== 0) return;
+    if (!c || e.button !== 0 || held()) return;
     view.focus();
     view.setPointerCapture(e.pointerId);
     press = { x: e.clientX, y: e.clientY, from: { pos: [...c.pos], aim: [...c.aim] }, dragged: false };

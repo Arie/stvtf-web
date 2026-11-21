@@ -18,7 +18,10 @@ const SECS = 8,
   HOLD = 1,
   EVEN = 0.25,
   TRACK = 48,
-  THUMB_MS = 300;
+  THUMB_MS = 300,
+  // The count before a flight, and the longest one, in seconds.
+  COUNT = 3,
+  LONGEST = 60;
 const COLOUR = { track: "#ffd23f", now: "#7cff8a", bad: "#ff6b5a" };
 
 /** @type {Host} */
@@ -33,6 +36,9 @@ let playing = null;
 let scrub = null;
 /** @type {{ from: number; flown: import("./moves.js").Sample[] } | null} */
 let flying = null;
+// Since when the count before a flight runs.
+/** @type {number | null} */
+let counting = null;
 let [stale, taken] = [true, 0];
 // The move playing was sent to the relay too.
 let sent = false;
@@ -44,7 +50,8 @@ export const onEnd = () => frame === "end";
 export const spotOf = c => (frame === "end" && c.move && !c.move.path ? c.move.end : c);
 // Placing another camera, or none.
 export function begun() {
-  [frame, playing, scrub, flying, stale] = ["start", null, null, null, true];
+  [frame, playing, scrub, stale] = ["start", null, null, true];
+  grounded();
 }
 // A frame moved: an arc keeps the way round it went, and nothing plays.
 /** @param {Camera} c */
@@ -61,6 +68,7 @@ export function shown(c) {
   const now = performance.now(),
     move = c.move;
   $("cam-run").classList.toggle("on", sent && playing !== null);
+  if (flying || counting !== null) badge(c, now);
   if (flying) flying.flown.push({ t: (now - flying.from) / 1000, pos: [...c.pos], aim: [...c.aim] });
   if (stale && now - taken > THUMB_MS) thumbs(c, now);
   if (!move) return c;
@@ -124,7 +132,8 @@ export function composing(c) {
   $("cam-end").textContent = move ? "End" : "+ End";
   for (const id of ["cam-play", "cam-scrub", "cam-secs", "cam-secs-s"]) $(id).hidden = !move;
   $("cam-play").textContent = playing === null ? "▶" : "■";
-  $("cam-rec").textContent = flying ? "■ Stop" : "● Record";
+  const waits = counting === null ? "● Record" : "Cancel";
+  $("cam-rec").textContent = flying ? "■ Stop" : waits;
   $("cam-still").hidden = !move;
   $("cam-way-row").hidden = !move || flown;
   $("cam-even-row").hidden = !flown;
@@ -140,16 +149,24 @@ function framed(c) {
     c.move = { end: { pos: [...c.pos], aim: [...c.aim] }, secs: c.move?.secs ?? SECS, way: "straight", turn: 0 };
   return c.move;
 }
-// A flight flown from the picture, begun or ended: the camera is back where it began.
+// Record: the picture takes hold of the pointer and counts down, then the flight flown is kept
+// until the button again, a click, Esc or a minute. Pressed while it counts, it is off.
 /** @param {Camera} c */
 function record(c) {
-  if (!flying) {
-    [frame, playing, scrub, flying] = ["start", null, null, { from: performance.now(), flown: [] }];
-    $("cam-view").focus();
-    return;
-  }
-  const [flown, made] = [flying.flown, flight(flying.flown, EVEN)];
-  flying = null;
+  if (flying) return landed(c);
+  if (counting !== null) return grounded();
+  [frame, playing, scrub, counting] = ["start", null, null, performance.now()];
+  const view = $("cam-view");
+  view.focus();
+  // Not every browser gives it: a drag looks round then, as ever.
+  Promise.resolve(view.requestPointerLock?.()).catch(() => {});
+}
+// The flight is over: kept as the camera's move, the camera back where it began.
+/** @param {Camera} c */
+function landed(c) {
+  const flown = flying?.flown ?? [],
+    made = flight(flown, EVEN);
+  grounded();
   if (!made) return;
   c.move = made;
   c.pos = /** @type {Spot["pos"]} */ (flown[0].pos.map(Math.round));
@@ -157,6 +174,34 @@ function record(c) {
   host.changed();
   host.done();
   playing = performance.now();
+}
+// No flight, nor one about to be.
+function grounded() {
+  [flying, counting] = [null, null];
+  if (document.pointerLockElement) document.exitPointerLock();
+  $("cam-badge").hidden = true;
+}
+// The count before a flight, then its length so far, over the picture; the flight begins when the
+// count is out and ends by itself at the longest.
+/** @param {Camera} c @param {number} now */
+function badge(c, now) {
+  const el = $("cam-badge"),
+    left = counting === null ? 0 : COUNT - (now - counting) / 1000;
+  if (counting !== null && left <= 0) {
+    [counting, flying] = [null, { from: now, flown: [] }];
+    host.panel();
+  }
+  const secs = flying ? (now - flying.from) / 1000 : 0,
+    text = flying
+      ? `● ${Math.floor(secs / 60)}:${String(Math.floor(secs % 60)).padStart(2, "0")}`
+      : String(Math.ceil(left));
+  el.hidden = !flying && counting === null;
+  el.classList.toggle("rec", flying !== null);
+  if (el.textContent !== text) el.textContent = text;
+  if (secs >= LONGEST) {
+    landed(c);
+    host.panel();
+  }
 }
 // What a control does to the camera being placed; only playing it plays it.
 /** @param {(c: Camera, e: Event) => void} does @param {boolean} [plays] */
@@ -179,6 +224,16 @@ function run(c) {
   );
 }
 function wireRest() {
+  // A flight ends on a click in the picture, or when the picture lets go of the pointer (Esc).
+  const end = () => {
+    const c = host.camera();
+    if (c && flying) landed(c);
+    else if (counting !== null && !document.pointerLockElement) grounded();
+    else return;
+    host.panel();
+  };
+  $("cam-view").addEventListener("pointerdown", () => flying && document.pointerLockElement && end());
+  document.addEventListener("pointerlockchange", () => document.pointerLockElement || end());
   $("cam-run").addEventListener("click", on(run, true));
   $("cam-rec").addEventListener("click", on(record));
   $("cam-still").addEventListener(
