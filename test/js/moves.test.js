@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { at, flight, fromKept, rowsOf, stepped, toKept, turnTo } from "../../app/room/moves.js";
+import { at, flight, fromKept, orbited, rowsOf, toKept, turnTo } from "../../app/room/moves.js";
 
 /** @type {import("../../app/room/moves.js").Spot} */
 const from = { pos: [900, 0, 900], aim: [0, 0, 300] };
@@ -16,7 +16,7 @@ test("a straight move goes from its spot to its end, slow off and slow to a stop
 });
 
 test("an arc keeps its distance round what it looks at, the way round it was turned", () => {
-  const end = stepped(stepped(from, "orbit", 1), "orbit", 1),
+  const end = orbited(orbited(from, 1), 1),
     far = (/** @type {typeof from} */ s) => Math.hypot(s.pos[0] - s.aim[0], s.pos[1] - s.aim[1]);
   assert.ok(Math.abs(end.pos[0]) < 1e-6 && Math.abs(end.pos[1] - 900) < 1e-6, "a quarter round");
   /** @type {import("../../app/room/moves.js").Move} */
