@@ -74,7 +74,7 @@ jobs:
           working_directory: stvtf-web
           # Pinned: left to pick, it took 2026.11.4, whose .tar.zst GitHub answers with a 504.
           version: 2026.11.3
-      - run: script/test -v -t shellcheck,actionlint,zizmor,hadolint
+      - run: script/test -v -t shellcheck,actionlint,zizmor,hadolint,sizes
 
   clippy:
     name: clippy

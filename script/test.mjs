@@ -33,6 +33,7 @@ const TASKS = {
   actionlint: { section: "checks", cmd: "actionlint" },
   zizmor: { section: "checks", cmd: "zizmor --offline --quiet .github/workflows" },
   hadolint: { section: "checks", cmd: "hadolint Dockerfile" },
+  sizes: { section: "checks", cmd: "node script/sizes.mjs", fix: "node script/sizes.mjs --lower" },
   "page-tests": { section: "tests", cmd: "npm test --silent", needs: [NPM] },
   // Without the maps in testdata/maps (see .github/workflows/ci.yml) the BSP tests skip them.
   "cargo-test": { section: "tests", cmd: "cargo test --locked --quiet" },
