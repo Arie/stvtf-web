@@ -8,7 +8,19 @@ import { layerOn } from "../core/layers.js";
 import { flyTool } from "./fly.js";
 import { focusOf, label, toScreen } from "../map/view.js";
 import { HOME, me, post } from "./home.js";
-import { begun, composeTool, composing, counted, drawTrack, moved, onEnd, shown, spotOf } from "./compose.js";
+import {
+  begun,
+  composeTool,
+  composing,
+  counted,
+  drawTrack,
+  escaped,
+  moved,
+  onEnd,
+  shown,
+  spotOf,
+  tapped,
+} from "./compose.js";
 import { drawGoing, offKey, setOff } from "./going.js";
 import { fromKept, toKept } from "./moves.js";
 import { preview } from "./preview.js";
@@ -285,7 +297,8 @@ function nudge(e) {
 /** @param {KeyboardEvent} e */
 function key(e) {
   if (!editing || e.target instanceof HTMLInputElement) return;
-  if (e.key === "Escape") edit(null);
+  // Esc ends a flight first, then the placing.
+  if (e.key === "Escape") escaped() || edit(null);
   else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") undo();
   else if (e.key.startsWith("Arrow")) nudge(e);
   else return;
@@ -417,7 +430,7 @@ export function camerasTool() {
   });
   addEventListener("keydown", key, { capture: true });
   // Not while a flight is counted down to: it begins where the camera was put.
-  flyTool(() => (counted() ? null : placed()), changed, done);
+  flyTool(() => (counted() ? null : placed()), changed, done, tapped);
   canvas.addEventListener(
     "wheel",
     e => {

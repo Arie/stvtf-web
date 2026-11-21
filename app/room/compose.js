@@ -196,7 +196,7 @@ function badge(c, now) {
   }
   const secs = flying ? (now - flying.from) / 1000 : 0,
     text = flying
-      ? `● ${Math.floor(secs / 60)}:${String(Math.floor(secs % 60)).padStart(2, "0")} · Click: stop`
+      ? `● ${Math.floor(secs / 60)}:${String(Math.floor(secs % 60)).padStart(2, "0")} · Click or Esc: stop`
       : String(Math.ceil(left));
   el.hidden = !flying && counting === null;
   el.classList.toggle("rec", flying !== null);
@@ -238,15 +238,28 @@ function run(c) {
     () => note("No relay"),
   );
 }
+// A flight being flown ends, or the count before one that lost the pointer; whether either was.
+function ended() {
+  const c = host.camera();
+  if (c && flying) landed(c);
+  else if (counting !== null && !document.pointerLockElement) grounded();
+  else return false;
+  host.panel();
+  return true;
+}
+// A click in the picture, which does not hold the pointer: it ends a flight being flown.
+export const tapped = () => flying !== null && ended();
+// Esc: a flight being flown ends, the count before one is off. Whether it was for either.
+export function escaped() {
+  if (flying) return ended();
+  if (counting === null) return false;
+  grounded();
+  host.panel();
+  return true;
+}
 function wireRest() {
   // A flight ends on a click in the picture, or when the picture lets go of the pointer (Esc).
-  const end = () => {
-    const c = host.camera();
-    if (c && flying) landed(c);
-    else if (counting !== null && !document.pointerLockElement) grounded();
-    else return;
-    host.panel();
-  };
+  const end = ended;
   // Before the picture takes the click for an aim.
   $("cam-view").addEventListener(
     "pointerdown",
