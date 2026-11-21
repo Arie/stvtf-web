@@ -3,7 +3,7 @@
 // moves are kept in the page only.)
 import { $, ctx, uiScale } from "../core/core.js";
 import { toScreen } from "../map/view.js";
-import { at, flight, rowsOf, stepped, turnTo } from "./moves.js";
+import { ORBIT, at, flight, orbited, rowsOf, turnTo } from "./moves.js";
 import { snapshot } from "./preview.js";
 import { blind } from "./sight.js";
 import { note } from "./tools.js";
@@ -201,17 +201,17 @@ export function composeTool(h) {
       host.changed();
     }),
   );
-  // A shortcut steps the end frame on, round the way it was already going.
+  // An orbit steps the end frame on round what it looks at, the way it was already going.
   $("cam-moves").addEventListener(
     "click",
     on((c, e) => {
-      const { move: kind, way } = /** @type {HTMLElement} */ (e.target).dataset;
-      if (!kind) return;
+      const way = Number(/** @type {HTMLElement} */ (e.target).dataset.way);
+      if (!way) return;
       const move = framed(c),
         before = move.turn ?? 0;
-      move.end = stepped(move.end, /** @type {keyof typeof import("./moves.js").STEPS} */ (kind), Number(way));
+      move.end = orbited(move.end, way);
       move.end.pos = /** @type {Spot["pos"]} */ (move.end.pos.map(Math.round));
-      if (kind === "orbit") [move.way, move.turn] = ["arc", turnTo(c, move.end, before + (Math.PI / 4) * Number(way))];
+      [move.way, move.turn] = ["arc", turnTo(c, move.end, before + ORBIT * way)];
       host.done();
     }, true),
   );

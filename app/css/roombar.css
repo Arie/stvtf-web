@@ -639,10 +639,7 @@
   flex: 1;
   min-width: 40px;
 }
-#cameras #cam-moves {
-  flex-wrap: wrap;
-}
 #cameras #cam-moves button {
-  flex: 1 0 20%;
+  flex: 1;
   text-align: center;
 }

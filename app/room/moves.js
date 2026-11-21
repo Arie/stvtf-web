@@ -54,10 +54,9 @@ export function rowsOf(from, move) {
   return rows;
 }
 
-// A flight's samples a second, and what a press of each shortcut adds to the end frame: a turn in
-// radians, a share of the way to the aim, map units.
+// A flight's samples a second, and the turn a press of an orbit adds to the end frame.
 const RATE = 30;
-export const STEPS = { orbit: Math.PI / 4, push: 0.25, slide: 300, rise: 200 };
+export const ORBIT = Math.PI / 4;
 
 const mix = (/** @type {Vec3} */ a, /** @type {Vec3} */ b, /** @type {number} */ s) =>
   /** @type {Vec3} */ (a.map((v, i) => v + (b[i] - v) * s));
@@ -106,22 +105,14 @@ export function at(from, move, t) {
   };
 }
 
-// An end frame a shortcut's step on from `end`, one way (1) or the other (-1).
-/** @param {Spot} end @param {keyof typeof STEPS} kind @param {number} way @returns {Spot} */
-export function stepped(end, kind, way) {
+// An end frame an eighth of a turn on round what it looks at from `end`, one way (1) or the
+// other (-1).
+/** @param {Spot} end @param {number} way @returns {Spot} */
+export function orbited(end, way) {
   const { pos, aim } = copy(end),
-    by = STEPS[kind] * way,
-    d = [pos[0] - aim[0], pos[1] - aim[1]];
-  if (kind === "orbit") {
-    const [cos, sin] = [Math.cos(by), Math.sin(by)];
-    return { pos: [aim[0] + d[0] * cos - d[1] * sin, aim[1] + d[0] * sin + d[1] * cos, pos[2]], aim };
-  }
-  if (kind === "push") return { pos: mix(pos, aim, by), aim };
-  if (kind === "rise") return { pos: [pos[0], pos[1], pos[2] + by], aim };
-  // To its right.
-  const flat = Math.hypot(d[0], d[1]) || 1,
-    r = [(d[1] / flat) * by, (-d[0] / flat) * by];
-  return { pos: [pos[0] + r[0], pos[1] + r[1], pos[2]], aim: [aim[0] + r[0], aim[1] + r[1], aim[2]] };
+    d = [pos[0] - aim[0], pos[1] - aim[1]],
+    [cos, sin] = [Math.cos(ORBIT * way), Math.sin(ORBIT * way)];
+  return { pos: [aim[0] + d[0] * cos - d[1] * sin, aim[1] + d[0] * sin + d[1] * cos, pos[2]], aim };
 }
 
 // What was flown, as a flight: at an even pace, a hand's unsteadiness evened out over `even`
