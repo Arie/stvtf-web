@@ -14,7 +14,7 @@ use super::markers::Markers;
 use super::names::Names;
 use super::play::{Pace, State};
 use super::scores::{Added, Scores};
-use crate::cameras::{self, Spot};
+use crate::cameras::{self, Shot};
 use crate::matches::hub::{SharedHub, announce};
 use crate::matches::recording::Recording;
 use crate::relays::pool::{Offer, RoomRelay, Was};
@@ -55,7 +55,7 @@ pub(crate) struct Room {
     /// The user id the view follows; the relay's camera does too.
     pub(super) camera: Mutex<Option<u16>>,
     /// The spot of the map the relay's camera is at instead, as an admin put it.
-    pub(super) spot: Mutex<Option<Spot>>,
+    pub(super) spot: Mutex<Option<Shot>>,
     /// The room's own cameras, as its admins placed them.
     pub(super) cameras: Mutex<cameras::Kept>,
     /// The permanent marker, and which map's the pages and the relay were last told.

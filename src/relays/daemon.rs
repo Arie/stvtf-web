@@ -48,7 +48,7 @@ use anyhow::{Context, Result, bail};
 use base64::Engine;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use stvtf::relay::{Beam, Camera, Handover, Light, Names, Note, VoiceIn, Want};
+use stvtf::relay::{Beam, Camera, Handover, Light, Names, Note, Path as CameraPath, Step, VoiceIn, Want};
 
 use crate::matches::sessions::logged;
 use crate::relays::pool::{LocalRelay, Relays, Was};
@@ -84,9 +84,42 @@ pub(crate) struct WantLine {
     /// The player (user id) the camera follows.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     follow: Option<u16>,
-    /// The spot it is at instead: where, its pitch and its yaw.
+    /// The path it is on instead.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    path: Option<PathLine>,
+    /// The spot it is at instead, as a stv.tf from before paths says it: where, its pitch and
+    /// its yaw.
+    #[serde(default, skip_serializing)]
     fixed: Option<([i32; 3], i16, i16)>,
+}
+
+/// A camera's [`Path`] on the wire: each moment the seconds in, where it is, what it looks at.
+#[derive(Clone, Deserialize, Serialize)]
+struct PathLine {
+    id: u64,
+    age_ms: u64,
+    steps: Vec<[f32; 7]>,
+}
+
+impl PathLine {
+    fn of(p: &CameraPath) -> PathLine {
+        let steps = p.steps.iter().map(|s| [s.secs, s.pos[0], s.pos[1], s.pos[2], s.aim[0], s.aim[1], s.aim[2]]);
+        PathLine { id: p.id, age_ms: p.began.elapsed().as_millis() as u64, steps: steps.collect() }
+    }
+
+    fn path(self) -> CameraPath {
+        let began = Instant::now().checked_sub(Duration::from_millis(self.age_ms)).unwrap_or_else(Instant::now);
+        let steps = self.steps.iter().map(|r| Step { secs: r[0], pos: [r[1], r[2], r[3]], aim: [r[4], r[5], r[6]] });
+        CameraPath { id: self.id, began, steps: steps.collect() }
+    }
+}
+
+/// A spot as a stv.tf from before paths says it, as a path of that one moment.
+fn still(pos: [i32; 3], pitch: i16, yaw: i16) -> CameraPath {
+    let (pitch, yaw) = (f32::from(pitch).to_radians(), f32::from(yaw).to_radians());
+    let pos = pos.map(|v| v as f32);
+    let aim = [pos[0] + 1000.0 * pitch.cos() * yaw.cos(), pos[1] + 1000.0 * pitch.cos() * yaw.sin(), pos[2] - 1000.0 * pitch.sin()];
+    CameraPath { id: 0, began: Instant::now(), steps: vec![Step { secs: 0.0, pos, aim }] }
 }
 
 impl WantLine {
@@ -102,10 +135,11 @@ impl WantLine {
                 Some(Camera::Follow { player }) => Some(player),
                 _ => None,
             },
-            fixed: match w.camera {
-                Some(Camera::Fixed { pos, pitch, yaw }) => Some((pos, pitch, yaw)),
+            path: match &w.camera {
+                Some(Camera::Along(path)) => Some(PathLine::of(path)),
                 _ => None,
             },
+            fixed: None,
         }
     }
 
@@ -119,8 +153,10 @@ impl WantLine {
             speed: self.speed,
             from_start: self.from_start,
             camera: self
-                .fixed
-                .map(|(pos, pitch, yaw)| Camera::Fixed { pos, pitch, yaw })
+                .path
+                .map(PathLine::path)
+                .or(self.fixed.map(|(pos, pitch, yaw)| still(pos, pitch, yaw)))
+                .map(|path| Camera::Along(Arc::new(path)))
                 .or(self.follow.map(|player| Camera::Follow { player })),
         }
     }

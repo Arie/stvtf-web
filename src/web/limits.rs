@@ -10,6 +10,9 @@ pub(super) const USER_COOKIE: &str = "stvtf_user";
 /// Request line and headers together; the pages send far less.
 pub(super) const MAX_REQUEST: u64 = 16 << 10;
 
+/// A camera's path, as a page posts it.
+pub(super) const MAX_PATH: usize = 256 << 10;
+
 /// Event streams from one address, so a single client cannot take all the connections. A LAN
 /// event or an office behind one address stays well under it.
 pub(crate) const MAX_STREAMS_PER_CLIENT: usize = 32;
