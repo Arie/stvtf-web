@@ -45,6 +45,8 @@ let sent = false;
 const input = (/** @type {string} */ id) => /** @type {HTMLInputElement} */ ($(id));
 
 export const onEnd = () => frame === "end";
+// A flight is being counted down to: the camera stays put until it begins.
+export const counted = () => counting !== null;
 // The frame being placed: the camera's own spot, or its move's end.
 /** @param {Camera} c @returns {Spot} */
 export const spotOf = c => (frame === "end" && c.move && !c.move.path ? c.move.end : c);

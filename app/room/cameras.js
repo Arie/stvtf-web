@@ -8,7 +8,7 @@ import { layerOn } from "../core/layers.js";
 import { flyTool } from "./fly.js";
 import { focusOf, label, toScreen } from "../map/view.js";
 import { HOME, me, post } from "./home.js";
-import { begun, composeTool, composing, drawTrack, moved, onEnd, shown, spotOf } from "./compose.js";
+import { begun, composeTool, composing, counted, drawTrack, moved, onEnd, shown, spotOf } from "./compose.js";
 import { drawGoing, offKey, setOff } from "./going.js";
 import { fromKept, toKept } from "./moves.js";
 import { preview } from "./preview.js";
@@ -416,7 +416,8 @@ export function camerasTool() {
     held = null;
   });
   addEventListener("keydown", key, { capture: true });
-  flyTool(placed, changed, done);
+  // Not while a flight is counted down to: it begins where the camera was put.
+  flyTool(() => (counted() ? null : placed()), changed, done);
   canvas.addEventListener(
     "wheel",
     e => {
