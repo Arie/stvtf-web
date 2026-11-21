@@ -34,6 +34,9 @@ const MAX_ON_MAP: usize = 32;
 const MAX_MAPS: usize = 5000;
 /// A map's coordinates stay within this.
 const MAX_COORD: i32 = 32768;
+/// The longest a camera's path takes (seconds), and the most moments one has.
+const MAX_PATH_SECS: f32 = 120.0;
+const MAX_STEPS: usize = 2000;
 
 /// Where a camera is and the spot it looks at.
 #[derive(Clone, Copy, Debug, PartialEq, Deserialize, Serialize)]
@@ -47,13 +50,39 @@ impl Spot {
     pub(crate) fn fits(&self) -> bool {
         self.pos.iter().chain(&self.aim).all(|v| v.abs() <= MAX_COORD) && self.pos != self.aim
     }
+}
 
-    /// As a relay's camera: its pitch (down positive) and yaw in degrees.
+/// Where a relay's camera is: at a spot, and on from there along a path if set off on one.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct Shot {
+    pub(crate) spot: Spot,
+    pub(crate) path: Arc<stvtf::relay::Path>,
+}
+
+/// A moment of a path as a page gives it: seconds in, where the camera is, what it looks at.
+pub(crate) type Row = [f32; 7];
+
+impl Shot {
+    /// At `spot` from now, and along `rows` if given.
+    pub(crate) fn new(spot: Spot, rows: Option<&[Row]>) -> Result<Shot> {
+        let still =
+            [0.0, spot.pos[0] as f32, spot.pos[1] as f32, spot.pos[2] as f32, spot.aim[0] as f32, spot.aim[1] as f32, spot.aim[2] as f32];
+        let rows = rows.unwrap_or(std::slice::from_ref(&still));
+        let in_order = rows.windows(2).all(|w| w[0][0] <= w[1][0]);
+        let fits = |r: &Row| r.iter().all(|v| v.is_finite()) && r[1..].iter().all(|v| v.abs() <= MAX_COORD as f32) && r[1..4] != r[4..];
+        let lasts = rows.first().is_some_and(|r| r[0] >= 0.0) && rows.last().is_some_and(|r| r[0] <= MAX_PATH_SECS);
+        if !spot.fits() || rows.len() > MAX_STEPS || !lasts || !in_order || !rows.iter().all(fits) {
+            bail!("Invalid camera.");
+        }
+        let steps = rows.iter().map(|r| stvtf::relay::Step { secs: r[0], pos: [r[1], r[2], r[3]], aim: [r[4], r[5], r[6]] });
+        // No two set off in the same millisecond.
+        let id = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_millis() as u64);
+        Ok(Shot { spot, path: Arc::new(stvtf::relay::Path { id, began: std::time::Instant::now(), steps: steps.collect() }) })
+    }
+
+    /// As a relay's camera.
     pub(crate) fn for_tf2(&self) -> stvtf::relay::Camera {
-        let d: [f64; 3] = std::array::from_fn(|a| f64::from(self.aim[a] - self.pos[a]));
-        let yaw = d[1].atan2(d[0]).to_degrees().round();
-        let pitch = (-d[2]).atan2(d[0].hypot(d[1])).to_degrees().round();
-        stvtf::relay::Camera::Fixed { pos: self.pos, pitch: pitch as i16, yaw: yaw as i16 }
+        stvtf::relay::Camera::Along(self.path.clone())
     }
 }
 
@@ -396,11 +425,27 @@ mod tests {
     }
 
     #[test]
-    fn a_spot_is_a_relays_camera_looking_at_its_aim() {
-        let down = Spot { pos: [0, 0, 1500], aim: [0, 0, 400] };
-        assert_eq!(down.for_tf2(), stvtf::relay::Camera::Fixed { pos: [0, 0, 1500], pitch: 90, yaw: 0 });
-        let angled = Spot { pos: [1000, 0, 1400], aim: [0, 1000, 400] };
-        assert_eq!(angled.for_tf2(), stvtf::relay::Camera::Fixed { pos: [1000, 0, 1400], pitch: 35, yaw: 135 });
+    fn a_spot_is_a_relays_camera_that_stays_or_goes_along_a_path_given() {
+        let spot = Spot { pos: [1000, 0, 1400], aim: [0, 1000, 400] };
+        let stvtf::relay::Camera::Along(still) = Shot::new(spot, None).unwrap().for_tf2() else { panic!() };
+        let at = stvtf::relay::Step { secs: 0.0, pos: [1000.0, 0.0, 1400.0], aim: [0.0, 1000.0, 400.0] };
+        assert_eq!(still.steps, [at]);
+        let rows = [[0.0, 1000.0, 0.0, 1400.0, 0.0, 1000.0, 400.0], [2.5, 900.5, 0.0, 1400.0, 0.0, 1000.0, 400.0]];
+        let moving = Shot::new(spot, Some(&rows)).unwrap();
+        assert_eq!((moving.path.steps.len(), moving.path.steps[1].secs, moving.path.steps[1].pos[0]), (2, 2.5, 900.5));
+        assert_ne!(moving.path.id, 0);
         assert!(!Spot { pos: [1, 1, 1], aim: [1, 1, 1] }.fits());
+        // Out of order, too long, off the map, looking at itself, not a number, none.
+        let bad: [&[Row]; 6] = [
+            &[rows[1], rows[0]],
+            &[rows[0], [121.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0]],
+            &[[0.0, 99_999.0, 0.0, 0.0, 1.0, 0.0, 0.0]],
+            &[[0.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0]],
+            &[[f32::NAN, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0]],
+            &[],
+        ];
+        for rows in bad {
+            assert!(Shot::new(spot, Some(rows)).is_err(), "{rows:?}");
+        }
     }
 }

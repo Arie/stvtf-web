@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use super::Room;
 use super::state::{Leader, on_map};
-use crate::cameras::{Change, Kept, Spot};
+use crate::cameras::{Change, Kept, Row, Shot, Spot};
 use crate::matches::hub::announce;
 use crate::sync::lock;
 
@@ -59,7 +59,8 @@ pub(crate) struct ViewPost {
     pub(crate) page: String,
 }
 
-/// Where an admin puts the relay's camera: with neither, nowhere.
+/// Where an admin puts the relay's camera: with neither, nowhere. With a `path`, it sets off
+/// along it from there.
 #[derive(Debug, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct SpotPost {
@@ -67,6 +68,8 @@ pub(crate) struct SpotPost {
     pub(crate) pos: Option<[i32; 3]>,
     #[serde(default)]
     pub(crate) aim: Option<[i32; 3]>,
+    #[serde(default)]
+    pub(crate) path: Option<Vec<Row>>,
 }
 
 /// The longest page name.
@@ -144,19 +147,26 @@ impl Room {
     }
 
     /// An admin puts the relay's camera at a spot of the map, or (none) back with the director.
+    /// A path given sets it off anew, the same again too.
     pub(crate) fn set_spot(&self, post: &SpotPost) -> Result<()> {
-        let spot = match (post.pos, post.aim) {
-            (Some(pos), Some(aim)) => Some(Spot { pos, aim }),
-            (None, None) => None,
+        let now = match (post.pos, post.aim) {
+            (Some(pos), Some(aim)) => Some(Shot::new(Spot { pos, aim }, post.path.as_deref())?),
+            (None, None) if post.path.is_none() => None,
             _ => bail!("Invalid camera."),
         };
-        if spot.is_some_and(|s| !s.fits()) {
-            bail!("Invalid camera.");
+        let at = now.as_ref().map(|s| s.spot);
+        let mut shot = lock(&self.spot);
+        // Staying where it stays is no change.
+        let stays = |s: &Shot| (s.spot, s.path.steps.len() == 1);
+        if post.path.is_none() && shot.as_ref().map(stays) == at.map(|s| (s, true)) {
+            return Ok(());
         }
-        if std::mem::replace(&mut *lock(&self.spot), spot) != spot {
-            self.tell_spot(spot);
-            self.steer_relay(&lock(&self.state));
+        let was = std::mem::replace(&mut *shot, now);
+        drop(shot);
+        if was.map(|s| s.spot) != at {
+            self.tell_spot(at);
         }
+        self.steer_relay(&lock(&self.state));
         Ok(())
     }
 
@@ -201,6 +211,6 @@ impl Room {
     /// The relay's camera: at the spot, else on the player followed.
     pub(super) fn relay_camera(&self) -> Option<stvtf::relay::Camera> {
         let follow = lock(&self.camera).map(|player| stvtf::relay::Camera::Follow { player });
-        lock(&self.spot).map(|s| s.for_tf2()).or(follow)
+        lock(&self.spot).as_ref().map(Shot::for_tf2).or(follow)
     }
 }

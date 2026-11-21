@@ -144,7 +144,9 @@ looks at. In a room, the Cameras layer (behind ⚙) shows them as markers on the
   for those watching in TF2 (on `spec_autodirector 1`); a click on it again, or following a player,
   gives the camera back: the
   clients go to a player's eyes, and on with the demo's own director from there. Another map
-  ends it too. TF2 takes no field of view from it.
+  ends it too. TF2 takes no field of view from it. Posted with a `path` (`POST /r/<id>/camera`:
+  each moment of it the seconds in, where the camera is and what it looks at), the relay's camera
+  sets off along it from there, and stays at its end; the game itself moves it between frames.
 - The site's streamers (anyone, where nobody signs in) place them: Add or Edit in the panel, drag
   the camera and its aim, the wheel over either (or the panel) for its height. The panel says how much of
   each capture area shows. A camera in something solid, out over the void, or with something between

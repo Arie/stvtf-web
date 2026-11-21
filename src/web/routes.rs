@@ -18,7 +18,7 @@ use tower_http::set_header::SetResponseHeaderLayer;
 
 use super::answer::{query_of, unix_now};
 use super::asked::{Back, Stream, Visit, answer};
-use super::limits::{MAX_REQUEST, USER_COOKIE};
+use super::limits::{MAX_PATH, MAX_REQUEST, USER_COOKIE};
 use super::start::{landing, watch};
 use super::visitor::{origin, return_to, set_cookie};
 use super::{Answered, Shared, assets, cameras, events, matches, pages, rooms, token, upload, voice};
@@ -80,7 +80,6 @@ fn of_room(router: Routes) -> Routes {
         .route("/r/{id}/leagues", post(rooms::leagues))
         .route("/r/{id}/names", post(rooms::names))
         .route("/r/{id}/score", post(rooms::score))
-        .route("/r/{id}/camera", post(rooms::camera))
         .route("/r/{id}/cameras", post(rooms::cameras))
         .route("/r/{id}/control", post(rooms::control))
         .route("/r/{id}/map", post(rooms::map))
@@ -113,6 +112,9 @@ pub(super) fn routes(app: &App) -> (Routes, Routes) {
     let little = RequestBodyLimitLayer::new(MAX_REQUEST as usize);
     let big = (DefaultBodyLimit::max(upload::MAX_PART), RequestBodyLimitLayer::new(upload::MAX_PART));
     let part = Router::new().route("/upload/{id}", put(upload::part).layer(big));
+    // A camera's path is every moment of it.
+    let long = (DefaultBodyLimit::max(MAX_PATH), RequestBodyLimitLayer::new(MAX_PATH));
+    let part = part.route("/r/{id}/camera", post(rooms::camera).layer(long));
     let acting = Router::new().route("/", get(front)).route("/watch", post(watched)).route("/mumble", get(mumble));
     let all = all
         .route("/matches", get(matches::list))
