@@ -8,11 +8,16 @@ import { layerOn } from "../core/layers.js";
 import { flyTool } from "./fly.js";
 import { focusOf, label, toScreen } from "../map/view.js";
 import { HOME, me, post } from "./home.js";
+import { begun, composeTool, composing, drawTrack, moved, onEnd, shown, spotOf } from "./compose.js";
+import { fromKept, rowsOf, toKept } from "./moves.js";
 import { preview } from "./preview.js";
 import { blind, floorUnder, loadSight, showsOf } from "./sight.js";
 import { note, worldAt } from "./tools.js";
 /** @typedef {[number, number, number]} Vec3 */
-/** @typedef {{ id?: number; name: string; pos: Vec3; aim: Vec3; room?: boolean }} Camera */
+/** @typedef {import("./moves.js").Move} Move */
+/** @typedef {{ id?: number; name: string; pos: Vec3; aim: Vec3; room?: boolean; move?: Move }} Camera */
+// One as the site lists it.
+/** @typedef {Omit<Camera, "move"> & { move?: import("./moves.js").Kept }} Listed */
 /** @typedef {{ clientX: number; clientY: number }} Pointer */
 
 // Map units: a wheel step, a new camera's height and distance, how far over the players its floor
@@ -28,10 +33,10 @@ const MARK_PX = 9,
   PICK_PX = 14;
 const COLOUR = { mark: "#ffd23f", on: "#7cff8a", bad: "#ff6b5a" };
 
-/** @type {{ map: string; from: string; cameras: Camera[] } | null} */
+/** @type {{ map: string; from: string; cameras: Listed[] } | null} */
 let known = null;
 // The room's own, by map.
-/** @type {Record<string, Camera[]>} */
+/** @type {Record<string, Listed[]>} */
 let own = {};
 // The map asked about, and as whom: its answer may come late.
 let asked = "";
@@ -45,13 +50,12 @@ let held = null;
 /** @type {"pos" | "aim"} */
 let picked = "pos";
 // Where the camera being placed was after each change, for Ctrl+Z: the first as it started.
-/** @type {{ pos: Vec3; aim: Vec3 }[]} */
+/** @type {{ pos: Vec3; aim: Vec3; move?: Move }[]} */
 let past = [];
 /** @type {import("./sight.js").Grid | null} */
 let sight = null;
 /** @type {string | null} */
 let look = null;
-
 /** @param {import("../../types/stream").CameraLine} m */
 export function onCamera(m) {
   active = { pos: m.pos, aim: m.aim };
@@ -67,7 +71,7 @@ const ofMap = () => [...(known?.cameras ?? []), ...ofRoom()];
 // Those listed: the room's, and the map's for the site's streamers.
 const mine = () => (me.cameras ? ofMap() : ofRoom());
 // One's name in the list: the room's are numbered apart from the map's.
-const keyOf = (/** @type {Camera} */ c) => `${c.room ? "r" : ""}${c.id}`;
+const keyOf = (/** @type {Camera | Listed} */ c) => `${c.room ? "r" : ""}${c.id}`;
 
 const same = (/** @type {Vec3 | undefined} */ a, /** @type {Vec3 | undefined} */ b) =>
   a !== undefined && b !== undefined && a.every((v, i) => v === b[i]);
@@ -80,14 +84,14 @@ function stray() {
   const { pos, aim } = active;
   return me.cameras && pos && aim && elsewhere() ? [{ name: "", pos, aim }] : [];
 }
-/** @param {Camera} c */
+/** @param {Camera | Listed} c */
 function colourOf(c) {
   if (isActive(c)) return COLOUR.on;
   return sight && blind(sight, c) ? COLOUR.bad : COLOUR.mark;
 }
 
 // ---------- on the map
-/** @param {Camera} c @param {string} colour @param {boolean} placing */
+/** @param {Camera | Listed} c @param {string} colour @param {boolean} placing */
 function mark(c, colour, placing) {
   const [x, y] = toScreen(c.pos[0], c.pos[1]),
     [ax, ay] = toScreen(c.aim[0], c.aim[1]),
@@ -115,21 +119,71 @@ function mark(c, colour, placing) {
   ctx.restore();
   if (c.name) label(c.name, x, y - r - 12 * uiScale(), 11 * uiScale(), { colour });
 }
+// Where a listed camera's move ends: a ring, with a short line the way it looks there.
+/** @param {{ pos: Vec3; aim: Vec3 }} end @param {string} colour */
+function endMark(end, colour) {
+  const [x, y] = toScreen(end.pos[0], end.pos[1]),
+    [ax, ay] = toScreen(end.aim[0], end.aim[1]),
+    r = MARK_PX * uiScale(),
+    far = Math.hypot(ax - x, ay - y) || 1,
+    reach = Math.min(far, 3 * r);
+  ctx.save();
+  ctx.strokeStyle = colour;
+  ctx.lineWidth = 2 * uiScale();
+  ctx.beginPath();
+  ctx.moveTo(x + ((ax - x) / far) * r, y + ((ay - y) / far) * r);
+  ctx.lineTo(x + ((ax - x) / far) * reach, y + ((ay - y) / far) * reach);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(x, y, r, 0, 2 * Math.PI);
+  ctx.stroke();
+  ctx.restore();
+}
+// A listed camera's move as the page works with it, made once.
+/** @type {WeakMap<object, Move>} */
+const going = new WeakMap();
+/** @param {Listed} c */
+function goingOf(c) {
+  if (!c.move) return undefined;
+  const made = going.get(c.move) ?? fromKept(c.move);
+  going.set(c.move, made);
+  return made;
+}
+// A listed camera on the map, with where its move takes it.
+/** @param {Listed} c */
+function listedMark(c) {
+  if (isEdited(c)) return;
+  const move = goingOf(c);
+  if (move) {
+    drawTrack({ pos: c.pos, aim: c.aim, move });
+    endMark(move.end, colourOf(c));
+  }
+  mark(c, colourOf(c), false);
+}
 // What the camera being placed shows of the points, said in the panel.
-/** @param {Camera} c @param {import("./sight.js").Grid} grid */
+/** @param {{ pos: Vec3; aim: Vec3 }} c @param {import("./sight.js").Grid} grid */
 function sayLook(c, grid) {
   look ??= showsOf(grid, c);
   if ($("cam-shows").textContent !== look) $("cam-shows").textContent = look;
 }
-const isEdited = (/** @type {Camera} */ c) => c.id !== undefined && c.id === editing?.id && !c.room === !editing?.room;
+const isEdited = (/** @type {Camera | Listed} */ c) =>
+  c.id !== undefined && c.id === editing?.id && !c.room === !editing?.room;
 export function drawCameras() {
   const map = layerOn("cameras") ? state.map : null;
-  preview(map ? editing : null, sight);
+  const now = editing ? shown(editing) : null;
+  preview(map ? now : null, sight);
   if (!map) return;
   if (asked !== asking(map)) load(map);
-  if (editing && sight) sayLook(editing, sight);
-  for (const c of [...ofMap(), ...stray()]) if (!isEdited(c)) mark(c, colourOf(c), false);
-  if (editing) mark(editing, sight && blind(sight, editing) ? COLOUR.bad : COLOUR.mark, true);
+  if (editing && sight) sayLook(spotOf(editing), sight);
+  ofMap().forEach(listedMark);
+  for (const c of stray()) mark(c, colourOf(c), false);
+  if (!editing || !now) return;
+  drawTrack(editing, now);
+  // Both frames of a move, the one being placed with its aim.
+  const end = editing.move && !editing.move.path ? editing.move.end : null,
+    colour = (/** @type {{ pos: Vec3; aim: Vec3 }} */ c) => (sight && blind(sight, c) ? COLOUR.bad : COLOUR.mark);
+  if (end) mark({ name: "", ...end }, colour(end), onEnd());
+  mark(editing, colour(editing), !onEnd());
 }
 
 const asking = (/** @type {string} */ map) => `${map} ${me.cameras}`;
@@ -167,6 +221,7 @@ function fields(c) {
     min: Math.floor(lo[2] / STEP) * STEP,
     max: Math.ceil(hi[2] / STEP) * STEP + OVER,
   });
+  composing(c);
   heights();
 }
 function panel() {
@@ -177,18 +232,20 @@ function panel() {
   $("cam-list").hidden = editing !== null;
   if (editing) return fields(editing);
   const from = Object.assign(document.createElement("div"), { className: "cfrom", textContent: `From ${known.from}` }),
-    button = (/** @type {"go" | "id"} */ does, /** @type {string} */ id, /** @type {string} */ text) => {
+    button = (/** @type {"go" | "id" | "play"} */ does, /** @type {string} */ id, /** @type {string} */ text) => {
       const b = Object.assign(document.createElement("button"), { textContent: text });
       b.dataset[does] = id;
       return b;
     },
-    // A camera's name puts the relay there, Edit places it anew.
-    row = (/** @type {Camera} */ c) => {
+    // A camera's name puts the relay there, ▶ sets it off on its move, Edit places it anew.
+    row = (/** @type {Camera | Listed} */ c) => {
       const at = Object.assign(button("go", keyOf(c), c.name), { disabled: !me.admin }),
         div = Object.assign(document.createElement("div"), { className: "crow" });
       at.classList.toggle("on", isActive(c));
       if (c.room && me.cameras) at.title = "Room only";
-      div.append(at, Object.assign(button("id", keyOf(c), "Edit"), { disabled: Boolean(c.room) && !me.admin }));
+      if (c.move && me.admin) div.append(at, Object.assign(button("play", keyOf(c), "▶"), { title: "Play" }));
+      else div.append(at);
+      div.append(Object.assign(button("id", keyOf(c), "Edit"), { disabled: Boolean(c.room) && !me.admin }));
       return div;
     };
   $("cam-list").replaceChildren(
@@ -199,45 +256,59 @@ function panel() {
     button("id", "new", "Add"),
   );
 }
+// The frame of it being placed: its spot, or its move's end.
+const placed = () => (editing ? spotOf(editing) : null);
 function heights() {
-  if (!editing) return;
-  /** @type {HTMLInputElement} */ ($("cam-z")).value = String(editing.pos[2]);
-  /** @type {HTMLInputElement} */ ($("cam-z-slide")).value = String(editing.pos[2]);
-  /** @type {HTMLInputElement} */ ($("cam-aim-z")).value = String(editing.aim[2]);
+  const c = placed();
+  if (!c) return;
+  /** @type {HTMLInputElement} */ ($("cam-z")).value = String(c.pos[2]);
+  /** @type {HTMLInputElement} */ ($("cam-z-slide")).value = String(c.pos[2]);
+  /** @type {HTMLInputElement} */ ($("cam-aim-z")).value = String(c.aim[2]);
 }
 // The camera being placed moved: what it shows is worked out again.
 function changed() {
   look = null;
+  if (editing) moved(editing);
   heights();
 }
 // A change to it is done: kept, to go back to.
+const moveOf = (/** @type {Move | undefined} */ m) =>
+  m && { ...m, end: { pos: /** @type {Vec3} */ ([...m.end.pos]), aim: /** @type {Vec3} */ ([...m.end.aim]) } };
 function done() {
-  const last = past[past.length - 1];
-  if (!editing || (last && same(last.pos, editing.pos) && same(last.aim, editing.aim))) return;
-  past.push({ pos: [...editing.pos], aim: [...editing.aim] });
+  const last = past[past.length - 1],
+    now = editing && { pos: [...editing.pos], aim: [...editing.aim], move: moveOf(editing.move) };
+  if (
+    !now ||
+    JSON.stringify([last?.pos, last?.aim, last?.move?.end]) === JSON.stringify([now.pos, now.aim, now.move?.end])
+  )
+    return;
+  past.push(/** @type {typeof past[number]} */ (now));
 }
 function undo() {
   if (!editing || past.length < 2) return;
   past.pop();
   const was = past[past.length - 1];
-  [editing.pos, editing.aim] = [[...was.pos], [...was.aim]];
+  [editing.pos, editing.aim, editing.move] = [[...was.pos], [...was.aim], moveOf(was.move)];
   changed();
+  panel();
 }
 /** @param {Camera | null} c */
 function edit(c) {
   [editing, past, picked, look] = [c, [], "pos", null];
+  begun();
   done();
   panel();
 }
 // An arrow moves the part last held a little, the way it points on the screen.
 /** @param {KeyboardEvent} e */
 function nudge(e) {
-  if (!editing) return;
+  const c = placed();
+  if (!c) return;
   const far = e.shiftKey ? NUDGE * 4 : NUDGE,
     [dx, dy] = { ArrowLeft: [-far, 0], ArrowRight: [far, 0], ArrowUp: [0, -far], ArrowDown: [0, far] }[e.key] ?? [0, 0],
     [cos, sin] = [Math.cos(state.view.rot), Math.sin(state.view.rot)];
-  editing[picked][0] += Math.round(cos * dx - sin * dy);
-  editing[picked][1] += Math.round(-sin * dx - cos * dy);
+  c[picked][0] += Math.round(cos * dx - sin * dy);
+  c[picked][1] += Math.round(-sin * dx - cos * dy);
   changed();
   done();
 }
@@ -283,25 +354,35 @@ function near(p, e) {
 // The part of the camera being placed a pointer is on.
 /** @param {Pointer} e */
 function handleAt(e) {
-  if (!editing) return null;
-  if (near(editing.pos, e)) return "pos";
-  return near(editing.aim, e) ? "aim" : null;
+  const c = placed();
+  if (!c) return null;
+  if (near(c.pos, e)) return "pos";
+  return near(c.aim, e) ? "aim" : null;
 }
 
 function wirePanel() {
   $("cam-list").addEventListener("click", e => {
-    const { id, go } = /** @type {HTMLElement} */ (e.target).dataset;
+    const { id, go, play } = /** @type {HTMLElement} */ (e.target).dataset;
     if (!known) return;
-    const kept = mine().find(c => keyOf(c) === (id ?? go));
+    const kept = mine().find(c => keyOf(c) === (id ?? go ?? play));
     if (go === "back") return put(null);
     if (go && kept) return put(kept);
+    if (play && kept) return setOff(kept);
     if (!id) return;
     // The view stays put under what is dragged.
     setAutoZoom(false);
-    edit(kept ? { ...kept, pos: [...kept.pos], aim: [...kept.aim] } : fresh());
+    edit(kept ? { ...kept, pos: [...kept.pos], aim: [...kept.aim], move: kept.move && fromKept(kept.move) } : fresh());
   });
   $("cam-room").addEventListener("change", e => {
     if (editing) editing.room = /** @type {HTMLInputElement} */ (e.target).checked;
+  });
+  composeTool({
+    camera: () => editing,
+    changed,
+    done,
+    panel,
+    sight: () => sight,
+    send: body => post("camera", body, HOME),
   });
   $("cam-name").addEventListener("input", e => {
     if (editing) editing.name = /** @type {HTMLInputElement} */ (e.target).value;
@@ -312,8 +393,9 @@ function wirePanel() {
     ["cam-aim-z", "aim"],
   ])) {
     $(id).addEventListener("input", e => {
-      if (!editing) return;
-      editing[part][2] = Math.round(Number(/** @type {HTMLInputElement} */ (e.target).value)) || 0;
+      const c = placed();
+      if (!c) return;
+      c[part][2] = Math.round(Number(/** @type {HTMLInputElement} */ (e.target).value)) || 0;
       changed();
     });
     $(id).addEventListener("change", done);
@@ -322,15 +404,22 @@ function wirePanel() {
   $("cameras").addEventListener("keydown", e => e.stopPropagation());
   $("cam-save").addEventListener("click", () => {
     if (!editing) return;
-    const { id, name, pos, aim } = editing;
-    save({ id, name, pos, aim });
+    const { id, name, pos, aim, move } = editing;
+    save({ id, name, pos, aim, ...(move ? { move: toKept(move) } : { still: true }) });
   });
   $("cam-remove").addEventListener("click", () => editing && save({ id: editing.id, remove: true }));
   $("cam-cancel").addEventListener("click", () => edit(null));
   $("settings").addEventListener("change", () => panel());
 }
+// Sets the relay's camera off on a listed camera's move.
+/** @param {Listed} c */
+function setOff(c) {
+  post("camera", { pos: c.pos, aim: c.aim, path: rowsOf(c, goingOf(c)) }, HOME).then(
+    async r => r.ok || note(await r.text()),
+  );
+}
 // Puts the relay at a camera (again, or none: back).
-/** @param {Camera | null} c */
+/** @param {Camera | Listed | null} c */
 function put(c) {
   post("camera", !c || isActive(c) ? {} : { pos: c.pos, aim: c.aim }, HOME).then(
     async r => r.ok || note(await r.text()),
@@ -352,11 +441,12 @@ export function camerasTool() {
   wirePanel();
   canvas.addEventListener("pointerdown", press, { capture: true });
   addEventListener("pointermove", e => {
-    if (!held || !editing) return;
+    const c = placed();
+    if (!held || !c) return;
     const [x, y] = worldAt(e);
-    [editing[held][0], editing[held][1]] = [x, y];
+    [c[held][0], c[held][1]] = [x, y];
     // The aim lies on the floor under it.
-    if (held === "aim" && sight) editing.aim[2] = floorUnder(sight, x, y, editing.pos[2]) ?? editing.aim[2];
+    if (held === "aim" && sight) c.aim[2] = floorUnder(sight, x, y, c.pos[2]) ?? c.aim[2];
     changed();
   });
   addEventListener("pointerup", () => {
@@ -364,15 +454,16 @@ export function camerasTool() {
     held = null;
   });
   addEventListener("keydown", key, { capture: true });
-  flyTool(() => editing, changed, done);
+  flyTool(placed, changed, done);
   canvas.addEventListener(
     "wheel",
     e => {
-      const part = layerOn("cameras") ? handleAt(e) : null;
-      if (!part || !editing) return;
+      const part = layerOn("cameras") ? handleAt(e) : null,
+        c = placed();
+      if (!part || !c) return;
       e.preventDefault();
       e.stopImmediatePropagation();
-      editing[part][2] -= Math.sign(e.deltaY) * STEP;
+      c[part][2] -= Math.sign(e.deltaY) * STEP;
       changed();
       done();
     },

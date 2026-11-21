@@ -49,6 +49,25 @@
         <label>Height<input id="cam-z" type="number" step="50"></label>
         <input id="cam-z-slide" type="range" step="10" aria-label="Height">
         <label>Aim height<input id="cam-aim-z" type="number" step="50"></label>
+        <div id="cam-moves" class="cbuttons">
+          <button data-move="orbit" data-way="1" title="Orbit left">⟲</button>
+          <button data-move="orbit" data-way="-1" title="Orbit right">⟳</button>
+          <button data-move="push" data-way="1" title="Push in">In</button>
+          <button data-move="push" data-way="-1" title="Pull out">Out</button>
+          <button data-move="slide" data-way="-1" title="Slide left">←</button>
+          <button data-move="slide" data-way="1" title="Slide right">→</button>
+          <button data-move="rise" data-way="1" title="Rise">↑</button>
+          <button data-move="rise" data-way="-1" title="Sink">↓</button>
+        </div>
+        <label id="cam-way-row" hidden>Path<select id="cam-way">
+          <option value="straight">Straight</option>
+          <option value="arc">Arc</option>
+        </select></label>
+        <label id="cam-even-row" hidden>Smooth<input id="cam-even" type="range" min="0" max="1" step="0.05"></label>
+        <div class="cbuttons">
+          <button id="cam-rec">● Record</button>
+          <button id="cam-still" hidden>No move</button>
+        </div>
         <label id="cam-own" hidden>Room only<input id="cam-room" type="checkbox"></label>
         <div id="cam-shows"></div>
         <div class="cbuttons">
@@ -58,7 +77,16 @@
         </div>
       </div>
     </div>
-    <div id="cam-pane" hidden><canvas id="cam-view" tabindex="0" title="Drag: look · Click: aim · WASD QE: move"></canvas></div>
+    <div id="cam-pane" hidden><canvas id="cam-view" tabindex="0" title="Drag: look · Click: aim · WASD QE: move"></canvas>
+      <div id="cam-bar">
+        <button id="cam-start" class="on">Start</button>
+        <button id="cam-end">+ End</button>
+        <button id="cam-play" hidden>▶</button>
+        <button id="cam-run" title="Play in TF2">TF2</button>
+        <input id="cam-scrub" type="range" min="0" max="1000" value="0" aria-label="Moment" hidden>
+        <input id="cam-secs" type="number" min="1" max="60" aria-label="Seconds" hidden><span id="cam-secs-s" hidden>s</span>
+      </div>
+    </div>
     <div id="help" hidden>
       <table>
         <tr><td><kbd>Tab</kbd></td><td>Hold for the scoreboard</td></tr>
