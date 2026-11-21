@@ -154,7 +154,8 @@ looks at. In a room, the Cameras layer (behind ⚙) shows them as markers on the
   click ends it too). The bar under the picture plays it
   there, and **TF2** in the room's relay. Saved, it is kept with the camera; its way and its end
   show on the map, and ▶ by its name sets the relay's camera off on it. The pages work out its
-  moments; the relay takes them as they are.
+  moments; the relay takes them as they are. A move goes by the match's own time: faster at 2×,
+  not at all while the room is paused; the ▶ of the page that set it off counts by the clock.
 - The site's streamers (anyone, where nobody signs in) place them: Add or Edit in the panel, drag
   the camera and its aim, the wheel over either (or the panel) for its height. The panel says how much of
   each capture area shows. A camera in something solid, out over the void, or with something between
