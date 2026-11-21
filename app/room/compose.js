@@ -1,6 +1,6 @@
 // Composing the move of the camera being placed: a start and an end frame under its picture, the
-// way between and how long, shortcuts that set the end frame, or a flight flown. (A try-out: the
-// moves are kept in the page only.)
+// way between and how long, shortcuts that set the end frame, or a flight flown. Saved, a move is kept
+// with its camera.
 import { $, ctx, uiScale } from "../core/core.js";
 import { toScreen } from "../map/view.js";
 import { ORBIT, at, flight, orbited, rowsOf, turnTo } from "./moves.js";
@@ -139,7 +139,8 @@ export function composing(c) {
   $("cam-still").hidden = !move;
   $("cam-way-row").hidden = !move || flown;
   $("cam-moves").hidden = flown;
-  $("cam-even-row").hidden = !flown;
+  // Evened out anew from the flight as flown, which one saved no longer has.
+  $("cam-even-row").hidden = !move?.raw;
   if (!move) return;
   input("cam-secs").value = String(Math.round(move.secs * 10) / 10);
   /** @type {HTMLSelectElement} */ ($("cam-way")).value = move.way;

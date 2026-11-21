@@ -1,5 +1,5 @@
 // A camera's move: from its spot to an end frame over some seconds, straight or in an arc round
-// what it looks at; or a flight recorded from the picture. (A try-out: kept in the page only.)
+// what it looks at; or a flight recorded from the picture. Kept with the camera (`toKept`).
 /** @typedef {[number, number, number]} Vec3 */
 /** @typedef {{ pos: Vec3; aim: Vec3 }} Spot */
 /** @typedef {{ t: number; pos: Vec3; aim: Vec3 }} Sample */
@@ -92,7 +92,14 @@ function along(path, t) {
 /** @param {Spot} from @param {Move} move @param {number} t @returns {Spot} */
 export function at(from, move, t) {
   const u = within(t / move.secs);
-  if (move.path) return along(move.path, u * (move.took ?? move.secs));
+  // A flight goes from where the camera is: moved since it was flown, all of it moved along.
+  if (move.path) {
+    const on = along(move.path, u * (move.took ?? move.secs)),
+      [first] = move.path,
+      by = (/** @type {"pos" | "aim"} */ part) =>
+        /** @type {Vec3} */ (on[part].map((v, i) => v + from[part][i] - first[part][i]));
+    return { pos: by("pos"), aim: by("aim") };
+  }
   const s = u * u * (3 - 2 * u),
     aim = mix(from.aim, move.end.aim, s);
   if (move.way !== "arc") return { pos: mix(from.pos, move.end.pos, s), aim };

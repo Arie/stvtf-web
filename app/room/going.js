@@ -73,7 +73,7 @@ export function drawGoing(c, key, colour) {
   const move = goingOf(c);
   if (!move) return;
   drawTrack({ pos: c.pos, aim: c.aim, move });
-  endMark(move.end, colour);
+  endMark(at(c, move, move.secs), colour);
   const t = off?.key === key ? offNow() : null;
   if (t === null) return;
   const now = at(c, move, t).pos,
