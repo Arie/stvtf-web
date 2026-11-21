@@ -1384,7 +1384,9 @@ test("a flight flown in the picture after a count is a camera's move", async () 
   // Flown forward for a second and a half, looking round with the mouse; a click ends it.
   await page.keyboard.down("w");
   await page.waitForTimeout(700);
-  await page.mouse.move(700, 300, { steps: 5 });
+  await page.evaluate(() =>
+    document.getElementById("cam-view").dispatchEvent(new MouseEvent("mousemove", { movementX: 120, movementY: 10 })),
+  );
   await page.waitForTimeout(800);
   await page.keyboard.up("w");
   if (process.env.SHOTS) await page.screenshot({ path: `${process.env.SHOTS}/camera-flying.png` });
@@ -1402,6 +1404,9 @@ test("a flight flown in the picture after a count is a camera's move", async () 
   );
   const [first, last] = [kept.move.path[0], kept.move.path.at(-1)];
   assert.ok(Math.hypot(last[1] - first[1], last[2] - first[2], last[3] - first[3]) > 300, "it went somewhere");
+  // The mouse turned it while the key was held: it looks another way at the end.
+  const way = (/** @type {number[]} */ r) => Math.atan2(r[5] - r[2], r[4] - r[1]);
+  assert.ok(Math.abs(way(last) - way(first)) > 0.1, `turned by ${way(last) - way(first)}`);
   await page.click("#cam-list .crow:last-of-type button[data-id]");
   await page.click("#cam-remove");
   await until(page, () => document.querySelector("#cam-list .crow") === null);
