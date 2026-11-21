@@ -55,13 +55,14 @@ function put(c, to) {
   c.aim = /** @type {Vec3} */ (to.aim.map(Math.round));
 }
 
-// The keys held move it every frame, from where it was when the first went down.
+// The keys held move it every frame, the way it looks then: the mouse may turn it meanwhile. Where
+// it is is kept unrounded from frame to frame, unless something else moved it.
 /** @param {() => Spot | null} spot @param {() => void} changed @param {() => void} done */
 function keys(spot, changed, done) {
   const view = $("cam-view"),
     /** @type {Set<string>} */
     held = new Set();
-  /** @type {Spot | null} */
+  /** @type {Vec3 | null} */
   let at = null;
   let [last, fast] = [0, false];
   const frame = (/** @type {number} */ now) => {
@@ -72,8 +73,11 @@ function keys(spot, changed, done) {
     }
     const far = (last ? (now - last) / 1000 : 0) * SPEED * (fast ? FAST : 1),
       by = /** @type {Vec3} */ ([0, 1, 2].map(i => [...held].reduce((sum, k) => sum + WAYS[k][i], 0) * far));
-    at = moved(at ?? c, by);
-    put(c, at);
+    const near = at?.every((v, i) => Math.abs(v - c.pos[i]) <= 1) ? at : c.pos,
+      off = /** @type {Vec3} */ (near.map((v, i) => v - c.pos[i])),
+      to = moved({ pos: near, aim: /** @type {Vec3} */ (c.aim.map((v, i) => v + off[i])) }, by);
+    at = to.pos;
+    put(c, to);
     last = now;
     changed();
     requestAnimationFrame(frame);
@@ -119,7 +123,10 @@ export function flyTool(spot, changed, done) {
     const [dx, dy] = [e.clientX - press.x, e.clientY - press.y];
     press.dragged ||= Math.hypot(dx, dy) > CLICK_PX;
     if (!press.dragged) return;
-    c.aim = turned(press.from, dx * TURN, dy * TURN);
+    // From where it is now: the keys may be moving it meanwhile.
+    const { from } = press,
+      to = turned(from, dx * TURN, dy * TURN);
+    c.aim = /** @type {Vec3} */ (to.map((v, i) => v - from.pos[i] + c.pos[i]));
     changed();
   });
   view.addEventListener("pointerup", e => {
