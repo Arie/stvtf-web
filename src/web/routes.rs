@@ -80,7 +80,6 @@ fn of_room(router: Routes) -> Routes {
         .route("/r/{id}/leagues", post(rooms::leagues))
         .route("/r/{id}/names", post(rooms::names))
         .route("/r/{id}/score", post(rooms::score))
-        .route("/r/{id}/cameras", post(rooms::cameras))
         .route("/r/{id}/control", post(rooms::control))
         .route("/r/{id}/map", post(rooms::map))
         .route("/r/{id}/admin", post(rooms::admin))
@@ -96,7 +95,7 @@ pub(super) fn routes(app: &App) -> (Routes, Routes) {
         .route("/overview/{file}", get(overview))
         .route("/map/{name}", get(map))
         .route("/sight/{name}", get(cameras::sight))
-        .route("/cameras/{map}", get(cameras::on_map).post(cameras::change))
+        .route("/cameras/{map}", get(cameras::on_map))
         .nest_service("/backpack", ServiceBuilder::new().layer(day).service(ServeDir::new(&app.backpack)))
         .fallback(get(file));
     if matches!(app.matches, Matches::One(_)) {
@@ -114,7 +113,10 @@ pub(super) fn routes(app: &App) -> (Routes, Routes) {
     let part = Router::new().route("/upload/{id}", put(upload::part).layer(big));
     // A camera's path is every moment of it.
     let long = (DefaultBodyLimit::max(MAX_PATH), RequestBodyLimitLayer::new(MAX_PATH));
-    let part = part.route("/r/{id}/camera", post(rooms::camera).layer(long));
+    let part = part
+        .route("/r/{id}/camera", post(rooms::camera).layer(long))
+        .route("/r/{id}/cameras", post(rooms::cameras).layer(long))
+        .route("/cameras/{map}", post(cameras::change).layer(long));
     let acting = Router::new().route("/", get(front)).route("/watch", post(watched)).route("/mumble", get(mumble));
     let all = all
         .route("/matches", get(matches::list))

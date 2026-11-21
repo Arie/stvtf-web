@@ -34,9 +34,11 @@ const MAX_ON_MAP: usize = 32;
 const MAX_MAPS: usize = 5000;
 /// A map's coordinates stay within this.
 const MAX_COORD: i32 = 32768;
-/// The longest a camera's path takes (seconds), and the most moments one has.
+/// The longest a camera's path takes (seconds), the most moments one has, and the furthest an arc
+/// turns (radians: four times round).
 const MAX_PATH_SECS: f32 = 120.0;
 const MAX_STEPS: usize = 2000;
+const MAX_TURN: f32 = 8.0 * std::f32::consts::PI;
 
 /// Where a camera is and the spot it looks at.
 #[derive(Clone, Copy, Debug, PartialEq, Deserialize, Serialize)]
@@ -68,10 +70,7 @@ impl Shot {
         let still =
             [0.0, spot.pos[0] as f32, spot.pos[1] as f32, spot.pos[2] as f32, spot.aim[0] as f32, spot.aim[1] as f32, spot.aim[2] as f32];
         let rows = rows.unwrap_or(std::slice::from_ref(&still));
-        let in_order = rows.windows(2).all(|w| w[0][0] <= w[1][0]);
-        let fits = |r: &Row| r.iter().all(|v| v.is_finite()) && r[1..].iter().all(|v| v.abs() <= MAX_COORD as f32) && r[1..4] != r[4..];
-        let lasts = rows.first().is_some_and(|r| r[0] >= 0.0) && rows.last().is_some_and(|r| r[0] <= MAX_PATH_SECS);
-        if !spot.fits() || rows.len() > MAX_STEPS || !lasts || !in_order || !rows.iter().all(fits) {
+        if !spot.fits() || rows.is_empty() || !rows_fit(rows) {
             bail!("Invalid camera.");
         }
         let steps = rows.iter().map(|r| stvtf::relay::Step { secs: r[0], pos: [r[1], r[2], r[3]], aim: [r[4], r[5], r[6]] });
@@ -92,6 +91,59 @@ pub(crate) struct Camera {
     name: String,
     #[serde(flatten)]
     spot: Spot,
+    /// Where it goes from its spot, if set off.
+    #[serde(default, rename = "move", skip_serializing_if = "Option::is_none")]
+    going: Option<Move>,
+}
+
+/// A camera's move, as a page composed it: to an end frame over some seconds, straight or in an
+/// arc round what it looks at, or along a flight recorded. The pages work out its moments.
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct Move {
+    end: Spot,
+    secs: f32,
+    way: Way,
+    /// An arc's turn round the aim, in radians.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    turn: Option<f32>,
+    /// A flight's moments, which took `took` seconds to fly, evened out over `even`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    path: Option<Vec<Row>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    took: Option<f32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    even: Option<f32>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Deserialize, Serialize)]
+#[serde(rename_all = "lowercase")]
+enum Way {
+    Straight,
+    Arc,
+}
+
+impl Move {
+    fn fits(&self) -> bool {
+        let within = |v: Option<f32>, most: f32| v.is_none_or(|v| v.is_finite() && v.abs() <= most);
+        self.end.fits()
+            && self.secs > 0.0
+            && self.secs <= MAX_PATH_SECS
+            && within(self.turn, MAX_TURN)
+            && within(self.took, MAX_PATH_SECS)
+            && within(self.even, MAX_PATH_SECS)
+            && self.path.as_ref().is_none_or(|rows| !rows.is_empty() && rows_fit(rows))
+    }
+}
+
+/// Whether a path's moments are in order, within its time and on the map.
+fn rows_fit(rows: &[Row]) -> bool {
+    let fits = |r: &Row| r.iter().all(|v| v.is_finite()) && r[1..].iter().all(|v| v.abs() <= MAX_COORD as f32) && r[1..4] != r[4..];
+    rows.len() <= MAX_STEPS
+        && rows.first().is_none_or(|r| r[0] >= 0.0)
+        && rows.last().is_none_or(|r| r[0] <= MAX_PATH_SECS)
+        && rows.windows(2).all(|w| w[0][0] <= w[1][0])
+        && rows.iter().all(fits)
 }
 
 /// A change a streamer makes to a map's cameras: one new (no `id`), placed or named anew, or
@@ -107,6 +159,11 @@ pub(crate) struct Change {
     pos: Option<[i32; 3]>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     aim: Option<[i32; 3]>,
+    /// Where it goes from its spot; or no more (`still`).
+    #[serde(default, rename = "move", skip_serializing_if = "Option::is_none")]
+    going: Option<Move>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    still: bool,
     #[serde(default)]
     remove: bool,
 }
@@ -200,7 +257,7 @@ impl Kept {
         if name.chars().count() > MAX_NAME {
             bail!("At most {MAX_NAME} characters.");
         }
-        if change.spot().is_some_and(|s| !s.fits()) {
+        if change.spot().is_some_and(|s| !s.fits()) || change.going.as_ref().is_some_and(|m| !m.fits()) {
             bail!("Invalid camera.");
         }
         if !self.maps.contains_key(map) {
@@ -221,6 +278,9 @@ impl Kept {
                     c.name = name.to_string();
                 }
                 c.spot = change.spot().unwrap_or(c.spot);
+                if change.still || change.going.is_some() {
+                    c.going.clone_from(&change.going);
+                }
             }
             (None, _) => {
                 let Some(spot) = change.spot() else { bail!("Invalid camera.") };
@@ -229,7 +289,7 @@ impl Kept {
                 }
                 self.next += 1;
                 let name = if name.is_empty() { format!("Camera {}", on.cameras.len() + 1) } else { name.to_string() };
-                on.cameras.push(Camera { id: self.next, name, spot });
+                on.cameras.push(Camera { id: self.next, name, spot, going: change.going.clone() });
             }
         }
         Ok(())
@@ -342,7 +402,7 @@ mod tests {
     use super::*;
 
     fn placed(name: &str, x: i32) -> Change {
-        Change { id: None, name: name.into(), pos: Some([x, 0, 1500]), aim: Some([0, 0, 400]), remove: false }
+        Change { id: None, name: name.into(), pos: Some([x, 0, 1500]), aim: Some([0, 0, 400]), going: None, still: false, remove: false }
     }
 
     fn names(c: &Cameras, map: &str) -> (String, Vec<String>) {
@@ -383,8 +443,16 @@ mod tests {
         assert_eq!(names(&c, "cp_snakewater_final1"), ("cp_snakewater_final1".into(), vec![]));
         // Changed there: its own from then on, the older version's as they were.
         let mid = c.on("cp_gullywash_final1")["cameras"][0]["id"].as_u64().unwrap() as u32;
-        c.change("cp_gullywash_final1", &Change { id: Some(mid), name: "Middle".into(), pos: None, aim: None, remove: false }).unwrap();
-        c.change("cp_gullywash_final1", &Change { id: Some(mid + 1), name: String::new(), pos: None, aim: None, remove: true }).unwrap();
+        c.change(
+            "cp_gullywash_final1",
+            &Change { id: Some(mid), name: "Middle".into(), pos: None, aim: None, going: None, still: false, remove: false },
+        )
+        .unwrap();
+        c.change(
+            "cp_gullywash_final1",
+            &Change { id: Some(mid + 1), name: String::new(), pos: None, aim: None, going: None, still: false, remove: true },
+        )
+        .unwrap();
         assert_eq!(names(&c, "cp_gullywash_final1"), ("cp_gullywash_final1".into(), vec!["Middle".into()]));
         assert_eq!(names(&c, "cp_gullywash_f9").1, ["Mid", "Camera 2"]);
         assert_eq!(names(&c, "cp_gullywash_f10").0, "cp_gullywash_final1", "the latest changed");
@@ -397,8 +465,14 @@ mod tests {
         assert!(c.change("../etc", &placed("a", 1)).is_err());
         assert!(c.change("cp_a", &placed(&"n".repeat(MAX_NAME + 1), 1)).is_err());
         assert!(c.change("cp_a", &placed("a", 99_999)).is_err());
-        assert!(c.change("cp_a", &Change { id: Some(4), name: "a".into(), pos: None, aim: None, remove: false }).is_err());
-        assert!(c.change("cp_a", &Change { id: None, name: "a".into(), pos: None, aim: None, remove: false }).is_err());
+        assert!(
+            c.change("cp_a", &Change { id: Some(4), name: "a".into(), pos: None, aim: None, going: None, still: false, remove: false })
+                .is_err()
+        );
+        assert!(
+            c.change("cp_a", &Change { id: None, name: "a".into(), pos: None, aim: None, going: None, still: false, remove: false })
+                .is_err()
+        );
         for n in 0..MAX_ON_MAP {
             c.change("cp_b", &placed("", n as i32)).unwrap();
         }
@@ -422,6 +496,33 @@ mod tests {
         region.sync().unwrap();
         assert_eq!(names(&region, "cp_a").1.len(), 3);
         assert_eq!(home.since(lock(&region.0.kept).version), None);
+    }
+
+    #[test]
+    fn a_camera_keeps_the_move_it_was_given_until_told_it_stays() {
+        let mut k = Kept::default();
+        let change = |text: &str| serde_json::from_str::<Change>(text).unwrap();
+        let arc = r#"{"end":{"pos":[0,900,900],"aim":[0,0,300]},"secs":8,"way":"arc","turn":1.5}"#;
+        k.change("cp_a", &change(&format!(r#"{{"name":"Orbit","pos":[900,0,900],"aim":[0,0,300],"move":{arc}}}"#))).unwrap();
+        let said = |k: &Kept| serde_json::to_value(k.by_map()["cp_a"]).unwrap()[0]["move"].clone();
+        assert_eq!(said(&k), serde_json::json!({"end":{"pos":[0,900,900],"aim":[0,0,300]},"secs":8.0,"way":"arc","turn":1.5}));
+        // Placed anew or named anew, it keeps it.
+        k.change("cp_a", &change(r#"{"id":1,"name":"Round","pos":[800,0,900],"aim":[0,0,300]}"#)).unwrap();
+        assert_eq!(said(&k)["way"], "arc");
+        // A flight's moments, each the seconds in, where it is and what it looks at.
+        let flight = r#"{"end":{"pos":[0,900,900],"aim":[0,0,300]},"secs":2,"way":"straight","took":2,"even":0.25,
+            "path":[[0,900,0,900,0,0,300],[2,0,900,900,0,0,300]]}"#;
+        k.change("cp_a", &change(&format!(r#"{{"id":1,"move":{flight}}}"#))).unwrap();
+        assert_eq!(said(&k)["path"][1][2], 900.0);
+        for bad in [r#""secs":0"#, r#""secs":500"#, r#""turn":99"#, r#""path":[]"#, r#""path":[[1,0,0,1,0,0,0],[0,0,0,1,0,0,0]]"#] {
+            let odd = format!(
+                r#"{{"id":1,"move":{{"end":{{"pos":[0,900,900],"aim":[0,0,300]}},"way":"arc",{}{bad}}}}}"#,
+                if bad.contains("secs") { "" } else { r#""secs":2,"# }
+            );
+            assert!(k.change("cp_a", &change(&odd)).is_err(), "{bad}");
+        }
+        k.change("cp_a", &change(r#"{"id":1,"still":true}"#)).unwrap();
+        assert!(said(&k).is_null());
     }
 
     #[test]
