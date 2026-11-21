@@ -158,6 +158,7 @@ function record(c) {
   host.done();
   playing = performance.now();
 }
+// What a control does to the camera being placed; only playing it plays it.
 /** @param {(c: Camera, e: Event) => void} does @param {boolean} [plays] */
 const on = (does, plays) => (/** @type {Event} */ e) => {
   const c = host.camera();
@@ -217,22 +218,22 @@ export function composeTool(h) {
       move.end.pos = /** @type {Spot["pos"]} */ (move.end.pos.map(Math.round));
       [move.way, move.turn] = ["arc", turnTo(c, move.end, before + ORBIT * way)];
       host.done();
-    }, true),
+    }),
   );
   $("cam-way").addEventListener(
     "change",
-    on((c, e) => c.move && (c.move.way = value(e) === "arc" ? "arc" : "straight"), true),
+    on((c, e) => c.move && (c.move.way = value(e) === "arc" ? "arc" : "straight")),
   );
   $("cam-secs").addEventListener(
     "change",
-    on((c, e) => c.move && (c.move.secs = Math.min(60, Math.max(1, Number(value(e)) || SECS))), true),
+    on((c, e) => c.move && (c.move.secs = Math.min(60, Math.max(1, Number(value(e)) || SECS)))),
   );
   $("cam-even").addEventListener(
     "change",
     on((c, e) => {
       const again = c.move?.raw ? flight(c.move.raw, Number(value(e)) || 0, c.move.secs) : null;
       if (again) c.move = again;
-    }, true),
+    }),
   );
   $("cam-scrub").addEventListener(
     "input",
