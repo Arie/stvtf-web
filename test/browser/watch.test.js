@@ -1371,6 +1371,9 @@ test("a flight flown in the picture after a count is a camera's move", async () 
   await page.click('#cam-list button[data-id="new"]');
   await until(page, () => document.getElementById("cam-shows").textContent !== "");
   await page.fill("#cam-name", "Flown");
+  const began = await page.evaluate(() =>
+    ["cam-z", "cam-aim-z"].map(id => Number(/** @type {HTMLInputElement} */ (document.getElementById(id)).value)),
+  );
   // Counted down to, the picture holding the pointer; let go of (Esc) while it counts, it is off.
   await page.click("#cam-rec");
   await until(page, () => /^[123]$/.test(document.getElementById("cam-badge").textContent ?? ""));
@@ -1395,6 +1398,15 @@ test("a flight flown in the picture after a count is a camera's move", async () 
   await until(page, () => document.getElementById("cam-badge").hidden);
   assert.equal(await page.textContent("#cam-rec"), "● Record");
   assert.equal(await page.evaluate(() => document.pointerLockElement), null);
+  // The click that ended it aimed at nothing, and End shows where it was flown to: the flight stays.
+  const heights = () =>
+    page.evaluate(() =>
+      ["cam-z", "cam-aim-z"].map(id => Number(/** @type {HTMLInputElement} */ (document.getElementById(id)).value)),
+    );
+  assert.deepEqual(await heights(), began);
+  await page.click("#cam-end");
+  assert.equal(await page.$eval("#cam-scrub", el => /** @type {HTMLInputElement} */ (el).value), "1000");
+  assert.ok(await page.$eval("#cam-moves", el => el.hidden));
   await page.click("#cam-save");
   await until(page, () => document.querySelector("#cam-list button")?.textContent === "Flown");
   const kept = (await page.evaluate(map => fetch(`../../cameras/${map}`).then(r => r.json()), MAP)).cameras.at(-1);

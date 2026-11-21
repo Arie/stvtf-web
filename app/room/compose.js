@@ -136,6 +136,7 @@ export function composing(c) {
   $("cam-rec").textContent = flying ? "■ Stop" : waits;
   $("cam-still").hidden = !move;
   $("cam-way-row").hidden = !move || flown;
+  $("cam-moves").hidden = flown;
   $("cam-even-row").hidden = !flown;
   if (!move) return;
   input("cam-secs").value = String(Math.round(move.secs * 10) / 10);
@@ -203,6 +204,18 @@ function badge(c, now) {
     host.panel();
   }
 }
+// The end frame, to place; a flight's is where it was flown to, looked at and not placed.
+/** @param {Camera} c */
+function toEnd(c) {
+  if (c.move?.path) {
+    [frame, playing, scrub] = ["start", null, c.move.secs];
+    input("cam-scrub").value = "1000";
+    return;
+  }
+  framed(c);
+  [frame, playing, scrub] = ["end", null, null];
+  host.changed();
+}
 // What a control does to the camera being placed; only playing it plays it.
 /** @param {(c: Camera, e: Event) => void} does @param {boolean} [plays] */
 const on = (does, plays) => (/** @type {Event} */ e) => {
@@ -232,7 +245,16 @@ function wireRest() {
     else return;
     host.panel();
   };
-  $("cam-view").addEventListener("pointerdown", () => flying && document.pointerLockElement && end());
+  // Before the picture takes the click for an aim.
+  $("cam-view").addEventListener(
+    "pointerdown",
+    e => {
+      if (!flying || !document.pointerLockElement) return;
+      e.stopImmediatePropagation();
+      end();
+    },
+    { capture: true },
+  );
   document.addEventListener("pointerlockchange", () => document.pointerLockElement || end());
   $("cam-run").addEventListener("click", on(run, true));
   $("cam-rec").addEventListener("click", on(record));
@@ -253,14 +275,7 @@ export function composeTool(h) {
     "click",
     on(() => ([frame, playing, scrub] = ["start", null, null])),
   );
-  $("cam-end").addEventListener(
-    "click",
-    on(c => {
-      framed(c);
-      [frame, playing, scrub] = ["end", null, null];
-      host.changed();
-    }),
-  );
+  $("cam-end").addEventListener("click", on(toEnd));
   // An orbit steps the end frame on round what it looks at, the way it was already going.
   $("cam-moves").addEventListener(
     "click",

@@ -132,8 +132,9 @@ export function flyTool(spot, changed, done) {
   view.addEventListener("pointerup", e => {
     const c = spot(),
       hit = press && !press.dragged ? pointAt(e.offsetX / view.clientWidth, e.offsetY / view.clientHeight) : null;
+    const pressed = press !== null;
     press = null;
-    if (!c) return;
+    if (!c || !pressed) return;
     if (hit) c.aim = hit;
     changed();
     done();
