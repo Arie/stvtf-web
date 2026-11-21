@@ -9,7 +9,8 @@ import { flyTool } from "./fly.js";
 import { focusOf, label, toScreen } from "../map/view.js";
 import { HOME, me, post } from "./home.js";
 import { begun, composeTool, composing, drawTrack, moved, onEnd, shown, spotOf } from "./compose.js";
-import { fromKept, rowsOf, toKept } from "./moves.js";
+import { drawGoing, offKey, setOff } from "./going.js";
+import { fromKept, toKept } from "./moves.js";
 import { preview } from "./preview.js";
 import { blind, floorUnder, loadSight, showsOf } from "./sight.js";
 import { note, worldAt } from "./tools.js";
@@ -119,45 +120,11 @@ function mark(c, colour, placing) {
   ctx.restore();
   if (c.name) label(c.name, x, y - r - 12 * uiScale(), 11 * uiScale(), { colour });
 }
-// Where a listed camera's move ends: a ring, with a short line the way it looks there.
-/** @param {{ pos: Vec3; aim: Vec3 }} end @param {string} colour */
-function endMark(end, colour) {
-  const [x, y] = toScreen(end.pos[0], end.pos[1]),
-    [ax, ay] = toScreen(end.aim[0], end.aim[1]),
-    r = MARK_PX * uiScale(),
-    far = Math.hypot(ax - x, ay - y) || 1,
-    reach = Math.min(far, 3 * r);
-  ctx.save();
-  ctx.strokeStyle = colour;
-  ctx.lineWidth = 2 * uiScale();
-  ctx.beginPath();
-  ctx.moveTo(x + ((ax - x) / far) * r, y + ((ay - y) / far) * r);
-  ctx.lineTo(x + ((ax - x) / far) * reach, y + ((ay - y) / far) * reach);
-  ctx.stroke();
-  ctx.beginPath();
-  ctx.arc(x, y, r, 0, 2 * Math.PI);
-  ctx.stroke();
-  ctx.restore();
-}
-// A listed camera's move as the page works with it, made once.
-/** @type {WeakMap<object, Move>} */
-const going = new WeakMap();
-/** @param {Listed} c */
-function goingOf(c) {
-  if (!c.move) return undefined;
-  const made = going.get(c.move) ?? fromKept(c.move);
-  going.set(c.move, made);
-  return made;
-}
 // A listed camera on the map, with where its move takes it.
 /** @param {Listed} c */
 function listedMark(c) {
   if (isEdited(c)) return;
-  const move = goingOf(c);
-  if (move) {
-    drawTrack({ pos: c.pos, aim: c.aim, move });
-    endMark(move.end, colourOf(c));
-  }
+  drawGoing(c, keyOf(c), colourOf(c));
   mark(c, colourOf(c), false);
 }
 // What the camera being placed shows of the points, said in the panel.
@@ -243,7 +210,9 @@ function panel() {
         div = Object.assign(document.createElement("div"), { className: "crow" });
       at.classList.toggle("on", isActive(c));
       if (c.room && me.cameras) at.title = "Room only";
-      if (c.move && me.admin) div.append(at, Object.assign(button("play", keyOf(c), "▶"), { title: "Play" }));
+      const play = Object.assign(button("play", keyOf(c), offKey() === keyOf(c) ? "…" : "▶"), { title: "Play" });
+      play.classList.toggle("on", offKey() === keyOf(c));
+      if (c.move && me.admin) div.append(at, play);
       else div.append(at);
       div.append(Object.assign(button("id", keyOf(c), "Edit"), { disabled: Boolean(c.room) && !me.admin }));
       return div;
@@ -367,7 +336,7 @@ function wirePanel() {
     const kept = mine().find(c => keyOf(c) === (id ?? go ?? play));
     if (go === "back") return put(null);
     if (go && kept) return put(kept);
-    if (play && kept) return setOff(kept);
+    if (play && kept) return setOff(kept, keyOf(kept), body => post("camera", body, HOME), panel);
     if (!id) return;
     // The view stays put under what is dragged.
     setAutoZoom(false);
@@ -410,13 +379,6 @@ function wirePanel() {
   $("cam-remove").addEventListener("click", () => editing && save({ id: editing.id, remove: true }));
   $("cam-cancel").addEventListener("click", () => edit(null));
   $("settings").addEventListener("change", () => panel());
-}
-// Sets the relay's camera off on a listed camera's move.
-/** @param {Listed} c */
-function setOff(c) {
-  post("camera", { pos: c.pos, aim: c.aim, path: rowsOf(c, goingOf(c)) }, HOME).then(
-    async r => r.ok || note(await r.text()),
-  );
 }
 // Puts the relay at a camera (again, or none: back).
 /** @param {Camera | Listed | null} c */

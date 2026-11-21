@@ -34,6 +34,8 @@ let scrub = null;
 /** @type {{ from: number; flown: import("./moves.js").Sample[] } | null} */
 let flying = null;
 let [stale, taken] = [true, 0];
+// The move playing was sent to the relay too.
+let sent = false;
 const input = (/** @type {string} */ id) => /** @type {HTMLInputElement} */ ($(id));
 
 export const onEnd = () => frame === "end";
@@ -58,6 +60,7 @@ export function moved(c) {
 export function shown(c) {
   const now = performance.now(),
     move = c.move;
+  $("cam-run").classList.toggle("on", sent && playing !== null);
   if (flying) flying.flown.push({ t: (now - flying.from) / 1000, pos: [...c.pos], aim: [...c.aim] });
   if (stale && now - taken > THUMB_MS) thumbs(c, now);
   if (!move) return c;
@@ -161,6 +164,7 @@ const on = (does, plays) => (/** @type {Event} */ e) => {
   if (!c) return;
   does(c, e);
   if (plays) [playing, scrub] = [c.move ? performance.now() : null, null];
+  sent = does === run;
   stale = true;
   host.panel();
 };
