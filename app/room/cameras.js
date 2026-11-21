@@ -17,9 +17,9 @@ import {
   escaped,
   moved,
   onEnd,
+  recKey,
   shown,
   spotOf,
-  tapped,
 } from "./compose.js";
 import { drawGoing, offKey, setOff } from "./going.js";
 import { fromKept, toKept } from "./moves.js";
@@ -300,6 +300,8 @@ function key(e) {
   // Esc ends a flight first, then the placing.
   if (e.key === "Escape") escaped() || edit(null);
   else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") undo();
+  // R: a flight begun, or ended (a browser inside the game keeps Esc and the clicks to itself).
+  else if (e.key.toLowerCase() === "r" && !e.ctrlKey && !e.metaKey && !e.altKey) recKey();
   else if (e.key.startsWith("Arrow")) nudge(e);
   else return;
   e.preventDefault();
@@ -430,7 +432,7 @@ export function camerasTool() {
   });
   addEventListener("keydown", key, { capture: true });
   // Not while a flight is counted down to: it begins where the camera was put.
-  flyTool(() => (counted() ? null : placed()), changed, done, tapped);
+  flyTool(() => (counted() ? null : placed()), changed, done);
   canvas.addEventListener(
     "wheel",
     e => {

@@ -134,8 +134,8 @@ export function composing(c) {
   $("cam-end").textContent = move ? "End" : "+ End";
   for (const id of ["cam-play", "cam-scrub", "cam-secs", "cam-secs-s"]) $(id).hidden = !move;
   $("cam-play").textContent = playing === null ? "▶" : "■";
-  const waits = counting === null ? "● Record" : "Cancel";
-  $("cam-rec").textContent = flying ? "■ Stop" : waits;
+  const waits = counting === null ? "● Record (R)" : "Cancel (R)";
+  $("cam-rec").textContent = flying ? "■ Stop (R)" : waits;
   $("cam-still").hidden = !move;
   $("cam-way-row").hidden = !move || flown;
   $("cam-moves").hidden = flown;
@@ -196,7 +196,7 @@ function badge(c, now) {
   }
   const secs = flying ? (now - flying.from) / 1000 : 0,
     text = flying
-      ? `● ${Math.floor(secs / 60)}:${String(Math.floor(secs % 60)).padStart(2, "0")} · Click or Esc: stop`
+      ? `● ${Math.floor(secs / 60)}:${String(Math.floor(secs % 60)).padStart(2, "0")} · ${document.pointerLockElement ? "Click or R" : "R"}: stop`
       : String(Math.ceil(left));
   el.hidden = !flying && counting === null;
   el.classList.toggle("rec", flying !== null);
@@ -217,6 +217,14 @@ function toEnd(c) {
   framed(c);
   [frame, playing, scrub] = ["end", null, null];
   host.changed();
+}
+// R, as the Record button pressed.
+export function recKey() {
+  const c = host.camera();
+  if (!c) return;
+  record(c);
+  stale = true;
+  host.panel();
 }
 // What a control does to the camera being placed; only playing it plays it.
 /** @param {(c: Camera, e: Event) => void} does @param {boolean} [plays] */
@@ -247,8 +255,6 @@ function ended() {
   host.panel();
   return true;
 }
-// A click in the picture, which does not hold the pointer: it ends a flight being flown.
-export const tapped = () => flying !== null && ended();
 // Esc: a flight being flown ends, the count before one is off. Whether it was for either.
 export function escaped() {
   if (flying) return ended();

@@ -1378,19 +1378,15 @@ test("a flight flown in the picture after a count is a camera's move", async () 
     page.evaluate(() =>
       ["cam-z", "cam-aim-z"].map(id => Number(/** @type {HTMLInputElement} */ (document.getElementById(id)).value)),
     );
-  // In a browser that does not let the picture hold the pointer, a click in it ends a flight all
-  // the same, and so does Esc.
+  // In a browser that does not let the picture hold the pointer (one inside the game), R begins a
+  // flight and ends it; Esc ends it too, and a click in the picture is an aim as ever.
   await page.evaluate(() => {
     window.lockOf = HTMLCanvasElement.prototype.requestPointerLock;
     HTMLCanvasElement.prototype.requestPointerLock = () => Promise.reject(new Error("no"));
   });
-  const view = await page.locator("#cam-view").boundingBox();
-  assert.ok(view);
-  for (const stop of [
-    () => page.mouse.click(view.x + view.width / 2, view.y + view.height / 3),
-    () => page.keyboard.press("Escape"),
-  ]) {
-    await page.click("#cam-rec");
+  for (const stop of [() => page.keyboard.press("r"), () => page.keyboard.press("Escape")]) {
+    await page.focus("#cam-view");
+    await page.keyboard.press("r");
     await until(page, () => document.getElementById("cam-badge").classList.contains("rec"));
     await page.focus("#cam-view");
     await page.keyboard.down("w");
@@ -1398,7 +1394,7 @@ test("a flight flown in the picture after a count is a camera's move", async () 
     await page.keyboard.up("w");
     await stop();
     await until(page, () => document.getElementById("cam-badge").hidden);
-    assert.equal(await page.textContent("#cam-rec"), "● Record");
+    assert.equal(await page.textContent("#cam-rec"), "● Record (R)");
     assert.deepEqual(await heights(), began);
   }
   await page.evaluate(() => {
@@ -1407,13 +1403,13 @@ test("a flight flown in the picture after a count is a camera's move", async () 
   // Counted down to, the picture holding the pointer; let go of (Esc) while it counts, it is off.
   await page.click("#cam-rec");
   await until(page, () => /^[123]$/.test(document.getElementById("cam-badge").textContent ?? ""));
-  assert.equal(await page.textContent("#cam-rec"), "Cancel");
+  assert.equal(await page.textContent("#cam-rec"), "Cancel (R)");
   await page.evaluate(() => document.exitPointerLock());
   await until(page, () => document.getElementById("cam-badge").hidden);
-  assert.equal(await page.textContent("#cam-rec"), "● Record");
+  assert.equal(await page.textContent("#cam-rec"), "● Record (R)");
   await page.click("#cam-rec");
   await until(page, () => document.getElementById("cam-badge").classList.contains("rec"));
-  assert.equal(await page.textContent("#cam-rec"), "■ Stop");
+  assert.equal(await page.textContent("#cam-rec"), "■ Stop (R)");
   // Flown forward for a second and a half, looking round with the mouse; a click ends it.
   await page.keyboard.down("w");
   await page.waitForTimeout(700);
@@ -1426,7 +1422,7 @@ test("a flight flown in the picture after a count is a camera's move", async () 
   await page.mouse.down();
   await page.mouse.up();
   await until(page, () => document.getElementById("cam-badge").hidden);
-  assert.equal(await page.textContent("#cam-rec"), "● Record");
+  assert.equal(await page.textContent("#cam-rec"), "● Record (R)");
   assert.equal(await page.evaluate(() => document.pointerLockElement), null);
   // The click that ended it aimed at nothing, and End shows where it was flown to: the flight stays.
   assert.deepEqual(await heights(), began);
