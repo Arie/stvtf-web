@@ -1337,6 +1337,13 @@ test("a camera is given a move, which is kept with it and set off from the list"
   assert.deepEqual(sent.path[0], [0, ...kept.pos, ...kept.aim]);
   assert.deepEqual(sent.path[90].slice(0, 4), [3, ...kept.move.end.pos]);
   assert.equal((await asked.response())?.status(), 204);
+  // Its ▶ says it is on its way, counting down, and is itself again once there.
+  const play = "#cam-list .crow:last-of-type button[data-play]";
+  await until(page, sel => /^[123]s$/.test(document.querySelector(sel)?.textContent ?? ""), play);
+  assert.ok(await page.$eval(play, el => el.classList.contains("on")));
+  if (process.env.SHOTS) await page.screenshot({ path: `${process.env.SHOTS}/camera-playing.png` });
+  await until(page, sel => document.querySelector(sel)?.textContent === "▶", play);
+  assert.ok(!(await page.$eval(play, el => el.classList.contains("on"))));
   // Placed again, it has its move still; told to stay, no more.
   await page.click("#cam-list .crow:last-of-type button[data-id]");
   assert.equal(await page.$eval("#cam-way", el => /** @type {HTMLSelectElement} */ (el).value), "arc");

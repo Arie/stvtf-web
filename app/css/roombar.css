@@ -586,6 +586,18 @@
 #cameras .crow .on {
   border-color: var(--pen);
 }
+/* A move on its way: its button fills as it goes. */
+#cameras .crow [data-play] {
+  min-width: 34px;
+  text-align: center;
+}
+#cameras .crow [data-play].on {
+  background: linear-gradient(
+    to right,
+    color-mix(in srgb, var(--pen) 45%, transparent) calc(var(--done, 0) * 100%),
+    transparent 0
+  );
+}
 #cameras .cbuttons button {
   padding: 0 4px;
 }
