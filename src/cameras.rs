@@ -15,6 +15,7 @@
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -39,6 +40,10 @@ const MAX_COORD: i32 = 32768;
 const MAX_PATH_SECS: f32 = 120.0;
 const MAX_STEPS: usize = 2000;
 const MAX_TURN: f32 = 8.0 * std::f32::consts::PI;
+/// The id of the last path set off.
+static LAST_PATH: AtomicU64 = AtomicU64::new(0);
+/// The most moments the flights of one map's cameras have together: all of them go to every page.
+const MAX_ROWS_ON_MAP: usize = 6000;
 
 /// Where a camera is and the spot it looks at.
 #[derive(Clone, Copy, Debug, PartialEq, Deserialize, Serialize)]
@@ -74,8 +79,10 @@ impl Shot {
             bail!("Invalid camera.");
         }
         let steps = rows.iter().map(|r| stvtf::relay::Step { secs: r[0], pos: [r[1], r[2], r[3]], aim: [r[4], r[5], r[6]] });
-        // No two set off in the same millisecond.
-        let id = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_millis() as u64);
+        // The time, and never one twice: each sets off anew.
+        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(1, |d| d.as_millis() as u64);
+        let next = |last: u64| last.max(now.saturating_sub(1)) + 1;
+        let id = LAST_PATH.try_update(Ordering::Relaxed, Ordering::Relaxed, |last| Some(next(last))).map_or(now, next);
         Ok(Shot { spot, path: Arc::new(stvtf::relay::Path { id, began: std::time::Instant::now(), steps: steps.collect() }) })
     }
 
@@ -266,6 +273,12 @@ impl Kept {
             }
             let from = self.on(map).map_or_else(Vec::new, |f| f.cameras.to_vec());
             self.maps.insert(map.to_string(), OnMap { changed: 0, cameras: from });
+        }
+        let Some(on) = self.maps.get(map) else { bail!("Invalid map.") };
+        let rows = |m: Option<&Move>| m.and_then(|m| m.path.as_ref()).map_or(0, Vec::len);
+        let others: usize = on.cameras.iter().filter(|c| Some(c.id) != change.id).map(|c| rows(c.going.as_ref())).sum();
+        if others + rows(change.going.as_ref()) > MAX_ROWS_ON_MAP {
+            bail!("Too many flights on this map.");
         }
         self.version += 1;
         let Some(on) = self.maps.get_mut(map) else { bail!("Invalid map.") };
@@ -523,6 +536,17 @@ mod tests {
         }
         k.change("cp_a", &change(r#"{"id":1,"still":true}"#)).unwrap();
         assert!(said(&k).is_null());
+        // The flights of a map's cameras go to every page: no more of them than that takes.
+        let long: Vec<String> = (0..1800).map(|n| format!("[{},900,0,900,0,0,300]", f64::from(n) / 30.0)).collect();
+        let flown =
+            format!(r#""move":{{"end":{{"pos":[0,900,900],"aim":[0,0,300]}},"secs":60,"way":"straight","path":[{}]}}"#, long.join(","));
+        for n in 0..3 {
+            k.change("cp_a", &change(&format!(r#"{{"name":"f{n}","pos":[900,0,900],"aim":[0,0,300],{flown}}}"#))).unwrap();
+        }
+        let more = k.change("cp_a", &change(&format!(r#"{{"name":"f3","pos":[900,0,900],"aim":[0,0,300],{flown}}}"#)));
+        assert_eq!(more.unwrap_err().to_string(), "Too many flights on this map.");
+        // One flown again is counted once.
+        k.change("cp_a", &change(&format!(r#"{{"id":2,{flown}}}"#))).unwrap();
     }
 
     #[test]
@@ -535,6 +559,9 @@ mod tests {
         let moving = Shot::new(spot, Some(&rows)).unwrap();
         assert_eq!((moving.path.steps.len(), moving.path.steps[1].secs, moving.path.steps[1].pos[0]), (2, 2.5, 900.5));
         assert_ne!(moving.path.id, 0);
+        // Each sets off anew, two at one moment too.
+        let ids: Vec<u64> = (0..50).map(|_| Shot::new(spot, None).unwrap().path.id).collect();
+        assert!(ids.windows(2).all(|w| w[0] < w[1]) && ids[0] > moving.path.id);
         assert!(!Spot { pos: [1, 1, 1], aim: [1, 1, 1] }.fits());
         // Out of order, too long, off the map, looking at itself, not a number, none.
         let bad: [&[Row]; 6] = [
