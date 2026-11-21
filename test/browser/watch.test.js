@@ -1449,6 +1449,21 @@ test("a flight flown in the picture after a count is a camera's move", async () 
   // The mouse turned it while the key was held: it looks another way at the end.
   const way = (/** @type {number[]} */ r) => Math.atan2(r[5] - r[2], r[4] - r[1]);
   assert.ok(Math.abs(way(last) - way(first)) > 0.1, `turned by ${way(last) - way(first)}`);
+  // Its name puts the relay where the flight begins, looking as it was flown, and is marked there.
+  const flownName = "#cam-list .crow:last-of-type button[data-go]";
+  const [put] = await Promise.all([page.waitForRequest(r => r.url().endsWith("/camera")), page.click(flownName)]);
+  const there = put.postDataJSON();
+  assert.deepEqual(there.pos, kept.pos);
+  assert.ok(
+    there.aim.every(
+      (/** @type {number} */ v, /** @type {number} */ i) =>
+        Math.abs(v - first[4 + i] - (kept.pos[i] - first[1 + i])) <= 1,
+    ),
+    JSON.stringify([there.aim, first]),
+  );
+  await until(page, sel => document.querySelector(sel)?.classList.contains("on"), flownName);
+  const [gone] = await Promise.all([page.waitForRequest(r => r.url().endsWith("/camera")), page.click(flownName)]);
+  assert.equal(gone.postData(), "{}");
   await page.click("#cam-list .crow:last-of-type button[data-id]");
   await page.click("#cam-remove");
   await until(page, () => document.querySelector("#cam-list .crow") === null);

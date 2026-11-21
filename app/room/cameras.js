@@ -21,7 +21,7 @@ import {
   shown,
   spotOf,
 } from "./compose.js";
-import { drawGoing, offKey, setOff } from "./going.js";
+import { drawGoing, offEnded, offKey, setOff } from "./going.js";
 import { fromKept, startOf, toKept } from "./moves.js";
 import { preview } from "./preview.js";
 import { blind, floorUnder, loadSight, showsOf } from "./sight.js";
@@ -73,6 +73,8 @@ let look = null;
 /** @param {import("../../types/stream").CameraLine} m */
 export function onCamera(m) {
   active = { pos: m.pos, aim: m.aim, moving: m.moving };
+  // Put elsewhere, or given up: no move set off from here goes on.
+  if (!m.moving) offEnded();
   if (!editing) panel();
 }
 /** @param {import("../../types/stream").CamerasLine} m */
@@ -87,8 +89,9 @@ const mine = () => (me.cameras ? ofMap() : ofRoom());
 // One's name in the list: the room's are numbered apart from the map's.
 const keyOf = (/** @type {Camera | Listed} */ c) => `${c.room ? "r" : ""}${c.id}`;
 
+// The same place, to a unit: a flight's start is rounded once kept.
 const same = (/** @type {Vec3 | undefined} */ a, /** @type {Vec3 | undefined} */ b) =>
-  a !== undefined && b !== undefined && a.every((v, i) => v === b[i]);
+  a !== undefined && b !== undefined && a.every((v, i) => Math.abs(v - b[i]) <= 1);
 const isActive = (/** @type {Camera | Listed} */ c) => same(c.pos, active.pos) && same(startOf(c).aim, active.aim);
 // The relay is where no camera known here is: at one taken away, or one of the map's unseen.
 const elsewhere = () => active.pos !== undefined && !ofMap().some(isActive);
@@ -107,8 +110,9 @@ function colourOf(c) {
 // ---------- on the map
 /** @param {Camera | Listed} c @param {string} colour @param {boolean} placing */
 function mark(c, colour, placing) {
-  const [x, y] = toScreen(c.pos[0], c.pos[1]),
-    [ax, ay] = toScreen(c.aim[0], c.aim[1]),
+  const { aim } = startOf(c),
+    [x, y] = toScreen(c.pos[0], c.pos[1]),
+    [ax, ay] = toScreen(aim[0], aim[1]),
     r = MARK_PX * uiScale(),
     far = Math.hypot(ax - x, ay - y) || 1,
     // Not being placed: a short line the way it looks.
@@ -277,6 +281,8 @@ function undo() {
 /** @param {Camera | null} c */
 function edit(c) {
   [editing, past, picked, look] = [c, [], "pos", null];
+  // A flight's start looks as it was flown, whatever was kept.
+  if (c) c.aim = startOf(c).aim;
   begun();
   done();
   panel();

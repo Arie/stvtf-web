@@ -14,6 +14,13 @@ const MARK_PX = 9,
 /** @type {{ key: string; secs: number; from: number | null; changed: () => void } | null} */
 let off = null;
 export const offKey = () => off?.key ?? null;
+// The relay's camera is no longer on the move set off from here.
+export function offEnded() {
+  if (!off || off.from === null) return;
+  const { changed } = off;
+  off = null;
+  changed();
+}
 
 // A listed camera's move as the page works with it, made once.
 /** @type {WeakMap<object, Move>} */
