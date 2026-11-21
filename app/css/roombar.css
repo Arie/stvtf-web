@@ -603,6 +603,25 @@
 }
 
 /* The frames of a camera's move and the moment looked at, under its picture. */
+/* The count before a flight, in the middle; its length as it is flown, in the corner. */
+#cam-badge {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  color: #fff;
+  font-size: 64px;
+  font-weight: 700;
+  text-shadow: 0 0 8px #000;
+  pointer-events: none;
+}
+#cam-badge.rec {
+  top: 8px;
+  left: 8px;
+  transform: none;
+  color: #ff6b5a;
+  font-size: 14px;
+}
 #cam-bar {
   position: absolute;
   right: 0;

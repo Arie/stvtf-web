@@ -1359,6 +1359,56 @@ test("a camera is given a move, which is kept with it and set off from the list"
   await page.close();
 });
 
+test("a flight flown in the picture after a count is a camera's move", async () => {
+  const { page, errors } = await open();
+  await page.goto(base);
+  await page.click("#roomopen");
+  await page.waitForURL(/\/r\/[0-9a-f]{32}\/$/, { timeout: WAIT });
+  await until(page, () => window.viewState?.framed);
+  await page.click("#settingstoggle");
+  await page.check('#settings input[data-layer="cameras"]');
+  await page.click("#settingstoggle");
+  await page.click('#cam-list button[data-id="new"]');
+  await until(page, () => document.getElementById("cam-shows").textContent !== "");
+  await page.fill("#cam-name", "Flown");
+  // Counted down to, the picture holding the pointer; let go of (Esc) while it counts, it is off.
+  await page.click("#cam-rec");
+  await until(page, () => /^[123]$/.test(document.getElementById("cam-badge").textContent ?? ""));
+  assert.equal(await page.textContent("#cam-rec"), "Cancel");
+  await page.evaluate(() => document.exitPointerLock());
+  await until(page, () => document.getElementById("cam-badge").hidden);
+  assert.equal(await page.textContent("#cam-rec"), "● Record");
+  await page.click("#cam-rec");
+  await until(page, () => document.getElementById("cam-badge").classList.contains("rec"));
+  assert.equal(await page.textContent("#cam-rec"), "■ Stop");
+  // Flown forward for a second and a half, looking round with the mouse; a click ends it.
+  await page.keyboard.down("w");
+  await page.waitForTimeout(700);
+  await page.mouse.move(700, 300, { steps: 5 });
+  await page.waitForTimeout(800);
+  await page.keyboard.up("w");
+  if (process.env.SHOTS) await page.screenshot({ path: `${process.env.SHOTS}/camera-flying.png` });
+  await page.mouse.down();
+  await page.mouse.up();
+  await until(page, () => document.getElementById("cam-badge").hidden);
+  assert.equal(await page.textContent("#cam-rec"), "● Record");
+  assert.equal(await page.evaluate(() => document.pointerLockElement), null);
+  await page.click("#cam-save");
+  await until(page, () => document.querySelector("#cam-list button")?.textContent === "Flown");
+  const kept = (await page.evaluate(map => fetch(`../../cameras/${map}`).then(r => r.json()), MAP)).cameras.at(-1);
+  assert.ok(
+    kept.move.path.length > 40 && kept.move.secs > 1.4,
+    JSON.stringify([kept.move.path.length, kept.move.secs]),
+  );
+  const [first, last] = [kept.move.path[0], kept.move.path.at(-1)];
+  assert.ok(Math.hypot(last[1] - first[1], last[2] - first[2], last[3] - first[3]) > 300, "it went somewhere");
+  await page.click("#cam-list .crow:last-of-type button[data-id]");
+  await page.click("#cam-remove");
+  await until(page, () => document.querySelector("#cam-list .crow") === null);
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
 test("an admin who is no streamer places a camera for the room alone", async () => {
   const { page, errors } = await open();
   await page.route("**/me", async r => {
