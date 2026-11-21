@@ -147,6 +147,12 @@ looks at. In a room, the Cameras layer (behind ⚙) shows them as markers on the
   ends it too. TF2 takes no field of view from it. Posted with a `path` (`POST /r/<id>/camera`:
   each moment of it the seconds in, where the camera is and what it looks at), the relay's camera
   sets off along it from there, and stays at its end; the game itself moves it between frames.
+- A camera may have a move: placing it, **+ End** (or a shortcut: orbit, push, slide, rise) gives it
+  an end frame, reached straight or in an arc round what it looks at over the seconds set; or
+  **Record** keeps a flight flown in the picture, evened out. The bar under the picture plays it
+  there, and **TF2** in the room's relay. Saved, it is kept with the camera; its way and its end
+  show on the map, and ▶ by its name sets the relay's camera off on it. The pages work out its
+  moments; the relay takes them as they are.
 - The site's streamers (anyone, where nobody signs in) place them: Add or Edit in the panel, drag
   the camera and its aim, the wheel over either (or the panel) for its height. The panel says how much of
   each capture area shows. A camera in something solid, out over the void, or with something between

@@ -135,6 +135,16 @@ export function pointAt(x, y) {
   return hit ? [Math.round(hit.x), Math.round(hit.y), Math.round(hit.z)] : null;
 }
 
+// A picture of what `c` shows, as an image's address; none before the map is drawn.
+/** @param {Spot} c */
+export function snapshot(c) {
+  if (!stage?.world) return null;
+  stage.camera.position.set(...c.pos);
+  stage.camera.lookAt(...c.aim);
+  stage.renderer.render(stage.scene, stage.camera);
+  return stage.renderer.domElement.toDataURL("image/jpeg", 0.6);
+}
+
 // Draws what `c` would show, or (null) puts the preview away.
 /** @param {Spot | null} c @param {Grid | null} grid */
 export function preview(c, grid) {

@@ -544,6 +544,7 @@
   justify-content: space-between;
 }
 #cameras input,
+#cameras select,
 #cameras button {
   height: 24px;
   padding: 0 6px;
@@ -553,8 +554,12 @@
   color: var(--text);
   font: inherit;
 }
-#cameras label input {
+#cameras label input,
+#cameras label select {
   width: 70px;
+}
+#cameras button[hidden] {
+  display: none;
 }
 #cameras label input[type="checkbox"] {
   width: auto;
@@ -583,4 +588,61 @@
 }
 #cameras .cbuttons button {
   padding: 0 4px;
+}
+
+/* The frames of a camera's move and the moment looked at, under its picture. */
+#cam-bar {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  padding: 6px;
+  background: var(--shade-95);
+  color: var(--text);
+  font-size: 12px;
+}
+#cam-bar [hidden] {
+  display: none;
+}
+#cam-bar button,
+#cam-bar input[type="number"] {
+  height: 24px;
+  padding: 0 6px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--panel);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+#cam-bar input[type="number"] {
+  width: 48px;
+}
+#cam-bar #cam-start,
+#cam-bar #cam-end {
+  width: 64px;
+  height: 36px;
+  background-position: center;
+  background-size: cover;
+  text-shadow:
+    0 0 3px #000,
+    0 0 3px #000;
+}
+#cam-bar .on {
+  border-color: var(--pen);
+  outline: 1px solid var(--pen);
+}
+#cam-scrub {
+  flex: 1;
+  min-width: 40px;
+}
+#cameras #cam-moves {
+  flex-wrap: wrap;
+}
+#cameras #cam-moves button {
+  flex: 1 0 20%;
+  text-align: center;
 }

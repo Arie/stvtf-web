@@ -1302,6 +1302,56 @@ test("a camera is placed on the map and an admin's click puts the room's relay t
   await page.close();
 });
 
+test("a camera is given a move, which is kept with it and set off from the list", async () => {
+  const { page, errors } = await open();
+  await page.goto(base);
+  await page.click("#roomopen");
+  await page.waitForURL(/\/r\/[0-9a-f]{32}\/$/, { timeout: WAIT });
+  await until(page, () => window.viewState?.framed);
+  await page.click("#settingstoggle");
+  await page.check('#settings input[data-layer="cameras"]');
+  await page.click("#settingstoggle");
+  await page.click('#cam-list button[data-id="new"]');
+  await until(page, () => document.getElementById("cam-shows").textContent !== "");
+  await page.fill("#cam-name", "Round");
+  // A quarter round what it looks at, in three seconds.
+  await page.click('#cam-moves button[data-move="orbit"][data-way="1"]');
+  await page.click('#cam-moves button[data-move="orbit"][data-way="1"]');
+  await page.fill("#cam-secs", "3");
+  await page.dispatchEvent("#cam-secs", "change");
+  if (process.env.SHOTS) await page.screenshot({ path: `${process.env.SHOTS}/camera-move.png` });
+  await page.click("#cam-save");
+  await until(page, () => document.querySelector("#cam-list button")?.textContent === "Round");
+  const kept = (await page.evaluate(map => fetch(`../../cameras/${map}`).then(r => r.json()), MAP)).cameras.at(-1);
+  assert.equal(kept.move.way, "arc");
+  assert.equal(kept.move.secs, 3);
+  assert.ok(Math.abs(kept.move.turn - Math.PI / 2) < 1e-6);
+  // Set off from the list: every moment of it, from its spot to its end.
+  const [asked] = await Promise.all([
+    page.waitForRequest(r => r.url().endsWith("/camera")),
+    page.click("#cam-list .crow:last-of-type button[data-play]"),
+  ]);
+  const sent = asked.postDataJSON();
+  assert.deepEqual([sent.pos, sent.aim], [kept.pos, kept.aim]);
+  assert.equal(sent.path.length, 91);
+  assert.deepEqual(sent.path[0], [0, ...kept.pos, ...kept.aim]);
+  assert.deepEqual(sent.path[90].slice(0, 4), [3, ...kept.move.end.pos]);
+  assert.equal((await asked.response())?.status(), 204);
+  // Placed again, it has its move still; told to stay, no more.
+  await page.click("#cam-list .crow:last-of-type button[data-id]");
+  assert.equal(await page.$eval("#cam-way", el => /** @type {HTMLSelectElement} */ (el).value), "arc");
+  await page.click("#cam-still");
+  await page.click("#cam-save");
+  await until(page, () => document.querySelector("#cam-list .crow:last-of-type button[data-play]") === null);
+  const still = (await page.evaluate(map => fetch(`../../cameras/${map}`).then(r => r.json()), MAP)).cameras.at(-1);
+  assert.equal(still.move, undefined);
+  await page.click("#cam-list .crow:last-of-type button[data-id]");
+  await page.click("#cam-remove");
+  await until(page, () => document.querySelector("#cam-list .crow") === null);
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
 test("an admin who is no streamer places a camera for the room alone", async () => {
   const { page, errors } = await open();
   await page.route("**/me", async r => {
