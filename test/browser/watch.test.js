@@ -1374,6 +1374,36 @@ test("a flight flown in the picture after a count is a camera's move", async () 
   const began = await page.evaluate(() =>
     ["cam-z", "cam-aim-z"].map(id => Number(/** @type {HTMLInputElement} */ (document.getElementById(id)).value)),
   );
+  const heights = () =>
+    page.evaluate(() =>
+      ["cam-z", "cam-aim-z"].map(id => Number(/** @type {HTMLInputElement} */ (document.getElementById(id)).value)),
+    );
+  // In a browser that does not let the picture hold the pointer, a click in it ends a flight all
+  // the same, and so does Esc.
+  await page.evaluate(() => {
+    window.lockOf = HTMLCanvasElement.prototype.requestPointerLock;
+    HTMLCanvasElement.prototype.requestPointerLock = () => Promise.reject(new Error("no"));
+  });
+  const view = await page.locator("#cam-view").boundingBox();
+  assert.ok(view);
+  for (const stop of [
+    () => page.mouse.click(view.x + view.width / 2, view.y + view.height / 3),
+    () => page.keyboard.press("Escape"),
+  ]) {
+    await page.click("#cam-rec");
+    await until(page, () => document.getElementById("cam-badge").classList.contains("rec"));
+    await page.focus("#cam-view");
+    await page.keyboard.down("w");
+    await page.waitForTimeout(900);
+    await page.keyboard.up("w");
+    await stop();
+    await until(page, () => document.getElementById("cam-badge").hidden);
+    assert.equal(await page.textContent("#cam-rec"), "● Record");
+    assert.deepEqual(await heights(), began);
+  }
+  await page.evaluate(() => {
+    HTMLCanvasElement.prototype.requestPointerLock = window.lockOf;
+  });
   // Counted down to, the picture holding the pointer; let go of (Esc) while it counts, it is off.
   await page.click("#cam-rec");
   await until(page, () => /^[123]$/.test(document.getElementById("cam-badge").textContent ?? ""));
@@ -1399,10 +1429,6 @@ test("a flight flown in the picture after a count is a camera's move", async () 
   assert.equal(await page.textContent("#cam-rec"), "● Record");
   assert.equal(await page.evaluate(() => document.pointerLockElement), null);
   // The click that ended it aimed at nothing, and End shows where it was flown to: the flight stays.
-  const heights = () =>
-    page.evaluate(() =>
-      ["cam-z", "cam-aim-z"].map(id => Number(/** @type {HTMLInputElement} */ (document.getElementById(id)).value)),
-    );
   assert.deepEqual(await heights(), began);
   await page.click("#cam-end");
   assert.equal(await page.$eval("#cam-scrub", el => /** @type {HTMLInputElement} */ (el).value), "1000");

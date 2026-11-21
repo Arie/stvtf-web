@@ -100,8 +100,9 @@ function keys(spot, changed, done) {
   view.addEventListener("blur", () => held.clear());
 }
 
-/** @param {() => Spot | null} spot @param {() => void} changed @param {() => void} done */
-export function flyTool(spot, changed, done) {
+// `tap` is asked of a click first: what it took is no aim.
+/** @param {() => Spot | null} spot @param {() => void} changed @param {() => void} done @param {() => boolean} tap */
+export function flyTool(spot, changed, done, tap) {
   const view = $("cam-view");
   /** @type {{ x: number; y: number; from: Spot; dragged: boolean } | null} */
   let press = null;
@@ -133,12 +134,15 @@ export function flyTool(spot, changed, done) {
     changed();
   });
   view.addEventListener("pointerup", e => {
-    const c = spot(),
-      hit = press && !press.dragged ? pointAt(e.offsetX / view.clientWidth, e.offsetY / view.clientHeight) : null;
-    const pressed = press !== null;
+    const [c, was] = [spot(), press];
     press = null;
-    if (!c || !pressed) return;
-    if (hit) c.aim = hit;
+    if (!c || !was) return;
+    // A click: taken for something else, or an aim at what is under it.
+    if (!was.dragged) {
+      if (tap()) return;
+      const hit = pointAt(e.offsetX / view.clientWidth, e.offsetY / view.clientHeight);
+      if (hit) c.aim = hit;
+    }
     changed();
     done();
   });
