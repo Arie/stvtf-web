@@ -33,8 +33,8 @@ const TIMEOUT: Duration = Duration::from_secs(5);
 const MAX_NAME: usize = 24;
 const MAX_ON_MAP: usize = 32;
 const MAX_MAPS: usize = 5000;
-/// A map's coordinates stay within this.
-const MAX_COORD: i32 = 32768;
+/// A map's coordinates stay within this: what the game sends an entity's place in.
+const MAX_COORD: i32 = 16383;
 /// The longest path (seconds), the most moments in one, and the furthest an arc turns (radians).
 const MAX_PATH_SECS: f32 = 120.0;
 const MAX_STEPS: usize = 2000;
@@ -43,6 +43,10 @@ const MAX_TURN: f32 = 8.0 * std::f32::consts::PI;
 static LAST_PATH: AtomicU64 = AtomicU64::new(0);
 /// The most moments a map's flights have together: they go to every page.
 const MAX_ROWS_ON_MAP: usize = 6000;
+/// And those of all maps together: a room's go to its pages at once, the site's to every region.
+const MAX_ROWS: usize = 60_000;
+/// The most of the home's answer that is read: all it keeps, at the most it may.
+const MAX_ANSWER: u64 = 64 << 20;
 
 /// Where a camera is and the spot it looks at.
 #[derive(Clone, Copy, Debug, PartialEq, Deserialize, Serialize)]
@@ -278,6 +282,11 @@ impl Kept {
         if others + rows(change.going.as_ref()) > MAX_ROWS_ON_MAP {
             bail!("Too many flights on this map.");
         }
+        let elsewhere: usize =
+            self.maps.iter().filter(|(name, _)| *name != map).flat_map(|(_, m)| &m.cameras).map(|c| rows(c.going.as_ref())).sum();
+        if elsewhere + others + rows(change.going.as_ref()) > MAX_ROWS {
+            bail!("Too many flights.");
+        }
         self.version += 1;
         let Some(on) = self.maps.get_mut(map) else { bail!("Invalid map.") };
         on.changed = self.version;
@@ -398,7 +407,8 @@ fn over_http(url: &str, key: &str) -> Home {
             if answer.status() == 204 {
                 return Ok(None);
             }
-            Ok(Some(serde_json::from_str(&answer.into_string()?)?))
+            // Not as a string: that is cut off at 10 MB.
+            Ok(Some(serde_json::from_reader(std::io::Read::take(answer.into_reader(), MAX_ANSWER))?))
         }),
         change: Box::new(move |map, change| {
             let ask = agent.post(&format!("{url}/cameras/{map}")).set("Authorization", &bearer).set("Content-Type", "application/json");
