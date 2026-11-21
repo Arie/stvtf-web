@@ -1,6 +1,6 @@
-// Steering the camera being placed from its picture: a drag looks round, a click aims at what is
-// under it, the wheel and WASD move it (Q down, E or Space up), Shift faster. With the pointer
-// held by the picture (a flight being flown) the mouse looks round as it moves, as in the game.
+// Steering the camera being placed from its picture: a drag looks round, a click aims, the wheel
+// and WASD move it (Q down, E or Space up), Shift faster. Held by the picture, the mouse looks
+// round as in the game.
 import { $ } from "../core/core.js";
 import { pointAt } from "./preview.js";
 /** @typedef {[number, number, number]} Vec3 */
@@ -57,8 +57,8 @@ function put(c, to) {
   c.aim = /** @type {Vec3} */ (to.aim.map(Math.round));
 }
 
-// The keys held move it every frame, the way it looks then: the mouse may turn it meanwhile. Where
-// it is is kept unrounded from frame to frame, unless something else moved it.
+// The keys held move it every frame, the way it looks then. Its place is kept unrounded between
+// frames, unless something else moved it.
 /** @param {() => Spot | null} spot @param {() => void} changed @param {() => void} done */
 function keys(spot, changed, done) {
   const view = $("cam-view"),

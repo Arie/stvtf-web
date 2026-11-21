@@ -59,8 +59,7 @@ pub(crate) struct ViewPost {
     pub(crate) page: String,
 }
 
-/// Where an admin puts the relay's camera: with neither, nowhere. With a `path`, it sets off
-/// along it from there.
+/// Where an admin puts the relay's camera (neither: nowhere), and the path it sets off on.
 #[derive(Debug, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct SpotPost {
@@ -202,8 +201,7 @@ impl Room {
         was
     }
 
-    /// Tells the pages where the relay's camera is, and whether it set off on a path from there:
-    /// it is then no longer at that spot.
+    /// Tells the pages where the relay's camera is, and whether it set off from there.
     fn tell_spot(&self, spot: Option<Spot>, moving: bool) {
         let line = match spot {
             Some(s) if moving => serde_json::json!({ "type": "camera", "pos": s.pos, "aim": s.aim, "moving": true }),

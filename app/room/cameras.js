@@ -301,7 +301,7 @@ function key(e) {
   // Esc ends a flight first, then the placing.
   if (e.key === "Escape") escaped() || edit(null);
   else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") undo();
-  // R: a flight begun, or ended (a browser inside the game keeps Esc and the clicks to itself).
+  // R: a flight begun or ended.
   else if (e.key.toLowerCase() === "r" && !e.ctrlKey && !e.metaKey && !e.altKey) recKey();
   else if (e.key.startsWith("Arrow")) nudge(e);
   else return;

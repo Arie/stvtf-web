@@ -1,6 +1,5 @@
-// Composing the move of the camera being placed: a start and an end frame under its picture, the
-// way between and how long, shortcuts that set the end frame, or a flight flown. Saved, a move is kept
-// with its camera.
+// Composing the move of the camera being placed: a start and an end frame, the way between and how
+// long, or a flight flown. Saved, it is kept with its camera.
 import { $, ctx, uiScale } from "../core/core.js";
 import { toScreen } from "../map/view.js";
 import { ORBIT, at, flight, orbited, rowsOf, turnTo } from "./moves.js";
@@ -12,8 +11,8 @@ import { note } from "./tools.js";
 /** @typedef {{ name: string; pos: Spot["pos"]; aim: Spot["aim"]; room?: boolean; move?: Move }} Camera */
 /** @typedef {{ camera: () => Camera | null; changed: () => void; done: () => void; panel: () => void; sight: () => import("./sight.js").Grid | null; send: (body: object) => Promise<Response> }} Host */
 
-// Seconds a new move takes and one played stays at its end, how evened out a flight starts, the
-// track's pieces, and how often the frames' pictures are taken again, in ms.
+// Seconds a new move takes and one played holds at its end, a flight's first evening out, the
+// track's pieces, and ms between the frames' pictures.
 const SECS = 8,
   HOLD = 1,
   EVEN = 0.25,
@@ -26,8 +25,8 @@ const COLOUR = { track: "#ffd23f", now: "#7cff8a", bad: "#ff6b5a" };
 
 /** @type {Host} */
 let host;
-// The frame the map and the picture place, the move playing since, the moment looked at, a flight
-// being flown, and whether the frames' pictures are behind.
+// The frame being placed, the move playing since, the moment looked at, a flight being flown, and
+// whether the frames' pictures are behind.
 /** @type {"start" | "end"} */
 let frame = "start";
 /** @type {number | null} */
@@ -63,8 +62,7 @@ export function moved(c) {
   stale = true;
 }
 
-// What the picture shows now: the move as it plays or at the moment looked at, else the frame
-// being placed. A flight being flown is kept, the frames' pictures taken when behind.
+// What the picture shows: the move playing or looked at, else the frame being placed.
 /** @param {Camera} c @returns {Spot} */
 export function shown(c) {
   const now = performance.now(),
@@ -94,8 +92,7 @@ function thumbs(c, now) {
   [stale, taken] = [false, now];
 }
 
-// The move on the map: being placed, red where the camera would show nothing, and a dot where it
-// is; else (no `now`) its way alone.
+// The move on the map. Being placed (`now`): red where it would show nothing, a dot where it is.
 /** @param {Pick<Camera, "pos" | "aim" | "move">} c @param {Spot} [now] */
 export function drawTrack(c, now) {
   const move = c.move,
@@ -153,8 +150,7 @@ function framed(c) {
     c.move = { end: { pos: [...c.pos], aim: [...c.aim] }, secs: c.move?.secs ?? SECS, way: "straight", turn: 0 };
   return c.move;
 }
-// Record: the picture takes hold of the pointer and counts down, then the flight flown is kept
-// until the button again, a click, Esc or a minute. Pressed while it counts, it is off.
+// Record: a count, then the flight flown is kept until it is ended, or a minute.
 /** @param {Camera} c */
 function record(c) {
   if (flying) return landed(c);
@@ -185,8 +181,7 @@ function grounded() {
   if (document.pointerLockElement) document.exitPointerLock();
   $("cam-badge").hidden = true;
 }
-// The count before a flight, then its length so far, over the picture; the flight begins when the
-// count is out and ends by itself at the longest.
+// The count before a flight, then its length, over the picture.
 /** @param {Camera} c @param {number} now */
 function badge(c, now) {
   const el = $("cam-badge"),
@@ -207,7 +202,7 @@ function badge(c, now) {
     host.panel();
   }
 }
-// The end frame, to place; a flight's is where it was flown to, looked at and not placed.
+// The end frame, to place; a flight's is only looked at.
 /** @param {Camera} c */
 function toEnd(c) {
   if (c.move?.path) {
@@ -238,8 +233,7 @@ const on = (does, plays) => (/** @type {Event} */ e) => {
   stale = true;
   host.panel();
 };
-// The relay's camera along the move, each moment of it a row (seconds in, where it is, what it
-// looks at); it plays here too.
+// Sets the relay's camera off on the move; it plays here too.
 /** @param {Camera} c */
 function run(c) {
   host.send({ pos: c.pos.map(Math.round), aim: c.aim.map(Math.round), path: rowsOf(c, c.move) }).then(
@@ -247,7 +241,7 @@ function run(c) {
     () => note("No relay"),
   );
 }
-// A flight being flown ends, or the count before one that lost the pointer; whether either was.
+// Ends a flight, or a count that lost the pointer. Whether it did.
 function ended() {
   const c = host.camera();
   if (c && flying) landed(c);
@@ -256,7 +250,7 @@ function ended() {
   host.panel();
   return true;
 }
-// Esc: a flight being flown ends, the count before one is off. Whether it was for either.
+// Esc ends a flight or its count. Whether it did.
 export function escaped() {
   if (flying) return ended();
   if (counting === null) return false;

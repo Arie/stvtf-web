@@ -35,14 +35,13 @@ const MAX_ON_MAP: usize = 32;
 const MAX_MAPS: usize = 5000;
 /// A map's coordinates stay within this.
 const MAX_COORD: i32 = 32768;
-/// The longest a camera's path takes (seconds), the most moments one has, and the furthest an arc
-/// turns (radians: four times round).
+/// The longest path (seconds), the most moments in one, and the furthest an arc turns (radians).
 const MAX_PATH_SECS: f32 = 120.0;
 const MAX_STEPS: usize = 2000;
 const MAX_TURN: f32 = 8.0 * std::f32::consts::PI;
 /// The id of the last path set off.
 static LAST_PATH: AtomicU64 = AtomicU64::new(0);
-/// The most moments the flights of one map's cameras have together: all of them go to every page.
+/// The most moments a map's flights have together: they go to every page.
 const MAX_ROWS_ON_MAP: usize = 6000;
 
 /// Where a camera is and the spot it looks at.
@@ -103,8 +102,7 @@ pub(crate) struct Camera {
     going: Option<Move>,
 }
 
-/// A camera's move, as a page composed it: to an end frame over some seconds, straight or in an
-/// arc round what it looks at, or along a flight recorded. The pages work out its moments.
+/// A camera's move as a page composed it; the pages work out its moments.
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Move {

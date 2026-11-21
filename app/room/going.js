@@ -1,4 +1,4 @@
-// The moves of the cameras listed: on the map, and the relay's camera set off on one from here.
+// The listed cameras' moves: on the map, and set off from here.
 import { $, ctx, uiScale } from "../core/core.js";
 import { toScreen } from "../map/view.js";
 import { drawTrack } from "./compose.js";
@@ -10,8 +10,7 @@ import { note } from "./tools.js";
 
 const MARK_PX = 9,
   NOW = "#7cff8a";
-// The one whose move the relay's camera was set off on from here, and since when the room has it
-// (not yet: asked).
+// The one set off from here, and since when the room has it (not yet: asked).
 /** @type {{ key: string; secs: number; from: number | null; changed: () => void } | null} */
 let off = null;
 export const offKey = () => off?.key ?? null;
@@ -48,8 +47,7 @@ function endMark(end, colour) {
   ctx.restore();
 }
 
-// How far into the move set off from here the relay's camera is, its ▶ in the list saying so:
-// the seconds left, filling up. None once it is there.
+// How far into the move set off from here it is, its ▶ counting down. None once there.
 function offNow() {
   if (!off || off.from === null) return null;
   const t = (performance.now() - off.from) / 1000,
@@ -66,8 +64,7 @@ function offNow() {
   return t;
 }
 
-// A listed camera's move on the map: its way, its end, and where it is on it when set off from
-// here.
+// A listed camera's move on the map: its way, its end, and where it is when set off from here.
 /** @param {Listed} c @param {string} key @param {string} colour */
 export function drawGoing(c, key, colour) {
   const move = goingOf(c);
@@ -86,8 +83,7 @@ export function drawGoing(c, key, colour) {
   ctx.restore();
 }
 
-// Sets the relay's camera off on a listed camera's move: its ▶ waits for the room to take it,
-// then counts the move down. `changed` when the list is to be drawn anew.
+// Sets the relay's camera off on a listed camera's move; its ▶ waits, then counts down.
 /** @param {Listed} c @param {string} key @param {(body: object) => Promise<Response>} send @param {() => void} changed */
 export async function setOff(c, key, send, changed) {
   const move = goingOf(c);

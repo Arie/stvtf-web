@@ -1,5 +1,5 @@
-// A camera's move: from its spot to an end frame over some seconds, straight or in an arc round
-// what it looks at; or a flight recorded from the picture. Kept with the camera (`toKept`).
+// A camera's move: to an end frame over some seconds, straight or in an arc round what it looks at,
+// or a flight recorded. Kept with the camera (`toKept`).
 /** @typedef {[number, number, number]} Vec3 */
 /** @typedef {{ pos: Vec3; aim: Vec3 }} Spot */
 /** @typedef {{ t: number; pos: Vec3; aim: Vec3 }} Sample */
@@ -15,8 +15,7 @@
  * @property {number} [even]
  */
 
-// A move as the site keeps it: a flight's moments as rows (seconds in, where it is, what it looks
-// at), and not as it was flown.
+// A move as the site keeps it: a flight's moments as rows, not as it was flown.
 /** @typedef {Omit<Move, "path" | "raw"> & { path?: number[][] }} Kept */
 const tenth = (/** @type {number} */ v) => Math.round(v * 10) / 10;
 /** @param {Move} move @returns {Kept} */
@@ -40,8 +39,8 @@ export function fromKept(kept) {
   };
 }
 
-// A camera's way along its move as the relay takes it: each moment a row, the seconds in, where
-// it is and what it looks at. With no move, where it stays.
+// A move as the relay takes it: a row a moment (seconds in, where it is, what it looks at). With
+// no move, where it stays.
 /** @param {Spot} from @param {Move} [move] */
 export function rowsOf(from, move) {
   const n = move ? Math.ceil(move.secs * RATE) : 0,
@@ -92,7 +91,7 @@ function along(path, t) {
 /** @param {Spot} from @param {Move} move @param {number} t @returns {Spot} */
 export function at(from, move, t) {
   const u = within(t / move.secs);
-  // A flight goes from where the camera is: moved since it was flown, all of it moved along.
+  // A flight goes from where the camera is now.
   if (move.path) {
     const on = along(move.path, u * (move.took ?? move.secs)),
       [first] = move.path,
@@ -112,8 +111,7 @@ export function at(from, move, t) {
   };
 }
 
-// An end frame an eighth of a turn on round what it looks at from `end`, one way (1) or the
-// other (-1).
+// `end` an eighth of a turn on round what it looks at, one way (1) or the other (-1).
 /** @param {Spot} end @param {number} way @returns {Spot} */
 export function orbited(end, way) {
   const { pos, aim } = copy(end),
@@ -122,8 +120,7 @@ export function orbited(end, way) {
   return { pos: [aim[0] + d[0] * cos - d[1] * sin, aim[1] + d[0] * sin + d[1] * cos, pos[2]], aim };
 }
 
-// What was flown, as a flight: at an even pace, a hand's unsteadiness evened out over `even`
-// seconds round each moment.
+// What was flown, as a flight: at an even pace, evened out over `even` seconds.
 /** @param {Sample[]} raw @param {number} even @param {number} [secs] @returns {Move | null} */
 export function flight(raw, even, secs) {
   const took = raw.length ? raw[raw.length - 1].t : 0;

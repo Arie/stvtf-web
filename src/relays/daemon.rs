@@ -87,8 +87,7 @@ pub(crate) struct WantLine {
     /// The path it is on instead.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     path: Option<PathLine>,
-    /// The spot it is at instead, as a stv.tf from before paths says it: where, its pitch and
-    /// its yaw.
+    /// The spot it is at instead, from a stv.tf of before paths: where, pitch, yaw.
     #[serde(default, skip_serializing)]
     fixed: Option<([i32; 3], i16, i16)>,
 }
@@ -114,8 +113,7 @@ impl PathLine {
     }
 }
 
-/// A spot as a stv.tf from before paths says it, as a path of that one moment: another spot is
-/// another path.
+/// A spot from a stv.tf of before paths, as a path: each spot its own.
 fn still(pos: [i32; 3], pitch: i16, yaw: i16) -> CameraPath {
     use std::hash::{Hash, Hasher};
     let mut hash = std::collections::hash_map::DefaultHasher::new();
@@ -941,8 +939,7 @@ mod tests {
     use crate::relays::pool::tests::want;
     use crate::testing::{TempDir, free_port};
 
-    /// A camera's path goes to the relay process as it is, as old as it is; a spot as a stv.tf
-    /// from before paths says it is a path of its own, another spot another.
+    /// A path reaches the relay process as it is; an old stv.tf's spot is one too.
     #[test]
     fn a_cameras_path_goes_to_the_relay_process_and_an_old_spot_is_one_too() {
         let step = |secs, x| Step { secs, pos: [x, 0.0, 900.0], aim: [0.0, 0.0, 300.0] };
