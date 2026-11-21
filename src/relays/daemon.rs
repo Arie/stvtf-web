@@ -114,12 +114,17 @@ impl PathLine {
     }
 }
 
-/// A spot as a stv.tf from before paths says it, as a path of that one moment.
+/// A spot as a stv.tf from before paths says it, as a path of that one moment: another spot is
+/// another path.
 fn still(pos: [i32; 3], pitch: i16, yaw: i16) -> CameraPath {
+    use std::hash::{Hash, Hasher};
+    let mut hash = std::collections::hash_map::DefaultHasher::new();
+    (pos, pitch, yaw).hash(&mut hash);
+    let id = hash.finish();
     let (pitch, yaw) = (f32::from(pitch).to_radians(), f32::from(yaw).to_radians());
     let pos = pos.map(|v| v as f32);
     let aim = [pos[0] + 1000.0 * pitch.cos() * yaw.cos(), pos[1] + 1000.0 * pitch.cos() * yaw.sin(), pos[2] - 1000.0 * pitch.sin()];
-    CameraPath { id: 0, began: Instant::now(), steps: vec![Step { secs: 0.0, pos, aim }] }
+    CameraPath { id, began: Instant::now(), steps: vec![Step { secs: 0.0, pos, aim }] }
 }
 
 impl WantLine {
@@ -935,6 +940,30 @@ mod tests {
     use super::*;
     use crate::relays::pool::tests::want;
     use crate::testing::{TempDir, free_port};
+
+    /// A camera's path goes to the relay process as it is, as old as it is; a spot as a stv.tf
+    /// from before paths says it is a path of its own, another spot another.
+    #[test]
+    fn a_cameras_path_goes_to_the_relay_process_and_an_old_spot_is_one_too() {
+        let step = |secs, x| Step { secs, pos: [x, 0.0, 900.0], aim: [0.0, 0.0, 300.0] };
+        let began = Instant::now().checked_sub(Duration::from_secs(2)).unwrap();
+        let path = Arc::new(CameraPath { id: 7, began, steps: vec![step(0.0, 900.0), step(4.0, 0.5)] });
+        let sent = serde_json::to_string(&WantLine::of(&Want { camera: Some(Camera::Along(path.clone())), ..want() })).unwrap();
+        let Some(Camera::Along(got)) = serde_json::from_str::<WantLine>(&sent).unwrap().want().camera else { panic!() };
+        assert_eq!((got.id, &got.steps), (7, &path.steps));
+        let age = got.began.elapsed();
+        assert!(age >= Duration::from_secs(2) && age < Duration::from_secs(3), "{age:?}");
+        // As a stv.tf from before paths says a spot: where, pitch and yaw.
+        let old = |fixed: &str| {
+            let line = sent.split_once(r#","path""#).unwrap().0.to_string() + &format!(r#","fixed":{fixed}}}"#);
+            let Some(Camera::Along(got)) = serde_json::from_str::<WantLine>(&line).unwrap().want().camera else { panic!() };
+            got
+        };
+        let (down, again, other) = (old("[[0,0,1500],90,0]"), old("[[0,0,1500],90,0]"), old("[[10,0,1500],90,0]"));
+        assert_eq!((down.steps.len(), down.steps[0].pos), (1, [0.0, 0.0, 1500.0]));
+        assert!((down.steps[0].aim[2] - 500.0).abs() < 0.01, "{:?}", down.steps[0].aim);
+        assert!(down.id == again.id && down.id != other.id);
+    }
 
     /// A request asked while answering one of stv.tf's goes in its trace.
     #[test]
