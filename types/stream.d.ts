@@ -218,7 +218,13 @@ export type CircleLine = { type: "circle"; by: number; stroke: number; ink: stri
 export type LightLine = { type: "light"; by: number; stroke: number; ink: string; at: [number, number, number] };
 
 /** Where an admin put the relay's camera and the spot it looks at; with neither, back with the director. */
-export type CameraLine = { type: "camera"; pos?: [number, number, number]; aim?: [number, number, number] };
+export type CameraLine = {
+  type: "camera";
+  pos?: [number, number, number];
+  aim?: [number, number, number];
+  /** It set off on a move from there. */
+  moving?: boolean;
+};
 /** The room's own cameras, by map. */
 export type CamerasLine = {
   type: "cameras";

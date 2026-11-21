@@ -1344,6 +1344,14 @@ test("a camera is given a move, which is kept with it and set off from the list"
   if (process.env.SHOTS) await page.screenshot({ path: `${process.env.SHOTS}/camera-playing.png` });
   await until(page, sel => document.querySelector(sel)?.textContent === "▶", play);
   assert.ok(!(await page.$eval(play, el => el.classList.contains("on"))));
+  // Off on its move it is no longer at its spot: its name puts it back there, and again gives it up.
+  const name = "#cam-list .crow:last-of-type button[data-go]";
+  const [back] = await Promise.all([page.waitForRequest(r => r.url().endsWith("/camera")), page.click(name)]);
+  assert.deepEqual(back.postDataJSON(), { pos: kept.pos, aim: kept.aim });
+  await back.response();
+  await page.waitForTimeout(200);
+  const [off] = await Promise.all([page.waitForRequest(r => r.url().endsWith("/camera")), page.click(name)]);
+  assert.equal(off.postData(), "{}");
   // Placed again, it has its move still; told to stay, no more.
   await page.click("#cam-list .crow:last-of-type button[data-id]");
   assert.equal(await page.$eval("#cam-way", el => /** @type {HTMLSelectElement} */ (el).value), "arc");

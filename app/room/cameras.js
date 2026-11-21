@@ -53,7 +53,8 @@ let known = null;
 let own = {};
 // The map asked about, and as whom: its answer may come late.
 let asked = "";
-/** @type {{ pos?: Vec3; aim?: Vec3 }} */
+// Where the relay's camera is, and whether it set off on a move from there.
+/** @type {{ pos?: Vec3; aim?: Vec3; moving?: boolean }} */
 let active = {};
 /** @type {Camera | null} */
 let editing = null;
@@ -71,7 +72,7 @@ let sight = null;
 let look = null;
 /** @param {import("../../types/stream").CameraLine} m */
 export function onCamera(m) {
-  active = { pos: m.pos, aim: m.aim };
+  active = { pos: m.pos, aim: m.aim, moving: m.moving };
   if (!editing) panel();
 }
 /** @param {import("../../types/stream").CamerasLine} m */
@@ -296,7 +297,7 @@ function nudge(e) {
 // The keys of placing one, before the page's own.
 /** @param {KeyboardEvent} e */
 function key(e) {
-  if (!editing || e.target instanceof HTMLInputElement) return;
+  if (!editing || e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement) return;
   // Esc ends a flight first, then the placing.
   if (e.key === "Escape") escaped() || edit(null);
   else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") undo();
@@ -398,7 +399,8 @@ function wirePanel() {
 // Puts the relay at a camera (again, or none: back).
 /** @param {Camera | Listed | null} c */
 function put(c) {
-  post("camera", !c || isActive(c) ? {} : { pos: c.pos, aim: c.aim }, HOME).then(
+  // Off on its move, it is no longer there: its name puts it back.
+  post("camera", !c || (isActive(c) && !active.moving) ? {} : { pos: c.pos, aim: c.aim }, HOME).then(
     async r => r.ok || note(await r.text()),
   );
 }

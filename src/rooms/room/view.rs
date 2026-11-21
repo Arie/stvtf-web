@@ -161,10 +161,12 @@ impl Room {
         if post.path.is_none() && shot.as_ref().map(stays) == at.map(|s| (s, true)) {
             return Ok(());
         }
+        let moving = |s: &Shot| s.path.steps.len() > 1;
+        let told = (at, now.as_ref().is_some_and(moving));
         let was = std::mem::replace(&mut *shot, now);
         drop(shot);
-        if was.map(|s| s.spot) != at {
-            self.tell_spot(at);
+        if was.map(|s| (Some(s.spot), moving(&s))) != Some(told) {
+            self.tell_spot(told.0, told.1);
         }
         self.steer_relay(&lock(&self.state));
         Ok(())
@@ -195,13 +197,16 @@ impl Room {
     pub(super) fn leave_spot(&self) -> bool {
         let was = lock(&self.spot).take().is_some();
         if was {
-            self.tell_spot(None);
+            self.tell_spot(None, false);
         }
         was
     }
 
-    fn tell_spot(&self, spot: Option<Spot>) {
+    /// Tells the pages where the relay's camera is, and whether it set off on a path from there:
+    /// it is then no longer at that spot.
+    fn tell_spot(&self, spot: Option<Spot>, moving: bool) {
         let line = match spot {
+            Some(s) if moving => serde_json::json!({ "type": "camera", "pos": s.pos, "aim": s.aim, "moving": true }),
             Some(s) => serde_json::json!({ "type": "camera", "pos": s.pos, "aim": s.aim }),
             None => serde_json::json!({ "type": "camera" }),
         };

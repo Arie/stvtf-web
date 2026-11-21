@@ -417,21 +417,25 @@ fn the_relays_camera_is_at_the_spot_an_admin_put_it_until_a_player_is_followed()
     r.set_view(&ViewPost { view: View::Follow { player: 4, w: Some(3000.0), h: Some(2000.0) }, take: false, page: "a".into() }, "me")
         .unwrap();
     assert_eq!(r.relay_camera(), Some(Camera::Along(still)));
+    let told = |r: &Room| subscribe(&r.hub, false).try_iter().find(|l| l.contains(r#""type":"camera""#)).unwrap();
+    assert_eq!(&*told(&r), r#"{"aim":[0,0,400],"pos":[0,0,1500],"type":"camera"}"#);
     // A path sets it off, and the same again does anew.
     let rows = vec![[0.0, 0.0, 0.0, 1500.0, 0.0, 0.0, 400.0], [4.0, 500.0, 0.0, 1500.0, 0.0, 0.0, 400.0]];
     let along = SpotPost { path: Some(rows), ..at };
     r.set_spot(&along).unwrap();
     let Some(Camera::Along(first)) = r.relay_camera() else { panic!() };
     assert_eq!(first.steps.len(), 2);
+    // Off from its spot: the pages are told, and again when it is put back there.
+    assert_eq!(&*told(&r), r#"{"aim":[0,0,400],"moving":true,"pos":[0,0,1500],"type":"camera"}"#);
     std::thread::sleep(Duration::from_millis(2));
     r.set_spot(&along).unwrap();
     let Some(Camera::Along(again)) = r.relay_camera() else { panic!() };
     assert!(again.id != first.id && again.steps == first.steps);
+    r.set_spot(&at).unwrap();
+    assert_eq!(&*told(&r), r#"{"aim":[0,0,400],"pos":[0,0,1500],"type":"camera"}"#);
     r.set_view(&follow(5), "me").unwrap();
     assert_eq!(r.relay_camera(), Some(Camera::Follow { player: 5 }));
-    // Told once for the spot, however often it set off from it.
-    let told: Vec<_> = subscribe(&r.hub, false).try_iter().filter(|l| l.contains(r#""type":"camera""#)).collect();
-    assert_eq!(&*told[0], r#"{"type":"camera"}"#);
+    assert_eq!(&*told(&r), r#"{"type":"camera"}"#);
     assert!(r.set_spot(&SpotPost { pos: Some([0, 0, 99_999]), aim: Some([0, 0, 400]), path: None }).is_err());
     assert!(r.set_spot(&SpotPost { path: Some(Vec::new()), ..SpotPost::default() }).is_err());
     assert!(r.set_spot(&SpotPost::default()).is_ok() && !r.leave_spot());
