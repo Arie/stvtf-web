@@ -22,7 +22,7 @@ import {
   spotOf,
 } from "./compose.js";
 import { drawGoing, offKey, setOff } from "./going.js";
-import { fromKept, toKept } from "./moves.js";
+import { fromKept, startOf, toKept } from "./moves.js";
 import { preview } from "./preview.js";
 import { blind, floorUnder, loadSight, showsOf } from "./sight.js";
 import { note, worldAt } from "./tools.js";
@@ -89,7 +89,7 @@ const keyOf = (/** @type {Camera | Listed} */ c) => `${c.room ? "r" : ""}${c.id}
 
 const same = (/** @type {Vec3 | undefined} */ a, /** @type {Vec3 | undefined} */ b) =>
   a !== undefined && b !== undefined && a.every((v, i) => v === b[i]);
-const isActive = (/** @type {{ pos: Vec3; aim: Vec3 }} */ c) => same(c.pos, active.pos) && same(c.aim, active.aim);
+const isActive = (/** @type {Camera | Listed} */ c) => same(c.pos, active.pos) && same(startOf(c).aim, active.aim);
 // The relay is where no camera known here is: at one taken away, or one of the map's unseen.
 const elsewhere = () => active.pos !== undefined && !ofMap().some(isActive);
 // Marked for the site's streamers: to others it may be one of the map's.
@@ -400,7 +400,7 @@ function wirePanel() {
 /** @param {Camera | Listed | null} c */
 function put(c) {
   // Off on its move, it is no longer there: its name puts it back.
-  post("camera", !c || (isActive(c) && !active.moving) ? {} : { pos: c.pos, aim: c.aim }, HOME).then(
+  post("camera", !c || (isActive(c) && !active.moving) ? {} : startOf(c), HOME).then(
     async r => r.ok || note(await r.text()),
   );
 }

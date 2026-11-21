@@ -2,7 +2,7 @@
 import { $, ctx, uiScale } from "../core/core.js";
 import { toScreen } from "../map/view.js";
 import { drawTrack } from "./compose.js";
-import { at, fromKept, rowsOf } from "./moves.js";
+import { at, fromKept, rowsOf, startOf } from "./moves.js";
 import { note } from "./tools.js";
 /** @typedef {[number, number, number]} Vec3 */
 /** @typedef {import("./moves.js").Move} Move */
@@ -92,7 +92,7 @@ export async function setOff(c, key, send, changed) {
   const mine = { key, secs: move.secs, from: null, changed };
   off = mine;
   changed();
-  const r = await send({ pos: c.pos, aim: c.aim, path: rowsOf(c, move) }).catch(() => null);
+  const r = await send({ ...startOf(c), path: rowsOf(c, move) }).catch(() => null);
   if (off !== mine) return;
   if (r?.ok) mine.from = performance.now();
   else {

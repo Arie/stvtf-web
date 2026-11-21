@@ -1,3 +1,13 @@
+// Where a camera begins: its spot, a flight's looking as the flight was flown (not as the camera
+// was turned since). For one as listed (its flight in rows) or as placed.
+/** @param {Spot & { move?: { path?: (Sample | number[])[] } }} c @returns {Spot} */
+export function startOf(c) {
+  const first = c.move?.path?.[0];
+  if (!first) return { pos: c.pos, aim: c.aim };
+  const [pos, aim] = Array.isArray(first) ? [first.slice(1, 4), first.slice(4, 7)] : [first.pos, first.aim];
+  return { pos: c.pos, aim: /** @type {Vec3} */ (aim.map((v, i) => Math.round(v + c.pos[i] - pos[i]))) };
+}
+
 // A camera's move: to an end frame over some seconds, straight or in an arc round what it looks at,
 // or a flight recorded. Kept with the camera (`toKept`).
 /** @typedef {[number, number, number]} Vec3 */
@@ -91,13 +101,12 @@ function along(path, t) {
 /** @param {Spot} from @param {Move} move @param {number} t @returns {Spot} */
 export function at(from, move, t) {
   const u = within(t / move.secs);
-  // A flight goes from where the camera is now.
+  // A flight goes from where the camera is now, looking as it was flown.
   if (move.path) {
     const on = along(move.path, u * (move.took ?? move.secs)),
       [first] = move.path,
-      by = (/** @type {"pos" | "aim"} */ part) =>
-        /** @type {Vec3} */ (on[part].map((v, i) => v + from[part][i] - first[part][i]));
-    return { pos: by("pos"), aim: by("aim") };
+      by = (/** @type {Vec3} */ v) => /** @type {Vec3} */ (v.map((x, i) => x + from.pos[i] - first.pos[i]));
+    return { pos: by(on.pos), aim: by(on.aim) };
   }
   const s = u * u * (3 - 2 * u),
     aim = mix(from.aim, move.end.aim, s);

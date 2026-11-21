@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { at, flight, fromKept, orbited, rowsOf, toKept, turnTo } from "../../app/room/moves.js";
+import { at, flight, fromKept, orbited, rowsOf, startOf, toKept, turnTo } from "../../app/room/moves.js";
 
 /** @type {import("../../app/room/moves.js").Spot} */
 const from = { pos: [900, 0, 900], aim: [0, 0, 300] };
@@ -55,7 +55,7 @@ test("a flight is kept as its moments and comes back as it was", () => {
   assert.equal(flight(raw.slice(0, 5), 0.25), null, "too short to be one");
 });
 
-test("a flight goes from where its camera is, moved since it was flown", () => {
+test("a flight goes from where its camera is, looking as it was flown", () => {
   const raw = Array.from({ length: 40 }, (_, i) => ({
     t: i / 20,
     pos: /** @type {[number, number, number]} */ ([i * 10, 0, 900]),
@@ -63,12 +63,30 @@ test("a flight goes from where its camera is, moved since it was flown", () => {
   }));
   const flown = flight(raw, 0.25);
   assert.ok(flown?.path);
+  // Moved by (100, 200, 50), and turned to stare up since: the turn counts for nothing.
   /** @type {import("../../app/room/moves.js").Spot} */
-  const moved = { pos: [100, 200, 950], aim: [100, 700, 350] };
-  const near = (/** @type {number[]} */ a, /** @type {number[]} */ b) => a.every((v, i) => Math.abs(v - b[i]) < 1e-6);
-  const begins = at(moved, flown, 0);
-  assert.ok(near(begins.pos, moved.pos) && near(begins.aim, moved.aim), "it begins where the camera is");
-  const [there, here] = [at({ pos: raw[0].pos, aim: raw[0].aim }, flown, 1), at(moved, flown, 1)];
-  assert.ok(Math.abs(here.pos[1] - there.pos[1] - 200) < 1e-6 && Math.abs(here.aim[2] - there.aim[2] - 50) < 1e-6);
-  assert.deepEqual(rowsOf(moved, flown)[0], [0, 100, 200, 950, 100, 700, 350]);
+  const moved = { pos: [100, 200, 950], aim: [100, 200, 5000] };
+  const near = (/** @type {number[]} */ a, /** @type {number[]} */ b) => a.every((v, i) => Math.abs(v - b[i]) < 1);
+  const [first] = flown.path,
+    looks = first.aim.map((v, i) => v + moved.pos[i] - first.pos[i]),
+    begins = at(moved, flown, 0);
+  assert.ok(near(begins.pos, moved.pos) && near(begins.aim, looks), JSON.stringify(begins));
+  assert.ok(Math.abs(looks[2] - 350) < 1, "not up where the camera was turned to");
+  const [there, here] = [at(first, flown, 1), at(moved, flown, 1)],
+    by = moved.pos.map((v, i) => v - first.pos[i]);
+  assert.ok(
+    near(
+      here.pos,
+      there.pos.map((v, i) => v + by[i]),
+    ) &&
+      near(
+        here.aim,
+        there.aim.map((v, i) => v + by[i]),
+      ),
+  );
+  // Its start, placed or as listed (its flight in rows), is where it looks then.
+  assert.ok(near(startOf({ ...moved, move: flown }).aim, looks));
+  assert.ok(near(startOf({ ...moved, move: toKept(flown) }).aim, looks));
+  assert.deepEqual(startOf(moved), moved);
+  assert.ok(near(rowsOf(moved, flown)[0], [0, ...moved.pos, ...looks]));
 });

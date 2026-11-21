@@ -2,7 +2,7 @@
 // long, or a flight flown. Saved, it is kept with its camera.
 import { $, ctx, uiScale } from "../core/core.js";
 import { toScreen } from "../map/view.js";
-import { ORBIT, at, flight, orbited, rowsOf, turnTo } from "./moves.js";
+import { ORBIT, at, flight, orbited, rowsOf, startOf, turnTo } from "./moves.js";
 import { snapshot } from "./preview.js";
 import { blind } from "./sight.js";
 import { note } from "./tools.js";
@@ -58,6 +58,8 @@ export function begun() {
 /** @param {Camera} c */
 export function moved(c) {
   if (c.move && !c.move.path) c.move.turn = turnTo(c, c.move.end, c.move.turn);
+  // A flight looks as it was flown: its start is moved, not turned.
+  if (c.move?.path && !flying) c.aim = startOf(c).aim;
   if (!flying) [playing, scrub] = [null, null];
   stale = true;
 }
@@ -236,7 +238,8 @@ const on = (does, plays) => (/** @type {Event} */ e) => {
 // Sets the relay's camera off on the move; it plays here too.
 /** @param {Camera} c */
 function run(c) {
-  host.send({ pos: c.pos.map(Math.round), aim: c.aim.map(Math.round), path: rowsOf(c, c.move) }).then(
+  const from = startOf(c);
+  host.send({ pos: from.pos.map(Math.round), aim: from.aim.map(Math.round), path: rowsOf(c, c.move) }).then(
     async r => r.ok || note(await r.text()),
     () => note("No relay"),
   );
