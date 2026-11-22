@@ -256,6 +256,8 @@ function joinMumble() {
       if (!r.ok) return void r.text().then(why => refuse(why || "Refused"));
       view.screen = "home";
       view.editing = null;
+      // Drawn now: the poll draws only on a change, and may have seen this one already.
+      redraw();
       pollComms();
     },
     () => refuse("No answer"),

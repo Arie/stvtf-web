@@ -865,6 +865,8 @@ test("comms for Mumble: a channel is joined, moved and left, and what will not d
   assert.equal(await page.inputValue(field("channel")), "Team A");
   await page.fill(field("channel"), "Team B");
   site.comms = { discord: null, mumble: [{ ...inTeamA, channel: "Team B", status: "In Team B" }] };
+  // The bot is there before the page is told so: the page's own asking has seen it by then.
+  await page.waitForTimeout(1300);
   await page.click('#voicelist [data-action="join"]');
   assert.deepEqual(await sent("voice-mumble", 3), {
     id: 1,
