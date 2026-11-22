@@ -40,7 +40,7 @@ fn cameras_are_kept_by_map_and_a_new_version_of_a_map_starts_with_the_last_ones(
     assert_eq!(names(&c, "cp_gullywash_f9"), ("cp_gullywash_f9".into(), vec!["Mid".into(), "Camera 2".into()]));
     assert_eq!(names(&c, "cp_gullywash_final1").0, "cp_gullywash_f9", "the same map by another name");
     assert_eq!(names(&c, "cp_snakewater_final1"), ("cp_snakewater_final1".into(), vec![]));
-    // Changed there: its own from then on, the older version's as they were.
+    // Once changed there, the map has its own; those of the older version stay as they were.
     let mid = c.on("cp_gullywash_final1")["cameras"][0]["id"].as_u64().unwrap() as u32;
     c.change(
         "cp_gullywash_final1",
@@ -121,7 +121,7 @@ fn a_camera_keeps_the_move_it_was_given_until_told_it_stays() {
     }
     k.change("cp_a", &change(r#"{"id":1,"still":true}"#)).unwrap();
     assert!(said(&k).is_null());
-    // The flights of a map's cameras go to every page: no more of them than that takes.
+    // The flights on a map go to every page, so their rows are capped (`MAX_ROWS_ON_MAP`).
     let long: Vec<String> = (0..1800).map(|n| format!("[{},900,0,900,0,0,300]", f64::from(n) / 30.0)).collect();
     let flown = format!(r#""move":{{"end":{{"pos":[0,900,900],"aim":[0,0,300]}},"secs":60,"way":"straight","path":[{}]}}"#, long.join(","));
     for n in 0..3 {
@@ -143,7 +143,7 @@ fn a_spot_is_a_relays_camera_that_stays_or_goes_along_a_path_given() {
     let moving = Shot::new(spot, Some(&rows)).unwrap();
     assert_eq!((moving.path.steps.len(), moving.path.steps[1].secs, moving.path.steps[1].pos[0]), (2, 2.5, 900.5));
     assert_ne!(moving.path.id, 0);
-    // Each sets off anew, two at one moment too.
+    // Each gets a new id, even two made in the same millisecond.
     let ids: Vec<u64> = (0..50).map(|_| Shot::new(spot, None).unwrap().path.id).collect();
     assert!(ids.windows(2).all(|w| w[0] < w[1]) && ids[0] > moving.path.id);
     assert!(!Spot { pos: [1, 1, 1], aim: [1, 1, 1] }.fits());

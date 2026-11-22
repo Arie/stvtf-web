@@ -25,12 +25,13 @@ pub(crate) struct WantLine {
     /// The path it is on instead.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(super) path: Option<PathLine>,
-    /// The spot it is at instead, from a stv.tf of before paths: where, pitch, yaw.
+    /// The spot it is at instead, from a stv.tf of before paths: where, pitch, yaw. Only read.
     #[serde(default, skip_serializing)]
     pub(super) fixed: Option<([i32; 3], i16, i16)>,
 }
 
-/// A camera's path on the wire: each moment the seconds in, where it is, what it looks at.
+/// A camera's path on the wire: each step is the seconds in, where the camera is and the point it
+/// looks at.
 #[derive(Clone, Deserialize, Serialize)]
 pub(super) struct PathLine {
     pub(super) id: u64,
@@ -51,7 +52,8 @@ impl PathLine {
     }
 }
 
-/// A spot from a stv.tf of before paths, as a path: each spot its own.
+/// A spot from a stv.tf of before paths, as a path of one step. Its id is a hash of the spot, so
+/// each spot is a path of its own.
 pub(super) fn still(pos: [i32; 3], pitch: i16, yaw: i16) -> CameraPath {
     use std::hash::{Hash, Hasher};
     let mut hash = std::collections::hash_map::DefaultHasher::new();
@@ -121,7 +123,7 @@ pub(super) enum Request {
         want: WantLine,
         #[serde(default)]
         was: Option<Was>,
-        /// The room knows where it is: `want` is no stand-in.
+        /// Whether the room knows where it is: if not, `want` is a stand-in.
         #[serde(default = "yes")]
         known: bool,
     },

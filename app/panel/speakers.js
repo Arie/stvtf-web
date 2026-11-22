@@ -31,7 +31,8 @@ export function initVoice() {
     return;
   }
   const show = () => {
-    // On from an earlier visit, a browser still plays nothing before a click: shown as off, and asking for one.
+    // Voice left on in an earlier visit: a browser plays nothing before a click, so it shows as off and asks
+    // for one.
     const waiting = voice.voiceWaiting();
     button.textContent = voice.voiceOn() && !waiting ? "🔊" : "🔇";
     button.title = waiting || voice.voiceMissed() ? "Click to hear" : "The players' voice";
@@ -44,7 +45,7 @@ export function initVoice() {
       voice.setVoice(true);
       openStream();
     }
-    // Asking: one team spoke, unmute; both, open the list.
+    // When the button asked for a click: if one team spoke, unmute the teams; if both did, open the list.
     const asked = voice.voiceAsked();
     if (asked && !asked.both) for (const team of ["red", "blue"]) voice.setTeamMuted(team, false);
     list.hidden = asked ? !asked.both : !list.hidden;
@@ -89,7 +90,7 @@ function cards() {
 function voiceState(id) {
   const steamid = state.players.get(id)?.steamid;
   if (!steamid) return null;
-  // Without voice: talking only.
+  // With voice off, only who talks shows.
   if (!voice.voiceOn()) return voice.isTalking(id) ? { muted: false, talking: true } : null;
   const muted = voice.isMuted(steamid);
   if (!muted && !voice.hasSpoken(steamid)) return null;
@@ -122,7 +123,7 @@ function markText(mark, now) {
   if (mark.textContent !== text) mark.textContent = text;
 }
 
-// Makes player `id`'s `mark` a waveform (its bars, drawn frame by frame from now), or what it was.
+// Makes player `id`'s `mark` a waveform (its bars, drawn frame by frame from now), or an icon again.
 /** @param {HTMLElement} mark @param {number} id @param {boolean} wave */
 function waveMark(mark, id, wave) {
   mark.classList.toggle("wave", wave);
@@ -156,7 +157,7 @@ function waves(t) {
   requestAnimationFrame(waves);
 }
 
-// A click on a card's voice mark mutes or unmutes its player, and follows nobody.
+// A click on a card's voice mark mutes or unmutes its player, without following them.
 /** @param {HTMLElement} hud */
 function cardClicks(hud) {
   hud.addEventListener(

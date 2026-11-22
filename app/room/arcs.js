@@ -6,7 +6,7 @@ import { toScreen } from "../map/view.js";
 import { EDGE_PX, STROKE_PX } from "./telestrator.js";
 /** @typedef {import("../../types/stream").ArcLine} ArcLine */
 
-// Lightness at the launch and at the peak, as the jump trails'.
+// Lightness at the launch and at the peak, as for the jump trails.
 const DARK = 24,
   BRIGHT = 74;
 // The arrowhead's length at the 1080p size, and its angle (lines are as wide as strokes).
@@ -17,7 +17,7 @@ const HEAD_PX = 14,
 /** @type {Map<number, Arc>} */
 const arcs = new Map();
 
-// An arc with its pieces' shades (each its end's height, the launch floor to the peak), worked
+// An arc with each segment's shade (by the height of its end, from the launch to the peak), worked
 // out once: they never change.
 /** @param {string} ink @param {[number, number, number][]} points @returns {Arc} */
 function prepared(ink, points) {

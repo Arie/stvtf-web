@@ -1,8 +1,8 @@
 //! A live match's recorder: its lines into its recording, and its demos' loads.
 //!
 //! The recording's file has one writer at a time. A process that picks a match up reads the file
-//! and writes nothing (its writer, the store another's now, closes its open chunk into it every
-//! [`BEAT`] for [`READ_ON_FOR`]): once its own stream has a tick it asks for the file
+//! and writes nothing (its writer, once another process owns the store, closes its open chunk into
+//! it every [`BEAT`] for [`READ_ON_FOR`]): once its own stream has a tick it asks for the file
 //! (`live-<id>.take`, its mark and that tick). The process that writes it writes on until its own
 //! stream is at that tick (a new connection's first frame is ahead of the stream), for
 //! [`GIVE_BY`] at most, saying every [`RECORD_POLL`] that it does (`live-<id>.beat`) and closing
@@ -57,8 +57,8 @@ pub(super) fn take_file(id: &str) -> String {
     format!("{LIVE_PREFIX}{id}.take")
 }
 
-/// There once match `id`'s file is closed and nobody writes it: the mark of the process that
-/// closed it.
+/// Exists once match `id`'s file is closed and nobody writes it; holds the mark of the process
+/// that closed it.
 pub(super) fn given_file(id: &str) -> String {
     format!("{LIVE_PREFIX}{id}.given")
 }
@@ -94,7 +94,8 @@ impl LiveFile {
         LiveFile { store: store.clone(), id: id.to_string(), mark: mark.to_string() }
     }
 
-    /// The file is this process's, to write: asked for with its stream at `tick`, or taken.
+    /// Writes the `.take`: this process asks for the file with its stream at `tick`, or (None)
+    /// says it has taken it.
     fn ask(&self, tick: Option<u32>) {
         let word = tick.map_or_else(|| TAKEN.to_string(), |t| t.to_string());
         if let Err(e) = self.store.replace(&take_file(&self.id), format!("{} {word}", self.mark).as_bytes()) {
@@ -121,8 +122,8 @@ impl LiveFile {
         self.store.written(&beat_file(&self.id)).filter(|at| *at >= since)
     }
 
-    /// Whether another process closed the file and this one is the one to have it: the first
-    /// that takes its word away.
+    /// Whether another process closed the file and this one gets it: the first to rename the
+    /// `.given` away does.
     fn take_given(&self) -> bool {
         let name = given_file(&self.id);
         if self.store.read(&name).map_or(true, |by| by == self.mark.as_bytes()) {
@@ -174,7 +175,8 @@ impl LiveFile {
 /// A match picked up, until its file is this process's.
 #[derive(Default)]
 struct Taking {
-    /// How much of the file is read, and how it began then; none of a file that did not read.
+    /// How many bytes of the file are read, and its first [`HEAD`] bytes then; None if the file
+    /// did not read.
     read: Option<(usize, Vec<u8>)>,
     /// This process's own stream meanwhile.
     held: Vec<(Stamped, Arc<str>)>,
@@ -249,20 +251,20 @@ impl Taking {
         silent >= GIVE_WAIT || asked.elapsed() >= TAKE_BY
     }
 
-    /// Takes the file: what was added to it since it was read, then this process's own lines,
-    /// which `recording` writes from now on. Of a file written since this process's stream began,
-    /// the lines held up to its last tick are in it; the tick a line is then to be past before
-    /// those behind it count again. The statuses of its own connecting are not the match's: a
-    /// recording that goes on has none of them.
+    /// Takes the file: reads what was added to it since it was last read, then pushes this
+    /// process's own held lines; `recording` writes the file from now on. If the file was written
+    /// since this process's stream began, the held lines up to the file's last tick are in it
+    /// already and are dropped: returns that tick. The statuses of this process's own connecting
+    /// are not the match's: a recording that goes on gets none of them.
     fn take(mut self, file: &LiveFile, recording: &Recording, interval: f64) -> Option<u32> {
         let name = live_file(&file.id);
-        // Said first: its writer, late, writes no more to it.
+        // Said first, so that a writer that is late writes no more to it.
         file.ask(None);
         // Given, or written since this process asked: the file is of the stream held. (Given with
         // nothing more written: a paused game.)
         let written = file.store.written(&name);
         let since = self.given || self.asked.is_some_and(|(_, asked)| written.is_some_and(|at| at >= asked));
-        // Torn, or not read: this process's is the file.
+        // Torn, or not read: the file becomes what this process has.
         if !self.read_on(file, recording) {
             recording.rewrite();
         }
@@ -338,7 +340,7 @@ const PAST: u32 = if cfg!(test) { 0 } else { 200 };
 /// A file asked for, written on until its stream is at the tick asked at (none: at once).
 struct Giving {
     tick: Option<u32>,
-    /// When the `.take` that asked was written: another since is the file taken.
+    /// When the `.take` that asked was written: a newer one means the file was taken.
     asked: SystemTime,
     since: Instant,
     /// When it last said it writes the file still, and when it last closed a chunk into it.
@@ -347,15 +349,15 @@ struct Giving {
 }
 
 impl Giving {
-    /// Writes the file on: says so, and closes the open chunk into it every [`BEAT`]. False once
-    /// it does no more: given, its stream at the tick or [`GIVE_BY`] up, or let go, taken
-    /// meanwhile (or it may be).
+    /// Writes the file on: says so, and closes the open chunk into it every [`BEAT`]. Returns
+    /// false once it writes no more: the file is given (its stream reached the tick, or
+    /// [`GIVE_BY`] is up), or let go because it was taken meanwhile (or may have been).
     fn writes_on(&mut self, file: &LiveFile, recording: &Recording, asked: Option<&Asked>) -> bool {
         if asked.is_none_or(|a| a.at != self.asked) || self.beat.elapsed() >= GIVE_WITHIN {
             recording.let_go();
             return false;
         }
-        // Some past it: a new connection's first snapshots are sparse.
+        // `PAST` ticks past it: a new connection's first snapshots are sparse.
         let there = self.tick.is_none_or(|tick| recording.last_tick().is_none_or(|last| last >= tick.saturating_add(PAST)));
         if there || self.since.elapsed() >= GIVE_BY {
             file.give(recording);
@@ -378,8 +380,8 @@ struct Pump {
     taking: Option<Taking>,
     /// While the file is asked for and not given yet.
     giving: Option<Giving>,
-    /// The file's last tick when it was taken, and when that was, until this process's stream
-    /// is past it: lines before it are in the file.
+    /// The ticks the file already has lines of (from [`AHEAD_S`] before its last tick up to that
+    /// tick, as it was when taken), and when it was taken. Kept for [`AHEAD_S`] after the take.
     behind: Option<(u32, u32, Instant)>,
     /// A fresh recording's first part is the load the match is at.
     fresh: bool,
@@ -493,7 +495,7 @@ impl Pump {
             None if self.beat.elapsed() >= BEAT => {
                 self.beat = Instant::now();
                 file.beat();
-                // The process the store is now reads the file on until it asks for it.
+                // The process that owns the store now reads the file on until it asks for it.
                 let taken_over = file.store.taken_over(&file.mark).then(|| *self.taken_over.get_or_insert_with(Instant::now));
                 if taken_over.is_some_and(|since| since.elapsed() < READ_ON_FOR) {
                     recording.flush();

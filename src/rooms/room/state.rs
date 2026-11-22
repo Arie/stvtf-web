@@ -35,7 +35,7 @@ pub(crate) struct Room {
     pub(crate) id: String,
     pub(crate) hub: SharedHub,
     pub(super) people: Mutex<People>,
-    /// The admin's number, page and the kind of view it chose, when one did.
+    /// The admin who leads the view, their page and the kind of view, once an admin chose one.
     pub(super) leader: Mutex<Option<Leader>>,
     /// The latest view line, to save.
     pub(super) view: Mutex<Option<Arc<str>>>,
@@ -54,11 +54,11 @@ pub(crate) struct Room {
     pub(super) relay: RelayState,
     /// The user id the view follows; the relay's camera does too.
     pub(super) camera: Mutex<Option<u16>>,
-    /// The spot of the map the relay's camera is at instead, as an admin put it.
+    /// Where an admin put the relay's camera instead: a spot, and the path it set off on if any.
     pub(super) spot: Mutex<Option<Shot>>,
     /// The room's own cameras, as its admins placed them.
     pub(super) cameras: Mutex<cameras::Kept>,
-    /// The permanent marker, and which map's the pages and the relay were last told.
+    /// The permanent marker, and the map whose marker the pages and the relay were last told.
     pub(super) marker: MarkerState,
     /// The names its admins gave the players and teams.
     pub(super) names: Mutex<Names>,
@@ -116,8 +116,8 @@ impl From<Leader> for (u32, String, String) {
     }
 }
 
-/// Where a private playback starts: at `at`, at `speed` (1× unless one of [`SPEEDS`]), paused or
-/// not.
+/// Where a room or private playback starts: at `at`, at `speed` (1× unless one of [`SPEEDS`]),
+/// paused or not.
 #[derive(Copy, Clone, Debug)]
 pub(crate) struct StartAt {
     pub(crate) at: u64,
@@ -137,7 +137,7 @@ pub(crate) struct Saved {
     /// Saved in a file of its own (see `Rooms::save`).
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub(crate) markers: Markers,
-    /// The latest map's, in files from before maps.
+    /// The marker of the latest map, in files from before markers were kept by map.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(super) marker: Vec<Kept>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

@@ -47,7 +47,8 @@ pub(super) async fn form(State(app): State<Shared>) -> Redirect {
     Redirect::to(&format!("{}/", app.base))
 }
 
-/// The upload store and the uploader (none if unlimited); refused if none or not allowed.
+/// The upload store and the uploader (none if unlimited); refused without a store, or when the
+/// visitor has to sign in first.
 fn uploading(v: &Visit) -> Result<(&Store, Option<String>), Early> {
     let Some(store) = &v.sessions()?.store else {
         return Err((StatusCode::NOT_FOUND, "No demos are kept here").into_response().into());
@@ -224,7 +225,7 @@ fn finish(v: &Visit, store: &Store, id: &str, by: Option<&str>, said: &Finish) -
     Ok(serde_json::json!({ "page": format!("{}/w/{}/", app.base, m.id) }))
 }
 
-/// The upload at `part` kept as a demo of its own, `by`'s: its number.
+/// Keeps the upload at `part` as a demo of its own, counting against `by`. Returns its number.
 pub(super) fn keep(store: &Store, part: &std::path::Path, name: &str, by: Option<&str>, uid: Option<&str>) -> Result<u64> {
     super::unpack::unpack(part, MAX_DEMO)?;
     let mut head = vec![0u8; stvtf::demo::HEADER_LEN];
@@ -238,7 +239,7 @@ pub(super) fn keep(store: &Store, part: &std::path::Path, name: &str, by: Option
         std::fs::remove_file(part)?;
         return Ok(demo);
     }
-    // Their last goes.
+    // Their previous upload goes.
     for (old, _) in by.map_or_default(|by| kept(store, |info| info["by"].as_str() == Some(by))) {
         forget(store, old);
     }

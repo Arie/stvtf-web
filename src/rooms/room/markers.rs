@@ -12,8 +12,8 @@ use crate::sync::lock;
 /// The marker's strokes, by the number of the map (part) they were drawn on.
 pub(crate) type Markers = BTreeMap<usize, Vec<Kept>>;
 
-/// A marker file's `bytes`: a map of parts' strokes, or (saved before parts) a plain list, the
-/// `latest` part's. One unreadable is none.
+/// The markers in a marker file's `bytes`: strokes by part, or (saved before parts) a plain
+/// list, which belongs to part `latest`. A file that cannot be read gives no strokes.
 pub(crate) fn read_marker(bytes: &[u8], latest: usize) -> Markers {
     if bytes.iter().find(|b| !b.is_ascii_whitespace()) == Some(&b'[') {
         let list: Vec<Kept> = serde_json::from_slice(bytes).unwrap_or_default();
@@ -40,7 +40,7 @@ impl Room {
         self.keep_marker();
     }
 
-    /// Drops the markers of the maps the trim dropped (the oldest first), whenever they came.
+    /// Drops the markers of the maps the recording's trim dropped (the oldest go first).
     pub(super) fn trim_markers(&self) {
         let Some(first) = self.recording.parts().first().map(|p| p.load) else { return };
         let mut all = lock(&self.marker.strokes);

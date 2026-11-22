@@ -10,7 +10,7 @@ use axum::response::{IntoResponse, Response};
 use crate::app::App;
 use crate::matches::recording::Mark;
 
-/// What a handler answers with; or with what it answered early: a refusal, a redirect, a fault.
+/// A handler's answer, or the answer that ended the request early: a refusal, a redirect, a fault.
 pub(crate) type Answered = Result<Response, Early>;
 
 pub(crate) struct Early(pub(crate) Box<Response>);
@@ -47,13 +47,13 @@ pub(super) fn query_of(pairs: &[(&str, &str)]) -> String {
     serde_urlencoded::to_string(pairs).unwrap_or_default()
 }
 
-/// The marks from the one `asked` for on, and how many there are in all.
+/// The marks from the one `asked` names onward, and how many there are in all.
 pub(super) fn marks_from(asked: &super::asked::Marks, marks: impl FnOnce(usize) -> (Vec<Mark>, usize)) -> Response {
     let (marks, all) = marks(asked.from());
     Json(serde_json::json!({ "marks": marks, "all": all })).into_response()
 }
 
-/// `204` when `done` is, `400` with why not.
+/// `204` when `done` is `Ok`, else `400` with the reason.
 pub(super) fn done(done: Result<()>) -> Response {
     match done {
         Ok(()) => StatusCode::NO_CONTENT.into_response(),

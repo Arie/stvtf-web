@@ -222,13 +222,13 @@ export const peopleListeners = new Set();
 export const viewListeners = new Set();
 /** @type {Set<(m: import("../../types/stream").RelayLine) => void>} */
 export const relayListeners = new Set();
-// A follow the page dropped by itself (the match reset): nobody's doing.
+// Called when the page itself drops a follow (the match reset), not the viewer.
 /** @type {Set<() => void>} */
 export const followDropListeners = new Set();
 /** @param {import("../../types/stream").PlaybackLine} m */
 function onPlayback(m) {
   setClockRate(m.paused ? 0 : m.speed);
-  // A paused room's map that is over says so instead (the bar does).
+  // When a paused room's map is over, the bar says so instead.
   if (m.paused) {
     state.lastData = performance.now();
     if (!m.over) setStatus("paused", true);
@@ -252,7 +252,7 @@ function onSnapshot(snap) {
   if (snap.tick < state.lastTick - TICK_RESET) resetMatch();
   state.lastTick = snap.tick;
   state.lastData = performance.now();
-  // A room's playback says itself where it is.
+  // A room's playback sets its own status.
   if (!playbackStatus($("status").textContent ?? "")) setStatus("live", true);
   observeTick(snap.tick);
   state.snaps.push(snap);

@@ -34,13 +34,15 @@ pub struct Session {
     pub(super) password: String,
     /// Who started it (a Steam id from the start token), for the log; it limits nothing.
     pub(super) owner: Option<String>,
-    /// The site's reservation the server belongs to, 0 for none: the latest start link that said.
+    /// The site's reservation the server belongs to, 0 for none: from the latest start link that
+    /// named one.
     reservation: AtomicU64,
     /// A fixed session (the demo): always there, outside the match limit.
     pub(super) pinned: bool,
     /// The demos.tf demo it plays instead of watching `server`.
     pub(super) demo: Option<u64>,
-    /// The match and its demo (`<load>-<tick>`) a demo made here is of: one with comms.
+    /// For a demo made here with comms: the match, and the demo of it (`<load>-<tick>`), that it
+    /// was made from.
     pub(super) comms_of: Option<(String, String)>,
     pub(super) stop: AtomicBool,
     /// Set when the watcher gave up (a wrong password, say) or was stopped.
@@ -135,7 +137,7 @@ impl Session {
         self.demo
     }
 
-    /// The match and its demo this one, made here with its comms, is of.
+    /// The match, and the demo of it, that this one was made from with its comms.
     pub(crate) fn comms_of(&self) -> Option<(&str, &str)> {
         self.comms_of.as_ref().map(|(id, file)| (id.as_str(), file.as_str()))
     }
@@ -253,7 +255,7 @@ impl Session {
         format!("{} {}", &self.id[..self.id.len().min(LABEL_ID_LEN)], map.as_deref().unwrap_or("-"))
     }
 
-    /// Not the demo nor a demos.tf demo.
+    /// Whether it watches a server: it is neither a fixed match nor a demo.
     pub(crate) fn watches_server(&self) -> bool {
         !self.pinned && self.demo.is_none()
     }

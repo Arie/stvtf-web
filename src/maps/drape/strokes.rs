@@ -5,8 +5,9 @@ use super::Ground;
 /// The stroke is followed in steps this long, so lines follow the floor between its points.
 pub(super) const STEP: f64 = 8.0;
 
-/// A floor continues the line when this much higher or lower than it, plus a step's worth for
-/// slopes (under 45°): over a gap too, so a line does not drop off a ledge onto the floor below.
+/// A floor continues a line when it is at most this much higher or lower than the line's end,
+/// plus a step's worth for slopes (under 45°). This holds over a gap too, so a line does not drop
+/// off a ledge onto the floor below.
 pub(super) const STEP_HEIGHT: f64 = 18.0;
 
 /// A line goes on over a gap in the floor up to this long.
@@ -24,7 +25,7 @@ pub(super) const TOLERANCE: f64 = 6.0;
 /// Lines shorter than this are left out: a stroke over a ledge or a crate's edge.
 pub(super) const MIN_LINE: f64 = 32.0;
 
-/// The most steps one piece of a stroke is followed in, whatever its points say.
+/// The most steps one `push` follows a stroke in, however far apart its points are.
 pub(super) const MAX_STEPS: usize = 20_000;
 
 /// The most lines a stroke has on the floors at once.

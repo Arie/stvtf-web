@@ -24,7 +24,7 @@ fn u32_at(b: &[u8], at: usize) -> u64 {
     u64::from(u32::from_le_bytes([b[at], b[at + 1], b[at + 2], b[at + 3]]))
 }
 
-/// Unpacks `part` in place, to at most `max` bytes: whether it was packed.
+/// Unpacks `part` in place, to at most `max` bytes. Returns whether it was packed.
 pub(super) fn unpack(part: &Path, max: u64) -> Result<bool> {
     let mut file = File::open(part).context("No such upload")?;
     let mut magic = [0u8; 4];

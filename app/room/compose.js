@@ -1,5 +1,5 @@
-// Composing the move of the camera being placed: a start and an end frame, the way between and how
-// long, or a flight flown. Saved, it is kept with its camera.
+// Composes the move of the camera being placed: a start and an end frame, the way between and how
+// long it takes, or a recorded flight. The move is saved with its camera.
 import { $, ctx, uiScale } from "../core/core.js";
 import { toScreen } from "../map/view.js";
 import { ORBIT, at, flight, orbited, rowsOf, startOf, turnTo } from "./moves.js";
@@ -11,22 +11,22 @@ import { note } from "./tools.js";
 /** @typedef {{ name: string; pos: Spot["pos"]; aim: Spot["aim"]; room?: boolean; move?: Move }} Camera */
 /** @typedef {{ camera: () => Camera | null; changed: () => void; done: () => void; panel: () => void; sight: () => import("./sight.js").Grid | null; send: (body: object) => Promise<Response> }} Host */
 
-// Seconds a new move takes and one played holds at its end, a flight's first evening out, the
-// track's pieces, and ms between the frames' pictures.
+// Seconds a new move takes, seconds a played move holds at its end, seconds a new flight is smoothed
+// over, line segments in the drawn track, and ms between updates of the frame thumbnails.
 const SECS = 8,
   HOLD = 1,
   EVEN = 0.25,
   TRACK = 48,
   THUMB_MS = 300,
-  // The count before a flight, and the longest one, in seconds.
+  // The countdown before a flight and the longest flight, in seconds.
   COUNT = 3,
   LONGEST = 60;
 const COLOUR = { track: "#ffd23f", now: "#7cff8a", bad: "#ff6b5a" };
 
 /** @type {Host} */
 let host;
-// The frame being placed, the move playing since, the moment looked at, a flight being flown, and
-// whether the frames' pictures are behind.
+// The frame being placed, when the move began playing, the second of the move scrubbed to, the
+// flight being recorded, and whether the frame thumbnails are out of date.
 /** @type {"start" | "end"} */
 let frame = "start";
 /** @type {number | null} */
@@ -35,7 +35,7 @@ let playing = null;
 let scrub = null;
 /** @type {{ from: number; flown: import("./moves.js").Sample[] } | null} */
 let flying = null;
-// Since when the count before a flight runs.
+// When the countdown before a flight started.
 /** @type {number | null} */
 let counting = null;
 let [stale, taken] = [true, 0];
@@ -44,27 +44,27 @@ let sent = false;
 const input = (/** @type {string} */ id) => /** @type {HTMLInputElement} */ ($(id));
 
 export const onEnd = () => frame === "end";
-// A flight is being counted down to: the camera stays put until it begins.
+// A flight's countdown is running: the camera stays put until the flight begins.
 export const counted = () => counting !== null;
 // The frame being placed: the camera's own spot, or its move's end.
 /** @param {Camera} c @returns {Spot} */
 export const spotOf = c => (frame === "end" && c.move && !c.move.path ? c.move.end : c);
-// Placing another camera, or none.
+// Another camera, or none, is now being placed: back to the start frame, nothing playing.
 export function begun() {
   [frame, playing, scrub, stale] = ["start", null, null, true];
   grounded();
 }
-// A frame moved: an arc keeps the way round it went, and nothing plays.
+// A frame was moved: an arc keeps turning the same way round, and playback stops.
 /** @param {Camera} c */
 export function moved(c) {
   if (c.move && !c.move.path) c.move.turn = turnTo(c, c.move.end, c.move.turn);
-  // A flight looks as it was flown: its start is moved, not turned.
+  // A flight keeps the direction it was flown in: its start can be moved, not turned.
   if (c.move?.path && !flying) c.aim = startOf(c).aim;
   if (!flying) [playing, scrub] = [null, null];
   stale = true;
 }
 
-// What the picture shows: the move playing or looked at, else the frame being placed.
+// What the picture shows: the move where it is playing or scrubbed to, else the frame being placed.
 /** @param {Camera} c @returns {Spot} */
 export function shown(c) {
   const now = performance.now(),
@@ -94,7 +94,8 @@ function thumbs(c, now) {
   [stale, taken] = [false, now];
 }
 
-// The move on the map. Being placed (`now`): red where it would show nothing, a dot where it is.
+// Draws the move on the map. With `now` (the camera being placed): red where it would see nothing,
+// and a dot where it is now.
 /** @param {Pick<Camera, "pos" | "aim" | "move">} c @param {Spot} [now] */
 export function drawTrack(c, now) {
   const move = c.move,
@@ -123,7 +124,7 @@ export function drawTrack(c, now) {
   ctx.restore();
 }
 
-// The move's part of the panel and the bar under the picture.
+// Updates the move's controls in the panel and in the bar under the picture.
 /** @param {Camera} c */
 export function composing(c) {
   const move = c.move,
@@ -138,7 +139,7 @@ export function composing(c) {
   $("cam-still").hidden = !move;
   $("cam-way-row").hidden = !move || flown;
   $("cam-moves").hidden = flown;
-  // Evened out anew from the flight as flown, which one saved no longer has.
+  // Smoothing starts from the raw recording, which a saved flight no longer has.
   $("cam-even-row").hidden = !move?.raw;
   if (!move) return;
   input("cam-secs").value = String(Math.round(move.secs * 10) / 10);
@@ -152,7 +153,7 @@ function framed(c) {
     c.move = { end: { pos: [...c.pos], aim: [...c.aim] }, secs: c.move?.secs ?? SECS, way: "straight", turn: 0 };
   return c.move;
 }
-// Record: a count, then the flight flown is kept until it is ended, or a minute.
+// The Record button or R: starts the countdown, cancels it, or stops the flight being recorded.
 /** @param {Camera} c */
 function record(c) {
   if (flying) return landed(c);
@@ -160,10 +161,10 @@ function record(c) {
   [frame, playing, scrub, counting] = ["start", null, null, performance.now()];
   const view = $("cam-view");
   view.focus();
-  // Not every browser gives it: a drag looks round then, as ever.
+  // Not every browser grants pointer lock; without it a drag still looks round.
   Promise.resolve(view.requestPointerLock?.()).catch(() => {});
 }
-// The flight is over: kept as the camera's move, the camera back where it began.
+// The flight is over: it becomes the camera's move, and the camera goes back to where it began.
 /** @param {Camera} c */
 function landed(c) {
   const flown = flying?.flown ?? [],
@@ -177,13 +178,14 @@ function landed(c) {
   host.done();
   playing = performance.now();
 }
-// No flight, nor one about to be.
+// Drops any flight being recorded and any countdown.
 function grounded() {
   [flying, counting] = [null, null];
   if (document.pointerLockElement) document.exitPointerLock();
   $("cam-badge").hidden = true;
 }
-// The count before a flight, then its length, over the picture.
+// The badge over the picture: the countdown, then how long the flight has run. Starts the flight when
+// the countdown ends, and stops it after LONGEST seconds.
 /** @param {Camera} c @param {number} now */
 function badge(c, now) {
   const el = $("cam-badge"),
@@ -204,7 +206,7 @@ function badge(c, now) {
     host.panel();
   }
 }
-// The end frame, to place; a flight's is only looked at.
+// Selects the end frame for placing. On a recorded flight, End only shows its last moment.
 /** @param {Camera} c */
 function toEnd(c) {
   if (c.move?.path) {
@@ -216,7 +218,7 @@ function toEnd(c) {
   [frame, playing, scrub] = ["end", null, null];
   host.changed();
 }
-// R, as the Record button pressed.
+// The R key does what the Record button does.
 export function recKey() {
   const c = host.camera();
   if (!c) return;
@@ -224,7 +226,7 @@ export function recKey() {
   stale = true;
   host.panel();
 }
-// What a control does to the camera being placed; only playing it plays it.
+// Wraps what a control does to the camera being placed. With `plays`, the move then plays here.
 /** @param {(c: Camera, e: Event) => void} does @param {boolean} [plays] */
 const on = (does, plays) => (/** @type {Event} */ e) => {
   const c = host.camera();
@@ -235,7 +237,7 @@ const on = (does, plays) => (/** @type {Event} */ e) => {
   stale = true;
   host.panel();
 };
-// Sets the relay's camera off on the move; it plays here too.
+// Sends the move to the relay's camera; it plays here too.
 /** @param {Camera} c */
 function run(c) {
   const from = startOf(c);
@@ -244,7 +246,7 @@ function run(c) {
     () => note("No relay"),
   );
 }
-// Ends a flight, or a count that lost the pointer. Whether it did.
+// Ends a flight, or a countdown when the picture does not hold the pointer. Returns whether it did.
 function ended() {
   const c = host.camera();
   if (c && flying) landed(c);
@@ -253,7 +255,7 @@ function ended() {
   host.panel();
   return true;
 }
-// Esc ends a flight or its count. Whether it did.
+// Esc ends a flight or its countdown. Returns whether it did.
 export function escaped() {
   if (flying) return ended();
   if (counting === null) return false;
@@ -262,9 +264,9 @@ export function escaped() {
   return true;
 }
 function wireRest() {
-  // A flight ends on a click in the picture, or when the picture lets go of the pointer (Esc).
+  // A flight ends on a click in the picture while it holds the pointer, or when it lets go of it (Esc).
   const end = ended;
-  // Before the picture takes the click for an aim.
+  // Captured, so it runs before the picture takes the click as an aim.
   $("cam-view").addEventListener(
     "pointerdown",
     e => {
@@ -295,7 +297,7 @@ export function composeTool(h) {
     on(() => ([frame, playing, scrub] = ["start", null, null])),
   );
   $("cam-end").addEventListener("click", on(toEnd));
-  // An orbit steps the end frame on round what it looks at, the way it was already going.
+  // An orbit button moves the end frame one step round its aim, adding to the arc's turn so far.
   $("cam-moves").addEventListener(
     "click",
     on((c, e) => {
@@ -335,7 +337,7 @@ export function composeTool(h) {
     on(() => ([playing, scrub] = [playing === null ? performance.now() : null, null])),
   );
   wireRest();
-  // The bar's keys are not the picture's.
+  // Keys and presses in the bar must not reach the picture.
   $("cam-bar").addEventListener("keydown", e => e.stopPropagation());
   $("cam-bar").addEventListener("pointerdown", e => e.stopPropagation());
 }

@@ -29,7 +29,8 @@ const QUIET: Duration = Duration::from_secs(5);
 /// A live match's `.dem` file not written for this long is past what its recording keeps.
 const LIVE_DEMO_KEPT: Duration = Duration::from_hours(3);
 /// Demos kept with their comms, to download, to watch, and for their teams to say whose voice
-/// is whose: for 30 days, and at most 25 GB of them unless said (the oldest go first).
+/// is whose: for 30 days, and at most 25 GB of them unless `STVTF_COMMS_GB` says otherwise (the
+/// oldest go first).
 const COMMS_DEMOS_KEPT: Duration = Duration::from_hours(30 * 24);
 const COMMS_DEMOS_BUDGET: u64 = 25 << 30;
 
@@ -48,7 +49,8 @@ pub(crate) struct Rooms {
     open: Mutex<HashMap<String, Entry>>,
     /// Where they are saved, if anywhere.
     store: Option<Store>,
-    /// Demos' recordings rooms picked up play, while one does: rooms on the same share it.
+    /// The recordings of demos that picked-up rooms play, while a room plays them: rooms on the
+    /// same demo share one.
     shared: Mutex<HashMap<String, Weak<Recording>>>,
     /// The ports rooms are relayed on, if they are (`--relay-ports`).
     relays: Option<Arc<Pool>>,
@@ -67,7 +69,8 @@ struct Entry {
     _viewer: Option<Viewer>,
     /// Who opened it, for the limits per person, and when.
     by: Option<(String, Instant)>,
-    /// A hash of each of its files as last written here: one the same again is only touched.
+    /// A hash of each of its files as last written here: a file that is still the same is only
+    /// touched.
     written: HashMap<String, u64>,
 }
 
@@ -114,7 +117,7 @@ fn watching(from: &Arc<Session>, source: &Source) -> Option<Viewer> {
 /// What the names of a room's files in the store start with.
 const ROOM_PREFIX: &str = "room-";
 
-/// A room's file in the store, its marker's, and a demo's beside the rooms on it.
+/// A room's file in the store, and the file of its marker.
 fn file(id: &str) -> String {
     format!("{ROOM_PREFIX}{id}")
 }
@@ -214,9 +217,9 @@ impl Rooms {
         Ok(room)
     }
 
-    /// Whether `by` may open another room (or private playback): fewer than the limit of theirs, or
-    /// their oldest goes. A room only once nobody has watched it for
-    /// [`crate::matches::sessions::MAKES_ROOM`].
+    /// Lets `by` open another room (or private playback): they have fewer than the limit, or their
+    /// oldest is ended. A room is ended only once nobody has watched it for
+    /// [`crate::matches::sessions::MAKES_ROOM`]; if none can be, this fails.
     fn make_room_for(&self, by: Option<&str>, private: bool) -> Result<()> {
         let Some(by) = by else { return Ok(()) };
         let max = if private { PRIVATE_PER_PERSON } else { ROOMS_PER_PERSON };
@@ -261,7 +264,6 @@ impl Rooms {
         Ok(room)
     }
 
-    /// Rooms that count towards the match limit: not private playbacks.
     /// The rooms `owner` has open (not private playbacks): each one's id and map.
     pub(crate) fn of(&self, owner: &str) -> Vec<(String, String)> {
         let mut theirs: Vec<(String, String)> = lock(&self.open)
@@ -277,7 +279,7 @@ impl Rooms {
         lock(&self.open).values().filter(|e| !e.is_private()).count()
     }
 
-    /// The recording rooms on `key` play, or `make`'s.
+    /// The recording that rooms on `key` share, or the one `make` gives.
     fn shared(&self, key: &str, make: impl FnOnce() -> Option<Arc<Recording>>) -> Option<Arc<Recording>> {
         let mut shared = lock(&self.shared);
         shared.retain(|_, r| r.strong_count() > 0);
@@ -356,7 +358,7 @@ impl Rooms {
             store.touch(&crate::matches::sessions::demo_info(demo));
         }
         let mut saved = SavedRoom { source, room: room.saved(), by };
-        // Apart: not rewritten with where playback is every second.
+        // The marker has a file of its own: it is not rewritten every second with where playback is.
         let marker = std::mem::take(&mut saved.room.markers);
         let written = serde_json::to_vec(&saved)
             .map_err(Into::into)
@@ -571,7 +573,7 @@ mod tests {
         assert_eq!((inode(file(&r.id)), inode(marker_file(&r.id))), (room, marker));
         let touched = std::fs::metadata(file_of(file(&r.id))).unwrap().modified().unwrap();
         assert!(touched > old + Duration::from_secs(60));
-        // More marker: its file only.
+        // More is drawn: only the marker's file is written.
         r.draw(&crate::rooms::room::Draw { stroke: 2, points: vec![[6.0, 6.0, 0.0]], end: false }, "me").unwrap();
         rooms.persist();
         assert_eq!(inode(file(&r.id)), room);

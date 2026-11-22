@@ -410,7 +410,7 @@ fn the_relays_camera_is_at_the_spot_an_admin_put_it_until_a_player_is_followed()
     r.set_spot(&at).unwrap();
     let Some(Camera::Along(still)) = r.relay_camera() else { panic!() };
     assert_eq!((still.steps.len(), still.steps[0].pos, still.steps[0].aim), (1, [0.0, 0.0, 1500.0], [0.0, 0.0, 400.0]));
-    // There again is no other camera.
+    // Put at the same spot again, it is still the same camera.
     r.set_spot(&at).unwrap();
     assert_eq!(r.relay_camera(), Some(Camera::Along(still.clone())));
     // The admin's own view moving is not a player chosen.
@@ -419,13 +419,13 @@ fn the_relays_camera_is_at_the_spot_an_admin_put_it_until_a_player_is_followed()
     assert_eq!(r.relay_camera(), Some(Camera::Along(still)));
     let told = |r: &Room| subscribe(&r.hub, false).try_iter().find(|l| l.contains(r#""type":"camera""#)).unwrap();
     assert_eq!(&*told(&r), r#"{"aim":[0,0,400],"pos":[0,0,1500],"type":"camera"}"#);
-    // A path sets it off, and the same again does anew.
+    // A path sets it off; the same path given again sets it off anew.
     let rows = vec![[0.0, 0.0, 0.0, 1500.0, 0.0, 0.0, 400.0], [4.0, 500.0, 0.0, 1500.0, 0.0, 0.0, 400.0]];
     let along = SpotPost { path: Some(rows), ..at };
     r.set_spot(&along).unwrap();
     let Some(Camera::Along(first)) = r.relay_camera() else { panic!() };
     assert_eq!(first.steps.len(), 2);
-    // Off from its spot: the pages are told, and again when it is put back there.
+    // Set off from its spot: the pages are told `moving`, and told again when it is put back.
     assert_eq!(&*told(&r), r#"{"aim":[0,0,400],"moving":true,"pos":[0,0,1500],"type":"camera"}"#);
     std::thread::sleep(Duration::from_millis(2));
     r.set_spot(&along).unwrap();

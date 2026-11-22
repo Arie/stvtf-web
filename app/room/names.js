@@ -1,5 +1,6 @@
-// A room's names, for its admins, from a click on a team's name: each player's and team's, filled in with a league's where the
-// leagues know them, to adjust and apply for everyone (see core/names.js).
+// A room's names panel, opened by an admin's click on a team's name: each player's and team's name,
+// filled in with a league's where the leagues know them, to adjust and apply for everyone (see
+// core/names.js).
 import { $, byClass, state } from "../core/core.js";
 import { env } from "../core/env.js";
 import { given } from "../core/names.js";
@@ -128,6 +129,6 @@ export function namesTool() {
   env.keys.addEventListener("keydown", e => {
     if (e.key === "Escape") panel.hidden = true;
   });
-  // Typing in it is no shortcut of the page's.
+  // Typing in the panel must not trigger the page's shortcuts.
   panel.addEventListener("keydown", e => e.key !== "Escape" && e.stopPropagation());
 }

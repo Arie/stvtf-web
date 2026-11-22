@@ -1,5 +1,5 @@
-//! The real program, started as a user would. `--replay` needs no network; without an address it
-//! would start building the most played maps.
+//! The real program, started as a user would. `--replay` needs no network; started without a
+//! match to play, the program would fetch and build the most played maps.
 
 use std::ffi::OsStr;
 use std::io::{BufRead, BufReader, Read, Write};
@@ -121,8 +121,8 @@ fn a_stopped_server_exits_cleanly_and_the_next_one_has_its_matches() {
     let args: [&OsStr; 3] = ["--no-warm".as_ref(), "--sessions".as_ref(), store.as_os_str()];
     let mut first = Server::run(dir.clone(), &args);
 
-    // A server that turns the watcher away, not an unreachable one: it only notices a stop between
-    // its attempts, and those wait up to 9 s for an answer from nowhere.
+    // A SourceTV server that refuses the watcher, not an unreachable one: the watcher only notices
+    // a stop between its attempts, and each attempt waits up to 9 s for an answer that never comes.
     let tv = UdpSocket::bind("127.0.0.1:0").unwrap();
     let port = tv.local_addr().unwrap().port();
     std::thread::spawn(move || {
@@ -159,7 +159,7 @@ fn a_stopped_server_exits_cleanly_and_the_next_one_has_its_matches() {
     let saved: Vec<_> = std::fs::read_dir(&store).unwrap().flatten().map(|e| e.file_name()).collect();
     assert_eq!(saved.len(), 4, "the match, its recording, given, and which process owns the folder: {saved:?}");
 
-    // Its files stay for the next one.
+    // Forgotten, not dropped, so its files stay for the next server.
     std::mem::forget(first);
     let second = Server::run(dir, &args);
     assert!(second.get(&page).starts_with("HTTP/1.1 200"), "the same link still works");

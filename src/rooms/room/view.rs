@@ -59,7 +59,8 @@ pub(crate) struct ViewPost {
     pub(crate) page: String,
 }
 
-/// Where an admin puts the relay's camera (neither: nowhere), and the path it sets off on.
+/// Where an admin puts the relay's camera (neither `pos` nor `aim`: back with the director), and
+/// the path it sets off on, if any.
 #[derive(Debug, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct SpotPost {
@@ -146,7 +147,7 @@ impl Room {
     }
 
     /// An admin puts the relay's camera at a spot of the map, or (none) back with the director.
-    /// A path given sets it off anew, the same again too.
+    /// A path given sets it off along that path, even when it is the same path as before.
     pub(crate) fn set_spot(&self, post: &SpotPost) -> Result<()> {
         let now = match (post.pos, post.aim) {
             (Some(pos), Some(aim)) => Some(Shot::new(Spot { pos, aim }, post.path.as_deref())?),
@@ -155,7 +156,7 @@ impl Room {
         };
         let at = now.as_ref().map(|s| s.spot);
         let mut shot = lock(&self.spot);
-        // Staying where it stays is no change.
+        // A camera standing still that is put at the same spot again is no change.
         let stays = |s: &Shot| (s.spot, s.path.steps.len() == 1);
         if post.path.is_none() && shot.as_ref().map(stays) == at.map(|s| (s, true)) {
             return Ok(());
@@ -192,7 +193,7 @@ impl Room {
         announce(&self.hub, "cameras", &Arc::from(line.to_string()));
     }
 
-    /// The relay's camera leaves its spot, as on another map. Whether it was at one.
+    /// The relay's camera leaves its spot, as on another map. Returns whether it was at one.
     pub(super) fn leave_spot(&self) -> bool {
         let was = lock(&self.spot).take().is_some();
         if was {

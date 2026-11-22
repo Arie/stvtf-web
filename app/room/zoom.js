@@ -6,7 +6,7 @@
 // The least it shows, in milliseconds, and how much one notch of the wheel zooms.
 export const LEAST_MS = 20_000;
 const NOTCH = 1.25;
-// Where playback is put in a window that it left: this far in from the left.
+// Where playback is put in a view that it left: this share of the view in from the left.
 const FOLLOW_AT = 0.15;
 
 // `view` kept within `whole`, no shorter than the least; null when it is all of it.
@@ -42,7 +42,7 @@ export function following(view, whole, now) {
 }
 
 // How much a wheel event zooms (above 1: in), or 0 for one that pans; and how far that pans, as a
-// share of what shows. A wheel that counts in lines (Firefox) counts for as much.
+// share of what shows. A wheel that reports lines (Firefox) is scaled to match one that reports pixels.
 /** @param {{ deltaX: number; deltaY: number; shiftKey: boolean; deltaMode?: number }} e */
 export function wheel(e) {
   const px = e.deltaMode === 1 ? 100 / 3 : 1,
@@ -52,8 +52,8 @@ export function wheel(e) {
   return { factor: NOTCH ** (-dy / 100), pan: 0 };
 }
 
-// A pinch: two fingers at `a` and `b` (each a share of the track's width) over `view` when it
-// began, now at `a2` and `b2`. What it shows then: the time between them stays between them.
+// A pinch: two fingers at `began` (each a share of the track's width) over `view` when it began,
+// now at `now`. Returns what it shows then: the time between the fingers stays between them.
 /** @param {Span} view @param {Span} whole @param {[number, number]} began @param {[number, number]} now */
 export function pinched(view, whole, began, now) {
   const span = view[1] - view[0],

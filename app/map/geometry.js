@@ -7,15 +7,15 @@ import { PLAIN_BG, context2d, INK } from "../core/core.js";
 // and the height above which floors are left out.
 /** @typedef {{ c: CanvasRenderingContext2D, w: number, h: number, X: (x: number) => number, Y: (y: number) => number, res: number, cut: number }} Drawing */
 
-// Map geometry: at least this many world units per pixel, and a canvas at most this wide;
-// src/maps/bsp.rs pads the bounds' top this far above the highest point or pickup (its PAD), floors are
-// kept up to this far above that, and a wall counts from this far below its top.
+// Map geometry: at least this many world units per pixel, and a canvas at most this wide. The server
+// pads the bounds' top this far above the highest point or pickup (PAD in src/maps/bsp/geometry.rs),
+// floors are kept up to this far above that, and a wall counts from this far below its top.
 const MIN_UNITS_PER_PIXEL = 4,
   MAX_CANVAS = 4096,
   GEOMETRY_PAD = 1536,
   ROOF_ABOVE = 400,
   WALL_BASE = 64;
-// Floor colours by surface kind (src/maps/bsp.rs's material words); anything else, or none, is "other".
+// Floor colours by surface kind (the material words in src/maps/bsp/material.rs); anything else, or none, is "other".
 export const KIND_COLOURS = {
   __proto__: null,
   grass: "#56703d",
@@ -42,7 +42,7 @@ const FLAT_SHADES = ["#2a2e33", "#373c42", "#464c53"],
   OUTLINE_EDGE = "#14161a",
   OUTLINE_WIDTH = 1 / 400,
   OUTLINE_EDGE_WIDTH = 1 / 200;
-// Gaps up to about twice this share of the canvas's longest side are filled in both.
+// Both fill gaps up to about twice this share of the canvas's longest side, on a copy at most this many pixels a side.
 const GAP_CLOSE = 1 / 150,
   PLAIN_SIDE = 1024;
 // Payload track: ties this far apart and this long, rails this far either side (canvas pixels).
@@ -180,7 +180,7 @@ function canvasLike(shape, draw) {
 function around(c, shape, r) {
   for (let i = 0; i < 16; i++) c.drawImage(shape, Math.cos((i / 8) * Math.PI) * r, Math.sin((i / 8) * Math.PI) * r);
 }
-// The shape with its cracks and narrow gaps filled: spread outwards, then eaten back as far. In
+// The shape with its cracks and narrow gaps filled: spread outwards, then shrunk back as far. In
 // passes, because one ring of copies of a thin sliver is a comb rather than a solid disc.
 /** @param {HTMLCanvasElement} shape */
 function withoutGaps(shape) {
@@ -229,8 +229,8 @@ function heightRange(floors) {
   return [zlo, zhi];
 }
 
-// A floor's colour at height share t: a flat shade with bg=flat, else its texture's colour (its
-// kind's, without), darker low down.
+// A floor's colour at height share t: a flat shade with bg=flat, else its texture's colour (or its
+// kind's colour when it has none), darker low down.
 /** @param {Floor} f @param {Kind} k @param {number} t */
 function floorColour(f, k, t) {
   if (PLAIN_BG) return FLAT_SHADES[Math.min(FLAT_SHADES.length - 1, Math.floor(t * FLAT_SHADES.length))];
@@ -283,7 +283,7 @@ function drawFloor({ c, X, Y }, f, t, patterns) {
   }
 }
 
-// Walls only where a floor was drawn: the rest are scenery's, out over the background.
+// Walls only where a floor was drawn: the rest belong to scenery outside the floors.
 /** @param {Drawing} at @param {Wall[]} walls */
 function drawWalls({ c, X, Y, cut }, walls) {
   c.strokeStyle = INK;
@@ -327,7 +327,7 @@ function clipToPlayable({ c, X, Y, res }, pa) {
   if (pa?.bits)
     try {
       const mc = playableMask(pa);
-      // Smoothing softens the mask's voxel steps into soft edges.
+      // Smoothing turns the mask's voxel steps into soft edges.
       c.imageSmoothingEnabled = true;
       c.globalCompositeOperation = "destination-in";
       c.drawImage(

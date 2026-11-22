@@ -20,7 +20,8 @@ export const env = {
   search: location.search,
   // Settings are kept per browser on stv.tf's own page only.
   storage: true,
-  // Hands the parent what happens (see embed.js); on the page, that is postMessage to an iframe's parent.
+  // Tells the embedding page what happens (see embed.js). Null on stv.tf's own page, where embed.js
+  // posts to an iframe's parent instead.
   emit: null,
   component: false,
 };
@@ -29,8 +30,8 @@ export const env = {
 export function configure(o) {
   Object.assign(env, o);
 }
-// On another site every file is read cross-origin: a copy cached before the server sent CORS
-// headers (Cloudflare's, the browser's) would fail it, so these addresses are its own.
+// On another site every file is read cross-origin. A copy cached before the server sent CORS headers
+// (by Cloudflare or the browser) would fail, so the component asks for addresses of its own (?cors=1).
 /** @param {string | URL} path */
 export const asset = path => {
   const url = new URL(path, env.base);

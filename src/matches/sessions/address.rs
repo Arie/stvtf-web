@@ -17,8 +17,9 @@ pub(super) fn in_network(ip: Ipv4Addr, (net, prefix): (Ipv4Addr, u32)) -> bool {
     ip.to_bits() >> (u32::BITS - prefix) == net.to_bits() >> (u32::BITS - prefix)
 }
 
-/// Not loopback, private, link-local, carrier-grade NAT (Tailscale), IETF protocol
-/// assignments, benchmarking, multicast or reserved.
+/// Whether `ip` is on the internet: not loopback, private, link-local, broadcast, documentation,
+/// carrier-grade NAT (Tailscale), IETF protocol assignments, benchmarking, multicast or reserved.
+/// No IPv6 address counts as public.
 pub fn is_public(ip: IpAddr) -> bool {
     match ip {
         IpAddr::V4(v4) => {

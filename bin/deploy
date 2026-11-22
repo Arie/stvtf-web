@@ -21,7 +21,8 @@ regions=("$@")
 
 version=${VERSION:-$(git rev-parse --short=12 HEAD)_stvtf_$(git -C ../stvtf rev-parse --short=12 HEAD)}
 
-# Kamal's image prune fails on the relay's image: deployed all the same if this version runs.
+# `kamal deploy` fails when its image prune does, which happens while the relay uses an older
+# image. The deploy itself succeeded if the app runs this version.
 deploy() {
   kamal deploy --skip-push -d "$1" && return
   if kamal app version -d "$1" 2>/dev/null | grep -qxF "$version"; then

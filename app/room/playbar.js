@@ -22,8 +22,8 @@ const LEAD_MS = 2000;
 const LIVE_MS = 2500;
 // How far the arrow keys jump, in milliseconds.
 const STEP_MS = 5000;
-// A zoomed timeline goes after playback that left it this long after its viewer last moved it, and
-// a pinch's fingers letting go seek nowhere for this long, in milliseconds.
+// A zoomed timeline follows playback that left it once its viewer has not moved it for this long,
+// and lifting the fingers of a pinch does not seek for this long, in milliseconds.
 const FOLLOW_AFTER_MS = 4000,
   PINCH_MS = 500;
 
@@ -56,7 +56,7 @@ export function playbar(o) {
   return new Playbar(o);
 }
 
-// The speed after `now` among `speeds`, round again after the last.
+// The speed after `now` among `speeds`, back to the first after the last.
 /** @param {number[]} speeds @param {number} now */
 export const nextSpeed = (speeds, now) => speeds.find(s => s > now) ?? speeds[0];
 
@@ -131,7 +131,7 @@ class Playbar {
       this.control({ seek: Math.round(Number(time.value)) });
     };
     time.onchange = seek;
-    // A drag back to where it began ends with no change: letting go ends it, once a change would have.
+    // A drag back to where it began fires no change event, so letting go ends the drag here.
     time.onpointerup = time.onpointercancel = time.onblur = () => setTimeout(() => this.dragging && seek());
     const at = () => this.at(),
       control = (/** @type {Control} */ c) => this.control(c);
@@ -188,7 +188,7 @@ class Playbar {
       track.addEventListener(type, e => lift(/** @type {PointerEvent} */ (e)), { capture: true });
   }
 
-  // All the timeline has: from what is kept to its length now.
+  // The whole timeline: from the start of what is kept to its length now.
   /** @returns {[number, number]} */
   whole() {
     return [this.start(), Math.max(this.start() + 1, this.length())];
@@ -201,7 +201,7 @@ class Playbar {
     return l ? l.length + (l.live ? Math.min(performance.now() - this.heardAt, LIVE_MS / 2) : 0) : 0;
   }
 
-  // What is kept, from the start, of the map that began at the origin; the clock counts from it.
+  // Where what is kept of the map begins. The clock counts from `origin`, where the map began.
   start() {
     return this.last?.start ?? 0;
   }
@@ -245,7 +245,7 @@ class Playbar {
     // At live the timeline is all played and the playhead, which could only waver at its end, hides.
     const now = atLive ? this.length() : this.at();
     this.showTrack(len, now, atLive);
-    // The clock as wide as it gets: the timeline stays put.
+    // The clock is as wide as it will get, so the timeline does not shift as it counts.
     this.shown.textContent = `${this.clockAt(this.dragging ? Number(this.time.value) : now)} / ${this.clockAt(len)}`;
     const widest = `${this.clockAt(len).length * 2 + 3}ch`;
     if (this.shown.style.minWidth !== widest) this.shown.style.minWidth = widest;
@@ -262,7 +262,8 @@ class Playbar {
   showTrack(len, now, atLive) {
     const { time, track } = this,
       l = /** @type {PlaybackLine} */ (this.last);
-    // Zoomed in, it shows a stretch of it: after playback again, a while after its viewer moved it.
+    // Zoomed in, it shows a stretch of the timeline, and follows playback again a while after its viewer
+    // moved it.
     /** @type {[number, number]} */
     const whole = [this.start(), len];
     if (this.view) this.view = within(this.view, whole);
@@ -278,13 +279,13 @@ class Playbar {
     if (!this.dragging) time.value = String(now);
     const at = this.dragging ? Number(time.value) : now,
       away = at < from || at > to;
-    // No playhead at live, nor while playback is beside what a zoomed timeline shows.
+    // No playhead at live, nor while playback is outside what a zoomed timeline shows.
     track.classList.toggle("at-live", (atLive || away) && !this.dragging);
     track.classList.toggle("zoomed", Boolean(this.view));
     const pct = (/** @type {number} */ ms, /** @type {[number, number]} */ [a, b]) =>
       `${Math.min(100, Math.max(0, (100 * (ms - a)) / (b - a)))}%`;
     track.style.setProperty("--played", pct(at, [from, to]));
-    // Where what shows is in the whole.
+    // Where the stretch shown lies in the whole timeline.
     track.style.setProperty("--view-from", pct(from, whole));
     track.style.setProperty("--view-to", pct(to, whole));
   }
@@ -323,7 +324,7 @@ class Playbar {
   }
 }
 
-// `e`'s width, kept by an observer: read each frame after the bar's changes, it would reflow.
+// `e`'s width, kept by an observer: reading it each frame after the bar's changes would force a reflow.
 /** @param {HTMLElement} e */
 function widthOf(e) {
   let width = e.clientWidth;

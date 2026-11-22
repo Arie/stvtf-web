@@ -35,7 +35,7 @@ pub(crate) fn sweep_kept(dir: &Path, max_age: Duration, budget: u64) {
         if total > budget || now.duration_since(written).is_ok_and(|age| age > max_age) {
             total -= bytes;
             let _ = std::fs::remove_file(voice_of(&path));
-            // `kept-<match>-<file>.dem`: what was said of its voices goes with it.
+            // `kept-<match>-<file>.dem`: its picks file (whose voice is whose) goes with it.
             let of = path.file_stem().and_then(|n| n.to_str()).and_then(|n| n.strip_prefix(KEPT_PREFIX)).and_then(|n| n.split_once('-'));
             if let Some((id, file)) = of {
                 let _ = std::fs::remove_file(picks_file(dir, id, file));

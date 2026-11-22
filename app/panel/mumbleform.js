@@ -8,7 +8,7 @@ export const MUMBLE_PORT = 64738;
 /** @typedef {{ id: number; host: string; port: number; channel: string; delay: number; status: string; state?: string }} InMumble */
 
 // A Mumble server as someone writes it: its name or address, with a port or without, or a
-// mumble:// link. None for what is no server.
+// mumble:// link. Null when the text is not a server.
 /** @param {string} text @returns {{ host: string; port: number } | null} */
 export function serverOf(text) {
   const m = /^(?:mumble:\/\/)?(?:[^@/\s]*@)?([A-Za-z0-9.-]+)(?::(\d{1,5}))?(?:\/\S*)?$/.exec(text.trim());
@@ -17,19 +17,19 @@ export function serverOf(text) {
   return port >= 1 && port <= 65535 ? { host: m[1], port } : null;
 }
 
-// What is typed.
+// What is typed into the form.
 export const typed = { server: "", password: "", channel: "" };
 
 // A server as it is typed: its port only when it is not Mumble's own.
 const serverText = (/** @type {InMumble} */ m) => (m.port === MUMBLE_PORT ? m.host : `${m.host}:${m.port}`);
 
-// The form for moving `m`: where it is.
+// Fills the form for moving `m` with where it is.
 /** @param {InMumble} m */
 export function fillFor(m) {
   Object.assign(typed, { server: serverText(m), password: "", channel: m.channel });
 }
 
-// The form for another channel: most likely on the server of `last`, the bot's latest.
+// Fills the form for another channel: most likely on the server of `last`, the bot's latest channel.
 /** @param {InMumble | undefined} last */
 export function fillAfter(last) {
   Object.assign(typed, { server: last ? serverText(last) : "", password: "", channel: "" });
@@ -42,7 +42,7 @@ function field(name, label, hint, type = "text") {
   return el("label", { className: "vrow vinvite vfield" }, labelOf(label), input);
 }
 
-// The form's fields: for a server the bot is on already (`known`), its password is.
+// The form's fields. For a server the bot is on already (`known`), an empty password keeps the old one.
 /** @param {boolean} known */
 export function mumbleFields(known) {
   return [
@@ -66,8 +66,9 @@ export function mumbleButtons(moving) {
   return buttons;
 }
 
-// What asks the bot into the channel typed in, as channel `id` (none: one more), `delay` seconds
-// behind; why not, when it will not do. No password typed: the one given before for that server.
+// The request that asks the bot into the channel typed in, as channel `id` (null: one more), `delay`
+// seconds behind; or why it cannot be made. With no password typed, the one given before for that
+// server is used.
 /** @param {number | null} id @param {number} delay @returns {{ body: object } | { why: string }} */
 export function mumbleRequest(id, delay) {
   const server = serverOf(typed.server);

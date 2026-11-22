@@ -7,7 +7,7 @@ use super::*;
 use crate::relays::pool::tests::want;
 use crate::testing::{TempDir, free_port};
 
-/// A path reaches the relay process as it is; an old stv.tf's spot is one too.
+/// A path reaches the relay process unchanged; a spot from an old stv.tf becomes a path too.
 #[test]
 fn a_cameras_path_goes_to_the_relay_process_and_an_old_spot_is_one_too() {
     let step = |secs, x| Step { secs, pos: [x, 0.0, 900.0], aim: [0.0, 0.0, 300.0] };
@@ -34,7 +34,6 @@ fn a_cameras_path_goes_to_the_relay_process_and_an_old_spot_is_one_too() {
     assert!(down.id == again.id && down.id != other.id);
 }
 
-/// A request asked while answering one of stv.tf's goes in its trace.
 #[test]
 fn names_go_to_the_relay_process_as_they_were() {
     let names =
@@ -44,6 +43,7 @@ fn names_go_to_the_relay_process_as_they_were() {
     assert_eq!((room.as_str(), asked), ("r", names));
 }
 
+/// A request made while stv.tf answers one of its own goes in that one's trace.
 #[test]
 fn a_request_carries_the_trace_it_was_asked_in() {
     crate::report::on_for_tests();

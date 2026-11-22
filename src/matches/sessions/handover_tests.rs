@@ -99,8 +99,8 @@ fn a_release_that_stops_closes_its_recordings_into_their_files() {
     new.stop_all();
 }
 
-/// A match on `target` saved in `dir` with a recording of `cp_a`, ticks 1000 to 3000 in its
-/// file, by a process that is gone; its id.
+/// A match on `target` saved in `dir` by a process that is gone, with a recording of `cp_a` up
+/// to tick 3100: all but its open chunk is in its file. Returns its id.
 fn left_by_a_crash(dir: &TempDir, target: &str) -> String {
     let id = random_id();
     let store = Store { dir: dir.to_path_buf(), keys: None };

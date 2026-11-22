@@ -58,7 +58,7 @@ function uberFlickerOff(p) {
   return Boolean(cleanUber.get(p.id)) && Math.floor(performance.now() / 90) % 2 === 1;
 }
 
-// Über, loud: bright team-coloured metal with flowing bands, a sweeping flash, a rim light and a
+// Über: bright team-coloured metal with flowing bands, a sweeping flash, a rim light and a
 // pulsing halo (drawUberGlow); the chrome class icon keeps a dark outline.
 const UBER_BANDS = /** @type {const} */ ([
   [0, 0.4],

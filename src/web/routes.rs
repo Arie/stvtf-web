@@ -26,7 +26,7 @@ use crate::app::{App, Matches};
 
 type Routes = Router<Shared>;
 
-/// The routes of a match's or a room's voice from outside, under `at`.
+/// The voice routes of a match or a room, under `at`.
 fn voiced(router: Routes, at: &str) -> Routes {
     router
         .route(&format!("{at}/voice"), post(voice::voice))
@@ -85,7 +85,8 @@ fn of_room(router: Routes) -> Routes {
         .route("/r/{id}/admin", post(rooms::admin))
 }
 
-/// The app's routes; those in `acting` act for the signed-in user.
+/// The app's routes, in two parts: the second holds the pages that act for the signed-in user,
+/// which the server does not let other sites frame.
 pub(super) fn routes(app: &App) -> (Routes, Routes) {
     // Backpack pictures are files on disk; other static files are embedded.
     let day = SetResponseHeaderLayer::if_not_present(header::CACHE_CONTROL, HeaderValue::from_static("max-age=86400"));
@@ -107,11 +108,11 @@ pub(super) fn routes(app: &App) -> (Routes, Routes) {
             .route("/overlay/{delay}", get(one_page));
         return (one.route("/events", get(one_events)), Router::new());
     }
-    // A body is no bigger than the little a form or JSON takes; an upload's part may be.
+    // A body is at most `MAX_REQUEST`, enough for a form or JSON; an upload's part may be bigger.
     let little = RequestBodyLimitLayer::new(MAX_REQUEST as usize);
     let big = (DefaultBodyLimit::max(upload::MAX_PART), RequestBodyLimitLayer::new(upload::MAX_PART));
     let part = Router::new().route("/upload/{id}", put(upload::part).layer(big));
-    // A camera's path is every moment of it.
+    // A camera's path lists every step of it, so it may be up to `MAX_PATH`.
     let long = (DefaultBodyLimit::max(MAX_PATH), RequestBodyLimitLayer::new(MAX_PATH));
     let part = part
         .route("/r/{id}/camera", post(rooms::camera).layer(long))
@@ -157,7 +158,7 @@ async fn map(v: Visit, Path(name): Path<String>) -> Answered {
     answer(move || Ok(assets::map(&v.app, &name, v.gzip))).await
 }
 
-/// The one match's page, at `/`.
+/// The one match's page, at `/`, with a delay or as an overlay; other paths are site files.
 async fn one_page(v: Visit) -> Answered {
     if v.path == "/index.html" || v.path.strip_prefix('/').is_some_and(matches::is_page) {
         return Ok(pages::viewer(&v.app));
@@ -207,10 +208,10 @@ async fn mumble_json() -> Response {
     assets::site_file("mumble.json")
 }
 
-/// `/signin`: to the site in front, to come back to `?return=`.
+/// `/signin`: sends the browser to the site in front, to come back to `?return=`.
 async fn signin(State(app): State<Shared>, Query(back): Query<Back>) -> Response {
     let Some(site) = app.home.as_deref().and_then(origin) else { return StatusCode::NOT_FOUND.into_response() };
-    // The site hands the return path back as it is: with it, what this browser set out with.
+    // The site hands the return path back unchanged, so the state put on its end comes back too.
     let state = crate::matches::sessions::random_id();
     let back = return_to(&app, back.to.as_deref());
     let back = format!("{back}{}{SIGNIN_STATE}{state}", if back.contains('?') { '&' } else { '?' });
@@ -218,7 +219,8 @@ async fn signin(State(app): State<Shared>, Query(back): Query<Back>) -> Response
     ([(header::SET_COOKIE, began)], Redirect::to(&format!("{site}/stv/sign_in?{}", query_of(&[("return", &back)])))).into_response()
 }
 
-/// A sign-in under way: its cookie, how long it has, and what ends its return path.
+/// A sign-in in progress: its cookie (which holds its state), how many seconds it may take, and
+/// what comes before the state at the end of its return path.
 const SIGNIN_COOKIE: &str = "stvtf_signin";
 const SIGNIN_FOR: u64 = 600;
 const SIGNIN_STATE: &str = "signin=";
@@ -228,7 +230,8 @@ fn back_with(app: &App, back: &Back, cookie: String) -> Response {
     ([(header::SET_COOKIE, cookie)], Redirect::to(&return_to(app, back.to.as_deref()))).into_response()
 }
 
-/// `/signed_in`: back from the site, with who signed in, in the browser that set out.
+/// `/signed_in`: the site sends the browser back with who signed in. Refused unless it is the
+/// browser that began the sign-in.
 async fn signed_in(State(app): State<Shared>, cookies: CookieJar, Query(mut back): Query<Back>) -> Response {
     let Some(keys) = &app.keys else { return StatusCode::NOT_FOUND.into_response() };
     let to = back.to.take().unwrap_or_default();
@@ -270,7 +273,8 @@ async fn started(v: Visit, Query(q): Query<HashMap<String, String>>) -> Answered
     .await
 }
 
-/// `/fault`: what a page says went wrong in it (see `report`): taken or not, it is not told.
+/// `POST /fault`: what a page says went wrong in it (see `report`). The page is not told whether
+/// it was taken.
 async fn fault(v: Visit, headers: HeaderMap, said: Bytes) -> StatusCode {
     let agent = headers.get(header::USER_AGENT).and_then(|a| a.to_str().ok()).unwrap_or_default();
     crate::report::page_fault(&said, agent.trim(), v.client, v.who.user.as_ref().map(|u| u.uid.as_str()));

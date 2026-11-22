@@ -13,7 +13,7 @@ use crate::sync::lock;
 
 /// Two clicks closer than this are no jump.
 const MIN_JUMP: f64 = 16.0;
-/// Arcs' ids, apart from the pages' strokes'.
+/// The ids of arcs, set apart from those of the pages' strokes.
 const ARC_IDS: u32 = 0x8000_0000;
 
 /// An arc as a page asks for it: the launch, then the landing.

@@ -1,6 +1,6 @@
-// A map's cameras (src/cameras.rs), behind a room's Cameras layer: an admin's click on one puts
-// the relay there, again gives it back. The site's streamers place them; a room's other admins
-// place the room's own.
+// A map's cameras (src/cameras.rs), shown with a room's Cameras layer: an admin's click on one puts
+// the relay there, a second click gives it back. The site's streamers place the map's cameras; a
+// room's other admins place the room's own.
 import { $, canvas, ctx, state, uiScale } from "../core/core.js";
 import { asset } from "../core/env.js";
 import { setAutoZoom } from "../core/input.js";
@@ -29,12 +29,12 @@ import { note, worldAt } from "./tools.js";
 /** @typedef {[number, number, number]} Vec3 */
 /** @typedef {import("./moves.js").Move} Move */
 /** @typedef {{ id?: number; name: string; pos: Vec3; aim: Vec3; room?: boolean; move?: Move }} Camera */
-// One as the site lists it.
+// A camera as the site lists it.
 /** @typedef {Omit<Camera, "move"> & { move?: import("./moves.js").Kept }} Listed */
 /** @typedef {{ clientX: number; clientY: number }} Pointer */
 
-// Map units: a wheel step, a new camera's height and distance, how far over the players its floor
-// is, an arrow's nudge, and how far over the map the slider goes.
+// Map units: a wheel step, a new camera's height and distance, how far above the players its floor
+// may be, an arrow's nudge, and how far above the map the height slider goes.
 const STEP = 50,
   NEW_UP = 900,
   NEW_BACK = 500,
@@ -48,12 +48,12 @@ const COLOUR = { mark: "#ffd23f", on: "#7cff8a", bad: "#ff6b5a" };
 
 /** @type {{ map: string; from: string; cameras: Listed[] } | null} */
 let known = null;
-// The room's own, by map.
+// The room's own cameras, by map.
 /** @type {Record<string, Listed[]>} */
 let own = {};
-// The map asked about, and as whom: its answer may come late.
+// The map asked about, and whether as a streamer: the answer may come late.
 let asked = "";
-// Where the relay's camera is, and whether it set off on a move from there.
+// Where the relay's camera is, and whether it is on a move that started there.
 /** @type {{ pos?: Vec3; aim?: Vec3; moving?: boolean }} */
 let active = {};
 /** @type {Camera | null} */
@@ -73,7 +73,7 @@ let look = null;
 /** @param {import("../../types/stream").CameraLine} m */
 export function onCamera(m) {
   active = { pos: m.pos, aim: m.aim, moving: m.moving };
-  // Put elsewhere, or given up: no move set off from here goes on.
+  // Not moving: any move started from here is over.
   if (!m.moving) offEnded();
   if (!editing) panel();
 }
@@ -86,16 +86,17 @@ const ofRoom = () => (own[state.map ?? ""] ?? []).map(c => ({ ...c, room: true }
 const ofMap = () => [...(known?.cameras ?? []), ...ofRoom()];
 // Those listed: the room's, and the map's for the site's streamers.
 const mine = () => (me.cameras ? ofMap() : ofRoom());
-// One's name in the list: the room's are numbered apart from the map's.
+// A camera's key in the list: the room's ids are separate from the map's.
 const keyOf = (/** @type {Camera | Listed} */ c) => `${c.room ? "r" : ""}${c.id}`;
 
-// The same place, to a unit: a flight's start is rounded once kept.
+// The same place, within a unit: a flight's start is rounded when stored.
 const same = (/** @type {Vec3 | undefined} */ a, /** @type {Vec3 | undefined} */ b) =>
   a !== undefined && b !== undefined && a.every((v, i) => Math.abs(v - b[i]) <= 1);
 const isActive = (/** @type {Camera | Listed} */ c) => same(c.pos, active.pos) && same(startOf(c).aim, active.aim);
-// The relay is where no camera known here is: at one taken away, or one of the map's unseen.
+// The relay's camera is at none known here: at one since removed, or one of the map's not shown here.
 const elsewhere = () => active.pos !== undefined && !ofMap().some(isActive);
-// Marked for the site's streamers: to others it may be one of the map's.
+// The relay's camera when elsewhere, marked only for the site's streamers: to others it may be one of
+// the map's.
 /** @returns {Camera[]} */
 function stray() {
   const { pos, aim } = active;
@@ -144,7 +145,7 @@ function listedMark(c) {
   drawGoing(c, keyOf(c), colourOf(c));
   mark(c, colourOf(c), false);
 }
-// What the camera being placed shows of the points, said in the panel.
+// Says in the panel how much of the capture points the camera being placed shows.
 /** @param {{ pos: Vec3; aim: Vec3 }} c @param {import("./sight.js").Grid} grid */
 function sayLook(c, grid) {
   look ??= showsOf(grid, c);
@@ -176,7 +177,7 @@ async function load(map) {
   const as = (asked = asking(map));
   [known, sight, look, editing] = [null, null, null, null];
   panel();
-  // The map's are its streamers' to see.
+  // Only the site's streamers see the map's cameras.
   const r = me.cameras ? await fetch(asset(`cameras/${encodeURIComponent(map)}`)).catch(() => null) : null;
   if (asked !== as || (me.cameras && !r?.ok)) return;
   const said = r ? await r.json() : { map, cameras: [] };
@@ -189,12 +190,12 @@ async function load(map) {
 }
 
 // ---------- placing them
-// The panel of the one being placed.
+// Fills the panel for the camera being placed.
 /** @param {Camera} c */
 function fields(c) {
   /** @type {HTMLInputElement} */ ($("cam-name")).value = c.name;
   $("cam-remove").hidden = c.id === undefined;
-  // A streamer's new one is the map's, or the room's alone.
+  // A streamer who is also the room's admin picks whether a new camera is the map's or only the room's.
   $("cam-own").hidden = c.id !== undefined || !me.cameras || !me.admin;
   /** @type {HTMLInputElement} */ ($("cam-room")).checked = Boolean(c.room);
   const [lo, hi] = state.geometry?.bounds ?? [
@@ -221,7 +222,7 @@ function panel() {
       b.dataset[does] = id;
       return b;
     },
-    // A camera's name puts the relay there, ▶ sets it off on its move, Edit places it anew.
+    // A camera's name puts the relay there, ▶ starts its move, Edit places it again.
     row = (/** @type {Camera | Listed} */ c) => {
       const at = Object.assign(button("go", keyOf(c), c.name), { disabled: !me.admin }),
         div = Object.assign(document.createElement("div"), { className: "crow" });
@@ -237,12 +238,12 @@ function panel() {
   $("cam-list").replaceChildren(
     ...(known.from === known.map || !me.cameras ? [] : [from]),
     ...mine().map(row),
-    // No marker to give the relay back with.
+    // These admins see no marker to click to give the relay back.
     ...(elsewhere() && me.admin && !me.cameras ? [button("go", "back", "Director")] : []),
     button("id", "new", "Add"),
   );
 }
-// The frame of it being placed: its spot, or its move's end.
+// The frame being placed: the camera's own spot, or its move's end.
 const placed = () => (editing ? spotOf(editing) : null);
 function heights() {
   const c = placed();
@@ -257,7 +258,7 @@ function changed() {
   if (editing) moved(editing);
   heights();
 }
-// A change to it is done: kept, to go back to.
+// A copy of a move for the undo history, to which `done` adds the camera after a finished change.
 const moveOf = (/** @type {Move | undefined} */ m) =>
   m && { ...m, end: { pos: /** @type {Vec3} */ ([...m.end.pos]), aim: /** @type {Vec3} */ ([...m.end.aim]) } };
 function done() {
@@ -281,7 +282,7 @@ function undo() {
 /** @param {Camera | null} c */
 function edit(c) {
   [editing, past, picked, look] = [c, [], "pos", null];
-  // A flight's start looks as it was flown, whatever was kept.
+  // A flight's start aims the way it was flown, whatever aim was stored.
   if (c) c.aim = startOf(c).aim;
   begun();
   done();
@@ -300,14 +301,14 @@ function nudge(e) {
   changed();
   done();
 }
-// The keys of placing one, before the page's own.
+// Keys while placing a camera, handled before the page's own.
 /** @param {KeyboardEvent} e */
 function key(e) {
   if (!editing || e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement) return;
-  // Esc ends a flight first, then the placing.
+  // Esc ends a flight or its countdown first, else the placing.
   if (e.key === "Escape") escaped() || edit(null);
   else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") undo();
-  // R: a flight begun or ended.
+  // R starts or stops recording a flight.
   else if (e.key.toLowerCase() === "r" && !e.ctrlKey && !e.metaKey && !e.altKey) recKey();
   else if (e.key.startsWith("Arrow")) nudge(e);
   else return;
@@ -319,13 +320,13 @@ function key(e) {
 function fresh() {
   const { cx, cy } = focusOf(state.view),
     [x, y] = [Math.round(cx), Math.round(cy)],
-    // On the floor the players are about on, not a roof over it.
+    // Aimed at the floor the players are on, not a roof over it.
     zs = state.lastPlayers.flatMap(p => (p.pos ? [p.pos[2]] : [])),
     about = zs.length ? zs.reduce((a, b) => a + b, 0) / zs.length : 0,
     z = (sight && floorUnder(sight, x, y, about + NEW_REACH)) ?? Math.round(about);
   return { name: "", pos: [x + NEW_BACK, y, z + NEW_UP], aim: [x, y, z], room: !me.cameras };
 }
-// A change to the camera being placed: to the room's own, or the map's.
+// Saves a change to the camera being placed, to the room's cameras or the map's.
 /** @param {object} change */
 async function save(change) {
   const room = Boolean(editing?.room),
@@ -391,7 +392,7 @@ function wirePanel() {
     });
     $(id).addEventListener("change", done);
   }
-  // Typing in it is not the page's keys.
+  // Typing in the panel must not trigger the page's keys.
   $("cameras").addEventListener("keydown", e => e.stopPropagation());
   $("cam-save").addEventListener("click", () => {
     if (!editing) return;
@@ -402,15 +403,16 @@ function wirePanel() {
   $("cam-cancel").addEventListener("click", () => edit(null));
   $("settings").addEventListener("change", () => panel());
 }
-// Puts the relay at a camera (again, or none: back).
+// Puts the relay at a camera. The camera it is already at, or null, gives the relay back.
 /** @param {Camera | Listed | null} c */
 function put(c) {
-  // Off on its move, it is no longer there: its name puts it back.
+  // On a move it is no longer at the camera, so the camera's name puts it back at the start.
   post("camera", !c || (isActive(c) && !active.moving) ? {} : startOf(c), HOME).then(
     async r => r.ok || note(await r.text()),
   );
 }
-// A press: takes hold of the camera being placed, or puts the relay at a marker (again: back).
+// A press takes hold of the camera being placed, or puts the relay at a marker (the same one again
+// gives it back).
 /** @param {PointerEvent} e */
 function press(e) {
   if (!layerOn("cameras") || e.button !== 0) return;
@@ -430,7 +432,7 @@ export function camerasTool() {
     if (!held || !c) return;
     const [x, y] = worldAt(e);
     [c[held][0], c[held][1]] = [x, y];
-    // The aim lies on the floor under it.
+    // The aim goes on the highest floor there below the camera.
     if (held === "aim" && sight) c.aim[2] = floorUnder(sight, x, y, c.pos[2]) ?? c.aim[2];
     changed();
   });
@@ -439,7 +441,7 @@ export function camerasTool() {
     held = null;
   });
   addEventListener("keydown", key, { capture: true });
-  // Not while a flight is counted down to: it begins where the camera was put.
+  // No steering during a flight's countdown: the flight begins where the camera was put.
   flyTool(() => (counted() ? null : placed()), changed, done);
   canvas.addEventListener(
     "wheel",

@@ -14,7 +14,7 @@ use super::sweep::KEPT_PREFIX;
 use crate::app::is_name;
 use crate::matches::sessions::LIVE_PREFIX;
 
-/// What follows a demo's name in that of its voice.
+/// What follows a demo's name in the name of its voice file.
 pub(super) const VOICE: &str = ".voice";
 
 /// Something said from outside the match, as the match's stream came to its tick: what writing it
@@ -35,8 +35,8 @@ pub(crate) struct Spoken {
 pub(crate) enum By {
     /// A player's then: their slot (their entity less one) and Steam account.
     Player { slot: u8, account: u32 },
-    /// No player's then, by who they are where they talk (as their lines name them) and the
-    /// name they talk under: a player's once someone says whose, when the demo is built.
+    /// No player's at the time: known by who they are where they talk (as their lines name them)
+    /// and the name they talk under. A player's once someone says whose, when the demo is built.
     Voice {
         who: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -44,7 +44,7 @@ pub(crate) enum By {
     },
 }
 
-/// Whose account someone in a voice channel is said to be by now, by who they are there.
+/// Looks up the account someone in a voice channel is now said to be, by who they are there.
 pub(crate) type WhoNow<'a> = &'a dyn Fn(&str) -> Option<u32>;
 
 /// A demo's voice file.
@@ -67,7 +67,7 @@ pub(super) fn with_comms(dir: &Path, id: &str, file: &str) -> Option<PathBuf> {
     [LIVE_PREFIX, KEPT_PREFIX].iter().map(|p| dir.join(format!("{p}{id}-{file}.dem"))).find(|p| has_voice(p))
 }
 
-/// Where what was said of whose voice is whose in match `id`'s demo `file` is kept: for that demo
+/// The file that keeps whose voice is whose in match `id`'s demo `file`: it holds for that demo
 /// alone, whatever is known of them elsewhere.
 pub(super) fn picks_file(dir: &Path, id: &str, file: &str) -> PathBuf {
     dir.join(format!("picks-{id}-{file}.json"))
@@ -102,8 +102,9 @@ pub(super) fn spoken_in(demo: &Path) -> Result<Vec<Spoken>> {
     Ok(lines.map_while(Result::ok).filter_map(|l| serde_json::from_str(&l).ok()).collect())
 }
 
-/// What tells match `id`'s demo `file` with its comms from any other, and from itself once more
-/// was recorded or said, or someone in it is said to be another (`who`): None if it is none.
+/// A key for match `id`'s demo `file` with its comms: it differs from any other demo's, and
+/// changes once more is recorded or said, or someone in it is said to be another player (`who`).
+/// None if there is no such demo.
 pub(crate) fn comms_key(dir: &Path, id: &str, file: &str, who: WhoNow) -> Option<String> {
     let path = with_comms(dir, id, file)?;
     let len = |p: &Path| std::fs::metadata(p).map_or(0, |m| m.len());

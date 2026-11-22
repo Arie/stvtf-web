@@ -338,7 +338,7 @@ impl RoomRelay {
     }
 }
 
-/// Which demo file holds a server tick of a map load: the load's number (its part's), the tick.
+/// The demo file that holds a server tick of a map load, given the load's number and the tick.
 pub(crate) type DemoOf = Arc<dyn Fn(usize, u32) -> Option<PathBuf> + Send + Sync>;
 
 /// A room's relays, and where its demos are.

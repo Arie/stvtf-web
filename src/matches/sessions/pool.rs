@@ -174,8 +174,8 @@ impl Sessions {
     }
 
     /// The session playing match `id`'s demo `file` with its comms in it, as a demo of its own
-    /// (see [`Sessions::open_demo_as`]): recorded on or said more since, or someone in it said to
-    /// be another (`who`), it is another.
+    /// (see [`Sessions::open_demo_as`]). Once more is recorded or said, or someone in it is said
+    /// to be another player (`who`), it is another demo.
     pub fn open_comms_demo_as(&self, by: Option<&str>, id: &str, file: &str, who: WhoIsWho) -> Result<Arc<Session>> {
         let dir = self.store.as_ref().map(|s| s.dir.clone()).ok_or_else(|| anyhow!("no demos are kept here"))?;
         let whom = |key: &str| who.account_now(key);

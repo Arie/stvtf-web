@@ -5,7 +5,7 @@ import { $, state } from "../../app/core/core.js";
 import { CHAT_TYPES, chat, feedEvent } from "../../app/panel/feed.js";
 
 // The lines Rust checks against stvtf (`the_sample_lines_are_what_stvtf_sends`), so a field the page
-// reads that stvtf does not send shows up as a hole in the row.
+// reads that stvtf does not send is missing from the row.
 const samples = readFileSync(new URL("../../testdata/lines.jsonl", import.meta.url), "utf8")
   .trim()
   .split("\n")
@@ -16,7 +16,7 @@ const PLAYERS = {
   5: { id: 5, name: "medic", team: "red" },
 };
 const p = id => PLAYERS[id];
-// Sent to the page, but it shows nothing of them.
+// Lines sent to the page that it shows no row for.
 const NO_ROW = new Set(["capture_broken"]);
 // What each line must say, which only holds if the page read the right fields.
 const SAYS = {

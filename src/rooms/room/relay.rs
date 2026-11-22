@@ -81,7 +81,8 @@ impl Room {
                     if let Some(was) = r.was() {
                         *lock(&self.relay.was) = Some(was);
                     }
-                    // A stand-in is not where the relay is: the room's own place goes once known.
+                    // While the room's place is not known, `want` is a stand-in: the relay is sent
+                    // the room's place once it is known.
                     *lock(&self.relay.sent) = known.then_some(want);
                     // A new relay has no marker yet, nor the room's names.
                     r.keep_names(lock(&self.names).for_tf2());

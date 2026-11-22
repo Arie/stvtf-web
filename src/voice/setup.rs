@@ -82,7 +82,7 @@ pub(crate) struct VoiceSetup {
     pub(crate) links: super::links::Links,
     /// Where the voice bot is added to a Discord server (`STVTF_VOICE_BOT`), for the invite.
     pub(crate) bot: Option<String>,
-    /// The bell the voice bot waits on for Mumble channels asked for.
+    /// What the voice bot waits on to hear of Mumble channels asked for.
     pub(crate) mumble_changes: super::mumble::Changes,
     /// Whether a Mumble server may be on this machine or its network (`STVTF_MUMBLE_ANYWHERE=1`):
     /// at a LAN.

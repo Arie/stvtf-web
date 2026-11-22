@@ -46,7 +46,8 @@ struct Examples;
 /// this soon.
 const LOADER_CACHE_FOR: std::time::Duration = std::time::Duration::from_mins(5);
 
-/// What other sites' kill icons have more: the class names stay as they are within a version.
+/// Added to the kill icons' stylesheet for other sites (`/killicons/v1/`): its class names stay
+/// as they are within a version.
 const CRITS: &str = "\n.killicon.crit { filter: drop-shadow(0 0 3px #ff4b3a); }\n";
 
 /// Whether file `name` has extension `extension`.
@@ -63,7 +64,8 @@ pub(super) fn app_files() -> &'static [(String, Vec<u8>)] {
     static FILES: OnceLock<Vec<(String, Vec<u8>)>> = OnceLock::new();
     FILES.get_or_init(|| {
         let mut names: Vec<String> = AppFiles::iter().map(|n| n.to_string()).collect();
-        // No part of a stylesheet (`css/`) by itself, nor what is no file of the page.
+        // Not the parts of a stylesheet (`css/`) by themselves, nor `mumble.json`, which is no
+        // file of the page.
         names.retain(|n| is(n, "js") || (is(n, "css") && !n.contains('/')));
         names.sort_by_key(|n| (n != "style.css", !is(n, "css"), n.clone()));
         names.into_iter().filter_map(|name| Some((served(&name)?, name))).map(|(body, name)| (name, body)).collect()
@@ -89,7 +91,8 @@ fn inline_imports(sheet: &str) -> String {
     sheet.lines().map(|line| part(line).unwrap_or_else(|| format!("{line}\n"))).collect()
 }
 
-/// Static file `path`, cached for a day; the page's are under `/app/<version>/`.
+/// Static file `path`; those that do not change are cached for a day. The page's are under
+/// `/app/<version>/`.
 pub(super) fn site_file(path: &str) -> Response {
     let name = path.trim_start_matches('/');
     let (body, kept) = match name.split_once('/') {
@@ -187,8 +190,6 @@ pub(super) fn sight(app: &App, name: &str, gzip: bool) -> Response {
     }
 }
 
-/// Changes whenever a page file does, so browsers holding `/app/` files for a day fetch new ones
-/// after a deploy; the modules' relative imports carry it along.
 /// The viewer's modules, without the embed's and upload page's entries and what is loaded when
 /// needed (`vendor/`).
 pub(super) fn page_modules() -> &'static [String] {
@@ -200,7 +201,9 @@ pub(super) fn page_modules() -> &'static [String] {
     })
 }
 
-/// The page files' version: their hash (FNV-1a), so a deploy busts the day's cache.
+/// The page files' version: their hash (FNV-1a). It is in the path of the `/app/` files, so
+/// browsers that keep those for a day fetch new ones after a deploy; the modules' relative imports
+/// carry it along.
 pub(crate) fn app_version() -> &'static str {
     static VERSION: OnceLock<String> = OnceLock::new();
     VERSION.get_or_init(|| format!("{:016x}", fnv1a(app_files().iter().flat_map(|(_, body)| body.iter().copied()))))

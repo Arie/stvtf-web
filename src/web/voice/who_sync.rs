@@ -32,7 +32,7 @@ pub(crate) fn site(home: &str, keys: Arc<Keys>) -> Site {
     Site { name, ask: Box::new(ask) }
 }
 
-/// `GET /voice/known?since=<version>`, another stv.tf's: what changed since.
+/// `GET /voice/known?since=<version>`, for another stv.tf: what changed since.
 pub(in crate::web) fn get_known(app: &App, bearer: Option<&str>, since: u64) -> Response {
     let Some(key) = &app.voice.key else { return StatusCode::NOT_FOUND.into_response() };
     if !is_key(key, bearer) {
@@ -42,7 +42,7 @@ pub(in crate::web) fn get_known(app: &App, bearer: Option<&str>, since: u64) -> 
     Json(serde_json::json!({ "version": version, "known": known })).into_response()
 }
 
-/// `POST /voice/known`, another stv.tf's: what was said on a page there.
+/// `POST /voice/known`, from another stv.tf: what was said on a page there.
 pub(in crate::web) fn post_known(app: &App, bearer: Option<&str>, said: &RegionEntry) -> Response {
     let Some(key) = &app.voice.key else { return StatusCode::NOT_FOUND.into_response() };
     if !is_key(key, bearer) {

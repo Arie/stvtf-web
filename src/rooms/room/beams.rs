@@ -32,8 +32,8 @@ pub(super) const HEAD_ANGLE: f64 = 30.0;
 /// takes.
 const MAX_MARKER_BEAMS: usize = 1200;
 
-/// The marker's beams' life: the relay shows kept beams again as they run out, for as long as it
-/// sets.
+/// The life given to the marker's beams: none, as the relay sets it and shows kept beams again
+/// as they run out.
 const KEPT_LIFE: f32 = 0.0;
 
 impl Room {
@@ -128,7 +128,7 @@ impl Room {
         drape::ground(maps, &map)
     }
 
-    /// Person `by`'s ink now: theirs, or the pages' for their number.
+    /// The ink of person `by` now: the one they picked, or the one the pages give their number.
     pub(super) fn ink_now(&self, by: u32) -> [u8; 3] {
         lock(&self.people).ink_of(by).and_then(rgb).unwrap_or(INKS[(by.max(1) as usize - 1) % INKS.len()])
     }
@@ -184,7 +184,7 @@ fn up(p: [f64; 3]) -> [f64; 3] {
     [p[0], p[1], p[2] + FENCE]
 }
 
-/// Whether two points are the one (a piece starting where another ends).
+/// Whether two points are the same (a piece starting where another ends).
 fn same(a: [f64; 3], b: [f64; 3]) -> bool {
     (0..3).all(|k| (a[k] - b[k]).abs() < 1e-6)
 }

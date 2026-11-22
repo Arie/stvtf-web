@@ -25,7 +25,7 @@ const TASKS = {
   rustfmt: { section: "checks", cmd: "cargo +nightly fmt --check", fix: "cargo +nightly fmt" },
   clippy: { section: "checks", cmd: "cargo clippy --all-targets --locked --quiet -- -D warnings" },
   rustdoc: { section: "checks", cmd: "cargo doc --no-deps --locked --quiet", env: { RUSTDOCFLAGS: "-D warnings" } },
-  // ESLint's fixes come before Prettier's, which has the last word on layout.
+  // ESLint's fixes run before Prettier's, so Prettier decides the final layout.
   eslint: { section: "checks", cmd: "npm run --silent lint", fix: "npm run --silent lint -- --fix", needs: [NPM] },
   prettier: { section: "checks", cmd: "npm run --silent format:check", fix: "npm run --silent format", needs: [NPM] },
   tsc: { section: "checks", cmd: "npm run --silent typecheck", needs: [NPM] },
@@ -126,7 +126,7 @@ const chosen = Object.keys(TASKS).filter(
  *   start?: number; ms?: number }} Run
  */
 
-// Why a check cannot run here (its program or node_modules is missing), or null.
+// Why a check cannot run here (its program or a file it needs is missing), or null.
 /** @param {string} name @param {string} cmd */
 function missing(name, cmd) {
   const need = TASKS[name].needs?.find(n => !existsSync(path.join(ROOT, n.file)));

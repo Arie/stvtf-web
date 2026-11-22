@@ -7,7 +7,7 @@ import { TEAM } from "../core/core.js";
 const BEFORE_MS = 3000;
 // The fight strip is redrawn this often (ms) as a live match's grows.
 const HEAT_MS = 5000;
-// Its bins (ms), and kills in one for full colour.
+// The fight strip's bins (ms), and the kills in one bin that give full colour.
 const HEAT_BIN_MS = 4000,
   HEAT_FULL = 3;
 const NAMES = /** @type {Record<string, string>} */ ({ blue: "BLU", red: "RED" });
@@ -21,7 +21,7 @@ const el = (cls, tag = "div") => Object.assign(document.createElement(tag), { cl
  * @typedef {{
  *   track: HTMLElement; home: URL; clock: (ms: number) => string;
  *   length: () => number; jump: ((ms: number) => void) | null;
- * }} Options `jump` is null for a viewer, who cannot.
+ * }} Options `jump` is null for a viewer who may not jump.
  */
 
 /** @param {Options} t */
@@ -95,7 +95,7 @@ class Timeline {
       px = (/** @type {number} */ ms) => ((ms - from) / all) * width;
     for (const [e, ms] of this.placed) {
       e.style.transform = `translate3d(${px(ms)}px, 0, 0)`;
-      // Past either end of a zoomed track: not shown beside it.
+      // A mark past either end of a zoomed track is hidden.
       const out = ms < from || ms > to ? "none" : "";
       if (e.style.display !== out) e.style.display = out;
     }
@@ -190,7 +190,7 @@ class Timeline {
     this.draw(moved);
   }
 
-  // Another map: its marks are fetched from the first.
+  // Another map: its marks are fetched from the first mark on.
   /** @param {number} load */
   nextMap(load) {
     [this.load, this.marks, this.fetched, this.shown, this.fetching] = [load, [], 0, 0, false];
@@ -252,8 +252,8 @@ function make(m, starts, mark) {
   });
 }
 
-// The rounds' starts, and the timeline's start when it was in a round (one joined live) that has
-// been won before the first start.
+// The rounds' starts, with the timeline's start added when it lies in a round (one joined live)
+// that was won before the first known start.
 /** @param {number[]} starts @param {Mark[]} marks @param {number} start */
 function joined(starts, marks, start) {
   const first = starts[0] ?? Infinity;
@@ -277,7 +277,7 @@ function drawRounds(span, starts, marks) {
   );
 }
 
-// Kills binned across the strip, in the colour of the team with more; the time it covers.
+// Kills binned across the strip, in the colour of the team with more. Returns the time the strip covers.
 /** @param {HTMLCanvasElement} heat @param {Mark[]} marks @param {number} start @param {number} length @returns {[number, number]} */
 function drawHeat(heat, marks, start, length) {
   // Fixed bins of time, a pixel each: a bin once counted stays put as a live match grows.

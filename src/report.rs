@@ -11,7 +11,8 @@ use sentry::protocol::{Event, Exception, Frame, IpAddress, Level, Request, Stack
 
 /// One kind of fault is told once in this long: a save failing every few seconds is one issue.
 const ONCE_IN: Duration = Duration::from_secs(60);
-/// Pages' reports taken in a minute, of all viewers together, and the most kept of one's text.
+/// The most page reports taken in a minute, from all viewers together; and the most characters
+/// of text and stack frames kept of one.
 const PAGE_REPORTS: usize = 30;
 const PAGE_TEXT: usize = 2000;
 const PAGE_FRAMES: usize = 50;
@@ -22,8 +23,8 @@ static PAGES: Mutex<Vec<Instant>> = Mutex::new(Vec::new());
 /// system, its process).
 static PAGE_HUB: OnceLock<sentry::Hub> = OnceLock::new();
 
-/// Starts telling Sentry, as `process` ("web" or "relay") of `STVTF_REGION`. Kept until the
-/// process ends: dropped, it sends what is left.
+/// Starts telling Sentry, as `process` ("web" or "relay") of `STVTF_REGION`. Keep the guard until
+/// the process ends: when dropped, it sends what is left.
 pub(crate) fn start(process: &'static str) -> sentry::ClientInitGuard {
     let region = std::env::var("STVTF_REGION").ok().filter(|r| !r.is_empty());
     let mut options = sentry::ClientOptions::new();
@@ -48,8 +49,8 @@ pub(crate) fn start(process: &'static str) -> sentry::ClientInitGuard {
     guard
 }
 
-/// Says `text` as a line, and tells Sentry: `kind` (the line unfilled) is what makes it the same
-/// fault as another.
+/// Logs `text` as an error and tells Sentry. Faults with the same `kind` (the format string) are
+/// one fault to Sentry.
 pub(crate) fn fault(kind: &'static str, text: &str) {
     tracing::error!("{text}");
     if due(kind, Instant::now()) {
@@ -71,7 +72,7 @@ fn due(kind: &'static str, now: Instant) -> bool {
     due
 }
 
-/// Says a line as `log!` does, and tells Sentry of it.
+/// Logs a formatted line as an error, and tells Sentry of it.
 macro_rules! fault_macro {
     ($fmt:literal $($arg:tt)*) => {
         $crate::report::fault($fmt, &format!($fmt $($arg)*))
@@ -167,7 +168,7 @@ pub(crate) struct PageFault {
 }
 
 /// Tells Sentry what a page reported, with its browser (`agent`) and whose it is (`client`, and
-/// `steam` of one signed in). Whether it was taken: only so many are in a minute.
+/// `steam` of one signed in). Returns whether it was taken: only `PAGE_REPORTS` are in a minute.
 pub(crate) fn page_fault(body: &[u8], agent: &str, client: IpAddr, steam: Option<&str>) -> bool {
     let Ok(fault) = serde_json::from_slice::<PageFault>(body) else { return false };
     if fault.message.is_empty() || !page_slot(Instant::now()) {
@@ -278,7 +279,7 @@ mod tests {
         let read = frames(firefox);
         assert_eq!(read[1].function.as_deref(), Some("drawPlayers"));
         assert_eq!(read[0].filename.as_deref(), Some("main.js"));
-        // Another's script is not this build's.
+        // A script from elsewhere is not in-app.
         let other = frames("at f (chrome-extension://abc/inject.js:1:2)");
         assert_eq!(other[0].in_app, Some(false));
     }

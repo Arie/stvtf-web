@@ -28,7 +28,7 @@ pub(crate) fn start(dir: Option<&Path>, name: &str) {
         Some(Err(e)) => (None, Some(e)),
         None => (None, None),
     };
-    // Written as it is said: little is, and nothing of it is lost when the process ends.
+    // Written unbuffered: there is little of it, and nothing is lost when the process ends.
     let kept = files.map(|files| fmt::layer().with_target(false).with_ansi(false).with_writer(Mutex::new(files)).with_filter(level()));
     tracing_subscriber::registry().with(stderr).with(kept).init();
     if let (Some(dir), Some(e)) = (dir, refused) {

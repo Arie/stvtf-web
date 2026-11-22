@@ -18,7 +18,7 @@ function edit(team) {
   });
   input.value = String(shown(team));
   input.setAttribute("aria-label", `${team === "blue" ? "BLU" : "RED"} score`);
-  // Once: taking the input away blurs it.
+  // Runs once: removing the input blurs it, which calls this again.
   const done = () => {
     if (!score.classList.contains("editing")) return;
     score.classList.remove("editing");

@@ -1,8 +1,8 @@
-// The players' voice (`voice` lines, which the page's stream carries once it asks: ?voice=1): each
-// speaker's Opus frames decoded with WebCodecs and played through a volume of their own, one
-// after the other as they come. Who talks, and the viewer's mutes and volumes (kept in the
-// browser, by SteamID, across matches). Off until the viewer turns it on: a browser plays sound
-// only after a click. Pausing, seeking or another speed than 1× drops what is queued.
+// The players' voice (`voice` lines, which the page's stream carries once it asks: ?voice=1). Each
+// speaker's Opus frames are decoded with WebCodecs and played in order through that speaker's own
+// volume. Also tracks who is talking, and the viewer's mutes and volumes (kept in the browser by
+// SteamID, across matches). Off until the viewer turns it on: a browser plays sound only after a
+// click. Pausing, seeking or a speed other than 1× drops what is queued.
 import { OVERLAY, state } from "./core.js";
 import { env } from "./env.js";
 /** @typedef {import("../../types/stream").VoiceLine} VoiceLine */
@@ -11,18 +11,18 @@ import { env } from "./env.js";
 const LEAD = 0.1;
 // How long a speaker counts as talking after their last frame, in milliseconds.
 const TALK_MS = 400;
-// How long a voice of no player stays listed after its last frame, in milliseconds.
+// How long a voice that belongs to no player stays listed after its last frame, in milliseconds.
 const FORGET_MS = 120_000;
 // The most seconds of a speaker queued ahead (past it, after a stall, frames are dropped), and the
 // most speakers (a client that claims a new SteamID each packet makes a new one each time).
 const MAX_AHEAD = 1,
   MAX_SPEAKERS = 64;
-// The levels (dB of full scale, RMS) a speaker's loudness goes from 0 to 1 between, and how long
-// a level heard stands, in seconds.
+// The RMS levels (dB of full scale) at which a speaker's loudness is 0 and 1, and how long a level
+// stays shown after it played, in seconds.
 const QUIET_DB = -42,
   LOUD_DB = -14,
   LOUD_HOLD = 0.12;
-// What the browser keeps: whether voice is on, and the mutes and volumes.
+// localStorage keys: whether voice is on, and the mutes and volumes.
 const ON_KEY = "voice",
   PREFS_KEY = "voice-prefs";
 
@@ -42,19 +42,19 @@ let chosen = read(ON_KEY) != null;
 let playing = true;
 /** @type {Map<string, Speaker>} */
 const speakers = new Map();
-// Paused: who was talking as it stopped, and how loud (null: nothing of them played yet). They
-// show so until playback goes on or jumps.
+// While paused: who was talking when playback stopped, and how loud (null: none of their sound had
+// played yet). They stay shown that way until playback resumes or jumps.
 /** @type {Map<string, number | null> | null} */
 let held = null;
 // When it paused, by the page's clock: the waveforms stand still at that moment.
 let heldAt = 0;
 
-// The time the waveforms are drawn at: now, or paused, when it stopped.
+// The time the waveforms are drawn at: now, or while paused, the moment playback stopped.
 /** @param {number} t */
 export const waveTime = t => (held ? heldAt : t);
 /** @type {{ muted: string[]; volume: Record<string, number> }} */
 const prefs = { muted: [], volume: {}, ...parse(read(PREFS_KEY)) };
-// Told when who talks, or the mutes, change.
+// Called when who is talking or the mutes change.
 /** @type {Set<() => void>} */
 export const voiceListeners = new Set();
 
@@ -107,8 +107,8 @@ export function setVoice(want) {
   voiceListeners.forEach(f => f());
 }
 
-// The audio, once there has been a click or a key: voice turned on in an earlier visit waits for
-// one (a browser plays no sound before), and the page is told when it has come.
+// Starts the audio. A browser plays no sound before a click or a key press, so voice turned on in an
+// earlier visit waits for one; the listeners are told when the audio starts.
 function start() {
   if (!audio) {
     audio = new AudioContext();
@@ -129,7 +129,8 @@ for (const first of ["pointerdown", "keydown"])
 // Whether voice is on but nothing can be heard yet: the page waits for its first click.
 export const voiceWaiting = () => voiceOn() && audio?.state !== "running";
 
-// Teams that spoke unheard ("" unknown): then the button asks for a click.
+// Teams that spoke while the viewer could not hear them ("" for unknown): the voice button then asks
+// for a click.
 /** @type {Set<string>} */
 const missed = new Set();
 const unheard = () => (voiceOn() ? voiceWaiting() : !chosen && !voiceUnsupported());
@@ -142,7 +143,7 @@ function spokeUnheard(team) {
   voiceListeners.forEach(f => f());
 }
 
-// Who talks per `talking` lines: player, and when.
+// When each player last talked, from `talking` lines.
 /** @type {Map<number, number>} */
 const said = new Map();
 
@@ -152,7 +153,8 @@ export function onTalking(m) {
   if (m.player != null) said.set(m.player, performance.now());
 }
 
-// Whether the button was asking at this click or key, and if both teams had spoken.
+// Whether the voice button was asking for a click at the last click or key press, and whether both
+// teams had spoken by then.
 /** @type {{ both: boolean } | null} */
 let asked = null;
 export const voiceAsked = () => asked;
@@ -166,7 +168,7 @@ function forget(id) {
   speakers.delete(id);
 }
 
-// What is queued of `s` stops, and its decoder goes (a new one starts afresh).
+// Stops what is queued for `s` and closes its decoder (the next line starts a new one).
 /** @param {Speaker} s */
 function drop(s) {
   for (const q of s.queued) q.stop();
@@ -177,8 +179,8 @@ function drop(s) {
   s.decoder = null;
 }
 
-// The speaker of `m`, ready to decode, at the level their mutes say now (a team's changes); none
-// past the most speakers, or with a decoder that will not take the line.
+// The speaker of `m`, ready to decode, with their volume set from the mutes as they are now (a team
+// mute can change it). Null past MAX_SPEAKERS, or when a decoder cannot be configured for the line.
 /** @param {VoiceLine} m @returns {Speaker | null} */
 function speaker(m) {
   let s = speakers.get(m.steamid);
@@ -200,7 +202,7 @@ function speaker(m) {
     speakers.set(m.steamid, s);
   }
   s.player = m.player ?? null;
-  // A voice from outside the match that is no player's: its name, and the team it is taken for.
+  // For a voice from outside the match that belongs to no player: its name, and the team it counts as.
   s.name = m.name ?? null;
   s.team = m.team ?? null;
   if (audio && !s.gain) {
@@ -227,8 +229,8 @@ function level(s) {
   if (s.gain) s.gain.gain.value = isMuted(s.steamid) ? 0 : volumeOf(s.steamid);
 }
 
-// When sound goes after what is queued until `queued`, at `now`: right after it while any is left
-// (a line late by less than the lead leaves no gap), else the lead ahead of now.
+// When the next sound starts, with sound queued until `queued` and the time `now`: right after the
+// queue while any is left (a line late by less than LEAD leaves no gap), else LEAD ahead of now.
 /** @param {number} queued @param {number} now */
 export const startAt = (queued, now) => (queued > now ? queued : now + LEAD);
 
@@ -256,7 +258,7 @@ function play(s, data) {
   s.loud.push({ at, end: s.at, level: loud });
 }
 
-// How loud `samples` are, 0 (a murmur) to 1 (a shout): their level in decibels, between the two.
+// How loud `samples` are, 0 (a murmur) to 1 (a shout): their RMS level in decibels, between QUIET_DB and LOUD_DB.
 /** @param {Float32Array} samples */
 export function loudness(samples) {
   let sum = 0;
@@ -274,9 +276,9 @@ function loudAt(s, now, ahead) {
   return loud;
 }
 
-// How loud player `id` is as heard now, 0 to 1 (the loudest of the last moment, so it does not
-// flicker between words' beats); null with nothing known of it (not talking, or nothing played).
-// Paused, as loud as they were when it stopped.
+// How loud player `id` is as heard now, 0 to 1 (the loudest within LOUD_HOLD, so it does not
+// flicker between syllables); null with nothing known of it (not talking, or nothing played).
+// While paused, as loud as they were when playback stopped.
 /** @param {number} id */
 export function loudnessOf(id) {
   if (!audio) return null;
@@ -307,7 +309,7 @@ export function onVoice(m) {
 // Playback paused, went on, or changed speed: only playing at 1× has voice.
 /** @param {{ paused: boolean; speed: number }} m */
 export function voicePlayback(m) {
-  // Paused: those talking stay shown as they were, with what was about to play of them.
+  // On a pause, those talking stay shown as they were, counting the sound that was about to play.
   if (!m.paused) held = null;
   else if (!held) {
     const at = audio?.currentTime ?? 0;
@@ -322,20 +324,20 @@ export function voicePlayback(m) {
 
 export const voicePlaying = () => playing;
 
-// The page's stream switched (one's own playback, and back to live, which says nothing of
-// playback): as playing, at 1×, nothing of the old one queued.
+// The page's stream switched (to the viewer's own playback, or back to live, which sends no playback
+// line): assume it plays at 1×, and drop what the old stream queued.
 export function streamSwitched() {
   playing = true;
   dropAll();
 }
 
-// A seek or a jump: what is queued was of before it, and so is who was talking in a pause.
+// A seek or a jump: what is queued is from before it, and so is the list of who was talking in a pause.
 export function dropAll() {
   if (held) held = new Map();
   for (const s of speakers.values()) drop(s);
 }
 
-// Whether `s` is talking: paused, whether they were when it stopped.
+// Whether `s` is talking; while paused, whether they were when playback stopped.
 /** @param {Speaker} s */
 function talking(s) {
   return held ? held.has(s.steamid) : performance.now() - s.last < TALK_MS;
@@ -348,8 +350,8 @@ export function isTalking(id) {
   return !held && performance.now() - (said.get(id) ?? -Infinity) < TALK_MS;
 }
 
-// Everyone heard so far, for the speakers list. A voice of no player that fell silent is forgotten
-// (matched to a player since, or gone): their mute and volume are kept.
+// Everyone heard so far, for the speakers list. A voice that belongs to no player is forgotten after
+// FORGET_MS of silence (it was matched to a player since, or is gone); its mute and volume are kept.
 export function speakersHeard() {
   const now = performance.now();
   for (const s of [...speakers.values()]) if (s.player == null && now - s.last > FORGET_MS) forget(s.steamid);
@@ -361,8 +363,8 @@ export function speakersHeard() {
   }));
 }
 
-// Everyone muted, or teams, for this page (another match has other players), and those let
-// through anyway. Kept for the tab, so a reload does not let anyone be heard again.
+// Mutes of everyone or of a team, for this page (another match has other players), and the players
+// let through anyway. The mutes are kept in sessionStorage, so a reload does not let anyone be heard again.
 const MUTES_KEY = `stvtf.voice.mutes:${globalThis.location?.pathname ?? ""}`;
 /** @type {Set<string>} */
 const mutedTeams = new Set();
@@ -380,8 +382,8 @@ function saveMutes() {
   } catch {}
 }
 
-// The team of whoever has `steamid` in the match; of a voice that is no player's, the team its
-// lines say.
+// The team of whoever has `steamid` in the match; for a voice that belongs to no player, the team
+// its lines give.
 /** @param {string} steamid */
 export function teamOf(steamid) {
   for (const p of state.players.values()) if (p.steamid === steamid) return p.team;
@@ -396,9 +398,9 @@ export function isMuted(steamid) {
   return mutedAs(steamid, s?.player ?? null, s?.team ?? null);
 }
 
-// The same, of a voice as its line says it: the player it is (by id), else the team it is taken
-// for. Everyone muted, nobody is heard, whoever they are and whenever they first talk. A team
-// muted, so is a player the match's list does not have yet: they may be on it.
+// The same, for a voice as its line describes it: by the player's id, else by the team the line
+// gives. With everyone muted, nobody is heard, whoever they are and whenever they first talk. With a
+// team muted, a player the match's list does not have yet is muted too: they may be on that team.
 /** @param {string} steamid @param {number | null} player @param {string | null} lineTeam */
 export function mutedAs(steamid, player, lineTeam) {
   if (prefs.muted.includes(steamid)) return true;
@@ -414,14 +416,14 @@ export function mutedAs(steamid, player, lineTeam) {
 /** @param {string} team */
 export const isTeamMuted = team => mutedTeams.has(team);
 
-// After a change of mutes: every speaker at their level, and the page told.
+// After the mutes change: sets every speaker's volume and tells the listeners.
 function remuted() {
   for (const s of speakers.values()) level(s);
   voiceListeners.forEach(f => f());
 }
 
-// A click on someone: muted, they are heard (their own mute lifted, or let through their team's);
-// heard, their own mute.
+// A click on someone: if muted, they are heard again (their own mute is lifted, or they are let
+// through their team's mute); if heard, they are muted.
 /** @param {string} steamid */
 export function toggleMuted(steamid) {
   if (!isMuted(steamid)) {
@@ -453,8 +455,8 @@ export function allMuted() {
   return everyone && !letThrough.size;
 }
 
-// Everyone muted (those heard, and whoever talks later, on a team or not: one's own mutes kept),
-// or nobody (one's own mutes of those heard lifted too).
+// Mutes everyone (those heard and whoever talks later, on a team or not; the viewer's own mutes are
+// kept), or nobody (the viewer's own mutes of speakers heard are lifted too).
 /** @param {boolean} muted */
 export function muteEveryone(muted) {
   letThrough.clear();
@@ -470,7 +472,7 @@ export function muteEveryone(muted) {
   remuted();
 }
 
-// The other team heard: one muted, the two swap; neither or both, RED is heard and BLU muted.
+// Hears the other team: with one muted, the two swap; with neither or both muted, RED is heard and BLU muted.
 export function swapTeams() {
   const hearRed = !(mutedTeams.has("blue") && !mutedTeams.has("red"));
   setTeamMuted("red", !hearRed);

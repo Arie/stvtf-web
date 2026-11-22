@@ -1,4 +1,4 @@
-// The listed cameras' moves: on the map, and set off from here.
+// The listed cameras' moves: drawn on the map, and started on the relay from here.
 import { $, ctx, uiScale } from "../core/core.js";
 import { toScreen } from "../map/view.js";
 import { drawTrack } from "./compose.js";
@@ -10,11 +10,11 @@ import { note } from "./tools.js";
 
 const MARK_PX = 9,
   NOW = "#7cff8a";
-// The one set off from here, and since when the room has it (not yet: asked).
+// The move started from here, and when the relay took it (`from` is null until it answers).
 /** @type {{ key: string; secs: number; from: number | null; changed: () => void } | null} */
 let off = null;
 export const offKey = () => off?.key ?? null;
-// The relay's camera is no longer on the move set off from here.
+// The relay's camera is no longer on the move started from here.
 export function offEnded() {
   if (!off || off.from === null) return;
   const { changed } = off;
@@ -22,7 +22,7 @@ export function offEnded() {
   changed();
 }
 
-// A listed camera's move as the page works with it, made once.
+// A listed camera's move as a `Move` (`fromKept`), converted once.
 /** @type {WeakMap<object, Move>} */
 const going = new WeakMap();
 /** @param {Listed} c */
@@ -33,7 +33,7 @@ export function goingOf(c) {
   return made;
 }
 
-// Where a move ends: a ring, with a short line the way it looks there.
+// Marks where a move ends: a ring, with a short line towards what it looks at there.
 /** @param {{ pos: Vec3; aim: Vec3 }} end @param {string} colour */
 function endMark(end, colour) {
   const [x, y] = toScreen(end.pos[0], end.pos[1]),
@@ -54,7 +54,8 @@ function endMark(end, colour) {
   ctx.restore();
 }
 
-// How far into the move set off from here it is, its ▶ counting down. None once there.
+// Seconds into the move started from here; its ▶ button shows the seconds left. Null before it starts
+// and once it is over.
 function offNow() {
   if (!off || off.from === null) return null;
   const t = (performance.now() - off.from) / 1000,
@@ -71,7 +72,7 @@ function offNow() {
   return t;
 }
 
-// A listed camera's move on the map: its way, its end, and where it is when set off from here.
+// Draws a listed camera's move on the map: its track, its end, and where it is now if started from here.
 /** @param {Listed} c @param {string} key @param {string} colour */
 export function drawGoing(c, key, colour) {
   const move = goingOf(c);
@@ -90,7 +91,7 @@ export function drawGoing(c, key, colour) {
   ctx.restore();
 }
 
-// Sets the relay's camera off on a listed camera's move; its ▶ waits, then counts down.
+// Starts a listed camera's move on the relay; its ▶ button waits for the answer, then counts down.
 /** @param {Listed} c @param {string} key @param {(body: object) => Promise<Response>} send @param {() => void} changed */
 export async function setOff(c, key, send, changed) {
   const move = goingOf(c);

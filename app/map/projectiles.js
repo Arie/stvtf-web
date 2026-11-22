@@ -43,7 +43,7 @@ function drawSmoke(list, size) {
 }
 
 // The overlay sizes projectiles from its panel like the players, a little larger than their
-// usual minimum, so they read at minimap scale.
+// usual minimum, so they can be made out at minimap scale.
 /** @param {number} units @param {number} min */
 const size = (units, min) => (OVERLAY ? (min * overlayUnit()) / 9 : px(units, min));
 

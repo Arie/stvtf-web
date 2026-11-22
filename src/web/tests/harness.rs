@@ -13,7 +13,7 @@ use crate::app::{App, Matches};
 use crate::matches::sessions::Sessions;
 use crate::testing::{TempDir, TestApp, app};
 
-/// The app behind a real `axum::serve` on its own port, until dropped.
+/// The app served for real (`server::serve`) on its own port, until dropped.
 pub(super) struct Served {
     pub(super) at: std::net::SocketAddr,
     pub(super) stop: Option<tokio::sync::oneshot::Sender<()>>,
@@ -136,7 +136,7 @@ pub(super) fn site_app() -> (TestApp, String, TempDir) {
 /// `stvtf_user` as the site's sign-in leaves it, for `json` (`{"uid", "name", "streamer"}`).
 pub(super) fn signed_in(app: &TestApp, key: &str, json: &str) -> String {
     let t = token::seal(key, &format!(r#"{{"signin":{json},"exp":{}}}"#, unix_now() + 60), [5; 12]);
-    // As the browser that set out: its state comes back on the return path.
+    // As the browser that began the sign-in: its state comes back on the return path.
     let began = get(app, "/signin?return=/r/x/", "");
     let state = began.split("stvtf_signin=").nth(1).unwrap().split(';').next().unwrap();
     let back = get(app, &format!("/signed_in?t={t}&return=/r/x/%3Fsignin%3D{state}"), &format!("stvtf_signin={state}"));

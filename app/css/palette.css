@@ -16,9 +16,9 @@
   --attention: #e0a040;
   --alert: #ff6b5a;
   --gold: #ffd166;
-  /* The pen and marker, and what a room bar says. */
+  /* The pen and marker, a room bar's note, and what is selected in the camera panel. */
   --pen: #ffd23f;
-  /* The dark of the bars and backdrops over the map, and as see-through. */
+  /* The dark of the bars and backdrops over the map, and see-through versions of it. */
   --shade: #0b0c0e;
   --shade-95: #0b0c0ef2;
   --shade-90: #0b0c0ee6;

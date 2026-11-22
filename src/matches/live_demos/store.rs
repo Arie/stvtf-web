@@ -26,7 +26,8 @@ pub(super) struct Demo {
     pub(super) back: Option<usize>,
 }
 
-/// The name of a demo of an earlier map set aside: never relayed, gone with the match.
+/// What follows the match in the name of a demo of an earlier map that was set aside
+/// (`live-<match>-past-…`): never relayed, gone with the match.
 pub(super) const PAST: &str = "past-";
 
 #[derive(Default)]
@@ -48,7 +49,7 @@ pub(crate) struct LiveDemos {
 /// Match `id`'s demos in `dir`, as a restart finds them. Of those named without their load, the
 /// `live-` ones are of the load the match was at, and those before it where its ticks started
 /// over: in time order, one of another map or with a lower first tick than the one before starts
-/// the next. The `kept-` ones are for downloading only.
+/// the next. The `kept-` ones named without a load are for downloading only.
 pub(super) fn demos_on_disk(dir: &Path, id: &str) -> Inner {
     let mut inner = Inner::default();
     let mut unnumbered = Vec::new();

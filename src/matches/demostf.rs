@@ -1,8 +1,8 @@
 //! A demos.tf demo played as a match: fetched and decoded, then played through once at game
-//! speed from its gzipped stvtf output. With a store, the output is kept there for the next to
-//! play the demo (and the demo file too, where relays play it), so that neither is fetched nor
-//! decoded again; the store's sweep keeps them within a budget. The file comes in to disk, many
-//! at a time; decoding holds a whole file in memory, one at a time.
+//! speed from its gzipped stvtf output. With a store, the output is kept there for the next play
+//! of the demo (and the demo file too, where relays play it), so that neither is fetched nor
+//! decoded again; the store's sweep keeps them within a budget. Downloads run side by side, to
+//! disk when there is a store; decoding holds a whole file in memory, so it runs one at a time.
 
 use std::io::{BufWriter, Read, Write};
 use std::path::Path;
@@ -31,12 +31,12 @@ const MAX_DEMO: u64 = 1 << 30;
 
 /// One demo is decoded at a time: each holds the whole file in memory meanwhile.
 pub(crate) static DECODING: Mutex<()> = Mutex::new(());
-/// Held by a test while no demo is to reach demos.tf.
+/// A test holds this to keep any fetch from reaching demos.tf meanwhile.
 #[cfg(test)]
 pub(crate) static HELD: Mutex<()> = Mutex::new(());
 /// How often the pages hear how far a download is, at most.
 const SAID_EVERY: Duration = Duration::from_millis(500);
-/// How long demos.tf gets to connect, and to send the next of an answer, before it is given up on.
+/// How long demos.tf gets to connect, and to send the next part of an answer, before we give up.
 const CONNECT_FOR: Duration = Duration::from_secs(30);
 const STALLED_FOR: Duration = Duration::from_secs(60);
 
@@ -47,8 +47,8 @@ pub(crate) struct DemoFiles {
     pub(crate) dem: bool,
 }
 
-/// A download: what it writes to, and what it tells of how far it is. Whether it came to its end
-/// (not when told to stop).
+/// A download: given where to write and a callback for its progress in percent, it returns whether
+/// it finished (false when told to stop).
 type Download<'a> = &'a dyn Fn(&mut dyn Write, &mut dyn FnMut(Option<u8>)) -> Result<bool>;
 
 /// What demos.tf says about a demo; only where its file is.
@@ -57,7 +57,7 @@ struct Info {
     url: String,
 }
 
-/// What asks demos.tf: given up on once an answer stalls for `stalled`.
+/// The HTTP agent for demos.tf: it gives up once an answer stalls for `stalled`.
 fn agent(stalled: Duration) -> ureq::Agent {
     ureq::AgentBuilder::new().timeout_connect(CONNECT_FOR).timeout_read(stalled).build()
 }
@@ -71,8 +71,8 @@ fn demo_url_from(agent: &ureq::Agent, api: &str, id: u64) -> Result<String> {
     file_url(id, &body)
 }
 
-/// Where demos.tf's answer `body` says demo `id` is: on one of its own hosts, so a token cannot
-/// make us fetch anything else.
+/// Where demos.tf's answer `body` says demo `id` is. It must be on one of demos.tf's own hosts, so
+/// that an answer cannot make us fetch from anywhere else.
 fn file_url(id: u64, body: &str) -> Result<String> {
     let info: Info = serde_json::from_str(body).with_context(|| format!("cannot read demos.tf's answer about demo {id}"))?;
     let host = info.url.strip_prefix("https://").and_then(|rest| rest.split('/').next()).unwrap_or_default();
@@ -83,8 +83,8 @@ fn file_url(id: u64, body: &str) -> Result<String> {
     Ok(info.url)
 }
 
-/// What makes a demo that is not demos.tf's (a match's, with its comms): the file.
-/// With what was said in it that is in no player's voice there: lines of their own, by tick.
+/// Makes a demo that is not from demos.tf (a match's own, with its comms). Returns the demo file
+/// and the voice lines that are not in the file, in tick order.
 pub(crate) type Made<'a> = &'a dyn Fn() -> Result<(Vec<u8>, Vec<Voice>)>;
 
 /// Demo `id` as gzipped stvtf output, with `snapshot_hz` snapshots a second; None when told to
@@ -104,7 +104,8 @@ fn fetch(
         return Ok(None);
     }
     let agent = agent(STALLED_FOR);
-    // One made here is made anew unless what it decoded to is kept: its lines come with it.
+    // A made demo is made again unless its decoded output is kept: a kept demo file alone lacks
+    // the extra voice lines.
     if made.is_some()
         && let Some(k) = kept
     {
@@ -170,7 +171,7 @@ fn fetch_with(
     Ok(Some(output))
 }
 
-/// What demo `id` decoded to, as kept: with its file too where relays play it.
+/// The kept output of demo `id`; None if relays play it and its demo file is not kept too.
 fn kept_output(k: &DemoFiles, id: u64) -> Option<Vec<u8>> {
     let output = k.store.take(&demo_output(id)).ok()?;
     if k.dem && !k.store.dir.join(demo_dem(id)).exists() {
@@ -183,8 +184,9 @@ fn kept_output(k: &DemoFiles, id: u64) -> Option<Vec<u8>> {
     Some(output)
 }
 
-/// Downloads to `file`, beside it until it is whole (a file by that name is one; another fetch
-/// of the same demo has a part file of its own). Whether all of it came.
+/// Downloads to a part file beside `file` and renames it once whole, so a file by that name is
+/// always complete; each fetch of the same demo has its own part file. Returns whether all of it
+/// came.
 fn download_to_file(file: &Path, download: Download, said: &mut dyn FnMut(Option<u8>)) -> Result<bool> {
     let part = file.with_extension(format!("dem.{}.part", crate::matches::sessions::random_id()));
     std::fs::create_dir_all(file.parent().unwrap_or(file))?;
@@ -256,7 +258,8 @@ fn download(
 /// A demo file as gzipped stvtf output, the `extra` lines (in tick order) among its own at their
 /// ticks.
 fn decode(id: u64, demo: &[u8], snapshot_hz: f32, extra: Vec<Voice>) -> Result<Vec<u8>> {
-    // Kept for the whole match: half the size of a fast level (a 24-minute demo is under 6 MiB).
+    // The default level: the output is kept for the whole match, and is half the size of the fast
+    // level's (a 24-minute demo is under 6 MiB).
     // Buffered: flate2 runs the compressor on every write, and serde writes a line in many small
     // pieces.
     let mut gz = BufWriter::new(GzEncoder::new(Vec::new(), Compression::default()));
@@ -268,7 +271,8 @@ fn decode(id: u64, demo: &[u8], snapshot_hz: f32, extra: Vec<Voice>) -> Result<V
     };
     let mut extra = extra.into_iter().peekable();
     stvtf::decode::demo_file(demo, snapshot_hz, &mut |line| {
-        // What was said up to this line's tick goes before it; a line with no tick waits for none.
+        // What was said up to this line's tick goes before it; a line with no tick has none
+        // put before it.
         while let Some(said) = extra.next_if(|v| line.tick().is_some_and(|t| v.tick <= t)) {
             write(Line::Voice(said));
         }
@@ -382,7 +386,7 @@ mod tests {
         assert!(lines.iter().any(|l| matches!(l.line, Line::Snapshot(_))));
         assert!(lines.iter().all(|l| l.time.is_none()), "timed by its ticks");
 
-        // Until the map is known: at game speed the whole demo would take minutes.
+        // Stops once the map is known: at game speed the whole demo would take minutes.
         let hub = SharedHub::default();
         let stop = AtomicBool::new(false);
         let until_the_map = || {
@@ -445,7 +449,7 @@ mod tests {
         assert!(started.elapsed() < Duration::from_secs(2));
     }
 
-    /// A store, and whether relays play its demos; a download of the recorded demo that counts.
+    /// A store in `dir`, and whether relays play its demos.
     fn kept(dir: &crate::testing::TempDir, dem: bool) -> DemoFiles {
         DemoFiles { store: Store { dir: dir.join("store"), keys: None }, dem }
     }

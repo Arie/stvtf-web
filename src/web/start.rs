@@ -11,7 +11,8 @@ use crate::app::App;
 use crate::matches::sessions;
 use crate::matches::sessions::Sessions;
 
-/// The match `line` asks for: a connect string, or a demos.tf link. Behind a site, signed in.
+/// The match `line` asks for: a connect string, or a demos.tf link. Behind a site, only for
+/// someone signed in.
 pub(super) fn watch(
     app: &App,
     sessions: &Sessions,

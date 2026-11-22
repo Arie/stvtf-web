@@ -1,4 +1,4 @@
-//! A match's voice routes, the same on its page and on a room's on it.
+//! A match's voice routes, the same under its page and under the page of a room on it.
 
 use std::sync::Arc;
 

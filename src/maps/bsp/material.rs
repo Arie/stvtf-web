@@ -45,8 +45,8 @@ impl Serialize for Tint {
 }
 
 impl Tint {
-    /// A texture's reflectivity (its mean colour, linear, as the map's compiler kept it) as it
-    /// looks; None for one without (black).
+    /// The colour seen for a texture's reflectivity (its mean colour, linear, as the map's
+    /// compiler stored it); None when it has none (black).
     pub(super) fn of(reflectivity: [f32; 3]) -> Option<Tint> {
         let seen = |v: f32| (v.clamp(0.0, 1.0).powf(1.0 / 2.2) * 255.0).round() as u8;
         (reflectivity.iter().all(|v| v.is_finite()) && reflectivity.iter().any(|v| *v > 0.0)).then(|| Tint(reflectivity.map(seen)))
@@ -62,8 +62,8 @@ impl Tint {
     }
 }
 
-/// What the materials a blend's name has look like in TF2: a blend's reflectivity is its first
-/// texture's alone, and its second is not in the map.
+/// The colours in TF2 of the materials a blend texture's name can mention. A blend's reflectivity
+/// is that of its first texture alone, and that of its second texture is not in the map.
 const BLENDS: [(&[&str], Tint); 8] = [
     (&["grass"], Tint([0x62, 0x59, 0x2a])),
     (&["snow"], Tint([0xba, 0xcd, 0xda])),
@@ -75,8 +75,8 @@ const BLENDS: [(&[&str], Tint); 8] = [
     (&["leaf"], Tint([0x91, 0x56, 0x3f])),
 ];
 
-/// What the second texture of blend `texture` looks like, its first being `first`: of the
-/// materials its name has, the one least like the first. None for a texture that is no blend.
+/// The colour of the second texture of blend `texture`, whose first texture has colour `first`:
+/// of the materials in its name, the one least like `first`. None when `texture` is not a blend.
 pub(super) fn blended_with(texture: &str, first: Tint) -> Option<Tint> {
     let name = original(texture);
     let file = name.rsplit('/').next().unwrap_or(name);
@@ -84,7 +84,7 @@ pub(super) fn blended_with(texture: &str, first: Tint) -> Option<Tint> {
     named.filter(|_| file.contains("blend")).max_by_key(|t| t.far_from(first))
 }
 
-/// The suffix a patched copy of a texture gets in the map's own pak: its position.
+/// The suffix of a blend texture's patched copy (`WorldVertexTransition`) in the map's own pak.
 const PATCH_SUFFIX: &str = "_wvt_patch";
 
 /// `name` without a leading `maps/<map>/` and a trailing `_x_y_z` (any of them negative) or

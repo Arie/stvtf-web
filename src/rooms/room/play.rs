@@ -327,7 +327,8 @@ impl Room {
         if let Some(score) = score {
             self.score_at(st, [score.blue, score.red]);
         }
-        // Every move between maps ends here: a follow of a player ends, the marker goes with it.
+        // Every move between maps ends here: a follow of a player ends, the relay's camera leaves
+        // its spot, and the marker shown is that of the new map.
         let n = self.part(st).load;
         if self.marker.load.load(Ordering::Relaxed) != n {
             self.end_follow();

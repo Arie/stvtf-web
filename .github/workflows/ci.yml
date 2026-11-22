@@ -60,7 +60,7 @@ jobs:
       - run: npm ci --ignore-scripts
       - run: script/test -v -t eslint,prettier,tsc,page-tests
 
-  # The linters mise.toml pins: shell scripts, workflows and the Dockerfile.
+  # The linters mise.toml pins (shell scripts, workflows, the Dockerfile) and the file size check.
   lint:
     name: shellcheck, actionlint, zizmor and hadolint
     runs-on: ubuntu-latest

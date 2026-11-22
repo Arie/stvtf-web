@@ -87,8 +87,8 @@ impl Remote {
     }
 
     /// Room `room`'s relay, started if it has none, playing as `want` says, on what it `was` on if
-    /// it can; None when every port is taken. One it has plays on where it is unless the room's
-    /// place is `known`.
+    /// it can; None when every port is taken. A relay it has already plays on where it is, unless
+    /// the room's place is `known`.
     pub(crate) fn start(self: &Arc<Self>, room: &str, want: &Want, was: Option<&Was>, known: bool) -> Result<Option<RemoteRelay>> {
         let answer = self.call(&json!({ "op": "start", "room": room, "want": WantLine::of(want), "was": was, "known": known }))?;
         let Some(line) = answer.get("line").filter(|l| !l.is_null()).cloned() else { return Ok(None) };
@@ -125,7 +125,7 @@ impl Remote {
 pub(super) enum Done {
     /// The relay plays on, for the next stv.tf.
     LetGo,
-    /// So does the relay: the room ended.
+    /// The relay stops too: the room ended.
     End,
 }
 
@@ -133,7 +133,7 @@ pub(super) struct Inner {
     pub(super) clients: usize,
     pub(super) stopped: bool,
     pub(super) line: Value,
-    /// Not sent yet.
+    /// Where the room is, not sent yet.
     pub(super) want: Option<Want>,
     /// The kept beams to hand over, the latest only.
     pub(super) kept: Option<Vec<Beam>>,
@@ -145,10 +145,11 @@ pub(super) struct Inner {
     pub(super) score: Option<[i64; 2]>,
     /// Voice to hand over, all of it, in order.
     pub(super) voice: VecDeque<VoiceLine>,
-    /// The notes last given to hand over: the marker gives them with its every piece.
+    /// The notes last given, so that the same ones are not sent again: the marker gives them with
+    /// every piece it draws.
     pub(super) notes_given: Vec<Note>,
-    /// The light last given to hand over (the marker gives it with its every piece), whether one
-    /// ever was, and whether it is still to hand over.
+    /// The light last given (the marker gives it with every piece it draws), whether one ever was,
+    /// and whether it is still to send.
     pub(super) light: Option<Light>,
     pub(super) light_given: bool,
     pub(super) light_due: bool,
@@ -265,7 +266,7 @@ impl Shared {
                     i.line = line.clone();
                 }
             }
-            // The relay process is away (restarting): as it was.
+            // The relay process is away (restarting): what was last known stands.
             Err(_) => {}
         }
     }
@@ -358,7 +359,7 @@ impl RemoteRelay {
         self.0.wake.notify_all();
     }
 
-    /// As last asked.
+    /// TF2 clients in, as of the last status asked.
     pub(crate) fn clients(&self) -> usize {
         lock(&self.0.inner).clients
     }

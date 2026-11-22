@@ -8,7 +8,7 @@ use super::token;
 use crate::app::App;
 use crate::matches::sessions;
 
-/// How long a guest cookie lasts: who one is in rooms, kept across visits.
+/// How long a guest cookie lasts: a year, so a guest is the same person in rooms across visits.
 const GUEST_FOR: std::time::Duration = std::time::Duration::from_hours(365 * 24);
 
 /// A `Set-Cookie` for `name`, lasting `seconds`: only for us, never to scripts, and over HTTPS
@@ -42,7 +42,7 @@ impl Who {
     }
 }
 
-/// The site's address, from where `/` sends visitors (`--home`): its scheme and host.
+/// The scheme and host of the site in front (`--home`).
 pub(super) fn origin(home: &str) -> Option<&str> {
     let rest = home.find("://")? + "://".len();
     Some(&home[..home[rest..].find('/').map_or(home.len(), |i| rest + i)])

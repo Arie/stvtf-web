@@ -93,7 +93,7 @@ let lastDraw = -Infinity,
 function frame(now) {
   const gap = now - lastRefresh;
   lastRefresh = now;
-  // The screen's refresh interval, smoothed; a gap this long is a stall, not a refresh.
+  // The screen's refresh interval, smoothed; a gap of MAX_REFRESH_MS or more is a stall, not a refresh.
   if (gap > 0 && gap < MAX_REFRESH_MS) refreshMs += (gap - refreshMs) * REFRESH_SMOOTHING;
   if (now - lastDraw + refreshMs / 2 >= FRAME_MS) {
     lastDraw = now;
@@ -138,7 +138,7 @@ function aim(f, tick) {
   if (target && target.pos) {
     state.view.cx += (target.pos[0] - state.view.cx) * FOLLOW_EASE;
     state.view.cy += (target.pos[1] - state.view.cy) * FOLLOW_EASE;
-    // A room's admin's zoom round them, fitted to this view.
+    // The zoom a room's admin set round them, fitted to this view.
     if (state.followZoom) {
       const { w, h } = viewArea(),
         z = Math.log(state.view.scale);
@@ -163,7 +163,7 @@ function drawFrame(f, tick) {
   drawObjectives(f.snap, tick);
   if (SHOW_BUILDINGS) drawBuildings(f.snap);
   if (layerOn("jumps")) drawJumpTrails(f.players);
-  // Above the players in the overlay, where a dot would otherwise cover them.
+  // Under the players, except in the overlay, where a dot would otherwise cover them.
   if (SHOW_PROJECTILES && !OVERLAY) drawProjectiles(f.projectiles);
   drawEffects(byId);
   if (SHOW_BEAMS) drawHealBeams(f.players, byId);

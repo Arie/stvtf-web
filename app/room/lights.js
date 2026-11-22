@@ -4,8 +4,8 @@ import { ctx, uiScale } from "../core/core.js";
 import { toScreen } from "../map/view.js";
 /** @typedef {import("../../types/stream").LightLine} LightLine */
 
-// How far its glow reaches on the map, in map units (about what TF2's light brightens), and the
-// least it does on the page, in pixels at the 1080p size: seen with the whole map in view too.
+// How far its glow reaches on the map, in map units (about what TF2's light brightens), and its
+// least radius on the page, in pixels at the 1080p size, so it shows with the whole map in view too.
 const RADIUS = 300,
   MIN_PX = 40;
 

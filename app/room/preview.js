@@ -6,13 +6,13 @@ import { footOf } from "./sight.js";
 /** @typedef {import("./sight.js").Spot} Spot */
 /** @typedef {import("./sight.js").Grid} Grid */
 
-// TF2's picture at 16:9, top to bottom in degrees, and how near and far it is drawn, in map units.
+// TF2's vertical field of view at 16:9 in degrees, and the nearest and farthest distance drawn, in map units.
 const FOV = 73.74,
   NEAR = 8,
   FAR = 40000;
 const WALL = "#8d887e",
   SKY = "#1c2733";
-// A player standing: how wide and tall.
+// A standing player: radius and height, in map units.
 const PILL = { r: 24, h: 82 };
 
 // three.js: untyped here.
@@ -39,7 +39,7 @@ function floorInto(f, at, tint) {
       tint.push(c.r, c.g, c.b);
     }
 }
-// A wall's: from its top down to where the solid under it ends (a voxel, where nothing is known).
+// A wall's triangles: from its top down to where the solid under it ends, or 64 units without a sight grid.
 /** @param {{ z: number; p: number[]; c?: string }} w @param {Grid | null} grid @param {number[]} at @param {number[]} tint */
 function wallInto(w, grid, at, tint) {
   const [x1, y1, x2, y2] = w.p,
@@ -90,7 +90,7 @@ function start() {
   stage.pills = Array.from({ length: 24 }, () => new THREE.Mesh(pill, teams.red));
   scene.add(...stage.pills);
 }
-// The map's, made again when it or what is known of its walls changed.
+// The map's mesh, made again when the geometry or the sight grid changed.
 /** @param {NonNullable<typeof stage>} s @param {Grid | null} grid */
 function keepWorld(s, grid) {
   if (s.of === state.geometry && s.grid === grid) return;
@@ -116,7 +116,7 @@ function placePills(s) {
 async function load() {
   asked = true;
   try {
-    // By its address: the page's types do not reach into it.
+    // Imported by URL so the type checker does not read the vendored file.
     THREE = await import(new URL("../vendor/three.module.min.js", import.meta.url).href);
     start();
   } catch (e) {
@@ -125,7 +125,7 @@ async function load() {
   }
 }
 
-// What of the map is under a spot of the picture (shares of its width and height), if anything.
+// The point of the map under a spot of the picture (fractions of its width and height), if any.
 /** @param {number} x @param {number} y @returns {[number, number, number] | null} */
 export function pointAt(x, y) {
   if (!stage?.world) return null;
@@ -135,7 +135,7 @@ export function pointAt(x, y) {
   return hit ? [Math.round(hit.x), Math.round(hit.y), Math.round(hit.z)] : null;
 }
 
-// A picture of what `c` shows, as an image's address; none before the map is drawn.
+// A picture of what `c` shows, as a data URL; null before the map's mesh is made.
 /** @param {Spot} c */
 export function snapshot(c) {
   if (!stage?.world) return null;
@@ -145,7 +145,7 @@ export function snapshot(c) {
   return stage.renderer.domElement.toDataURL("image/jpeg", 0.6);
 }
 
-// Draws what `c` would show, or (null) puts the preview away.
+// Draws what `c` would show; with null, hides the preview.
 /** @param {Spot | null} c @param {Grid | null} grid */
 export function preview(c, grid) {
   const view = /** @type {HTMLCanvasElement} */ ($("cam-view")),

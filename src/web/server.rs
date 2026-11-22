@@ -32,7 +32,7 @@ pub(crate) fn run(listen: &str, app: Shared, stop: &'static AtomicBool) -> Resul
         let listener = tokio::net::TcpListener::bind(listen).await?;
         tracing::info!("http://{listen}/");
         let stopped = async move {
-            // The flag is the watchers' too, which are no tasks: looked at now and then.
+            // The watcher threads share the flag and are not tasks, so it is polled.
             while !stop.load(Ordering::Relaxed) {
                 tokio::time::sleep(Duration::from_millis(100)).await;
             }
@@ -53,7 +53,7 @@ pub(crate) fn run(listen: &str, app: Shared, stop: &'static AtomicBool) -> Resul
 /// How long requests under way have to finish once the server is told to stop.
 const FINISH_WITHIN: Duration = Duration::from_secs(5);
 
-/// Once `stop` has been set for `long`.
+/// Returns once `stop` has been set for `long`.
 async fn stopped_for(stop: &'static AtomicBool, long: Duration) {
     while !stop.load(Ordering::Relaxed) {
         tokio::time::sleep(Duration::from_millis(100)).await;
@@ -81,7 +81,7 @@ pub(crate) async fn serve(
             () = &mut stopped => break,
         };
         let Ok((tcp, peer)) = accepted else {
-            // Out of file descriptors, say: not in a spin.
+            // Out of file descriptors, for example: wait, so the loop does not spin.
             tokio::time::sleep(Duration::from_millis(50)).await;
             continue;
         };
@@ -94,7 +94,7 @@ pub(crate) async fn serve(
         });
         let (http, watcher) = (http.clone(), graceful.watcher());
         tokio::spawn(async move {
-            // hyper's timer starts at the first byte: one that sends none is not kept either.
+            // hyper's timer starts at the first byte: a connection that sends none is dropped too.
             if !matches!(tokio::time::timeout(HEAD_WITHIN, tcp.peek(&mut [0])).await, Ok(Ok(1..))) {
                 return;
             }
@@ -105,7 +105,8 @@ pub(crate) async fn serve(
     Ok(())
 }
 
-/// A request is answered in this time, its body read: an upload's part on a slow line, at most.
+/// A request is answered within this time, reading its body included: enough for an upload's part
+/// on a slow line.
 const ANSWER_WITHIN: Duration = Duration::from_mins(5);
 
 /// Gives a request's trace id to its log lines and its answer (`x-trace-id`), and tags it with its

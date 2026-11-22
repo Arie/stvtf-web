@@ -2,7 +2,8 @@ import { $, OVERLAY, PAGE, optOn } from "./core.js";
 import { env } from "./env.js";
 import { openStream } from "./stream.js";
 
-// Overkill layers; `detail` ones need the hub's high-volume lines (?detail=1). All on by default; the overlay shows only caps. Each name is also a query option (1 or 0).
+// The layers that All (x) switches together; `detail` ones need the hub's high-volume lines (?detail=1).
+// All on by default; the overlay shows only caps. Each name is also a query option (1 or 0).
 const LAYERS = {
   caps: { label: "Capture areas", key: "", def: true, detail: false },
   heals: { label: "Heal numbers", key: "", def: true, detail: true },
@@ -15,7 +16,7 @@ const LAYERS = {
   loadout: { label: "Weapon in hand", key: "l", def: true, detail: false },
   effects: { label: "Status effects", key: "", def: true, detail: false },
 };
-// Not overkill: a room's own, off until asked for.
+// Not switched by All: layers only a room has, off until turned on.
 const ROOM_LAYERS = { cameras: { label: "Cameras", key: "", def: false, detail: false } };
 const IN_ROOM = /\/r\/[0-9a-f]{32}\/$/.test(PAGE);
 /** @type {{ [name: string]: boolean }} */

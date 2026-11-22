@@ -1,17 +1,17 @@
-//! Cameras casters place on maps, for a room's relay to take: where each is and what it looks at,
-//! by map. Kept in the store (`cameras.json`).
+//! Cameras casters place on maps, for a room's relay to take: where each is, what it looks at
+//! and the move it makes if it has one, by map. Kept in the store (`cameras.json`).
 //!
-//! A map with none has those of the same map under another version's name (`cp_gullywash_f9` for
-//! `cp_gullywash_final1`), the latest changed; the first change made there keeps them under its
-//! own name.
+//! A map with no cameras shows those of the same map under another version's name
+//! (`cp_gullywash_f9` for `cp_gullywash_final1`), from the version changed last. The first change
+//! made on that map copies them to its own name.
 //!
-//! One stv.tf holds them for all (the home, as `voice::who`'s). The others pass each change on
-//! to it and ask it what changed, with the voice bot's key:
+//! One stv.tf (the home, as in `voice::who`) holds the cameras for all regions. The others pass
+//! each change on to it and ask it what changed, with the voice bot's key:
 //!
-//! - `GET /cameras?since=<version>`: all of them, when changed since.
+//! - `GET /cameras?since=<version>`: all of them, unless they are still at that version.
 //! - `POST /cameras/<map>`: a change, as a streamer's page posts it.
 //!
-//! A room keeps its own besides (`Room::change_cameras`), placed by its admins.
+//! A room also keeps cameras of its own (`Room::change_cameras`), placed by its admins.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -33,7 +33,7 @@ const TIMEOUT: Duration = Duration::from_secs(5);
 const MAX_NAME: usize = 24;
 const MAX_ON_MAP: usize = 32;
 const MAX_MAPS: usize = 5000;
-/// A map's coordinates stay within this: what the game sends an entity's place in.
+/// Coordinates stay within this: the game cannot send an entity's place further out.
 const MAX_COORD: i32 = 16383;
 /// The longest path (seconds), the most moments in one, and the furthest an arc turns (radians).
 const MAX_PATH_SECS: f32 = 120.0;
@@ -43,9 +43,10 @@ const MAX_TURN: f32 = 8.0 * std::f32::consts::PI;
 static LAST_PATH: AtomicU64 = AtomicU64::new(0);
 /// The most moments a map's flights have together: they go to every page.
 const MAX_ROWS_ON_MAP: usize = 6000;
-/// And those of all maps together: a room's go to its pages at once, the site's to every region.
+/// The most across all maps: a room sends all of its flights to its pages at once, and the site
+/// sends all of its flights to every region.
 const MAX_ROWS: usize = 60_000;
-/// The most of the home's answer that is read: all it keeps, at the most it may.
+/// The most of the home's answer that is read: enough for all the cameras it may keep.
 const MAX_ANSWER: u64 = 64 << 20;
 
 /// Where a camera is and the spot it looks at.
@@ -82,7 +83,7 @@ impl Shot {
             bail!("Invalid camera.");
         }
         let steps = rows.iter().map(|r| stvtf::relay::Step { secs: r[0], pos: [r[1], r[2], r[3]], aim: [r[4], r[5], r[6]] });
-        // The time, and never one twice: each sets off anew.
+        // The id is the time in milliseconds, raised if needed so no two paths share one.
         let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(1, |d| d.as_millis() as u64);
         let next = |last: u64| last.max(now.saturating_sub(1)) + 1;
         let id = LAST_PATH.try_update(Ordering::Relaxed, Ordering::Relaxed, |last| Some(next(last))).map_or(now, next);
@@ -101,7 +102,7 @@ pub(crate) struct Camera {
     name: String,
     #[serde(flatten)]
     spot: Spot,
-    /// Where it goes from its spot, if set off.
+    /// The move it makes from its spot, if it has one.
     #[serde(default, rename = "move", skip_serializing_if = "Option::is_none")]
     going: Option<Move>,
 }
@@ -168,7 +169,7 @@ pub(crate) struct Change {
     pos: Option<[i32; 3]>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     aim: Option<[i32; 3]>,
-    /// Where it goes from its spot; or no more (`still`).
+    /// The move to give it; `still` takes its move away.
     #[serde(default, rename = "move", skip_serializing_if = "Option::is_none")]
     going: Option<Move>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
@@ -317,7 +318,8 @@ impl Kept {
 }
 
 impl Cameras {
-    /// Those kept in `dir`; with a `home` (its address and the bot's key), the same as there.
+    /// The cameras kept in `dir`. With a `home` (its address and the bot's key), they follow the
+    /// cameras kept there.
     pub(crate) fn new(dir: Option<&Path>, home: Option<(&str, &str)>) -> Self {
         Self::asking(dir, home.map(|(url, key)| over_http(url, key)))
     }
@@ -353,10 +355,10 @@ impl Cameras {
         serde_json::to_value(kept.on(map).unwrap_or(Found { map, cameras: &[] })).unwrap_or_default()
     }
 
-    /// A streamer's change to `map`'s: made at the home, if there is one.
+    /// A streamer's change to the cameras of `map`: made at the home, if there is one.
     pub(crate) fn change(&self, map: &str, change: &Change) -> Result<()> {
         if let Some(home) = &self.0.home {
-            // Checked here first: what the home says of it is not for a page.
+            // Checked on a copy here first: the page gets this error, not the one from the home.
             lock(&self.0.kept).clone().change(map, change)?;
             (home.change)(map, change).map_err(|e| {
                 tracing::info!("{e:#}");
@@ -370,7 +372,7 @@ impl Cameras {
         Ok(())
     }
 
-    /// All of them, when changed since `version`.
+    /// All of them, unless they are still at `version`.
     pub(crate) fn since(&self, version: u64) -> Option<Kept> {
         Some(lock(&self.0.kept).clone()).filter(|k| k.version != version)
     }

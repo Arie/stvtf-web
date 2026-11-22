@@ -113,7 +113,7 @@ fn a_live_recording_keeps_the_last_hours() {
     let r = Recording::live_to(to(&saved));
     let t0 = 1_700_000_000_000;
     push_at(&r, &server("cp_long"), t0);
-    // A line a second, up to just past what is kept and trimmed at once.
+    // A line a second, until just past the point where the recording trims.
     let last = (KEEP_MS + TRIM_MS) / 1000 + 10;
     let stalemate: Line = serde_json::from_str(r#"{"type":"stalemate","tick":5}"#).unwrap();
     for s in 1..=last {

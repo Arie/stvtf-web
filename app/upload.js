@@ -1,7 +1,7 @@
-// The front page's upload (pages/landing.html): a demo sent in parts, a failed part sent again
-// from where the server has it, then on to where it plays. See the server's web/upload.rs.
+// The front page's upload (templates/landing.html): a demo is sent in parts, a failed part is sent
+// again from where the server has it, and the page then goes to where the demo plays. See src/web/upload.rs.
 
-// How often a part that would not go is tried again, and how long between tries, in milliseconds.
+// How many times in a row a part may fail before the upload gives up, and the wait between tries in ms.
 const TRIES = 5,
   AGAIN_MS = 1500;
 
@@ -17,7 +17,7 @@ export function parts(size, part) {
 /** @param {Response} r What a refusal says, for the page. */
 const why = async r => (await r.text().catch(() => "")) || `Refused (${r.status})`;
 
-// Sends `file` to `home` (the page's folder), saying how far it is; where it plays.
+// Sends `file` to `home` (the page's folder), reporting progress to `said`. Returns the page where it plays.
 /** @param {File} file @param {URL} home @param {(done: number) => void} said @returns {Promise<string>} */
 export async function upload(file, home, said) {
   const json = { "Content-Type": "application/json" };
@@ -34,7 +34,7 @@ export async function upload(file, home, said) {
     const end = Math.min(file.size, at + part);
     const r = await fetch(`${to}?at=${at}`, { method: "PUT", body: file.slice(at, end) }).catch(() => null);
     if (r?.ok) [at, tries] = [end, 0];
-    // It has more or less than was thought (an answer lost on the way): on from where it is.
+    // The server has more or less than the page thought (a response was lost): go on from where it is.
     else if (r?.status === 409) at = Number(await r.text()) || 0;
     else if (r && r.status < 500) throw new Error(await why(r));
     else if (++tries >= TRIES) throw new Error("Could not reach the server");

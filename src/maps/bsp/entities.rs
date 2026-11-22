@@ -104,8 +104,9 @@ impl Entities {
     }
 }
 
-/// Points, pickups and the spawns near them; maps also hide unused spawns far away. None for a
-/// map without points or pickups (MGE, jump maps): its spawns frame no more than a spawn room.
+/// The box around the control points, pickups and the spawns near them (maps also have unused
+/// spawns far away). None for a map without points or pickups (MGE, jump maps): its spawns frame
+/// no more than a spawn room.
 pub(super) fn playable_bounds(ents: &[Entity]) -> Option<Bounds> {
     let (mut core, mut spawns) = (Vec::new(), Vec::new());
     for ent in ents {
@@ -150,7 +151,8 @@ pub(super) fn packs(ents: &[Entity]) -> Vec<Pack> {
 }
 
 /// Capture areas (`trigger_capture_area`: their brush model's bounds) and the point each caps.
-/// Payload ones are parented to the cart and move with it, so their bounds are just its start.
+/// Payload ones are parented to the cart and move with it, so they are left out: their bounds
+/// only say where the cart starts.
 pub(super) fn cap_areas(map: &Entities) -> Vec<CapArea> {
     map.of_class("trigger_capture_area")
         .filter(|e| e.get("parentname").is_none_or(str::is_empty))

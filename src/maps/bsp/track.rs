@@ -59,7 +59,8 @@ mod tests {
 
     #[test]
     fn swiftwater_track_is_the_carts_path() {
-        // 178 path_tracks, 177 links; the 4 of the skybox train's loop are not the cart's.
+        // 178 path_tracks, 177 links; the 4 links of the skybox train's loop are not on the cart's
+        // track.
         let Some(data) = swiftwater() else { return };
         assert_eq!(track(&Entities::read(&data).unwrap()).len(), 173);
     }

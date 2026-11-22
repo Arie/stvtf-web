@@ -12,9 +12,10 @@
 //! What someone says of who is who is remembered (`voice::who`), and holds when the same
 //! person is in a channel again, in any region.
 //!
-//! A match's demo with its comms, watched here as a demo of its own, has the last two too, for
-//! its voices that were no player's: whose each is said to be holds for that demo (built anew
-//! with it), by its players (signed in, playing in it at the moment shown) and the streamers.
+//! A match's demo with its comms, watched here as a demo of its own, has the last two routes
+//! too, for its voices that were no player's. Its players (signed in, and playing in it at the
+//! moment shown) and the streamers say whose each voice is. That holds for the demo, which is
+//! built anew with it.
 
 use std::time::{Duration, Instant};
 
@@ -53,8 +54,8 @@ pub(in crate::web) struct Report {
     kind: String,
     #[serde(default)]
     status: String,
-    /// Where the bot is: `in`, `failed`, `left`; none from a bot before it said, and one not known
-    /// here goes by the status.
+    /// Where the bot is: `in`, `failed`, `left`. An older bot sends none: then, and for a state
+    /// not known here, the status text decides.
     #[serde(default)]
     state: Option<String>,
     #[serde(default)]
@@ -72,7 +73,7 @@ pub(in crate::web) struct Report {
     job: Option<u32>,
 }
 
-/// The most channels a match keeps the people and the going of.
+/// The most channels a match keeps the people and the status of.
 const MAX_CHANNELS: usize = 8;
 
 /// `POST <page>voice-status`, the bot's.
@@ -116,7 +117,7 @@ fn discord_status(m: &Session, said: &Report, channel: &str, text: String) {
 }
 
 /// How it goes in one of match `m`'s Mumble channels: by its number, or the only one there is.
-/// Whether it was taken: not of a channel the bot was since asked out of.
+/// Returns whether it was taken: not when it is of a channel the bot was since asked out of.
 fn mumble_status(m: &Session, said: &Report, channel: &str, text: String) -> bool {
     let mut jobs = lock(&m.comms.mumble);
     let only = jobs.len() == 1;
@@ -131,7 +132,8 @@ fn mumble_status(m: &Session, said: &Report, channel: &str, text: String) -> boo
     true
 }
 
-/// Those the bot says are in `channel` now (none: it left), and whom they were said to be before.
+/// Sets those the bot says are in `channel` now (none: it left), and recalls whom they were said
+/// to be before.
 fn take_roster(app: &App, m: &Session, channel: &str, people: Vec<Member>) {
     let people = people
         .into_iter()
@@ -164,7 +166,7 @@ fn theirs<'a>(app: &App, m: Option<&'a Session>, who: &Who) -> Option<&'a Sessio
 /// for someone with no say.
 pub(in crate::web) fn get_voice_comms(app: &App, m: Option<&Session>, who: &Who) -> Response {
     let Some(m) = theirs(app, m, who) else { return StatusCode::NO_CONTENT.into_response() };
-    // Each Discord channel's going, one after the other; in, unless one is not.
+    // Each Discord channel's status, one after the other; the state is `in` unless one's is not.
     let going: Vec<DiscordGoing> = lock(&m.comms.discord).values().filter(|g| g.at.elapsed() < DISCORD_SAID_FOR).cloned().collect();
     let state = going.iter().map(|g| g.state).find(|s| *s != ChannelState::In).unwrap_or(ChannelState::In);
     let status = going.iter().map(|g| g.status.as_str()).collect::<Vec<_>>().join(" + ");
@@ -198,7 +200,7 @@ pub(in crate::web) fn reviewed<'a>(app: &'a App, m: Option<&'a Session>, who: &W
     may.then_some((demos_dir(app)?, id, file))
 }
 
-/// Who they are where they talk, for one a demo's lines name `discord:<that>`.
+/// The voice id of a speaker that a demo's lines name `discord:<id>`.
 fn voice_id(key: &str) -> Option<&str> {
     key.strip_prefix(crate::voice::feed::UNLINKED).filter(|id| is_voice_id(id))
 }
@@ -255,7 +257,7 @@ pub(in crate::web) fn post_voice_match(app: &App, m: Option<&Session>, v: &Match
     if !has_say(app, m, who) {
         return (StatusCode::FORBIDDEN, "Not allowed").into_response();
     }
-    // Looked up before anything is answered: the match is not held meanwhile.
+    // Looked up first, so the match's lock is not held while answering.
     let player = v.player.and_then(|p| lock(&m.hub).steamid_of_player(stvtf::output::PlayerId(p)).map(str::to_owned));
     let steamid = match (v.player, v.steamid.as_deref()) {
         (Some(_), _) => match player {

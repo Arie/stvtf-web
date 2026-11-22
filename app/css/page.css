@@ -136,7 +136,7 @@ canvas#c {
 canvas#c:active {
   cursor: grabbing;
 }
-/* Out of sight but there: the text a copy button copies the old way. */
+/* Invisible but in the page: holds the text a copy button copies with execCommand, the old way. */
 .offscreen {
   position: fixed;
   top: 0;

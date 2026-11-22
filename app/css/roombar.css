@@ -147,7 +147,7 @@
   height: 40px;
   min-width: 120px;
 }
-/* Zoomed in (room/zoom.js): where what shows is in the whole, along the bottom. */
+/* Zoomed in (room/zoom.js): a line along the bottom marks the part of the whole timeline that shows. */
 #rb-track.zoomed::before,
 #rb-track.zoomed::after {
   content: "";
@@ -480,7 +480,7 @@
   border: 2px solid var(--ink, var(--pen));
   border-radius: 4px;
 }
-/* A map's cameras, as the site's streamers place them. */
+/* The camera panel: a map's cameras in a list (name, ▶ for one with a move, Edit), or the form to edit one. */
 #cameras {
   position: absolute;
   top: 96px;
@@ -493,7 +493,7 @@
   color: var(--text);
   font-size: 12px;
 }
-/* What the camera being placed would show. */
+/* The camera picture: what the camera being placed would show, with its bar and badge. */
 #cam-pane {
   position: absolute;
   top: 96px;
@@ -602,8 +602,7 @@
   padding: 0 4px;
 }
 
-/* The frames of a camera's move and the moment looked at, under its picture. */
-/* The count before a flight, in the middle; its length as it is flown, in the corner. */
+/* The badge: the countdown before a recording, in the middle; then the recording's timer, in the corner (.rec). */
 #cam-badge {
   position: absolute;
   top: 50%;
@@ -622,6 +621,8 @@
   color: #ff6b5a;
   font-size: 14px;
 }
+/* The bar along the bottom of the picture: Start and End (the frames of a move), ▶, TF2, a scrubber for
+   the moment looked at, and the move's seconds. */
 #cam-bar {
   position: absolute;
   right: 0;

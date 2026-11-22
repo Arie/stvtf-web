@@ -63,8 +63,8 @@ impl Room {
         self.placed(st).0
     }
 
-    /// Whether the room waits at the end of its part: one that has a successor, or the server is
-    /// changing from while the match goes on (or did as it ended).
+    /// Whether the room waits at the end of its part: one that has a successor, or one the server
+    /// is changing away from while the match goes on (or did as it ended).
     pub(super) fn part_over(&self, st: &State) -> bool {
         self.end_of(&self.part(st)).is_some()
     }

@@ -1,13 +1,13 @@
 // A voice badge on a player's dot: while they talk, a waveform that is taller, wider and hotter the
 // louder they are (a shout stands out in a fight), as on their HUD card (panel/speakers.js); while
-// muted, a speaker crossed out (a click on the card's mutes them: the badge is too small, on a dot
-// that moves). See core/voice.js.
+// muted, a speaker crossed out (to mute someone, click the badge on their card: the one on the dot is
+// too small and moves). See core/voice.js.
 import { ctx } from "../core/core.js";
 import { isMuted, isTalking, loudnessOf, voiceOn, waveTime } from "../core/voice.js";
 /** @typedef {import("../../types/stream").Player} Player */
 
 // The badge's size against the dot's, and the least it is in pixels. It sits on the dot's right,
-// a little low (half past three): clear of the vaccinator's resist (upper right), a carried
+// a little low: clear of the vaccinator's resist (upper right), a carried
 // building (upper left), marked for death and stun stars (above), and the name (below).
 const SIZE = 0.62,
   MIN_PX = 8,
@@ -21,14 +21,14 @@ const SIZE = 0.62,
   BARS = [0.5, 0.85, 1, 0.7, 0.45],
   BEAT = 0.011;
 
-// How loud someone is taken to be before anything of them played.
+// How loud someone is taken to be before any of their sound has played.
 export const UNKNOWN = 0.35;
 
 // How loud each player's badge shows them, eased.
 /** @type {Map<number, number>} */
 const eased = new Map();
 
-// The badges of `dots`' players who talk or are muted.
+// Draws a badge for each player in `dots` who is talking or muted.
 /** @param {{ p: Player; x: number; y: number; rad: number }[]} dots */
 export function drawVoiceBadges(dots) {
   // Without voice: talkers only, no mutes.
@@ -51,7 +51,7 @@ export function drawVoiceBadges(dots) {
   }
 }
 
-// `level` as shown for `id`, after what `shown` has of them last: up at once, down slowly.
+// The level to show for `id`, eased from their last one in `shown`: it rises at once and falls slowly.
 /** @param {Map<number, number>} shown @param {number} id @param {number} level */
 export function ease(shown, id, level) {
   const was = shown.get(id) ?? 0;

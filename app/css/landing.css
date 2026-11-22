@@ -1,4 +1,5 @@
-/* The landing page: one form to paste a connect string into. */
+/* The landing page (a form to paste a connect string into, and a demo upload), and the Match ended and
+   Mumble bots pages. */
 * {
   box-sizing: border-box;
 }

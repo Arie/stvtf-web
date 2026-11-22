@@ -5,7 +5,7 @@ import { SHOW_SHOTS, SHOW_BUILDINGS } from "./players.js";
 /** @typedef {import("../../types/stream").GameEvent} GameEvent */
 /** @typedef {import("../../types/page").Effect} Effect */
 
-// World units: a hitscan tracer's length, and a sentry's range (its shot when the target is unknown).
+// World units: a hitscan tracer's length, and a sentry's range (its shot's length when the target is unknown).
 const SHOT_TRACER = 900,
   SENTRY_RANGE = 1100;
 // deaths: the main view's brief kill marks (the overlay keeps an X where a player fell instead).

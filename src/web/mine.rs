@@ -6,7 +6,7 @@ use super::pages::Yours;
 use super::upload;
 use crate::matches::sessions::{self, Sessions};
 
-/// What is theirs, to list.
+/// The visitor's own uploads, matches and rooms, to list.
 pub(super) fn mine(v: &Visit, sessions: &Sessions) -> Vec<Yours> {
     let (app, w) = (&v.app, &v.who);
     let uid = w.user.as_ref().map(|u| u.uid.as_str());

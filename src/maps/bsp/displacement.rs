@@ -10,8 +10,8 @@ use super::format::{
 use super::geometry::Vec3;
 use super::read::World;
 
-/// `ddispinfo_t`: its size and the fields read, and `dDispVert`: its size and its direction and
-/// distance.
+/// Sizes and field offsets of `ddispinfo_t` and of `dDispVert` (its distance and alpha; its
+/// direction comes first).
 const DISPINFO_SIZE: usize = 176;
 const DISPINFO_VERTEX_START: usize = 12;
 const DISPINFO_POWER: usize = 20;

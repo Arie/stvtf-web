@@ -40,7 +40,7 @@ window.addEventListener("mousemove", e => {
   state.view.cy = drag.cy - dy;
   state.handMoved = performance.now();
 });
-// h: player HUD, s: scoreboard, e: events and chat, g: overview or geometry, o: the overlay or back.
+// Turns a display class (nohud, noscore) on the viewer's element on or off, and saves the choice.
 /** @param {string} cls */
 function toggle(cls) {
   const on = env.el.classList.toggle(cls);

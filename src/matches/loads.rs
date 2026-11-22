@@ -14,7 +14,7 @@ pub(crate) struct Loads {
     named: Option<String>,
     /// The latest load's last tick.
     last_tick: Option<u32>,
-    /// A load began: the next snapshot starts load `n`, not `n + 1`, until one has.
+    /// Whether a load has begun. Until one has, the next snapshot starts load `n`, not `n + 1`.
     begun: bool,
 }
 
@@ -25,7 +25,7 @@ impl Loads {
         Loads { n, named: map.clone(), map, last_tick, begun: true }
     }
 
-    /// The first load is the match's `n`th, if none began yet (counted elsewhere before).
+    /// Numbers the first load `n`, if none has begun (the loads before it were counted elsewhere).
     pub(crate) fn first_is(&mut self, n: usize) {
         if !self.begun {
             self.n = n;

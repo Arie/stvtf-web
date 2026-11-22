@@ -19,8 +19,8 @@ use crate::sync::lock;
 
 /// The highest score an admin gives.
 const MAX_SCORE: i64 = 99;
-/// A snapshot's score may trail a round won by this much play time (ms): lower than the win's
-/// only after it is a reset.
+/// A snapshot's score may trail a round won by this much play time (ms): a score lower than the
+/// one at the win counts as a reset only after that.
 const TRAILS_MS: u64 = 5000;
 /// How often the game the room is in is looked up while its score stays as it is.
 const LOOK_EVERY: Duration = Duration::from_secs(1);
@@ -220,7 +220,7 @@ mod tests {
         until("the seek", || lock(&room.state).seek.is_none() && lock(&room.state).at == ms);
     }
 
-    /// What the pages were last told to add.
+    /// Sets a team's score, as an admin does.
     fn set(room: &Room, team: Team, score: i64) -> Result<()> {
         room.set_score(&ScoreEdit { team, score })
     }
@@ -235,7 +235,7 @@ mod tests {
     fn a_score_set_right_holds_for_its_game_and_not_the_next() {
         let room = room_of_two_games();
         at(&room, 20_000);
-        // 1-0 by the game: 3-2 it is, a first half carried over.
+        // The game says 1-0; it is really 3-2, with a first half carried over.
         set(&room, Team::Blue, 3).unwrap();
         set(&room, Team::Red, 2).unwrap();
         assert_eq!(told(&room), [2, 2]);

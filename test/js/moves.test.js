@@ -63,7 +63,8 @@ test("a flight goes from where its camera is, looking as it was flown", () => {
   }));
   const flown = flight(raw, 0.25);
   assert.ok(flown?.path);
-  // Moved by (100, 200, 50), and turned to stare up since: the turn counts for nothing.
+  // The camera was moved by (100, 200, 50) and turned to look straight up since: the flight ignores
+  // the turn.
   /** @type {import("../../app/room/moves.js").Spot} */
   const moved = { pos: [100, 200, 950], aim: [100, 200, 5000] };
   const near = (/** @type {number[]} */ a, /** @type {number[]} */ b) => a.every((v, i) => Math.abs(v - b[i]) < 1);
@@ -84,7 +85,7 @@ test("a flight goes from where its camera is, looking as it was flown", () => {
         there.aim.map((v, i) => v + by[i]),
       ),
   );
-  // Its start, placed or as listed (its flight in rows), is where it looks then.
+  // The move's start looks that way too, whether the flight is as flown or as kept (in rows).
   assert.ok(near(startOf({ ...moved, move: flown }).aim, looks));
   assert.ok(near(startOf({ ...moved, move: toKept(flown) }).aim, looks));
   assert.deepEqual(startOf(moved), moved);

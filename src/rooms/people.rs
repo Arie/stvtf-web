@@ -33,7 +33,7 @@ struct Person {
     name: String,
     /// Pen colour, as `#rrggbb`, once chosen.
     ink: Option<String>,
-    /// Signed in with the site: the name is theirs there.
+    /// Signed in with the site: the name is the one they have there.
     #[serde(default)]
     signed: bool,
     /// Open pages: someone with none has left. Not saved: pages come back to a new process.
@@ -94,7 +94,7 @@ impl People {
         }
     }
 
-    /// How many are in, on a page.
+    /// How many are here now, with a page open.
     pub(crate) fn listed(&self) -> usize {
         self.by_guest.values().filter(|p| p.pages > 0).count()
     }

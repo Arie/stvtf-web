@@ -137,7 +137,7 @@ class StvMap extends HTMLElement {
     }
   }
 
-  // A player by `steamid64`, `steamid` or `id`; none stops following.
+  // Follows a player by `steamid64`, `steamid` or `id`; with none, stops following.
   /** @param {{ steamid64?: string | number; steamid?: string; id?: number }} player */
   follow(player = {}) {
     this.#command?.({ type: "follow", ...player });

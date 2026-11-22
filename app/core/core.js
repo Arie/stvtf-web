@@ -50,7 +50,7 @@ export const byClass = (a, b) =>
 // and overrides. The zero-width joiner and non-joiner stay: emoji and some scripts need them.
 const INVISIBLE = /[\u061c\u180e\u200b\u200e\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]/g;
 const INVISIBLE_ESCAPED = /\\u(061c|180e|200[bef]|202[a-e]|206[0-46-9]|feff)/i;
-// A message from the stream, without them. Most have none, and skip the slower parse.
+// A message from the stream with the invisible characters removed. Most have none, and skip the slower parse.
 /** @type {(data: string) => import("../../types/stream").StreamMessage} */
 export const parseMessage = data =>
   data.search(INVISIBLE) >= 0 || INVISIBLE_ESCAPED.test(data)
@@ -106,8 +106,8 @@ export function overlayUnit() {
   return Math.max(DOT_MIN_PX, Math.min(DOT_MAX_PX, dot)) * (Number(OPT.get("ui")) || 1);
 }
 
-// 1080p is the design size; 4K gets the same layout at twice the size. The page's height is asked
-// of the layout on a resize (applyScale), not every frame: after the bar's changes, that reflows.
+// 1080p is the design size; 4K gets the same layout at twice the size. The page's height is read
+// on a resize (applyScale), not every frame: reading it after the room bar changed forces a reflow.
 let height = 0;
 const DESIGN_HEIGHT = 1080,
   [MIN_UI_SCALE, MAX_UI_SCALE] = [0.75, 2.5];
@@ -120,12 +120,12 @@ export function applyScale() {
 }
 applyScale();
 
-// What changes the page each frame, after the map is drawn: changed before, the map's text would
-// wait for the page's styles.
+// Callbacks that change the page each frame, run after the map is drawn: run before it, the map's
+// text would wait for the page's styles.
 /** @type {Set<() => void>} */
 export const afterDraw = new Set();
 
-// The viewer's elements are all in its page (or the component's template), so they are there.
+// Every element the viewer looks up is in its page (or the component's template), so this is never null.
 /** @param {string} id */
 export const $ = id => /** @type {HTMLElement} */ (env.root.getElementById(id));
 export const canvas = /** @type {HTMLCanvasElement} */ ($("c"));
@@ -172,7 +172,8 @@ export const state = {
   handMoved: 0,
   followZoom: null,
   mirror: null,
-  // The players last drawn, the score line for the feed, rooms seen spawning, when the HUD last refreshed.
+  // The players last drawn, the score line for the feed, the room each team was last seen spawning in,
+  // when the HUD last refreshed.
   lastPlayers: [],
   lastScores: null,
   spawnSeen: {},
@@ -231,7 +232,8 @@ export function setStatus(text, ok, why = "") {
   s.title = why;
 }
 
-// Whether the status says how playback goes: live, paused, a replay, or how far behind SourceTV.
+// Whether the status says how playback goes: live, paused, a replay, a map that is over, or how far
+// behind SourceTV.
 /** @param {string} text */
 export const playbackStatus = text =>
   ["live", "paused", "replay", "Map over", "Next map ready"].includes(text) || text.startsWith("−");
@@ -246,7 +248,7 @@ export function statusText(shown, m) {
   return demoText(m) ?? connectionText(shown, m);
 }
 
-// A demo on its way: fetched (how far, where that is known), then decoded. None for any other line.
+// A demo on its way: fetched (how far, where that is known), then decoded. Null for any other line.
 /** @param {import("../../types/stream").StatusLine} m @returns {[string, string] | null} */
 function demoText(m) {
   if (m.state === "decoding") return ["decoding", ""];

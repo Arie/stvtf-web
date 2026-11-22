@@ -1,9 +1,10 @@
 //! Mumble for a match: `POST /w/<id>/voice-mumble` (a room's too) asks the voice bot into a channel
-//! of a Mumble server: one more (each team's, on one server or on several), or with the `id` of one
-//! it is in, to move that (with no password, the one given before for the server). `{"leave":
-//! true}` sends it away from all, with an `id` from that one. For whoever has a say in the match's
-//! voice (`incoming::has_say`). The bot asks all that is wanted (`GET /voice/mumble`, with its
-//! key); how each goes it says to `who`.
+//! of a Mumble server. Without an `id` that is one more channel (each team's, on one server or on
+//! several); with the `id` of a channel the bot is in, that one is moved. Without a password, the
+//! one given before for the server is used. `{"leave": true}` sends the bot away from all
+//! channels, or with an `id` from that one. Only for whoever has a say in the match's voice
+//! (`incoming::has_say`). The bot asks for all that is wanted (`GET /voice/mumble`, with its key),
+//! and says how each goes to `who` (`voice-status`).
 
 use axum::Json;
 use axum::http::StatusCode;
@@ -56,7 +57,7 @@ pub(in crate::web) fn post_mumble(app: &App, m: Option<&Session>, ask: Ask, who:
         app.voice.mumble_changes.changed();
         return StatusCode::NO_CONTENT.into_response();
     }
-    // Decided with the match held, answered once it is not.
+    // `want` decides under the match's lock; the answer is made once that is released.
     if let Err(why) = want(app, m, ask) {
         return (StatusCode::BAD_REQUEST, why).into_response();
     }
@@ -84,8 +85,8 @@ fn drop_roster(m: &Session, job: &MumbleJob) {
     }
 }
 
-/// The channel `ask` names wanted for match `m`: the one named, else the one in that channel
-/// already, else one more. Why not, when it will not do.
+/// Wants the bot in the channel `ask` names, for match `m`: in place of the one with its `id`,
+/// else of the one for that channel already, else as one more. The error says why not.
 fn want(app: &App, m: &Session, ask: Ask) -> Result<(), &'static str> {
     let (port, delay) = (ask.port.unwrap_or(DEFAULT_PORT), ask.delay.unwrap_or(DEFAULT_DELAY));
     let channel = ask.channel.trim();

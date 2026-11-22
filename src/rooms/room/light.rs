@@ -16,7 +16,7 @@ use crate::sync::lock;
 const RADIUS: f32 = 500.0;
 const EXPONENT: u8 = 5;
 const LIFT: f64 = 8.0;
-/// The light's id, apart from the pages' strokes', arcs', circles' and notes'.
+/// The id of the light, set apart from those of the pages' strokes, arcs, circles and notes.
 const LIGHT_ID: u32 = 0x1000_0000;
 
 /// The spotlight as a page asks for it: where it shines.

@@ -66,7 +66,7 @@ pub(crate) fn play_lines(hub: &SharedHub, reader: impl Read, name: &str, play: &
         crate::sync::lock(hub).played = clock.play;
         publish(hub, &stamped.line);
     }
-    // Without any, the loop would replay the file as fast as it can, forever.
+    // Without a timed line, `replay` would loop over the file as fast as it can, forever.
     if !clock.timed {
         bail!("cannot play {name}: no line has a time or tick");
     }
@@ -106,7 +106,7 @@ impl Default for Clock {
 }
 
 impl Clock {
-    /// Goes on from `play` milliseconds: the next line is the next moment.
+    /// Resumes at `play` milliseconds: the next line adds no gap.
     pub(crate) fn resume(&mut self, play: u64) {
         (self.play, self.last, self.timed) = (play, None, true);
     }
@@ -232,7 +232,7 @@ mod tests {
         let path = dir.join("match.jsonl");
         std::fs::write(&path, recording("cp_badlands")).unwrap();
         let hub = SharedHub::default();
-        // Gone after the first pass, which is the only way a replay ends.
+        // Deletes the file during the first pass: failing to open it is the only way a replay ends.
         let play = || {
             let _ = std::fs::remove_file(&path);
             true

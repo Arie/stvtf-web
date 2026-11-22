@@ -257,13 +257,13 @@ export type VoiceLine = {
   name?: string;
 };
 
-/** Someone talks: sent to pages without voice, at most five a second. */
+/** Someone talks: sent to pages without voice, at most five a second per speaker. */
 export type TalkingLine = { type: "talking"; player: number | null; steamid: string; team?: Team };
 
 /** An admin wiped the room's map. */
 export type ClearLine = { type: "clear"; by: number };
 
-/** Who is in a room, in the order they came; `id` is their number in it. */
+/** The names a room shows for players (by SteamID) and teams, in place of the game's. */
 export type NamesLine = {
   type: "names";
   players: Record<string, string>;
@@ -271,6 +271,7 @@ export type NamesLine = {
 };
 /** What a room adds to the game's score. */
 export type ScoreLine = { type: "score"; blue: number; red: number };
+/** Who is in a room, in the order they came; `id` is their number in it. */
 export type PeopleLine = {
   type: "people";
   people: {

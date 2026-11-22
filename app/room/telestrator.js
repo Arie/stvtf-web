@@ -40,7 +40,7 @@ function luminance(hex) {
   });
   return 0.2126 * r + 0.7152 * g + 0.0722 * b;
 }
-// What reads best on an ink: the dark, or white.
+// The colour that reads best on an ink: the dark ink, or white.
 /** @param {string} ink */
 export function onInk(ink) {
   const l = luminance(ink) + 0.05;
@@ -81,10 +81,10 @@ function addPoints(m, behind) {
   strokes.set(m.stroke, s);
 }
 
-// Marker points the room's map holds.
+// The most marker points the room's map holds.
 let keptMax = Infinity;
 
-// The marker as the room has it, on join or reconnect: in place of the page's, but for strokes
+// The marker as the room has it, on join or reconnect: it replaces the page's, except strokes
 // drawn here.
 /** @param {import("../../types/stream").MarkerLine} m */
 export function onMarker(m) {
@@ -140,7 +140,7 @@ export function trimOwn(stroke, n) {
   else strokes.delete(stroke);
 }
 
-// An admin wiped the map.
+// An admin cleared the drawings.
 export function onClear() {
   clearArcs();
   clearCircles();

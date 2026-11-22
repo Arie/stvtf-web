@@ -108,8 +108,8 @@ export const setListView = other => (view = other);
 
 /** @param {HTMLElement} list */
 export function renderList(list) {
-  // Not under a slider being dragged or a choice being made: it would come loose. Once let go,
-  // the list catches up.
+  // Not rebuilt under a slider being dragged or a field in use: that would take it away. Marked
+  // stale, the list is rebuilt once it is let go.
   if (
     list.querySelector(
       "input[type=range]:active, select:focus, input[type=number]:focus, input[type=text]:focus, input[type=password]:focus",
@@ -147,7 +147,7 @@ export function renderList(list) {
   markTalking(list);
 }
 
-// Lights who talks, and their team's name; the list anew when who is in it changed.
+// Lights who talks, and their team's name; rebuilds the list when who is in it changed.
 /** @param {HTMLElement} list */
 export function markTalking(list) {
   const heard = voice.speakersHeard();
@@ -166,7 +166,7 @@ export function markTalking(list) {
     );
 }
 
-// What a click in the list does; whether it turned voice off.
+// Does what a click in the list asks. Returns whether it turned voice off.
 /** @param {Element} at */
 export function chooseIn(at) {
   const b = /** @type {HTMLButtonElement | null} */ (at.closest("button"));

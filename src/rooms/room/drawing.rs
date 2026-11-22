@@ -33,7 +33,7 @@ pub(crate) struct Kept {
     pub(super) stroke: u32,
     pub(super) by: u32,
     pub(super) points: Vec<[f64; 3]>,
-    /// The ink it was drawn in (`#rrggbb`); none in rooms saved before.
+    /// The ink it was drawn in (`#rrggbb`); none in rooms saved before inks were kept.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(super) ink: Option<String>,
     /// Still being drawn: its end not come yet.
@@ -59,7 +59,8 @@ pub(crate) const MAX_KEPT_POINTS: usize = 8000;
 /// The longest a stroke's points can say it took, in milliseconds.
 pub(super) const MAX_STROKE_MS: f64 = 600_000.0;
 
-/// The marker for joiners, empty too: a page back after a clear it missed drops its own.
+/// The marker line for pages that join, sent even when empty: a page that comes back after a
+/// clear it missed then drops its strokes.
 pub(super) fn kept_line(marker: &[Kept]) -> Arc<str> {
     serde_json::json!({ "type": "marker", "strokes": marker, "max": MAX_KEPT_POINTS }).to_string().into()
 }

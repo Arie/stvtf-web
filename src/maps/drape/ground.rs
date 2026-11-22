@@ -53,8 +53,8 @@ pub(super) struct Geometry {
     pub(super) bounds: Option<[[f64; 3]; 2]>,
 }
 
-/// The overview leaves out floors above `bounds`' top less the geometry's pad plus this
-/// (`app/map/geometry.js`'s `ROOF_ABOVE`).
+/// The overview leaves out floors higher than the top of `bounds` minus the geometry's pad plus
+/// this (the same as `ROOF_ABOVE` in `app/map/geometry.js`).
 pub(super) const ROOF_ABOVE: f64 = 400.0;
 
 /// One floor: its outline, its box, and its height as a plane.
@@ -100,7 +100,8 @@ pub(crate) struct Ground {
     pub(super) roof: f64,
 }
 
-/// The most cells the grid has: a crafted map's huge floors get bigger cells' worth of faces.
+/// The most cells the grid has: on a crafted map with huge floors, the last row and column of
+/// cells also take the faces that lie past them.
 pub(super) const MAX_CELLS: usize = 1 << 16;
 
 /// The most faces in cells, all together (real maps use under 200 000): a crafted map's floors
@@ -153,7 +154,8 @@ impl Ground {
         self.heights(x, y).into_iter().rev().find(|z| *z <= self.roof)
     }
 
-    /// The heights of the floors at (x, y), low to high, those about as high as one another once.
+    /// The heights of the floors at (x, y), low to high; floors within `SAME_FLOOR` of one another
+    /// count once.
     pub(super) fn heights(&self, x: f64, y: f64) -> Vec<f64> {
         if self.w == 0 {
             return Vec::new();

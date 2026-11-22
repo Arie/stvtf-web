@@ -14,7 +14,7 @@ use crate::sync::lock;
 const MAX_TEXT: usize = 40;
 /// The most notes kept: each is sent to every TF2 client again and again.
 pub(super) const MAX_NOTES: usize = 10;
-/// Notes' ids, apart from the pages' strokes', arcs' and circles'.
+/// The ids of notes, set apart from those of the pages' strokes, arcs and circles.
 const NOTE_IDS: u32 = 0x2000_0000;
 /// A bubble at a spot is this high above its floor.
 const ABOVE: f64 = 64.0;

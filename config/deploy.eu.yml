@@ -12,7 +12,7 @@ proxy:
 
 # Where Discord users link the Steam account on their profile (/voice/link), for every region:
 # the bot asks here who someone is. The Discord application's OAuth2 redirect is the one below.
-# (A list here replaces deploy.yml's, so it names those too.)
+# (The secret list here replaces the one in deploy.yml, so it repeats those entries.)
 env:
   clear:
     STVTF_REGION: eu

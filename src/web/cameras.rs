@@ -1,4 +1,5 @@
-//! The cameras casters placed on maps (`crate::cameras`): a page's routes, and another stv.tf's.
+//! The cameras casters placed on maps (`crate::cameras`): the routes a page uses, and those
+//! another stv.tf uses.
 
 use axum::Json;
 use axum::extract::{Path, Query};
@@ -17,7 +18,7 @@ pub(super) struct Since {
     since: u64,
 }
 
-/// Whether the bot's key came with it: another stv.tf asks.
+/// Whether the request carries the bot's key, as one from another stv.tf does.
 fn keyed(v: &Visit) -> bool {
     v.app.voice.key.as_deref().is_some_and(|key| is_key(key, v.bearer.as_deref()))
 }
@@ -46,7 +47,7 @@ pub(super) async fn change(v: Visit, Path(map): Path<String>, Json(change): Json
     .await
 }
 
-/// `GET /cameras?since=<version>`, another stv.tf's: all of them, when changed since.
+/// `GET /cameras?since=<version>`, for another stv.tf: all of them, or `204` when unchanged since.
 pub(super) async fn all(v: Visit, Query(q): Query<Since>) -> Answered {
     answer(move || {
         if !keyed(&v) {

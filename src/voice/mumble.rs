@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use crate::sync::lock;
 use crate::voice::ChannelState;
 
-/// Mumble's own port.
+/// Mumble's default port.
 pub(crate) const DEFAULT_PORT: u16 = 64738;
 
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
@@ -27,24 +27,25 @@ pub(crate) struct MumbleJob {
     /// How it goes, as the bot last said.
     #[serde(default)]
     pub(crate) status: String,
-    /// Where the bot is in it; none in a job saved before: its status says.
+    /// Where the bot is in it; none in a job saved before states were kept: its status then says.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) state: Option<ChannelState>,
     /// Counts each time the bot is asked to join: a new number, and it joins anew.
     #[serde(default)]
     pub(crate) asked: u64,
-    /// Which of the match's it is: its number, from 1, kept while it is moved.
+    /// Which of the match's jobs it is: its number, from 1, kept while it is moved.
     #[serde(default)]
     pub(crate) id: u32,
     /// What the bot calls its channel when it says who is there.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) roster: Option<String>,
-    /// When the bot last said how it goes; not since this process started, for a job saved.
+    /// When the bot last said how it goes; none for a saved job until the bot says so again.
     #[serde(skip)]
     pub(crate) said: Option<Said>,
 }
 
-/// When the bot said something of a job: no part of what the job is.
+/// When the bot said something of a job: not part of what the job is, so it never makes two jobs
+/// differ.
 #[derive(Copy, Clone, Debug)]
 pub(crate) struct Said(pub(crate) Instant);
 
@@ -98,7 +99,7 @@ impl MumbleJob {
 /// How long the bot is kept waiting for a change before it is answered anyway.
 const WAIT: Duration = Duration::from_secs(25);
 
-/// How often what is wanted changed, and the bell that says so: the bot waits on it, so it hears
+/// How often what is wanted changed, and the signal that it did: the bot waits on it, so it hears
 /// of a channel asked for at once.
 #[derive(Default)]
 pub(crate) struct Changes(Mutex<u64>, Condvar);

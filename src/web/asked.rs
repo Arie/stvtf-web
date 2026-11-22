@@ -78,7 +78,7 @@ impl FromRequestParts<Shared> for Visit {
 impl FromRequestParts<Shared> for Who {
     type Rejection = StatusCode;
 
-    /// The signed-in user, or the guest cookie's: a new one if none.
+    /// The signed-in user, else the guest the cookie names, else a new guest.
     async fn from_request_parts(parts: &mut Parts, app: &Shared) -> Result<Self, StatusCode> {
         let Ok(jar) = CookieJar::from_request_parts(parts, app).await;
         let user = app.keys.as_ref().zip(jar.get(USER_COOKIE)).and_then(|(k, c)| k.kept(c.value(), unix_now()));
@@ -100,7 +100,8 @@ pub(super) struct MatchAt {
     pub(super) moment: Moment,
 }
 
-/// A moment a page's link asks for: `t` (`12:34`), on the map of load `map`.
+/// A moment a page's link asks for: `t` (`12:34`), and `map`, the number of the map load it is
+/// in.
 #[derive(Default, Deserialize)]
 pub(super) struct Moment {
     t: Option<String>,
@@ -193,7 +194,7 @@ pub(super) struct Back {
     pub(super) t: Option<String>,
 }
 
-/// Work that may block (locks, files, a wait), off the threads that serve everyone: its answer.
+/// Runs work that may block (locks, files, a wait) off the async threads, and returns its answer.
 pub(super) async fn answer(work: impl FnOnce() -> Answered + Send + 'static) -> Answered {
     // The request's Sentry scope and log span go along.
     let (hub, span) = (sentry::Hub::current(), tracing::Span::current());

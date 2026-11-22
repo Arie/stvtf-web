@@ -156,7 +156,7 @@
   color: var(--alert);
   animation: pulse 0.7s infinite alternate;
 }
-/* Its contents, not the card: a followed one's frame stays bright. */
+/* Dims a dead card's contents, not the card: a followed one's frame stays bright. */
 .card.dead {
   background: var(--shade-90);
 }
@@ -227,7 +227,7 @@
   width: 2px;
   background: var(--shade);
 }
-/* The Vaccinator's four pips: marks at their quarters. */
+/* The Vaccinator's four charges: marks between them, at each quarter. */
 .charge .seg.q1 {
   left: 25%;
 }
@@ -556,7 +556,7 @@
 }
 
 /* A player talking, or muted (panel/speakers.js), on the class icon's corner: a click on it mutes
-   or unmutes them. Ids, to outdo the cards' own placing of their children. */
+   or unmutes them. The ids give these rules more weight than the cards' own placing of their children. */
 #hud-blue .card > .vc,
 #hud-red .card > .vc {
   position: absolute;

@@ -2,8 +2,8 @@
 // (panel/voicelist.js) a button swaps the list for this view, which is wider. With nothing
 // connected: Discord or Mumble. Discord: a button that copies the command that brings the voice
 // bot into a voice channel, to paste there or pass on to a team. Mumble: the server, its password
-// and the channel, and the bot joins at once. Once it is in a channel, those it is in show: how
-// each goes, a way to add another (the other team's), and who is who (voicewho.js). On a demo
+// and the channel, and the bot joins at once. Once it is in a channel, the channels it is in show,
+// each with its status, then a way to add another (the other team's), and who is who (voicewho.js). On a demo
 // with comms watched here, for its players and for casters: only who is who, of its voices that
 // were no player's. See the viewer's Voice.
 import { $ } from "../core/core.js";
@@ -23,7 +23,8 @@ import {
 } from "./mumbleform.js";
 import { pollWho, rebuiltRow, whoEvents, whoRows } from "./voicewho.js";
 
-// What most of competitive TF2 sets `tv_delay` to, in seconds: the bot's own when none is said.
+// The `tv_delay` most of competitive TF2 uses, which the bot takes when none is given, and the longest
+// that can be asked for, in seconds.
 const USUAL_DELAY = 90,
   MAX_DELAY = 300;
 // How long the button says it copied, in milliseconds.
@@ -53,8 +54,8 @@ let review = false;
 let comms = { discord: null, mumble: [] };
 // What the view shows: none (the speakers list), the choice or what is connected (home), one of
 // the two set-ups, or the bot being moved; the Mumble channel being moved or taken out (none
-// while one is added); the delay asked for; whether the command was just copied; and why what was
-// asked would not do.
+// while one is added); the delay asked for; whether the command was just copied; and why the last
+// request was refused.
 /** @type {{ screen: "" | "home" | "discord" | "mumble" | "reconnect"; editing: number | null; delay: number; copied: boolean; refused: string }} */
 const view = { screen: "", editing: null, delay: USUAL_DELAY, copied: false, refused: "" };
 
@@ -64,8 +65,8 @@ const redraw = () => list.hidden || renderList(list);
 
 /** @param {string} status */
 const failed = status => /^(Could not join|Left)/.test(status);
-// Where the bot is in a channel is its `state` (in, connecting, failed, left); a site that says
-// none is gone by its status text.
+// How the bot stands with a channel is its `state` (in, connecting, failed, left); when the site
+// sends no `state`, the status text is read instead.
 /** @param {{ status: string; state?: string }} c It would not join, or left. */
 const out = c => (c.state ? c.state === "failed" || c.state === "left" : failed(c.status));
 /** @param {{ status: string; state?: string }} c On its way in: also when the bot went silent. */
@@ -73,10 +74,10 @@ const onItsWay = c => (c.state ? c.state === "connecting" : c.status === "connec
 /** @param {{ status: string; state?: string }} c What its line says. */
 const said = c => (onItsWay(c) ? "connecting" : c.status);
 
-// How it goes: green in a channel, yellow on the way, red when it would not do.
+// A status line: a green dot in a channel, yellow on the way, red when it failed.
 /**
  * @param {string} status @param {string} [more] @param {string} [where] Discord or Mumble, said before it.
- * @param {boolean} [bad] It would not do, whatever the words.
+ * @param {boolean} [bad] It failed, whatever the status says.
  */
 function statusLine(status, more = "", where = "", bad = failed(status)) {
   let dot = "good";
@@ -180,13 +181,13 @@ function commsView() {
   if (moved) return mumbleSetup(moved);
   if (view.screen === "discord") return discordSetup();
   if (view.screen === "mumble") return mumbleSetup(null);
-  // The only one, and it would not do: its form again, with why.
+  // The only channel, and it failed: its form again, with the reason.
   const [only] = comms.mumble;
   if (!comms.discord && comms.mumble.length === 1 && out(only)) return mumbleSetup(only);
   return comms.discord || comms.mumble.length ? connected() : choice();
 }
 
-// In the speakers list: the way in.
+// The button in the speakers list that opens this view.
 function commsButton() {
   if ((!botInvite && !review) || view.screen) return [];
   const b = review ? act("🎧 Who is who", "go:home") : act("🎧 Comms", "go:home", "Discord or Mumble");
@@ -201,7 +202,7 @@ const postMumble = (/** @type {object} */ body) =>
     body: JSON.stringify(body),
   });
 
-// Where the bot is, asked while the view is open: the view anew when that changed.
+// Asks where the bot is while the view is open, and redraws the view when that changed.
 let soon = 0;
 function pollComms() {
   if (review && view.screen && !list.hidden) return pollWho(redraw);
@@ -214,7 +215,7 @@ function pollComms() {
         const shape = (/** @type {typeof comms} */ c) =>
           `${c.discord?.status ?? ""}/${c.discord?.state ?? ""}/${c.mumble.map(m => `${m.id}/${m.host}/${m.channel}/${m.delay}/${m.status}/${m.state ?? ""}`).join("/")}`;
         const changed = shape(now) !== shape(comms);
-        // The bot came into Discord while its set-up showed: on to where it is.
+        // The bot came into Discord while its set-up showed: show what is connected.
         if (view.screen === "discord" && now.discord && !comms.discord) view.screen = "home";
         comms = now;
         // On its way: asked again soon, so the dot turns as the bot gets there.
@@ -242,7 +243,7 @@ function copyCommand() {
   });
 }
 
-// The bot asked into the Mumble channel typed in (or moved there); why not, when it will not do.
+// Asks the bot into the Mumble channel typed in (or moves it there); shows the reason when refused.
 function joinMumble() {
   const refuse = (/** @type {string} */ why) => {
     view.refused = why;
@@ -270,7 +271,7 @@ function showScreen(to, id = null) {
   view.refused = "";
   view.editing = null;
   const [only] = comms.mumble;
-  // One to move: its own, or the only one when it would not do (its form shows by itself).
+  // The channel to move: the one asked for, or the only one when it failed (its form shows by itself).
   const m =
     to === "reconnect" ? comms.mumble.find(j => j.id === id) : to === "home" && comms.mumble.length === 1 && only;
   if (m && (to === "reconnect" || out(m))) {

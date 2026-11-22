@@ -36,9 +36,9 @@ fn held_of(name: &str) -> Option<(&str, &str)> {
 }
 
 impl Sessions {
-    /// Saves what each live match holds of voice, where that changed; `last`, as this process
-    /// stops: all of it, and they take no more. A release taken over saves too: voice comes in
-    /// until the proxy switches.
+    /// Saves what each live match holds of voice, where that changed. With `last` (this process
+    /// stops) it saves all of it, and the matches take in no more. A release taken over saves
+    /// too: voice comes in until the proxy switches.
     pub fn save_voice(&self, last: bool) {
         let Some(store) = &self.store else { return };
         for s in self.live() {
@@ -121,7 +121,7 @@ impl Sessions {
 }
 
 /// How often the feed looks at the stream: three frames of voice, so a line carries a few and a
-/// player's queue (100 ms ahead) rides it out.
+/// player's queue (100 ms ahead) does not run empty.
 const TEND_EVERY: Duration = Duration::from_millis(60);
 
 impl Session {
@@ -153,7 +153,7 @@ impl Session {
         lock(&self.hub).voice_clock().tick.is_some()
     }
 
-    /// A thread tends the feed from now on, unless one does.
+    /// Starts a thread that tends the feed, unless one does already.
     fn tend(self: &Arc<Self>) {
         if !self.comms.tended.swap(true, Ordering::AcqRel) {
             let s = self.clone();

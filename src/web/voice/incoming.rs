@@ -108,7 +108,7 @@ pub(in crate::web) fn has_say(app: &App, m: &Session, who: &crate::web::visitor:
 /// server (`STVTF_VOICE_BOT`), to those with a say. Every page asks: no content for the rest, and
 /// where no voice comes in, rather than an error in everyone's console.
 pub(in crate::web) fn get_voice_invite(app: &App, m: Option<&Session>, who: &crate::web::visitor::Who) -> Response {
-    // A demo with comms watched here: no bot to bring in, only whose its voices are.
+    // A demo with comms watched here: no bot to bring in, only saying whose voice is whose.
     if super::who::reviewed(app, m, who).is_some() {
         return Json(serde_json::json!({ "review": true })).into_response();
     }

@@ -81,7 +81,7 @@ impl Room {
         Ok(())
     }
 
-    /// The room's names are `names`: every page is told.
+    /// The room's names are `names`: every page and the relay are told.
     pub(super) fn keep_names(&self, names: Names) {
         announce(&self.hub, "names", &names.line());
         if let Some(r) = &*lock(&self.relay.current) {

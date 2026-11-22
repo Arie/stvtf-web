@@ -7,7 +7,8 @@
 //!
 //! - `{"op": "start", "room", "want", "was", "known"}`: the room's relay, started if it has none
 //!   or its own stopped (on the port and password it `was` on, if it can); its page line, null
-//!   when every port is taken. One it has plays on where it is unless the room's place is `known`.
+//!   when every port is taken. A relay it has already plays on where it is, unless the room's
+//!   place is `known`.
 //! - `{"op": "follow", "room", "want"}`: where the room is now.
 //! - `{"op": "status", "room"}`: TF2 clients in, whether it stopped, and its page line.
 //! - `{"op": "keep", "room", "beams"}`: lines the TF2 clients in keep seeing, in place of those
@@ -30,8 +31,9 @@
 //! a pause of some seconds and no reconnect.
 //!
 //! A `want` is a [`stvtf::relay::Want`] with `age_ms` (how long ago `tick` was wanted) for its
-//! instant. A relay nobody asked about for [`LEASE`] (its room gone with an stv.tf that crashed)
-//! is stopped.
+//! instant. Its camera is `follow` (a player's user id) or `path` (the path's id, age and steps);
+//! `fixed`, a spot as a stv.tf from before paths sends it, is still read. A relay nobody asked
+//! about for [`LEASE`] (its room gone with an stv.tf that crashed) is stopped.
 //!
 //! stv.tf never waits on it: a thread per relay talks to it, and one that does not answer is left
 //! alone for [`AWAY`].
@@ -139,7 +141,8 @@ fn now_ms() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_millis() as u64)
 }
 
-/// Stops every relay with TF2 clients in and writes them to `file`, each relay at once.
+/// Stops every relay and writes those with TF2 clients in to `file`. The relays hand over at the
+/// same time.
 fn hand_over(rooms: &Rooms, file: &Path) -> Result<usize> {
     let all = std::mem::take(&mut *lock(rooms));
     let handed: Vec<HandedRoom> = std::thread::scope(|s| {
@@ -159,7 +162,7 @@ fn hand_over(rooms: &Rooms, file: &Path) -> Result<usize> {
     });
     let clients = handed.iter().map(|r| r.clients.clients()).sum();
     let part = file.with_extension("handover.part");
-    // A want's age is as of now.
+    // `at_ms` is now: each want's age counts from here.
     std::fs::write(&part, serde_json::to_vec(&Handed { at_ms: now_ms(), rooms: handed })?)?;
     std::fs::rename(&part, file)?;
     Ok(clients)
@@ -217,7 +220,7 @@ pub(crate) fn clients(socket: &Path) -> Result<Value> {
 /// Serves relays on `socket` until told to `stop`: then its TF2 clients are handed over (see
 /// [`handed_at`]) and the process ends.
 pub(crate) fn serve(socket: &Path, relays: &Arc<Relays>, lease: Duration, stop: &'static AtomicBool) -> Result<()> {
-    // One left by a process before is in the way.
+    // A socket file left by a process before would be in the way.
     let _ = std::fs::remove_file(socket);
     let rooms: Rooms = Arc::default();
     take_over(&rooms, relays, &handed_at(socket));
@@ -274,8 +277,8 @@ fn answer(conn: UnixStream, rooms: &Rooms, relays: &Arc<Relays>) -> Result<()> {
     Ok(())
 }
 
-/// Says how starting a room's relay went: its port, to tell whose the relay's own notes are
-/// (not its password), or why there is none.
+/// Logs how starting a room's relay went: its port, which tells whose the relay's own log lines
+/// are (never its password), or why there is none.
 fn said_of(room: &str, started: &Result<Option<LocalRelay>>) {
     match started {
         Ok(Some(relay)) => tracing::info!("relay of room {} started on port {}", logged(room), relay.was().port),

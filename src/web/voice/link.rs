@@ -34,7 +34,7 @@ pub(in crate::web) fn link(app: &App) -> Response {
     ([(header::SET_COOKIE, set_cookie(app, STATE_COOKIE, &state, STATE_FOR))], Redirect::to(&to)).into_response()
 }
 
-/// `/voice/linked`: back from Discord with a code, in the browser that set out.
+/// `/voice/linked`: back from Discord with a code, in the browser that began it.
 pub(in crate::web) fn linked(app: &App, state: &str, code: &str, began: Option<&str>) -> Response {
     let Some(d) = &app.voice.links.discord else { return (StatusCode::NOT_FOUND, "No linking here").into_response() };
     if state.is_empty() || code.is_empty() || began != Some(state) {

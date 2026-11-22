@@ -1,4 +1,4 @@
-//! The parts of a recording: each load of a map, from its signon on.
+//! The parts of a recording: each load of a map, from its first snapshot on.
 
 use serde::{Deserialize, Serialize};
 use stvtf::Line;
@@ -8,8 +8,9 @@ use crate::matches::hub::SharedHub;
 use crate::matches::loads::Loads;
 use crate::sync::lock;
 
-/// Seconds of ticks a part plays before it has play (a frozen baseline frame has none), and
-/// that it goes on past the server's word that it is changing map before that word is taken back.
+/// Seconds of ticks past its first snapshot before a part counts as having play (a frozen
+/// baseline frame has none), and seconds of ticks a part must go on after the server said it is
+/// changing map before that is taken back.
 pub(super) const READY_S: f64 = 1.0;
 
 pub(super) const WENT_ON_S: f64 = 5.0;
@@ -62,7 +63,7 @@ pub(in crate::matches::recording) struct PartState {
     pub(super) tail: Option<u64>,
     pub(super) ready: bool,
     pub(super) first_tick: Option<u32>,
-    /// Play time of its first snapshot: a seek there has it.
+    /// Play time of its first snapshot: a seek there includes it.
     pub(super) first_at: Option<u64>,
     /// Play time and tick of the first snapshot of the run of ticks it is in, and of the last
     /// snapshot: when it turns ready, it begins at that run (not at a frozen frame before it).
@@ -101,8 +102,8 @@ impl PartState {
     }
 
     /// A snapshot of its play at `at`, `tick`: it turns ready a second of ticks past its first (a
-    /// `later` part then begins at its run of play), and one the server said was changing map
-    /// that goes on was not over.
+    /// `later` part then begins at its run of play). If the server said it was changing map but
+    /// the ticks go on, the part was not over.
     pub(super) fn play(&mut self, at: u64, tick: u32, interval: f64, later: bool) {
         self.run(at, tick, interval);
         let ready = self.first_tick.is_some_and(|first| tick >= first.saturating_add(ticks(READY_S, interval)));
@@ -250,7 +251,7 @@ impl Parts {
         Seed { loads: self.loads.clone(), part: self.list.last().cloned() }
     }
 
-    /// Whether play time `at` is a part's first snapshot: a seek there has it.
+    /// Whether play time `at` is a part's first snapshot: a seek there includes it.
     pub(in crate::matches::recording) fn first_snapshot_at(&self, at: u64) -> bool {
         self.list.iter().any(|p| p.first_at == Some(at))
     }
@@ -337,7 +338,7 @@ pub(in crate::matches::recording) struct Header {
 }
 
 impl Header {
-    /// Whether `key` is a header line's, the parts' or not.
+    /// Whether `key` is the key of a header line, one of the parts' or any other.
     pub(in crate::matches::recording) fn has(key: &str) -> bool {
         matches!(key, "marks" | "hub" | "origin" | "parts" | "seed" | "loads")
     }
@@ -348,7 +349,7 @@ impl Header {
             "origin" => self.origin = Some(value.parse()?),
             "parts" => self.parts = value.parse()?,
             "seed" => self.seed = Some(serde_json::from_str(value)?),
-            // Round 1's loads of each map: the rule needs none.
+            // An older version's count of loads per map: the rule needs none.
             "loads" => {}
             _ => return Ok(false),
         }

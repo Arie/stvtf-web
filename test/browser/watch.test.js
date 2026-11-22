@@ -233,7 +233,7 @@ test("a room is driven by its owner and followed by everyone else", async () => 
   await viewer.page.goto(page.url());
   await until(viewer.page, () => document.getElementById("status").textContent === "paused");
   assert.ok(await viewer.page.$eval("#rb-play", el => el.disabled), "only the owner controls it");
-  // A linked moment moves the room for its owner only, once.
+  // A link to a moment (`?t=`) moves the room only when its owner opens it, and only once.
   const room = page.url(),
     clock = (/** @type {import("playwright-core").Page} */ p, /** @type {string} */ at) =>
       until(p, a => document.getElementById("rb-clock").textContent.startsWith(`${a} /`), at);
@@ -284,7 +284,8 @@ test("the owner draws on the map and everyone in the room sees it", async () => 
   await viewer.page.goto(page.url());
   await until(viewer.page, m => document.getElementById("map").textContent === m, MAP);
   const clean = await ink(viewer.page);
-  // A drag that slips off the map selects no text; what a viewer cannot use shows no hand.
+  // A drag that slips off the map selects no text, but the name box, chat and feed can be copied.
+  // A viewer cannot seek, so the page is not marked seekable.
   assert.equal(await viewer.page.$eval("#app", el => getComputedStyle(el).userSelect), "none");
   assert.equal(await viewer.page.$eval("#myname", el => getComputedStyle(el).userSelect), "text");
   for (const id of ["#chat", "#feed"])
@@ -325,7 +326,7 @@ test("the marker stays, for those who come later too, until an admin clears it",
   const later = await open();
   await later.page.goto(page.url());
   await until(later.page, m => document.getElementById("map").textContent === m, MAP);
-  // Once it has drawn it.
+  // Wait until the later page has drawn the marker.
   let marked = await ink(later.page);
   for (let i = 0; i < 50 && marked <= clean + 100; i++) {
     await later.page.waitForTimeout(100);
@@ -346,7 +347,7 @@ test("people in a room see each other and admins make others admin", async () =>
   await page.waitForURL(/\/r\/[0-9a-f]{32}\/$/, { timeout: WAIT });
   await page.fill("#myname", "coach");
   await page.press("#myname", "Enter");
-  // One's own name is the box in one's row, with the room's name for one as its placeholder.
+  // A person's own name is an input in their row; its placeholder is the name the room has for them.
   await until(page, () => /** @type {HTMLInputElement} */ (document.getElementById("myname")).placeholder === "coach");
   const viewer = await open();
   await viewer.page.goto(page.url());
@@ -368,7 +369,7 @@ test("people in a room see each other and admins make others admin", async () =>
       el => getComputedStyle(el).backgroundColor === "rgb(0, 255, 0)",
     ),
   );
-  // The marker, on, shows the ink.
+  // While the marker is on, its button has the ink's colour.
   const markerShows = (/** @type {string} */ colour) =>
     until(
       page,
@@ -567,7 +568,7 @@ test("an admin clicking an event's time watches from just before it", async () =
   };
   const was = await seconds();
   await page.click(`#feed time[data-tick="${tick}"]`);
-  // Back to before it, and on from there: the event comes round again.
+  // Playback goes back to before the event and plays on, so the event shows in the feed again.
   await until(
     page,
     w => Number(document.getElementById("rb-clock").textContent.split(" / ")[0].split(":")[1]) < w,
@@ -601,7 +602,7 @@ test("a viewer of a match page goes back on their own", async () => {
     streams.some(s => s.startsWith("/r/")),
     streams.join(" "),
   );
-  // A demo has no live to go back to.
+  // A demo has no live moment to go back to.
   assert.ok(await page.$eval("#rb-live", el => el.hidden));
   assert.deepEqual(errors, []);
   await page.close();
@@ -646,8 +647,8 @@ test("a link to a moment watches from there", async () => {
   // The address stays as it was opened.
   await until(page, () => /^0:1[2-9] \//.test(document.getElementById("rb-clock").textContent ?? ""));
   assert.match(page.url(), /[?]t=0:10$/);
-  // A reload watches on from where one was.
-  // Kept every so often: a little before, at most.
+  // A reload plays on from where the viewer was. The position is saved every so often, so it can
+  // be a little earlier.
   await until(page, () => /^0:(1[5-9]|[2-9]\d) \//.test(document.getElementById("rb-clock").textContent ?? ""));
   await page.reload();
   await until(page, () => document.getElementById("status").textContent === "replay");
@@ -706,8 +707,8 @@ test("h hides the player HUD and s the scores, each on its own", async () => {
   await page.close();
 });
 
-// The speakers list, open, on a page that may set up comms. `site` answers for stv.tf; `posted`
-// keeps what the page posts.
+// Opens the speakers list on a page that may set up comms. `site` holds what the server answers;
+// `posted` keeps what the page posts.
 /** @param {{ comms?: object; voices?: object[]; demos?: object[]; refuse?: string }} site */
 async function openSpeakers(site) {
   const { page, errors } = await open();
@@ -747,7 +748,7 @@ test("the speakers list mutes a player, a team and everyone, and turns voice off
   assert.deepEqual(await page.$$eval("#voicelist .vtname", els => els.map(e => e.textContent)), ["RED", "BLU"]);
   assert.equal(await page.$$eval("#voicelist .vrow[data-steamid]", els => els.length), 12);
   const muted = () => page.$$eval("#voicelist [data-mute].muted", els => els.length);
-  // By name: the list keeps the HUD's order, which changes as players die.
+  // Picked by its `data-mute` value: the list keeps the HUD's order, which changes as players die.
   const one = `#voicelist [data-mute="${await page.getAttribute("#voicelist [data-mute]", "data-mute")}"]`;
   await page.click(one);
   assert.equal(await muted(), 1);
@@ -800,7 +801,7 @@ test("comms for Discord: the command to paste is copied, with the delay asked fo
     await page.evaluate(() => navigator.clipboard.readText()),
     `/stv join link:${base}?voice=0123456789abcdef delay:0`,
   );
-  // The bot came: on to where it is.
+  // The bot joined: the list goes on to show the channel it is in.
   site.comms = { discord: { status: "In General", state: "in" }, mumble: [] };
   await shows("Discord: In General");
   await shows("Nobody there");
@@ -856,7 +857,7 @@ test("comms for Mumble: a channel is joined, moved and left, and what will not d
   await shows("Mumble: In Team A");
   await shows("tv_delay 90 s");
   assert.ok(await page.$("#voicelist .vdot.good"));
-  // Another channel is most likely on the same server, its password known.
+  // The form for another channel starts with the same server, and keeps its password.
   await page.click('#voicelist [data-action="go:mumble"]');
   assert.equal(await page.inputValue(field("server")), "mumble.test:1234");
   assert.equal(await page.getAttribute(field("password"), "placeholder"), "unchanged");
@@ -865,7 +866,7 @@ test("comms for Mumble: a channel is joined, moved and left, and what will not d
   assert.equal(await page.inputValue(field("channel")), "Team A");
   await page.fill(field("channel"), "Team B");
   site.comms = { discord: null, mumble: [{ ...inTeamA, channel: "Team B", status: "In Team B" }] };
-  // The bot is there before the page is told so: the page's own asking has seen it by then.
+  // The bot is in the new channel before the join is answered: the page's own poll has seen it by then.
   await page.waitForTimeout(1300);
   await page.click('#voicelist [data-action="join"]');
   assert.deepEqual(await sent("voice-mumble", 3), {
@@ -881,7 +882,7 @@ test("comms for Mumble: a channel is joined, moved and left, and what will not d
   await page.click('#voicelist [data-action="leave"]');
   assert.deepEqual(await sent("voice-mumble", 4), { leave: true, id: 1 });
   await until(page, () => document.querySelectorAll("#voicelist .vcopy").length === 2);
-  // The only channel, and the bot would not join it: its form again, with why.
+  // The bot could not join the only channel: its form shows again, with the reason.
   site.comms = {
     discord: null,
     mumble: [
@@ -900,7 +901,7 @@ test("comms for Mumble: a channel is joined, moved and left, and what will not d
   assert.equal(await page.inputValue(field("server")), "mumble.test");
   assert.equal(await page.inputValue('#voicelist [data-action="delay"]'), "30");
   assert.ok(await page.$("#voicelist .vdot.bad"));
-  // The browser tells of what was refused itself.
+  // The browser itself logs the refused request (400) as an error.
   assert.deepEqual(
     errors.filter(e => !e.includes("400")),
     [],
@@ -924,7 +925,7 @@ test("who is who: those in the channel are put on players, by choice or by Steam
   await shows("Who is who");
   assert.equal(await page.textContent("#voicelist .vteam .vhint"), "2/3");
   const row = (/** @type {number} */ n) => `#voicelist .vwho:nth-child(${n} of .vwho)`;
-  // A look-alike name comes first; a guess shows as one until confirmed.
+  // The player with a similar name comes first in the options; a guess is marked as one until confirmed.
   assert.equal(await page.textContent(`${row(1)} option:nth-child(2)`), "Player 3");
   assert.equal(await page.$eval(`${row(2)} select`, el => el.className), "maybe");
   assert.equal(
@@ -961,7 +962,7 @@ test("who is who: those in the channel are put on players, by choice or by Steam
   await page.selectOption(`${row(1)} select`, "none");
   assert.deepEqual(await sent("voice-match", 4), { discord: "71" });
   await shows("Not a Steam ID");
-  // The browser tells of what was refused itself.
+  // The browser itself logs the refused request (400) as an error.
   assert.deepEqual(
     errors.filter(e => !e.includes("400")),
     [],
@@ -976,7 +977,8 @@ test("demos with comms in them are listed under the speakers, to watch or downlo
   await shows("With comms");
   assert.equal(await page.textContent("#voicelist a.vwatch"), "▶ cp_gullywash_f9");
   assert.equal(await page.textContent("#voicelist a.vdemo"), "12 MB ↓");
-  // Built once asked: the server says so by a cookie of the mark.
+  // The demo is built when first asked for: the server says it is ready with a `built` cookie that
+  // holds the link's mark.
   await page.$eval("#voicelist", list =>
     list.addEventListener("click", e => {
       const a = /** @type {Element} */ (e.target).closest("a.vdemo");
@@ -1007,7 +1009,7 @@ test("who talks shows on their HUD card and in the speakers list, and a click th
   const who = await page.evaluate(async frame => {
     const main = /** @type {HTMLScriptElement} */ ([...document.scripts].find(s => s.src.includes("main.js")));
     const voice = await import(main.src.replace("main.js", "core/voice.js"));
-    // The cards are drawn anew now and then: one that is there.
+    // The cards are redrawn now and then, so wait for one that is there.
     const find = () => /** @type {HTMLElement | null} */ (document.querySelector("#hud-red .card"));
     while (!find()) await new Promise(r => setTimeout(r, 20));
     const id = Number(find()?.dataset.id);
@@ -1029,7 +1031,7 @@ test("who talks shows on their HUD card and in the speakers list, and a click th
     who.steamid,
   );
   assert.equal(await page.$eval('#voicelist .vteam[data-team="blue"]', el => el.classList.contains("talking")), false);
-  // Silent again: a faint 🔊, there to mute them by.
+  // Silent again: a faint 🔊 stays, to mute them with.
   await page.evaluate(() => (window.talking = false));
   await until(page, m => document.querySelector(m)?.matches(".quiet:not(.wave)"), mark);
   assert.equal(await page.textContent(mark), "🔊");
@@ -1055,7 +1057,7 @@ test("an admin names the players and teams, from a league's names, for everyone 
   await until(viewer.page, () => !document.getElementById("scoreboard").hidden);
   await viewer.page.click(".sb-team.blue .sb-name", { force: true });
   assert.ok(await viewer.page.$eval("#names", el => el.hidden));
-  // What the leagues would say: one knows two of BLU and their team.
+  // What the leagues answer: ETF2L knows two BLU players and their team, RGL one player.
   /** @type {any} */
   let asked;
   await page.route("**/leagues", route => {
@@ -1084,7 +1086,7 @@ test("an admin names the players and teams, from a league's names, for everyone 
   assert.equal(await page.inputValue(field("team:blue")), "The Blues");
   assert.equal(await page.inputValue(field("team:red")), "");
   assert.equal(await page.getAttribute(field("[U:1:1002]"), "placeholder"), "Player 2");
-  // Another league's names, then one's own on top.
+  // The other league's names, then the first again, with the admin's own names typed over them.
   await page.selectOption("#names select", "1");
   assert.equal(await page.inputValue(field("[U:1:1001]")), "One");
   await page.selectOption("#names select", "0");
@@ -1167,7 +1169,7 @@ test("an admin clicks a score on the HUD to set it right, for everyone in the ro
 
 test("a long status is cut short, not the buttons after it pushed off the page", async () => {
   const { page } = await open();
-  // No stream: the status stays as it is put.
+  // Without a stream the status stays as the test sets it.
   await page.route("**/events*", r => r.abort());
   await page.goto(base);
   await page.waitForSelector("#status");
@@ -1195,11 +1197,11 @@ test("a camera is placed on the map and an admin's click puts the room's relay t
   await page.check('#settings input[data-layer="cameras"]');
   await page.click("#settingstoggle");
   await page.click('#cam-list button[data-id="new"]');
-  // What it would show is said once the map's voxels are in.
+  // The pane says what the camera would show once the map's voxels have loaded.
   await until(page, () => document.getElementById("cam-shows").textContent !== "");
   await page.fill("#cam-name", "Mid");
   await page.fill("#cam-z", "1400");
-  // Its picture, in the corner: more than a sky.
+  // The camera's picture, in the corner, shows more than plain sky.
   await until(page, () => {
     const view = /** @type {HTMLCanvasElement} */ (document.getElementById("cam-view")),
       c = Object.assign(document.createElement("canvas"), { width: 64, height: 36 }).getContext("2d");
@@ -1208,7 +1210,7 @@ test("a camera is placed on the map and an admin's click puts the room's relay t
     const px = new Uint32Array(c.getImageData(0, 0, 64, 36).data.buffer);
     return new Set(px).size > 8;
   });
-  // Steered from the picture: E lifts it, a drag down looks down, Ctrl+Z takes each back.
+  // The camera is steered from the picture: E lifts it, a drag down looks down, Ctrl+Z undoes each.
   const heights = () =>
     page.evaluate(() =>
       ["cam-z", "cam-aim-z"].map(id => Number(/** @type {HTMLInputElement} */ (document.getElementById(id)).value)),
@@ -1235,7 +1237,7 @@ test("a camera is placed on the map and an admin's click puts the room's relay t
   assert.deepEqual(await heights(), [lifted, liftedAim]);
   await page.keyboard.press("Control+z");
   assert.deepEqual(await heights(), [z, aimZ]);
-  // A click aims at what is under it; the slider is its height.
+  // A click aims at what is under the pointer; the slider sets the camera's height.
   await page.mouse.click(mx + 40, my + 40);
   await page.locator("#cam-z-slide").fill("1300");
   assert.deepEqual((await heights())[0], 1300);
@@ -1248,7 +1250,7 @@ test("a camera is placed on the map and an admin's click puts the room's relay t
   assert.equal(kept.cameras.length, 1);
   const { pos, aim } = kept.cameras[0];
   assert.equal(pos[2], 1400);
-  // Its marker, clicked: the relay's camera goes there, and back with the director on the next.
+  // A click on its marker puts the relay's camera there; the next click gives it back to the director.
   const [x, y] = await page.evaluate(async ([wx, wy]) => {
     const main = [...document.scripts].find(s => s.src.includes("main.js"));
     const view = await import(main.src.replace("main.js", "map/view.js"));
@@ -1262,7 +1264,7 @@ test("a camera is placed on the map and an admin's click puts the room's relay t
     assert.equal((await (await asked.response())?.status()) ?? 0, 204);
     await page.waitForTimeout(200);
   }
-  // Its name in the list does the same, with no picture of it.
+  // A click on its name in the list does the same, without opening its pane.
   for (const sent of [{ pos, aim }, {}]) {
     const [asked] = await Promise.all([
       page.waitForRequest(r => r.url().endsWith("/camera")),
@@ -1272,7 +1274,7 @@ test("a camera is placed on the map and an admin's click puts the room's relay t
     await until(page, on => (document.querySelector("#cam-list .on") !== null) === on, "pos" in sent);
   }
   assert.ok(await page.$eval("#cam-pane", el => el.hidden));
-  // Placed anew by dragging it, then taken away.
+  // Moved by dragging its marker, then removed.
   await page.click("#cam-list button[data-id]");
   await page.mouse.move(x, y);
   await page.mouse.down();
@@ -1287,7 +1289,7 @@ test("a camera is placed on the map and an admin's click puts the room's relay t
   await page.click("#cam-list button[data-id]");
   await page.click("#cam-remove");
   await until(page, () => document.querySelectorAll("#cam-list button").length === 1);
-  // A streamer's for the room alone, listed with the map's.
+  // A streamer's camera for this room only, listed with the map's cameras.
   await page.click('#cam-list button[data-id="new"]');
   await page.fill("#cam-name", "Ours");
   await page.check("#cam-room");
@@ -1318,7 +1320,7 @@ test("a camera is given a move, which is kept with it and set off from the list"
   await page.click('#cam-list button[data-id="new"]');
   await until(page, () => document.getElementById("cam-shows").textContent !== "");
   await page.fill("#cam-name", "Round");
-  // A quarter round what it looks at, in three seconds.
+  // A quarter turn round what it looks at, in three seconds.
   await page.click('#cam-moves button[data-move="orbit"][data-way="1"]');
   await page.click('#cam-moves button[data-move="orbit"][data-way="1"]');
   await page.fill("#cam-secs", "3");
@@ -1330,7 +1332,7 @@ test("a camera is given a move, which is kept with it and set off from the list"
   assert.equal(kept.move.way, "arc");
   assert.equal(kept.move.secs, 3);
   assert.ok(Math.abs(kept.move.turn - Math.PI / 2) < 1e-6);
-  // Set off from the list: every moment of it, from its spot to its end.
+  // Its ▶ in the list sends the whole move: a point for every moment, from its spot to its end.
   const [asked] = await Promise.all([
     page.waitForRequest(r => r.url().endsWith("/camera")),
     page.click("#cam-list .crow:last-of-type button[data-play]"),
@@ -1341,14 +1343,15 @@ test("a camera is given a move, which is kept with it and set off from the list"
   assert.deepEqual(sent.path[0], [0, ...kept.pos, ...kept.aim]);
   assert.deepEqual(sent.path[90].slice(0, 4), [3, ...kept.move.end.pos]);
   assert.equal((await asked.response())?.status(), 204);
-  // Its ▶ says it is on its way, counting down, and is itself again once there.
+  // While the camera moves, its ▶ counts down the seconds; it is ▶ again once there.
   const play = "#cam-list .crow:last-of-type button[data-play]";
   await until(page, sel => /^[123]s$/.test(document.querySelector(sel)?.textContent ?? ""), play);
   assert.ok(await page.$eval(play, el => el.classList.contains("on")));
   if (process.env.SHOTS) await page.screenshot({ path: `${process.env.SHOTS}/camera-playing.png` });
   await until(page, sel => document.querySelector(sel)?.textContent === "▶", play);
   assert.ok(!(await page.$eval(play, el => el.classList.contains("on"))));
-  // Off on its move it is no longer at its spot: its name puts it back there, and again gives it up.
+  // After the move the relay is no longer at the camera's spot: a click on its name puts it back,
+  // and a second click gives it back to the director.
   const name = "#cam-list .crow:last-of-type button[data-go]";
   const [back] = await Promise.all([page.waitForRequest(r => r.url().endsWith("/camera")), page.click(name)]);
   assert.deepEqual(back.postDataJSON(), { pos: kept.pos, aim: kept.aim });
@@ -1356,7 +1359,7 @@ test("a camera is given a move, which is kept with it and set off from the list"
   await page.waitForTimeout(200);
   const [off] = await Promise.all([page.waitForRequest(r => r.url().endsWith("/camera")), page.click(name)]);
   assert.equal(off.postData(), "{}");
-  // Placed again, it has its move still; told to stay, no more.
+  // Opened again, it still has its move; the still button removes it.
   await page.click("#cam-list .crow:last-of-type button[data-id]");
   assert.equal(await page.$eval("#cam-way", el => /** @type {HTMLSelectElement} */ (el).value), "arc");
   await page.click("#cam-still");
@@ -1391,7 +1394,7 @@ test("a flight flown in the picture after a count is a camera's move", async () 
       ["cam-z", "cam-aim-z"].map(id => Number(/** @type {HTMLInputElement} */ (document.getElementById(id)).value)),
     );
   // In a browser that does not let the picture hold the pointer (one inside the game), R begins a
-  // flight and ends it; Esc ends it too, and a click in the picture is an aim as ever.
+  // flight and ends it; Esc ends it too, and a click in the picture still aims.
   await page.evaluate(() => {
     window.lockOf = HTMLCanvasElement.prototype.requestPointerLock;
     HTMLCanvasElement.prototype.requestPointerLock = () => Promise.reject(new Error("no"));
@@ -1412,7 +1415,8 @@ test("a flight flown in the picture after a count is a camera's move", async () 
   await page.evaluate(() => {
     HTMLCanvasElement.prototype.requestPointerLock = window.lockOf;
   });
-  // Counted down to, the picture holding the pointer; let go of (Esc) while it counts, it is off.
+  // With the pointer locked to the picture, recording starts after a count; releasing the lock (Esc)
+  // during the count cancels it.
   await page.click("#cam-rec");
   await until(page, () => /^[123]$/.test(document.getElementById("cam-badge").textContent ?? ""));
   assert.equal(await page.textContent("#cam-rec"), "Cancel (R)");
@@ -1436,7 +1440,7 @@ test("a flight flown in the picture after a count is a camera's move", async () 
   await until(page, () => document.getElementById("cam-badge").hidden);
   assert.equal(await page.textContent("#cam-rec"), "● Record (R)");
   assert.equal(await page.evaluate(() => document.pointerLockElement), null);
-  // The click that ended it aimed at nothing, and End shows where it was flown to: the flight stays.
+  // The click that ended it did not aim the camera, and End shows where it flew to: the flight is kept.
   assert.deepEqual(await heights(), began);
   await page.click("#cam-end");
   assert.equal(await page.$eval("#cam-scrub", el => /** @type {HTMLInputElement} */ (el).value), "1000");
@@ -1453,7 +1457,8 @@ test("a flight flown in the picture after a count is a camera's move", async () 
   // The mouse turned it while the key was held: it looks another way at the end.
   const way = (/** @type {number[]} */ r) => Math.atan2(r[5] - r[2], r[4] - r[1]);
   assert.ok(Math.abs(way(last) - way(first)) > 0.1, `turned by ${way(last) - way(first)}`);
-  // Its name puts the relay where the flight begins, looking as it was flown, and is marked there.
+  // A click on its name puts the relay where the flight begins, looking as the flight began, and
+  // marks the name as on.
   const flownName = "#cam-list .crow:last-of-type button[data-go]";
   const [put] = await Promise.all([page.waitForRequest(r => r.url().endsWith("/camera")), page.click(flownName)]);
   const there = put.postDataJSON();
@@ -1502,7 +1507,8 @@ test("an admin who is no streamer places a camera for the room alone", async () 
   assert.deepEqual(shared, [], "the map's are not asked for");
   const kept = await page.evaluate(map => fetch(`../../cameras/${map}`).then(r => r.json()), MAP);
   assert.deepEqual(kept.cameras, [], "not the map's");
-  // The relay at one not listed here, as the map's are: a button gives it back.
+  // The relay is at a camera this page does not list (it lists none of the map's): a button gives
+  // it back to the director.
   const spot = { pos: [100, 200, 900], aim: [0, 0, 0] };
   await page.evaluate(
     ([to, at]) => fetch(to, { method: "POST", headers: { "Content-Type": "application/json" }, body: at }),

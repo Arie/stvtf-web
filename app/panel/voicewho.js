@@ -10,10 +10,10 @@ import { act, el, heading } from "./voicebits.js";
 /** @typedef {{ id: string; name: string; steamid: string | null; linked: string | null; heard: boolean; confirmed: boolean }} Person */
 /** @type {Person[]} */
 let people = [];
-// On a demo with comms watched here: where it plays with what was said of its voices since, once
-// anything was (it is built anew).
+// On a demo with comms watched here: the link to the demo rebuilt with the changes to who is who,
+// once any was made.
 let rebuilt = "";
-// Whose Steam ID is being typed, what is typed, and why it would not do.
+// Whose Steam ID is being typed, what is typed, and why the last change was refused.
 let typing = "",
   typedId = "",
   refused = "";
@@ -25,8 +25,8 @@ export function alike(a, b) {
   return x.length > 2 && y.length > 2 && (x.includes(y) || y.includes(x));
 }
 
-// The player someone is, if they are one of the match now: by whom they are put on, else by
-// the account they linked.
+// The player someone is, if that player is in the match now: by the Steam ID they were set to,
+// else by the account they linked.
 /** @param {Person} v */
 const playerOf = v =>
   [...state.players.values()].find(p => p.steamid === (v.steamid ?? (v.confirmed ? null : v.linked)));
@@ -57,7 +57,7 @@ function picker(v) {
     o.selected = p.id === now?.id;
     select.append(o);
   }
-  // Put on someone who is not in the match (yet): by their Steam ID.
+  // Set to someone who is not in the match (yet): shown by their Steam ID.
   if (v.steamid && !now) select.append(el("option", { value: "kept", selected: true }, v.steamid));
   select.append(el("option", { value: "steamid" }, "Steam ID…"));
   return select;
@@ -90,7 +90,7 @@ function row(v) {
   return r;
 }
 
-// The way to the demo built anew, from the moment watched now.
+// The link to the rebuilt demo, opening at the moment watched now.
 export function rebuiltRow() {
   if (!rebuilt) return [];
   const a = el("a", { href: rebuilt, className: "vcopy" }, "▶ Apply");
@@ -142,7 +142,7 @@ function putOn(id, whom, redraw) {
     .finally(redraw);
 }
 
-// What the comms view's list hears that is of who is who.
+// Handles the comms view's events that concern who is who.
 /** @param {HTMLElement} list @param {() => void} redraw */
 export function whoEvents(list, redraw) {
   list.addEventListener("change", e => {
@@ -163,7 +163,7 @@ export function whoEvents(list, redraw) {
   list.addEventListener("keydown", e => {
     const input = /** @type {HTMLInputElement} */ (e.target);
     if (e.key !== "Enter" || !input.dataset?.steamid) return;
-    // Let go of, so the view is drawn anew (it is not, under someone typing).
+    // Blurred so the view can be redrawn: it is not redrawn while someone types in it.
     input.blur();
     putOn(input.dataset.steamid, { steamid: typedId }, redraw);
   });

@@ -46,7 +46,8 @@ pub(crate) struct Hub {
     room: BTreeMap<&'static str, Arc<str>>,
     /// Whether the game is paused, as its stream last said.
     paused: bool,
-    /// Counts the stream's new starts (a map change, a new server line): its ticks start over.
+    /// Counts the times the stream started over (a map change, a server line): its ticks start
+    /// over then.
     epoch: u64,
     /// Who is in the latest snapshot, by `SteamID`, for voice from outside the match.
     steamids: Vec<(String, PlayerId, Team, u32)>,
@@ -99,8 +100,8 @@ pub(crate) struct Rostered {
     pub(crate) class: Class,
 }
 
-/// What held voice goes by: the stream's tick, whether the game is paused, and how many times the
-/// stream started over.
+/// What voice held back for the stream is timed by: the stream's tick, whether the game is paused,
+/// and how many times the stream started over.
 #[derive(Copy, Clone, Debug)]
 pub(crate) struct VoiceClock {
     pub(crate) tick: Option<u32>,
@@ -121,12 +122,12 @@ impl Hub {
         self.names.get(&id).map(|s| (s.name.as_str(), s.team))
     }
 
-    /// Seconds a server tick.
+    /// Seconds per server tick.
     pub(crate) fn tick_interval(&self) -> f64 {
         self.tick_interval.unwrap_or_else(default_tick_interval)
     }
 
-    /// What held voice goes by.
+    /// What voice held back for the stream is timed by.
     pub(crate) fn voice_clock(&self) -> VoiceClock {
         VoiceClock { tick: self.tick, paused: self.paused, epoch: self.epoch }
     }
@@ -141,7 +142,7 @@ impl Hub {
         self.steamids.iter().find(|(_, p, ..)| *p == id).map(|(s, ..)| s.as_str())
     }
 
-    /// The players in the latest snapshot.
+    /// The players in the latest snapshot, bots left out.
     pub(crate) fn players(&self) -> Vec<NamedPlayer> {
         let name = |id: &PlayerId| self.names.get(id).map_or_default(|n| n.name.clone());
         self.steamids.iter().filter(|(s, ..)| s != "BOT").map(|(s, id, ..)| NamedPlayer { steamid: s.clone(), name: name(id) }).collect()
@@ -220,7 +221,7 @@ struct Client {
     detail: bool,
     /// Whether it asked for the players' voice.
     voice: bool,
-    /// Whether it takes what is only kept (a match's recorder).
+    /// Whether it also gets the lines that go only to the recording (it is a match's recorder).
     kept: bool,
 }
 
@@ -494,7 +495,7 @@ pub(crate) fn subscribe_to(hub: &SharedHub, detail: bool, voice: bool) -> Receiv
     join(hub, detail, voice, false)
 }
 
-/// Every line, those only kept too: what a match's recorder takes.
+/// Every line, also those that go only to the recording: for a match's recorder.
 pub(crate) fn subscribe_all(hub: &SharedHub) -> Receiver<Arc<str>> {
     join(hub, true, true, true)
 }

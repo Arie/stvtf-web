@@ -1,5 +1,5 @@
-/* No hand on what this viewer cannot use: marks without a timeline to jump, the camera and
-   players while an admin's view holds it. */
+/* No pointer cursor on what this viewer cannot use: timeline marks when they cannot seek, and the
+   map and players while an admin's view is locked on. */
 .stvtf:not(.seekable) .rb-uber,
 .stvtf:not(.seekable) .rb-drop,
 .stvtf:not(.seekable) .rb-win,

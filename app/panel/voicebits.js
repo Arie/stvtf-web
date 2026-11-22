@@ -18,7 +18,7 @@ export function heading(text, more = "") {
   return h;
 }
 
-// A button that does `does` (the comms view hears clicks by it).
+// A button whose action is `does` (the comms view handles clicks by that action).
 /** @param {string} what @param {string} does @param {string} [title] */
 export function act(what, does, title = "") {
   const b = el("button", { title }, what);

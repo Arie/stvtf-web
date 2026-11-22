@@ -120,7 +120,8 @@ fn serves_the_page_and_its_modules_under_the_version() {
         let entry = ["main.js", "core/faults.js", "stv-map.js", "upload.js"].contains(&name) || name.starts_with("vendor/");
         assert!(ctype != JS || entry || imported.contains(name), "nothing imports {name}");
     }
-    // And everything imported is served: a module missing from APP would 404 in the browser.
+    // And everything imported is served: a module missing from the app's files would 404 in the
+    // browser.
     for import in &imported {
         assert!(app_files().iter().any(|(name, ..)| name == import), "{import} is imported but not in APP");
     }

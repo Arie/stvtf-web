@@ -205,7 +205,7 @@
   font: inherit;
   cursor: pointer;
 }
-/* Someone spoke unheard: asks for a click. */
+/* Someone spoke while voice was off or waiting: the button asks for a click. */
 #voicetoggle.wait {
   box-shadow: 0 0 0 2px var(--gold);
   animation: voicewait 1.6s ease-in-out infinite;

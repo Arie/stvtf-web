@@ -34,10 +34,10 @@ import { focusOf, viewArea } from "../map/view.js";
 const MIN_STEP_PX = 3;
 // How often a match page looks where its shared playback is, in milliseconds.
 const SHARED_MS = 1000;
-// How often where one watches is kept for a reload, in ms.
+// How often the moment being watched is saved for a reload, in ms.
 const MOMENT_MS = 250;
 
-// The playback bar in a room, the Room button and a viewer's own timeline on a match's page;
+// The playback bar in a room, the Watch together button and a viewer's own timeline on a match's page;
 // neither on the overlay or another site.
 export function initRoom() {
   if (env.component) return;
@@ -88,12 +88,12 @@ function roomButton() {
     const r = await fetch(new URL("room", HOME), { method: "POST", headers, body }).catch(() => null);
     if (r?.ok) {
       const page = new URL((await r.json()).page, location.origin);
-      // Its link to send, if the browser still lets this click copy.
+      // Copies the room's link to send on, if the browser still lets this click copy.
       await copyText(page.href);
       return location.assign(page);
     }
     button.classList.remove("busy");
-    // Why not, on the button for a moment.
+    // The reason it failed, on the button for a moment.
     button.textContent = r ? await r.text() : "Could not reach the server";
     setTimeout(() => {
       button.disabled = false;
@@ -102,7 +102,7 @@ function roomButton() {
   };
 }
 
-// The room's playback bar and maps control, both heard from the stream.
+// The room's playback bar and maps control, both updated from the stream's playback lines.
 /** @param {(c: import("./playbar.js").Control) => unknown} send */
 function roomPlayback(send) {
   const moveToMap = async (/** @type {number} */ load) => {
@@ -119,7 +119,7 @@ function roomPlayback(send) {
   return { bar, maps, moveToMap };
 }
 
-// A linked moment moves the room, for an admin, once.
+// A moment linked in the address moves the room there, once, if this viewer is an admin.
 /** @param {Playbar} bar @param {(c: import("./playbar.js").Control) => unknown} control @param {(load: number) => unknown} moveToMap */
 function linkedRoomMoment(bar, control, moveToMap) {
   const link = linkedMoment();
@@ -152,7 +152,7 @@ function linkedRoomMoment(bar, control, moveToMap) {
 
 function roomBar() {
   env.el.classList.add("room");
-  // The room's link, to send, by its name.
+  // The button by the map's name copies the room's link, to send.
   copyLink("Copy the room's link, to send", () =>
     momentLink(bar.last && !bar.atLive() ? bar.since() : null, bar.last?.load),
   );
@@ -170,7 +170,7 @@ function roomBar() {
     me.admin = on;
     bar.allow(on);
     if (bar.last) maps(bar.last, on);
-    // A tool in hand is let go, while its button still takes the click.
+    // A tool in use is put down, while its button still takes the click.
     for (const t of [marker, arc, circle, light, text]) if (!on && t.classList.contains("on")) t.click();
     if (!on) $("names").hidden = true;
     $("scoreboard").classList.toggle("scoring", on);
@@ -338,9 +338,9 @@ function ownPlayback(bar, toShared) {
   return { send, back, active: () => page != null };
 }
 
-// Where the shared playback is, while this viewer watches along: heard as at the moment `link`ed
-// to, if one was (a live match shows no more of itself), which then plays on their own; not one
-// on another map.
+// Follows the shared playback while this viewer watches along. With a moment `link`ed, the bar is
+// put there instead (so a live match's timeline shows no further) and the viewer gets a playback of
+// their own from it. A link to another map is dropped.
 /** @param {Playbar} bar @param {OwnPlayback} own @param {Link} link */
 function followShared(bar, own, link) {
   const shared = () =>
@@ -420,7 +420,7 @@ function drawing(marker) {
 }
 
 // How everyone sees the map, as its admins set it (see roomview.js for the rules), on this page.
-// This page among its admin's pages (two tabs, say): a page leads, not a person.
+// The random id tells this page from its admin's other pages (two tabs, say): a page leads, not a person.
 const views = new RoomView(Math.random().toString(36).slice(2, 12));
 // How often an admin's clicks and camera moves are looked at, in milliseconds.
 const VIEW_MS = 50;
@@ -477,7 +477,7 @@ function setViewAdmin(on) {
 }
 
 function roomView() {
-  // An overlay (in a stream, say) is nobody in the room.
+  // An overlay (in a stream, say) does not count as someone in the room.
   if (OVERLAY) streamParams.set("overlay", "1");
   const send = sender(
     (/** @type {import("./roomview.js").Send} */ s) => post("view", { ...s.view, take: s.take, page: views.page }),

@@ -57,7 +57,7 @@ impl Room {
     /// voice from outside the match, played at once to its pages and relay. What the tail had when
     /// the room got there is not: that was said before. Past the next map's first frame too, till
     /// a map after it has play (a frozen frame is still the gap). A chunk at a time, so the player
-    /// looks after the room in between. How long to wait for more.
+    /// looks after the room in between. Returns how long to wait for more.
     pub(super) fn hear_the_gap(&self, st: &mut State, cur: &mut Cursor) -> Duration {
         let rec = &self.recording;
         cur.refill(rec);

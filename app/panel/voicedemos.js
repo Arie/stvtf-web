@@ -1,6 +1,7 @@
 // At the end of the speakers list (panel/voicelist.js): the match's demos to watch here or
-// download with the comms in them, as the players' voice, once anything was said from outside it (a team's
-// Discord). One a map, or more when the connection to its server dropped. See the viewer's Voice.
+// download with the comms in them as the players' voice, offered once anything was said from outside
+// the game (a team's Discord). One per map, or more when the connection to its server dropped. See
+// the viewer's Voice.
 import { $ } from "../core/core.js";
 import { HOME } from "../room/home.js";
 import { addListExtra, renderList } from "./voicelist.js";
@@ -13,7 +14,7 @@ const BUILT_MS = 200,
   GIVE_UP_MS = 60_000;
 
 /** @typedef {{ map: string; mb: number; href: string; watch: string }} Demo */
-// Demos being built, by link: stv.tf sets a cookie of the mark each was asked with once it is.
+// Demos being built, by link. Once one is built, stv.tf sets a cookie with the mark it was asked with.
 /** @type {Set<string>} */
 const building = new Set();
 /** @type {Demo[]} */
@@ -69,7 +70,7 @@ export function voiceDemos() {
     const mark = Math.random().toString(36).slice(2, 12);
     a.href = `${href}?built=${mark}`;
     building.add(href);
-    // After the click went its way: the row is drawn anew.
+    // The row is redrawn after the click has done its own work (the download).
     setTimeout(show);
     const since = Date.now();
     const timer = setInterval(() => {

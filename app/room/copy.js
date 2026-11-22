@@ -1,7 +1,7 @@
 // Copy buttons: a link, or a console line, copied with a check shown for a moment.
 import { $ } from "../core/core.js";
 
-// How long the link button says it copied, in milliseconds.
+// How long a copy button shows its check, in milliseconds.
 const COPIED_MS = 1500;
 
 // The link button by the map's name: copies the link `url` makes (`what` it is), a check for a

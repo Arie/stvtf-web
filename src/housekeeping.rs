@@ -34,7 +34,8 @@ pub(super) fn keep_house(app: Arc<App>, stop: &'static AtomicBool) -> std::threa
         let Matches::Many(sessions) = &app.matches else { return };
         for round in 0u64.. {
             if stop.load(Ordering::Relaxed) {
-                // First, so what is saved is as it stops: the rooms play on meanwhile.
+                // Done first, so that what is saved is the state at the stop; the rooms play on
+                // meanwhile.
                 sessions.finish_giving();
                 // The feed up to now, and the voice held, for the process that takes over.
                 sessions.persist();
@@ -49,8 +50,8 @@ pub(super) fn keep_house(app: Arc<App>, stop: &'static AtomicBool) -> std::threa
             if round % PERSIST_ROUNDS == 0 {
                 sessions.persist();
             }
-            // Where each room is, to the second; relayed rooms the process before let go of,
-            // and the voice it held.
+            // Saves where each room is, every second. Also picks up the relayed rooms the
+            // previous process let go of, and the voice it held.
             if round % ROOM_PERSIST_ROUNDS == 0 {
                 app.rooms.persist();
                 app.rooms.pick_up_relayed(sessions);

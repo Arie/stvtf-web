@@ -178,7 +178,7 @@ pub(super) fn cell_normal_z(cell: &[Vec3; 4], plane: &[f32; 4]) -> f32 {
     side * n[2] / len
 }
 
-/// A cell's normal, unnormalised and facing either way: across its diagonals.
+/// A cell's normal, unnormalised and facing either way: the cross product of its diagonals.
 pub(super) fn cell_normal(cell: &[Vec3; 4]) -> Vec3 {
     let d = |a: usize, b: usize| [0, 1, 2].map(|i| cell[a][i] - cell[b][i]);
     cross(d(2, 0), d(3, 1))
@@ -189,7 +189,7 @@ pub(in crate::maps) fn cross(u: Vec3, v: Vec3) -> Vec3 {
     [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]]
 }
 
-/// Gradients are kept to this many places: a unit off over 10 000 units.
+/// Gradients are rounded to one part in this many: at most a unit off over 10 000 units.
 pub(super) const GRADIENT_PLACES: f64 = 1e4;
 
 /// How much a surface with normal `n` rises per unit along x and y, or None when it is flat.
@@ -217,8 +217,8 @@ pub fn geometry(data: &[u8]) -> Result<Geometry> {
     geometry_counted(data).map(|g| g.0)
 }
 
-/// What blocks a camera's sight on the map (see [`super::reach::sight`]): of one with points or
-/// pickups to frame it.
+/// What blocks a camera's sight on the map (see [`super::reach::sight`]). An error for a map
+/// without points or pickups to frame it.
 pub fn sight(data: &[u8]) -> Result<Vec<u8>> {
     if !data.starts_with(b"VBSP") {
         bail!("cannot read a file that is not VBSP");

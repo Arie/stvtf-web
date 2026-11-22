@@ -50,7 +50,7 @@ pub(super) fn stream(hub: &SharedHub, gzip: bool, asked: &Stream, held: impl Sen
         }
         let mut gz = GzEncoder::new(to, Compression::new(STREAM_GZIP));
         let _ = events(&mut gz, &rx);
-        // Its trailer too: the stream ends whole.
+        // Writes the gzip trailer too, so the stream ends complete.
         let _ = gz.finish().and_then(|mut to| to.flush());
     });
     let unbuffered = HeaderName::from_static("x-accel-buffering");
@@ -92,7 +92,8 @@ fn events(out: &mut dyn Write, rx: &Receiver<Arc<str>>) -> std::io::Result<()> {
 
 /// Event streams open at once; more are refused.
 pub(crate) const MAX_STREAMS: usize = 512;
-/// Flushes of events that may wait for a slow client, and how long one waits before it is gone.
+/// How many flushes of events may queue for a slow client, how long a full queue is waited on
+/// before the client is dropped, and how often it is tried again.
 const QUEUED: usize = 64;
 const SLOW_FOR: Duration = Duration::from_secs(30);
 const SLOW_STEP: Duration = Duration::from_millis(20);

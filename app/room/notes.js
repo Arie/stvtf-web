@@ -1,7 +1,7 @@
 // A room's notes: a short text at a spot on the map, or on a player (following their dot), in
 // the drawer's ink, kept until cleared; in TF2 the game's text bubble. `n` puts one where the
 // pointer is: on the player under it (a HUD card, a name in the events or chat, a dot), or else
-// at that spot; so does a click with the note button (T) on. Then the text, placed on Enter or
+// at that spot; so does a click with the note button (labelled T) on. Then the text, placed on Enter or
 // clicking away.
 import { INK, ctx, state, uiScale } from "../core/core.js";
 import { env } from "../core/env.js";
@@ -72,8 +72,8 @@ function tag(n, x, y, s) {
   label(n.text, x, y, size, { colour: "#fff", weight: "700" });
 }
 
-// The pointer, for `n`: where it is and over what (as it last moved: `n` looks again, the events
-// and chat scroll under it).
+// The pointer, for the `n` key: where it is and what it was over when it last moved. `n` looks that
+// up again, as the events and chat scroll under the pointer.
 /** @type {{ x: number; y: number; target: Element | null }} */
 const pointer = { x: 0, y: 0, target: null };
 

@@ -12,12 +12,12 @@ const SIGNATURE = 0x55aa1234;
 const HEADER_V2 = 28;
 // A directory entry after its name: CRC, preload size, archive, offset, length, terminator.
 const ENTRY = 18;
-// In the directory file itself, after the tree.
+// The archive index of an entry stored in the directory file itself, after the tree.
 const IN_DIR = 0x7fff;
 // The physics engine works in metres, its y down and z forward.
 const INCHES_PER_METRE = 39.3700787;
-// A triangle faces up when its normal points up at least this much in the model: a prop tilted
-// a little still has its tops, kept or not once the map places it.
+// A triangle faces up when its normal points up at least this much in the model. That is lenient,
+// so a prop the map tilts a little keeps its tops: they are tested again once the prop is placed.
 const UP = 0.5;
 const VPHY = 0x59485056; // "VPHY"
 // Sizes of the structures read: phyheader_t, the VPHY header, IVP_Compact_Ledgetree_Node,
@@ -81,7 +81,7 @@ function contents(e) {
   return out;
 }
 
-/** A point of the physics engine's, in the model's units. @param {Buffer} b @param {number} o */
+/** A point of the physics engine, converted to the model's units. @param {Buffer} b @param {number} o */
 const point = (b, o) => [
   b.readFloatLE(o) * INCHES_PER_METRE,
   b.readFloatLE(o + 8) * INCHES_PER_METRE,
@@ -114,7 +114,7 @@ function surfaceTriangles(b, s) {
       const tri = l + LEDGE + t * TRIANGLE;
       piece.push([0, 1, 2].map(k => point(b, l + points + (b.readUInt32LE(tri + 4 + k * 4) & 0xffff) * POINT)));
     }
-    // Outward, away from the middle of the piece (it is convex).
+    // A triangle's outward side faces away from the middle of its piece (a piece is convex).
     const all = piece.flat();
     const mid = [0, 1, 2].map(k => all.reduce((a, p) => a + p[k], 0) / all.length);
     for (const [a, p, q] of piece) {
@@ -130,7 +130,7 @@ function surfaceTriangles(b, s) {
   return out;
 }
 
-/** The upward triangles of a .phy, or null when it is not one read here. @param {Buffer} b */
+/** The upward triangles of a .phy, or null when a solid in it is not VPHY. @param {Buffer} b */
 function upward(b) {
   const solids = b.readInt32LE(8);
   /** @type {number[][][]} */

@@ -34,14 +34,15 @@ builder:
   dockerfile: Dockerfile
 
 # STVTF_VOICE_KEY is the voice bot's key (see stvtf-voice-bot): without it a region takes no
-# voice in. Europe has more of its own (deploy.eu.yml): people link Steam there.
+# voice in. Europe sets more (deploy.eu.yml), because people link Steam there.
 env:
   clear:
     # Where the voice bot is added to a Discord server, shown with a match's invite.
     STVTF_VOICE_BOT: https://discord.com/oauth2/authorize?client_id=1569859416897888426&scope=bot+applications.commands&permissions=68160512
-    # The sites asked who a Discord user is (their Steam account linked there), by every region.
+    # The sites every region asks who a Discord user is: users link their Steam account there.
     STVTF_LINK_SITES: https://serveme.tf/stv,https://na.serveme.tf/stv,https://au.serveme.tf/stv,https://sea.serveme.tf/stv
-    # Faults are told to Sentry (SENTRY_DSN) as this version's; each region says which it is.
+    # Errors are reported to Sentry (SENTRY_DSN) under this version; each region's file names the
+    # region (STVTF_REGION).
     SENTRY_RELEASE: <%= ENV["VERSION"] %>
     SENTRY_ENVIRONMENT: production
   secret:
@@ -62,7 +63,8 @@ ssh:
 proxy:
   ssl: true
   app_port: 8080
-  # Cloudflare's X-Forwarded-For through, so the app sees visitors, not Cloudflare (as serveme).
+  # Passes Cloudflare's X-Forwarded-For on, so the app sees the visitor's address, not
+  # Cloudflare's (as serveme does).
   forward_headers: true
   healthcheck:
     path: /up

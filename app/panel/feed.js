@@ -67,8 +67,8 @@ export function teamName(t) {
 }
 /** @param {GameEvent} ev */
 export const pointName = ev => (ev.name && !ev.name.startsWith("#") ? ev.name : "point " + (ev.point + 1));
-// A team's flag is its intelligence (Mann vs. Machine's bomb is the robots'); a neutral one is special delivery's Australium, player
-// destruction's pickups (each player carries their own) or a ball.
+// A team's flag is its intelligence (in Mann vs. Machine, any flag is the bomb). A neutral flag is
+// special delivery's Australium, player destruction's pickups (each player carries their own) or a ball.
 /** @param {string | null | undefined} team */
 export function flagName(team) {
   if (state.map?.startsWith("mvm_")) return "the bomb";

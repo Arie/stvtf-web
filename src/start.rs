@@ -134,10 +134,10 @@ pub(super) fn matches(options: &Options, keys: Option<&Arc<super::web::token::Ke
     Ok(Matches::One(hub))
 }
 
-/// Who is who in a team's voice channel: kept in the store, the same as the stv.tf that holds
-/// it for all regions (`STVTF_VOICE_HOME`; none on that one itself), and with the sites asked
-/// who a Discord user is (`STVTF_LINK_SITES`, each as `--home`; else the one this belongs to),
-/// where voice is taken in and the sites share a key.
+/// Who is who in a team's voice channel. The list is kept in the store, and kept the same as the
+/// one on the stv.tf that holds it for all regions (`STVTF_VOICE_HOME`, unset on that one
+/// itself). Where voice is taken in and the sites share a key, the sites are asked who a Discord
+/// user is (`STVTF_LINK_SITES`, each as `--home`; else `--home` itself).
 pub(super) fn who_is_who(
     options: &Options,
     keys: Option<&Arc<super::web::token::Keys>>,
@@ -154,14 +154,15 @@ pub(super) fn who_is_who(
     super::voice::who::WhoIsWho::new(options.sessions.as_deref(), home.as_deref().zip(voice_key), sites)
 }
 
-/// The cameras casters placed on maps: kept in the store, the same as the stv.tf that holds who
-/// is who (`STVTF_VOICE_HOME`).
+/// The cameras casters placed on maps: kept in the store, and kept the same as those on the
+/// stv.tf that holds who is who (`STVTF_VOICE_HOME`).
 pub(super) fn cameras(options: &Options, voice_key: Option<&str>) -> super::cameras::Cameras {
     let home = std::env::var("STVTF_VOICE_HOME").ok().filter(|u| !u.is_empty());
     super::cameras::Cameras::new(options.sessions.as_deref(), home.as_deref().zip(voice_key))
 }
 
-/// The sites asked how their league knows players: those asked who a Discord user is.
+/// The sites asked for their league's names of players: the same sites that are asked who a
+/// Discord user is.
 pub(super) fn leagues(options: &Options, keys: Option<&Arc<super::web::token::Keys>>) -> super::leagues::Leagues {
     let sites = std::env::var("STVTF_LINK_SITES").ok().filter(|l| !l.is_empty()).or_else(|| options.home.clone()).unwrap_or_default();
     let Some(keys) = keys else { return super::leagues::Leagues::default() };
@@ -175,8 +176,9 @@ pub(super) fn keep_log(options: &Options) {
     super::log::start(options.logs.as_deref(), if options.relay_daemon.is_some() { "relay" } else { "web" });
 }
 
-/// The relay process, if `options` ask for it: only the relays (the rest are the image's for the
-/// web), until told to `stop`. Or a question for the one running.
+/// Runs the relay process if `options` ask for it (`--relay-daemon`): it serves only the relays,
+/// until told to `stop`. With `--relay-clients`, asks the running relay process for its TF2
+/// clients instead. None when `options` ask for neither.
 pub(super) fn relay_process(options: &Options, stop: &'static AtomicBool) -> Option<Result<()>> {
     if let Some(socket) = &options.relay_clients {
         return Some(super::relays::daemon::clients(socket).map(|answer| println!("{answer}")));

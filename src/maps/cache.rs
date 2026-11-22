@@ -49,8 +49,9 @@ fn map_geometry_from(fastdl: &str, cache: &Path, name: &str, fetch: bool) -> Res
     Ok(body)
 }
 
-/// What `build` makes of the map's BSP, the cache's or fastdl's. The BSP does not stay: only a
-/// bump of a suffix needs it again, and the most played maps add up to GBs.
+/// What `build` makes of the map's BSP, read from the cache or else downloaded from fastdl. The
+/// BSP is deleted afterwards: only a version bump in a cached file's name needs it again, and the
+/// most played maps add up to GBs.
 fn built_from_bsp(fastdl: &str, cache: &Path, name: &str, build: impl Fn(&[u8]) -> Result<Vec<u8>>) -> Result<Vec<u8>> {
     let bsp_path = cache.join(format!("{name}.bsp"));
     let data = if let Ok(d) = std::fs::read(&bsp_path) {
@@ -65,8 +66,8 @@ fn built_from_bsp(fastdl: &str, cache: &Path, name: &str, build: impl Fn(&[u8]) 
         write_atomic(&bsp_path, &d)?;
         d
     };
-    // A broken download would otherwise fail every request for this map; the next one fetches
-    // it again.
+    // The BSP is removed even when the build fails: a broken download would otherwise fail every
+    // request for this map. The next request fetches it again.
     let made = build(&data);
     let _ = std::fs::remove_file(&bsp_path);
     made
@@ -135,7 +136,7 @@ pub(crate) fn overview(cache: &Path, file: &str) -> Result<Vec<u8>> {
 const MAP_WITHIN: Duration = Duration::from_mins(2);
 const OVERVIEW_WITHIN: Duration = Duration::from_secs(20);
 
-/// The overview's map (none for the list), if `file` is one.
+/// The map that overview image `file` is of, None for the list; an error for any other file.
 fn overview_map(file: &str) -> Result<Option<&str>> {
     match file.strip_suffix(".webp") {
         _ if file == "boundaries.json" => Ok(None),
@@ -203,7 +204,7 @@ pub(crate) fn write_atomic(path: &Path, data: &[u8]) -> std::io::Result<()> {
     tmp.push(format!(".{}.{}.tmp", std::process::id(), WRITES.fetch_add(1, Ordering::Relaxed)));
     let written = std::fs::write(&tmp, data).and_then(|()| std::fs::rename(&tmp, path));
     if written.is_err() {
-        // A half-written file under its own name would otherwise stay for good.
+        // A half-written temporary file would otherwise stay for good.
         let _ = std::fs::remove_file(&tmp);
     }
     written

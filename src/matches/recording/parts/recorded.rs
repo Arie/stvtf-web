@@ -35,9 +35,9 @@ impl Inner {
         self.part_list().pop().unwrap_or_else(|| self.parts.none_yet())
     }
 
-    /// Play times part `n` holds, from where it begins to where it ends, if kept: a part's tail is
-    /// the next part's (the next map's round can start before its first snapshot), and is no
-    /// part's till that exists.
+    /// The play times part `n` spans, from where it begins to where it ends, if kept. A part's
+    /// tail counts as the next part's (the next map's round can start before its first snapshot),
+    /// and as no part's until that part exists.
     pub(super) fn span(&self, n: usize) -> Option<(u64, Option<u64>)> {
         let parts = self.part_list();
         let i = parts.iter().position(|p| p.load == n)?;

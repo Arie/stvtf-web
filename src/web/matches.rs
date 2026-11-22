@@ -43,7 +43,7 @@ pub(super) fn found(v: &Visit, at: &MatchAt) -> Result<Arc<Session>, Early> {
         return Err(Redirect::to(&to).into_response().into());
     }
     let moment = at.moment.t().map_or_default(|t| format!("?t={t}"));
-    // A demo with comms of which more is known since is another demo: its page is elsewhere.
+    // A demo with comms is another demo once more is known of it: its page is elsewhere.
     if let Some(m) = session.as_ref().filter(|m| m.id != id) {
         return Err(Redirect::to(&format!("{}/w/{}/{moment}", app.base, m.id)).into_response().into());
     }
@@ -108,7 +108,7 @@ pub(super) async fn room(v: Visit, at: MatchAt) -> Answered {
     answer(move || Ok(open_room(&v, v.sessions()?, &found(&v, &at)?, Open::Asked))).await
 }
 
-/// `POST /w/<id>/room`: one is, from where its opener says they were watching.
+/// `POST /w/<id>/room`: opens one, starting where its opener says they were watching.
 pub(super) async fn room_opened(v: Visit, at: MatchAt, from: Option<Json<Where>>) -> Answered {
     answer(move || Ok(open_room(&v, v.sessions()?, &found(&v, &at)?, Open::From(from.map(|Json(from)| from))))).await
 }
@@ -148,7 +148,8 @@ fn moved_on(app: &App, sessions: &Sessions, at: &MatchAt, session: Option<&Arc<S
     Some(format!("{}/w/{id}/watch/{}?t={at}", app.base, demo.file))
 }
 
-/// Demo `id`, not playing, played again: demos.tf's (behind a site, signed in), or one kept here.
+/// Plays demo `id` again when it is not playing: a demos.tf demo (behind a site, only for someone
+/// signed in), or one kept here.
 fn kept_demo(v: &Visit, sessions: &Sessions, id: &str, rest: &str) -> Option<Arc<Session>> {
     let demo = sessions::id_demo(id).filter(|_| is_page(rest))?;
     let (app, user) = (&v.app, &v.who.user);
@@ -201,7 +202,8 @@ pub(super) fn match_timeline(m: &Arc<Session>, asked: &Marks, part: &str) -> Res
     // While the server changes map, the one just played, at its end; the match is live all the
     // same.
     let length = part.last;
-    // A live match's is at its end, once it ended too: only a replay plays from the start.
+    // A match watched from a server is at its end, also once it ended: only a replay plays from
+    // the start.
     let at = if m.watches_server() { length } else { lock(&m.hub).played.min(length) };
     let (live, rounds, marks) = (r.is_live(), r.rounds_in(part.load), r.marks(usize::MAX).1);
     let (start, origin) = (part.start, part.origin);
@@ -310,7 +312,8 @@ pub(super) fn is_page(rest: &str) -> bool {
 }
 
 /// Match `id`'s demos with comms in them: per demo its map, its size in MB, where it is to
-/// download (`href`) and what plays it here (`watch`). None without a store, or for an id that is none.
+/// download (`href`) and what plays it here (`watch`). Empty without a store, or when `id` is no
+/// match's id.
 pub(super) fn comms_demos(app: &App, sessions: &Sessions, id: &str) -> Vec<Kept> {
     let Some(store) = sessions.store.as_ref().filter(|_| sessions::is_id(id)) else { return Vec::new() };
     crate::matches::live_demos::downloads(&store.dir, id)
@@ -330,7 +333,8 @@ fn watch_comms_demo(v: &Visit, sessions: &Sessions, at: &MatchAt, file: &str) ->
     let (app, by) = (&v.app, counted(v.who.user.as_ref(), None, v.client));
     match sessions.open_comms_demo_as(by.as_deref(), &at.id, file, app.voice.who.clone()) {
         Ok(m) => {
-            // The moment asked for goes along: whoever said whose voice is whose watches on there.
+            // The moment asked for goes along: someone who just said whose voice is whose watches
+            // on from there.
             let moment = at.moment.t().map_or_default(|t| format!("?t={t}"));
             Redirect::to(&format!("{}/w/{}/{moment}", app.base, m.id)).into_response()
         }

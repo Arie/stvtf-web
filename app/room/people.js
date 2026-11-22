@@ -7,7 +7,7 @@ import { me, names, post } from "./home.js";
 
 // Where a name is kept between visits.
 const NAME_KEY = "name";
-// One's own pen colour, while a team's is taken.
+// Where one's own pen colour is kept while a team's is in use.
 const INK_KEY = "ink";
 
 // Who is in the room, with the viewer's own name to set; admins make others admin or not.
@@ -163,7 +163,7 @@ function steamLink(steamid) {
   return a;
 }
 
-// Signing in with serveme: the name is theirs there, and a streamer may make themselves admin.
+// Signing in with serveme: the name is the one they have there, and a streamer may make themselves admin.
 /** @param {{ admin: boolean; signed: boolean; streamer: boolean; signin: boolean }} m */
 export function signedIn(m) {
   const back = encodeURIComponent(location.pathname);

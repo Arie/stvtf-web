@@ -18,7 +18,7 @@ const FENCE: f64 = 24.0;
 const PIECES: usize = 24;
 /// The floor ring is this far above the floor.
 const LIFT: f64 = 4.0;
-/// Circles' ids, apart from the pages' strokes' and arcs'.
+/// The ids of circles, set apart from those of the pages' strokes and of arcs.
 const CIRCLE_IDS: u32 = 0x4000_0000;
 
 /// A circle as a page asks for it: where its centre is.

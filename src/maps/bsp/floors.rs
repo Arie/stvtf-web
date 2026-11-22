@@ -7,7 +7,8 @@ use super::{Floor, contains_point, outline_box};
 /// How far above a floor a spawn point or pack still stands on it.
 pub(super) const STANDS_ON: f64 = 64.0;
 
-/// The least share of the floor area the fill may keep: less is seeds in a sealed pocket.
+/// The least share of the floor area the fill may keep: with less, its seeds were in a sealed
+/// pocket.
 pub(super) const MIN_FILL_SHARE: f64 = 0.1;
 
 /// Floors looked at plus outline points tested for the spawn points and packs together (real
@@ -15,8 +16,8 @@ pub(super) const MIN_FILL_SHARE: f64 = 0.1;
 pub(super) const MAX_STAND_WORK: usize = 1 << 26;
 
 /// Keeps the floors players get to (`keeps`) and those a spawn point or pack in `stands` is on
-/// (inside the outline, 0 to `STANDS_ON` above it), and says true; when that is under
-/// `MIN_FILL_SHARE` of `area` (all the floors'), keeps every floor and says false.
+/// (inside the outline, 0 to `STANDS_ON` above it), and returns true. When that is under
+/// `MIN_FILL_SHARE` of `area` (the area of all the floors), keeps every floor and returns false.
 pub(super) fn fill(floors: &mut Vec<Floor>, keeps: impl Fn(&Floor) -> bool, stands: &[Position], area: f64) -> bool {
     let mut work_left = MAX_STAND_WORK;
     let mut stood_on = |f: &Floor| {

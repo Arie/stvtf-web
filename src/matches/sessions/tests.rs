@@ -149,7 +149,7 @@ fn a_matchs_demo_with_comms_plays_as_a_demo_made_here() {
     let b = s.open_comms_demo_as(None, &id, "0-1", WhoIsWho::default()).unwrap();
     assert_ne!(b.id, a.id);
     s.stop_all();
-    // No longer playing, its link plays it again; the older one's, what it is now.
+    // Once it no longer plays, its link plays it again; the older demo's link plays what it is now.
     let mut s = Sessions::new(false, 3, 20.0);
     s.store = Some(Store { dir: dir.to_path_buf(), keys: None });
     let again = |demo| s.open_kept_comms_as(None, demo, WhoIsWho::default()).map(|m| m.id.clone());

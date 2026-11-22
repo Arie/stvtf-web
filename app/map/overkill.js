@@ -54,7 +54,7 @@ export function addScorch(pos, t0) {
     m => !(Math.abs(m.t0 - t0) < SAME_BLAST_MS && Math.hypot(m.pos[0] - pos[0], m.pos[1] - pos[1]) < SAME_BLAST_UNITS),
   );
 }
-// The explosion's own blast decal would put a dot on its crater.
+// Whether `pos` is near a fresh scorch: the explosion's own blast decal would put a dot on its crater.
 /** @param {Vec3} pos @param {number} now */
 export function nearFreshScorch(pos, now) {
   for (let i = state.scorches.length - 1; i >= 0; i--) {

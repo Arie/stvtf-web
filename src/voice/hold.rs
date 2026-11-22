@@ -23,7 +23,7 @@ pub(crate) const GAP: Duration = Duration::from_millis(200);
 /// The most a frame goes out before its own due tick.
 const AHEAD: Duration = Duration::from_millis(500);
 /// Frames that came this soon after the tick last moved were still said in the running game: the
-/// stream's ticks come some apart.
+/// stream's ticks come some time apart.
 const NOTICED: Duration = Duration::from_millis(100);
 /// The most frames held of one speaker (speaking throughout the longest delay, and some):
 /// past it the oldest go.
@@ -117,7 +117,7 @@ pub(crate) struct VoiceHold {
     /// Since when the game is paused.
     paused: Option<Instant>,
     speakers: BTreeMap<String, Speaker>,
-    /// Each with its number, as frames have.
+    /// Pause talk, each with a number as frames have.
     pause_talk: Vec<(u64, Said)>,
     /// How many numbers were given out.
     count: u64,

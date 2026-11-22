@@ -1,9 +1,9 @@
-// What goes wrong on the page is told to the server (POST fault), which keeps track of it. Loaded
-// before the viewer, so its failing to start is told too.
+// Reports errors on the page to the server (POST fault), which keeps track of them. Loaded before
+// the viewer, so a viewer that fails to start is reported too.
 
-// The most told by one page: one that fails every frame says it once.
+// The most faults one page reports, so a page that fails every frame does not flood the server.
 let left = 5;
-// The trace of the last request the server failed (`x-trace-id`), told with a fault.
+// The trace of the last request the server failed (`x-trace-id`), sent with a fault.
 let trace = "";
 
 const fetched = globalThis.fetch.bind(globalThis);
@@ -17,7 +17,7 @@ globalThis.fetch = async (...args) => {
 /** @param {{ name?: string; message?: string; stack?: string } | null | undefined} e */
 function tell(e) {
   const stack = String(e?.stack ?? "");
-  // "Script error." is another origin's, which says no more; an extension's is not ours.
+  // "Script error." comes from another origin's script and carries no detail; an extension's error is not ours.
   if (!e?.message || e.message === "Script error." || stack.includes("extension://") || left-- <= 0) return;
   const body = JSON.stringify({
     kind: e.name ?? "Error",

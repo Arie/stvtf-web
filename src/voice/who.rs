@@ -14,7 +14,7 @@
 //! about, one site after the other (`GET <site>/discord_links/<id>`, with a token for that one
 //! user sealed with the key they share), and what a site says is kept, marked as from it (`src`).
 //!
-//! Not all of it is as sure. A link someone made themselves (a site's) and what a caster said
+//! Not all of it is equally sure. A link someone made themselves (a site's) and what a caster said
 //! hold everywhere as said. What a match's starter said holds in their match, and elsewhere is a
 //! suggestion: shown as one, and it never takes the place of the surer.
 
@@ -36,12 +36,13 @@ const FILE: &str = "voice-who.json";
 /// How often the list's home is asked what changed, and how long it gets to answer.
 const ASK_EVERY: Duration = Duration::from_secs(30);
 pub(crate) const TIMEOUT: Duration = Duration::from_secs(5);
-/// How long what the sites said of someone stands before they are asked again: a link, and none.
+/// How long what the sites said of someone stands before they are asked again: for a link, and
+/// for no link.
 const LINK_FOR: Duration = Duration::from_hours(24);
 const NO_LINK_FOR: Duration = Duration::from_mins(10);
 /// The most people waiting to be asked about.
 const MAX_WANTED: usize = 1000;
-/// The most people kept, and the longest a name.
+/// The most people kept, and the longest name.
 const MAX_KNOWN: usize = 100_000;
 pub(crate) const MAX_NAME: usize = 100;
 
@@ -147,7 +148,7 @@ struct Inner {
     /// Those to ask the sites about, and when each was last asked and whether a site knew them.
     wanted: Mutex<VecDeque<String>>,
     looked: Mutex<HashMap<String, (Instant, bool)>>,
-    /// Wakes the telling when something was said.
+    /// Wakes the thread that tells the home, when something was said.
     said: Mutex<Option<Sender<()>>>,
 }
 
@@ -160,7 +161,8 @@ impl Default for WhoIsWho {
     }
 }
 
-/// The list as read from the store: as kept now, or as it was (each id and its `SteamID`).
+/// The list as read from the store: as kept now, or in the older form (each id and its
+/// `SteamID`).
 fn read(file: &Path) -> Option<WhoList> {
     let data = std::fs::read(file).ok()?;
     if let Ok(kept) = serde_json::from_slice::<WhoList>(&data) {
@@ -244,9 +246,9 @@ impl WhoIsWho {
         })
     }
 
-    /// The account whoever talked as `key` (as their lines name one who is no player: by who
-    /// they are where they talk) is known as by now, a suggestion too: for a demo they talked
-    /// in, where it holds only while that account was playing.
+    /// The account the speaker `key` is known as by now, a suggestion included. `key` is how the
+    /// lines of a speaker who is no player name them: `feed::UNLINKED`, then who they are where
+    /// they talk. For a demo they talked in, where it holds only while that account was playing.
     pub(crate) fn account_now(&self, key: &str) -> Option<u32> {
         match self.recall(key.strip_prefix(super::feed::UNLINKED)?)? {
             Recalled::Player { steamid, .. } => super::ids::account_of(&steamid),
@@ -278,7 +280,7 @@ impl WhoIsWho {
         }
     }
 
-    /// Whether `who` was put in the list so: not when it is full.
+    /// Puts `who` in the list. Returns whether it did: not when the list is full.
     fn put(&self, kept: &mut WhoList, who: &str, steamid: Option<&str>, name: &str, src: &str, by: &str) -> bool {
         if kept.known.len() >= MAX_KNOWN && !kept.known.contains_key(who) {
             return false;

@@ -1,4 +1,4 @@
-//! Who someone is where they talk, and on Steam, as given.
+//! Ids as people give them: who someone is in voice (Discord, Mumble), and who they are on Steam.
 
 /// What Steam's 64-bit ids of people start from.
 pub(crate) const STEAM64_BASE: u64 = 76_561_197_960_265_728;

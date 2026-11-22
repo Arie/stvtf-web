@@ -21,7 +21,7 @@ use crate::voice::ids::account_of;
 
 /// How far behind its game a source's stream is unless it says: most leagues' `tv_delay`.
 pub(crate) const DEFAULT_DELAY: f64 = 90.0;
-/// The delays taken: `tv_delay`'s own range.
+/// The longest delay taken: as far as `tv_delay` itself goes.
 pub(crate) const MAX_DELAY: f64 = 300.0;
 /// A delay under this is none: commentary on the stream itself.
 const NO_DELAY: f64 = 0.05;
@@ -34,14 +34,15 @@ pub(crate) fn delay_left(delay: Option<f64>, late: f64) -> f64 {
 }
 /// The rate the frames are labelled with: Opus decodes any packet at it; TF2 and pages play it.
 const RATE: u16 = 24000;
-/// A tick that has not moved this long is a paused game's.
+/// A tick that has not moved for this long means the game is paused.
 const STILL: Duration = Duration::from_millis(700);
 /// With nothing held and nothing said this long, the feed needs no tending.
 const IDLE: Duration = Duration::from_secs(60);
 /// Another process on the same stream may be this far behind the one that saved.
 const BEHIND: f64 = 5.0;
 
-/// Who said something: their `SteamID` when the bot knows it (their link), else who they are/// id and name; and the voice channel they are in.
+/// Who said something: their `SteamID` when the bot knows it (their link), who they are where
+/// they talk and their name there, and the voice channel they are in.
 #[derive(Clone, Debug, Default, Eq, PartialEq, Deserialize, Serialize)]
 #[serde(default)]
 pub(crate) struct Speaker {
@@ -262,7 +263,7 @@ impl State {
     }
 }
 
-/// The most kept so, when nothing takes it (no demo is recorded).
+/// The most kept for the demo, when nothing takes it (no demo is recorded).
 const MAX_SPOKEN: usize = 4096;
 
 /// A match's voice from outside it.
@@ -378,8 +379,9 @@ impl VoiceFeed {
         true
     }
 
-    /// Whom `voice_id` was said to be before: theirs here while that one plays here and nobody
-    /// placed them; with that one not playing, their name is gone by first.
+    /// Whom `voice_id` was said to be before: they are put on that player here while that player
+    /// plays here and nobody placed them. When that player does not play here, a guess by their
+    /// name comes first.
     pub(crate) fn set_known_before(&self, voice_id: &str, before: Put) {
         let mut st = lock(&self.0);
         if st.known_before.len() < MAX_KNOWN || st.known_before.contains_key(voice_id) {
@@ -500,7 +502,7 @@ impl VoiceFeed {
     }
 
     /// One look at the stream: the hold follows its tick, pauses and new starts, and what is due
-    /// goes to the hub; pause talk, once the game goes on, as lines only kept.
+    /// goes to the hub; pause talk, once the game goes on, as lines that are kept and not heard.
     pub(crate) fn step(&self, hub: &SharedHub, now: Instant) {
         let (out, pause_talk, at, tick) = {
             // The feed first, then the stream's clock: two looking at once see it in turn.

@@ -6,10 +6,10 @@ import { asset } from "../core/env.js";
 /** @typedef {{ pos: Vec3; aim: Vec3 }} Spot */
 /** @typedef {{ bits: Uint8Array; dims: Vec3; origin: Vec3; vox: number; floors: Map<number, number[]> }} Grid */
 
-// TF2 at 16:9: half of what it shows left to right and top to bottom, as tangents.
+// TF2 at 16:9: tangents of half its horizontal and half its vertical field of view.
 const TAN_H = Math.tan((53.13 * Math.PI) / 180),
   TAN_V = Math.tan((36.87 * Math.PI) / 180);
-// How far round the aim the ground is looked at, and a player's chest above a floor, in map units.
+// How far round the aim the ground is checked, and a player's chest above a floor, in map units.
 const RANGE = 3200,
   CHEST = 48;
 
@@ -33,7 +33,7 @@ function solid(g, i, j, k) {
 const cell = (g, v, axis) => Math.floor((v - g.origin[axis]) / g.vox);
 /** @param {Grid} g @param {number[]} p */
 const solidAt = (g, p) => solid(g, cell(g, p[0], 0), cell(g, p[1], 1), cell(g, p[2], 2));
-// The floors of a column: where space lies on something solid.
+// The floor heights of a column: where an empty voxel lies on a solid one. Worked out once.
 /** @param {Grid} g @param {number} i @param {number} j */
 function floorsOf(g, i, j) {
   const key = i * g.dims[1] + j;
@@ -57,14 +57,15 @@ function clear(g, a, b) {
   }
   return true;
 }
-// A camera that shows nothing of its spot: in something solid, out over the void, or with
-// something between it and what it looks at.
+// Whether a camera shows nothing of what it looks at: it is in something solid, has no ground
+// under it, or something solid lies between it and its aim.
 /** @param {Grid} g @param {Spot} c */
 export function blind(g, c) {
   const overGround = floorsOf(g, cell(g, c.pos[0], 0), cell(g, c.pos[1], 1)).some(z => z <= c.pos[2]);
   return solidAt(g, c.pos) || !overGround || !clear(g, c.pos, [c.aim[0], c.aim[1], c.aim[2] + CHEST]);
 }
-// Where the solid under a wall's top ends, going down: on either side of its middle, the lower.
+// The height where the solid under a wall's top ends, going down: the lower of the two sides of its
+// middle, and at least a voxel below the top.
 /** @param {Grid} g @param {number[]} ends @param {number} top */
 export function footOf(g, [x1, y1, x2, y2], top) {
   const long = Math.hypot(x2 - x1, y2 - y1) || 1,
@@ -95,7 +96,7 @@ const sub = (/** @type {number[]} */ a, /** @type {number[]} */ b) => [a[0] - b[
   ],
   unit = (/** @type {number[]} */ a) => a.map(v => v / (Math.hypot(a[0], a[1], a[2]) || 1));
 
-// Whether a column's ground is in the camera's picture (null if not), and shows.
+// Whether a column's ground shows: true if seen, false if in the picture but hidden, null if outside it.
 /** @param {Grid} g @param {Spot} c @param {number[][]} axes @param {number} i @param {number} j */
 function columnShows(g, c, [f, r, u], i, j) {
   const x = g.origin[0] + (i + 0.5) * g.vox,
@@ -111,7 +112,7 @@ function columnShows(g, c, [f, r, u], i, j) {
   }
   return framed;
 }
-// How much of each capture area in the picture shows, as said under the camera's name.
+// How much of each capture area in the picture shows, as said in the camera's panel.
 /** @param {Grid} g @param {Set<number>} shown */
 function pointsShown(g, shown) {
   const said = (state.geometry?.cap_areas ?? []).flatMap(area => {
@@ -133,7 +134,7 @@ export function showsOf(g, c) {
   const n = Math.ceil(RANGE / g.vox),
     [ci, cj] = [cell(g, c.aim[0], 0), cell(g, c.aim[1], 1)],
     f = unit(sub(c.aim, c.pos)),
-    // Straight down any right will do.
+    // Looking straight up or down, any right will do.
     r = Math.abs(f[2]) > 0.999 ? [0, -1, 0] : unit(cross(f, [0, 0, 1])),
     shown = new Set();
   for (let i = ci - n; i < ci + n; i++)

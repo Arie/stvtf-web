@@ -119,7 +119,7 @@ impl Store {
         Ok(std::fs::File::options().create(true).append(true).open(self.path(name))?.write_all(data)?)
     }
 
-    /// `data` as all of `name`, as it is, as for `append`.
+    /// Writes `data` as all of `name`, not sealed, as `append` does.
     pub(crate) fn replace(&self, name: &str, data: &[u8]) -> Result<()> {
         std::fs::create_dir_all(&self.dir)?;
         Ok(write_atomic(&self.path(name), data)?)
@@ -199,12 +199,12 @@ pub(crate) const DEMO_PREFIX: &str = "demo-";
 /// What the names of a live match's files in the store start with.
 pub(crate) const LIVE_PREFIX: &str = "live-";
 
-/// A demos.tf demo's file in the store, kept for the next to play it where relays do.
+/// A demos.tf demo's file in the store, kept for its next play where relays play demos.
 pub(crate) fn demo_dem(demo: u64) -> String {
     format!("{DEMO_PREFIX}{demo}.dem")
 }
 
-/// What a demos.tf demo decodes to (gzipped stvtf output), kept for the next to play it.
+/// What a demos.tf demo decodes to (gzipped stvtf output), kept for its next play.
 pub(crate) fn demo_output(demo: u64) -> String {
     format!("{DEMO_PREFIX}{demo}.gz")
 }
@@ -220,7 +220,7 @@ pub(crate) fn age(entry: &std::fs::DirEntry) -> std::io::Result<Duration> {
     entry.metadata()?.modified().map(|t| SystemTime::now().duration_since(t).unwrap_or_default())
 }
 
-/// Whether `name` is a demos.tf demo's file kept for the next to play it: not one half fetched.
+/// Whether `name` is a kept file of a demos.tf demo, not one half fetched.
 pub(crate) fn is_kept_demo(name: &str) -> bool {
     name.starts_with(DEMO_PREFIX) && std::path::Path::new(name).extension().is_none_or(|e| e != "part")
 }
@@ -254,12 +254,13 @@ pub(crate) fn sweep_demos(dir: &std::path::Path, max_age: Duration, budget: u64,
     }
 }
 
-/// A live match's recording beside its file.
+/// The name of a live match's recording in the store, beside the match's saved file.
 pub(crate) fn live_file(id: &str) -> String {
     format!("{LIVE_PREFIX}{id}.gz")
 }
 
-/// Chunks to the end of file `name`, or all of it anew; the first that fails says so.
+/// A sink that adds chunks to the end of file `name`, or writes all of it anew; only its first
+/// failure is reported.
 pub(crate) fn to_file(store: &Store, name: &str) -> Sink {
     let (store, name, mut said) = (store.clone(), name.to_string(), false);
     Box::new(move |save: &Save| {

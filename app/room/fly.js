@@ -1,14 +1,14 @@
 // Steering the camera being placed from its picture: a drag looks round, a click aims, the wheel
-// and WASD move it (Q down, E or Space up), Shift faster. Held by the picture, the mouse looks
-// round as in the game.
+// and WASD move it (Q down, E or Space up), Shift faster. While the picture holds the pointer
+// (pointer lock), moving the mouse looks round, as in the game.
 import { $ } from "../core/core.js";
 import { pointAt } from "./preview.js";
 /** @typedef {[number, number, number]} Vec3 */
 /** @typedef {{ pos: Vec3; aim: Vec3 }} Spot */
 
-// Radians a pixel of drag turns it, map units a second and a wheel notch move it, how much faster
-// with Shift, how far a press may stray and still be a click, and how far the pointer held by the
-// picture moves at once at most, in pixels.
+// Radians a pixel of drag turns it, map units it moves a second and per wheel notch, how much faster
+// with Shift, pixels a press may stray and still be a click, the largest mouse movement taken from a
+// locked pointer in one event, in pixels, and the steepest it looks up or down, in radians.
 const TURN = 0.004,
   SPEED = 500,
   NOTCH = 100,
@@ -16,7 +16,7 @@ const TURN = 0.004,
   CLICK_PX = 4,
   LEAP_PX = 400,
   STEEP = 1.55;
-// A key's way: forward, right, up.
+// The way each key moves it: forward, right, up.
 /** @type {Record<string, Vec3>} */
 const WAYS = { w: [1, 0, 0], s: [-1, 0, 0], d: [0, 1, 0], a: [0, -1, 0], e: [0, 0, 1], " ": [0, 0, 1], q: [0, 0, -1] };
 
@@ -26,7 +26,7 @@ function facing({ pos, aim }) {
     far = Math.hypot(d[0], d[1], d[2]) || 1;
   return [[d[0] / far, d[1] / far, d[2] / far], far];
 }
-// Where it looks once turned right and down by these, as far off as before.
+// Its aim after turning right and down by these angles, as far off as before.
 /** @param {Spot} c @param {number} right @param {number} down @returns {Vec3} */
 function turned(c, right, down) {
   const [f, far] = facing(c),
@@ -57,8 +57,8 @@ function put(c, to) {
   c.aim = /** @type {Vec3} */ (to.aim.map(Math.round));
 }
 
-// The keys held move it every frame, the way it looks then. Its place is kept unrounded between
-// frames, unless something else moved it.
+// The held keys move it every frame, relative to the way it looks. Its position is kept unrounded
+// between frames, unless something else moved it.
 /** @param {() => Spot | null} spot @param {() => void} changed @param {() => void} done */
 function keys(spot, changed, done) {
   const view = $("cam-view"),
@@ -108,7 +108,7 @@ export function flyTool(spot, changed, done) {
   const held = () => document.pointerLockElement === view;
   view.addEventListener("mousemove", e => {
     const c = spot();
-    // Not a leap: a browser may say one as it takes hold of the pointer.
+    // Skip a huge movement: a browser may report one as it locks the pointer.
     if (!c || !held() || Math.hypot(e.movementX, e.movementY) > LEAP_PX) return;
     c.aim = turned(c, e.movementX * TURN, e.movementY * TURN);
     changed();

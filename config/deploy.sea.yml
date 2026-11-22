@@ -31,8 +31,8 @@ accessories:
       publish: ["28100-28119:28100-28119/udp"]
       memory: 1g
 
-# Who is who in a team's voice channel is kept on stv.tf for every region: what is said on a
-# page here is told there, and what is known there holds here.
+# stv.tf (Europe) keeps who is who in a team's voice channel, for every region: this region
+# sends it what people set on its pages, and uses what it knows.
 env:
   clear:
     STVTF_REGION: sea

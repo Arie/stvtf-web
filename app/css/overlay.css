@@ -18,7 +18,7 @@
 .stvtf.overlay #roombar {
   display: none !important;
 }
-/* Except while a delay holds the match back: one dim line in the panel instead of nothing. */
+/* Except while a delay holds the match back: one small line in the panel instead of nothing. */
 .stvtf.overlay #empty.holding {
   display: grid !important;
   font-size: 12px;

@@ -1,5 +1,5 @@
-// Where a camera begins: its spot, a flight's looking as the flight was flown (not as the camera
-// was turned since). For one as listed (its flight in rows) or as placed.
+// Where a camera's move starts: the camera's position, and for a recorded flight the direction it
+// was flown in, not the camera's current aim. Takes a listed camera (path as rows) or one being placed.
 /** @param {Spot & { move?: { path?: (Sample | number[])[] } }} c @returns {Spot} */
 export function startOf(c) {
   const first = c.move?.path?.[0];
@@ -9,7 +9,7 @@ export function startOf(c) {
 }
 
 // A camera's move: to an end frame over some seconds, straight or in an arc round what it looks at,
-// or a flight recorded. Kept with the camera (`toKept`).
+// or a recorded flight. Stored with the camera in the form `toKept` makes.
 /** @typedef {[number, number, number]} Vec3 */
 /** @typedef {{ pos: Vec3; aim: Vec3 }} Spot */
 /** @typedef {{ t: number; pos: Vec3; aim: Vec3 }} Sample */
@@ -18,14 +18,14 @@ export function startOf(c) {
  * @property {Spot} end
  * @property {number} secs
  * @property {"straight" | "arc"} way
- * @property {number} [turn] An arc's turn round the aim, in radians: more than half round if asked.
- * @property {Sample[]} [path] A flight: evened out from `raw`, which took `took` seconds.
+ * @property {number} [turn] How far an arc turns round the aim, in radians. May be more than half a turn.
+ * @property {Sample[]} [path] A recorded flight, smoothed from `raw`, which took `took` seconds.
  * @property {Sample[]} [raw]
  * @property {number} [took]
  * @property {number} [even]
  */
 
-// A move as the site keeps it: a flight's moments as rows, not as it was flown.
+// A move as the site stores it: a flight's path as rows (as in `rowsOf`), without the raw recording.
 /** @typedef {Omit<Move, "path" | "raw"> & { path?: number[][] }} Kept */
 const tenth = (/** @type {number} */ v) => Math.round(v * 10) / 10;
 /** @param {Move} move @returns {Kept} */
@@ -49,8 +49,8 @@ export function fromKept(kept) {
   };
 }
 
-// A move as the relay takes it: a row a moment (seconds in, where it is, what it looks at). With
-// no move, where it stays.
+// A move as the relay takes it: one row per sample (seconds in, position, aim). With no move, one
+// row for where the camera stays.
 /** @param {Spot} from @param {Move} [move] */
 export function rowsOf(from, move) {
   const n = move ? Math.ceil(move.secs * RATE) : 0,
@@ -63,7 +63,7 @@ export function rowsOf(from, move) {
   return rows;
 }
 
-// A flight's samples a second, and the turn a press of an orbit adds to the end frame.
+// Samples per second of a move's rows and a flight's path, and the turn one press of an orbit button adds.
 const RATE = 30;
 export const ORBIT = Math.PI / 4;
 
@@ -74,21 +74,21 @@ const copy = (/** @type {Spot} */ c) => ({
   pos: /** @type {Vec3} */ ([...c.pos]),
   aim: /** @type {Vec3} */ ([...c.aim]),
 });
-// A camera from what it looks at: how far out, which way round, how far up.
+// A camera's position relative to its aim: horizontal distance, angle round it, height above it.
 const round = (/** @type {Spot} */ c) => ({
   far: Math.hypot(c.pos[0] - c.aim[0], c.pos[1] - c.aim[1]),
   at: Math.atan2(c.pos[1] - c.aim[1], c.pos[0] - c.aim[0]),
   up: c.pos[2] - c.aim[2],
 });
 
-// The turn from `from` round to `end`: the short way, or the one a whole turn off nearest `like`.
+// The angle from `from` round to `end`: the short way, or with whole turns added to come nearest `like`.
 /** @param {Spot} from @param {Spot} end @param {number} [like] */
 export function turnTo(from, end, like = 0) {
   const short = Math.atan2(Math.sin(round(end).at - round(from).at), Math.cos(round(end).at - round(from).at));
   return short + 2 * Math.PI * Math.round((like - short) / (2 * Math.PI));
 }
 
-// Where a flight is `t` seconds of its own in.
+// Where a flight is `t` seconds into its recording.
 /** @param {Sample[]} path @param {number} t @returns {Spot} */
 function along(path, t) {
   const i = Math.min(path.length - 2, Math.max(0, Math.floor(t * RATE))),
@@ -97,11 +97,11 @@ function along(path, t) {
   return { pos: mix(a.pos, b.pos, s), aim: mix(a.aim, b.aim, s) };
 }
 
-// Where the camera of `from` is `t` seconds into its move: slow off and slow to a stop.
+// Where a camera that starts at `from` is `t` seconds into its move. A move between frames eases in and out.
 /** @param {Spot} from @param {Move} move @param {number} t @returns {Spot} */
 export function at(from, move, t) {
   const u = within(t / move.secs);
-  // A flight goes from where the camera is now, looking as it was flown.
+  // A flight is shifted to start at the camera's position and keeps the direction it was flown in.
   if (move.path) {
     const on = along(move.path, u * (move.took ?? move.secs)),
       [first] = move.path,
@@ -120,7 +120,7 @@ export function at(from, move, t) {
   };
 }
 
-// `end` an eighth of a turn on round what it looks at, one way (1) or the other (-1).
+// `end` moved an eighth of a turn round its aim, one way (1) or the other (-1).
 /** @param {Spot} end @param {number} way @returns {Spot} */
 export function orbited(end, way) {
   const { pos, aim } = copy(end),
@@ -129,7 +129,7 @@ export function orbited(end, way) {
   return { pos: [aim[0] + d[0] * cos - d[1] * sin, aim[1] + d[0] * sin + d[1] * cos, pos[2]], aim };
 }
 
-// What was flown, as a flight: at an even pace, evened out over `even` seconds.
+// The recorded samples as a flight: resampled at a steady rate, then smoothed over `even` seconds.
 /** @param {Sample[]} raw @param {number} even @param {number} [secs] @returns {Move | null} */
 export function flight(raw, even, secs) {
   const took = raw.length ? raw[raw.length - 1].t : 0;

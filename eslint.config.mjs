@@ -21,9 +21,9 @@ export default [
       "no-nested-ternary": "error",
     },
   },
-  // Limits on the size and shape of the page's code. What was over them when they came in is in
-  // eslint-suppressions.json: a file may not get more of it, and what is fixed is pruned with
-  // `npx eslint app test --prune-suppressions`.
+  // Limits on the size and shape of the page's code. What broke them when they were added is listed
+  // in eslint-suppressions.json: a file may not add more, and what is fixed is pruned with
+  // `npx eslint app test script --prune-suppressions`.
   {
     files: ["app/**/*.js"],
     rules: {

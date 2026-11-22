@@ -1,4 +1,4 @@
-// The page's own data: the map geometry the server builds (src/maps/bsp.rs) and the shared `state`
+// The page's own data: the map geometry the server builds (src/maps/bsp/) and the shared `state`
 // in app/core/core.js. Only `tsc` reads this file.
 import type { Player, Snapshot, GameEvent, Team, Vec3 } from "./stream";
 
@@ -28,7 +28,7 @@ export type Overview = {
 
 /** The view: the world point at the canvas centre, pixels per unit and the rotation (radians). */
 export type View = { cx: number; cy: number; scale: number; rot: number };
-/** A framing the camera heads for; `slow` brings a straggler in gently. */
+/** A framing the camera heads for; `slow` moves there slowly, to bring in a player who just spawned. */
 export type Framing = { cx: number; cy: number; scale: number; slow?: boolean };
 
 /** A short-lived drawing (a shot, a boom, a kill …) with when it started and how long it lasts, in ms. */

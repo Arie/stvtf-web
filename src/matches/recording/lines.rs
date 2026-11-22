@@ -20,7 +20,8 @@ use crate::sync::lock;
 /// Play time per chunk, in milliseconds.
 pub(super) const CHUNK_MS: u64 = 10_000;
 
-/// Play time a live recording keeps, in milliseconds, dropping more once over by [`TRIM_MS`].
+/// Play time a live recording keeps, in milliseconds. It trims back to this once it is over by
+/// [`TRIM_MS`].
 pub(super) const KEEP_MS: u64 = 3 * 3600 * 1000;
 
 pub(super) const TRIM_MS: u64 = 10 * 60 * 1000;
@@ -28,7 +29,8 @@ pub(super) const TRIM_MS: u64 = 10 * 60 * 1000;
 /// Where a live recording's chunks go as they close.
 pub(crate) type Sink = Box<dyn FnMut(&Save) + Send>;
 
-/// For a live recording's file: a chunk closed (its gzipped lines), or all the file is now.
+/// What a live recording's file gets: a closed chunk (its gzipped lines) to add at its end, or
+/// the whole file anew.
 pub(crate) enum Save {
     Add(Vec<u8>),
     All(Vec<u8>),
@@ -58,7 +60,8 @@ pub(super) struct Inner {
     /// The last chunk's lines while it is open: `{at}\t{json}`.
     pub(super) open: Vec<String>,
     pub(super) rounds: Vec<u64>,
-    /// The next line starts a chunk: the last one was resumed, and is in its file already.
+    /// The next line starts a chunk: the last one is in the file already (read from it, or
+    /// flushed to it).
     pub(super) fresh: bool,
     /// Lines in all.
     pub(super) count: usize,
@@ -77,7 +80,7 @@ pub(super) struct Inner {
     pub(super) last_tick: Option<u32>,
 }
 
-/// A score and a round won this close (ms) belong together, either first.
+/// A score and a round won within this many milliseconds belong together, whichever came first.
 pub(super) const SCORE_WITH_WIN_MS: u64 = 2000;
 
 /// A timeline mark: a round won (with the score), an uber, a drop, or a kill (for fight heat).
@@ -219,7 +222,8 @@ impl Inner {
                         let scratch = self.scratch.clone();
                         self.parts.seed_from(header, at, &scratch);
                     }
-                    // A file trimmed as it is read: its remains are the file.
+                    // The recording trimmed itself as it read: the file is to be written anew
+                    // from what is left.
                     self.rewrite |= matches!(self.add(at, &serde_json::from_str(value)?, value)?, Some(Save::All(_)));
                     self.clock.play = at;
                 }
@@ -303,7 +307,8 @@ impl Recording {
             if inner.count == 0 && !file.is_empty() {
                 bail!("cannot read a file that is not a recording");
             }
-            // A file trimmed as it was read, with lines skipped, or torn: its remains are the file.
+            // Trimmed as it was read, with lines skipped, or torn: the file is written anew from
+            // what was read.
             if std::mem::take(&mut inner.rewrite) || !whole {
                 sink(&Save::All(inner.file()?));
             }
@@ -312,9 +317,10 @@ impl Recording {
         Ok(r)
     }
 
-    /// Takes in `saved`, the next bytes of the file a recording not pushed to yet goes on from:
-    /// its whole gzip members, up to one torn or unreadable. How many bytes that was. What is
-    /// before its latest line in play time is skipped, and the file is then to be written anew.
+    /// Reads `saved`, the next bytes of the file that this recording (not pushed to yet) goes on
+    /// from: whole gzip members, stopping at one that is torn or unreadable. Returns how many
+    /// bytes it read. A chunk that begins before the latest line's play time is skipped, and the
+    /// file is then to be written anew.
     pub(crate) fn read_on(&self, saved: &[u8]) -> Result<usize> {
         let mut inner = lock(&self.inner);
         if inner.count == 0 && inner.header.is_none() {
@@ -397,7 +403,8 @@ impl Recording {
 
     /// The next line, `text` as read into `stamped`.
     pub(crate) fn push(&self, stamped: &Stamped, text: &str) -> Result<()> {
-        // Held from the line to its chunk in the file: none goes in after the file is given.
+        // The sink stays locked from adding the line to writing its chunk, so that nothing is
+        // written after the file is given away.
         let mut sink = lock(&self.sink);
         let save = {
             let mut inner = lock(&self.inner);
@@ -496,9 +503,10 @@ impl Recording {
     }
 
     /// The hub just before play time `at` (the start, if before), the chunk it is in, and how
-    /// many of its lines are before it; in a map over whose last line not tail is at `last`, at
-    /// or past it, the map's last moment, with that line. At a part's first snapshot, with it.
-    /// Never the server's word that it changes map: a room shows the map it is on to its end.
+    /// many of that chunk's lines are before it. `last` is the play time of the last line that is
+    /// not tail of a part that is over: a seek at or past it lands on that line, the line
+    /// included. A seek to a part's first snapshot includes the snapshot. Lines saying the server
+    /// changes map are not played: a room shows the map it is on to its end.
     pub(crate) fn seek(&self, at: u64, last: Option<u64>) -> (Hub, usize, usize) {
         let (i, hub, at, with_at) = {
             let inner = lock(&self.inner);

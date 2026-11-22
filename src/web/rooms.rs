@@ -35,7 +35,8 @@ fn with_cookie(cookie: Option<&str>) -> Option<[(header::HeaderName, String); 1]
     cookie.map(|c| [(header::SET_COOKIE, c.to_string())])
 }
 
-/// Whether a room can be opened on match `m`; or one is, owned by the browser.
+/// Answers whether a room can be opened on match `m`; with `Open::From`, opens one, owned by the
+/// browser.
 pub(super) fn open_room(v: &Visit, sessions: &Sessions, m: &Arc<Session>, open: Open) -> Response {
     let app = &v.app;
     if !m.recordable() && m.gave_up() {
@@ -52,7 +53,7 @@ pub(super) fn open_room(v: &Visit, sessions: &Sessions, m: &Arc<Session>, open: 
     // Where its opener was watching, if they say: it starts there.
     let start = from.and_then(|w| Some(StartAt { at: w.at?, speed: 1.0, paused: w.paused }));
     let Who { key: guest, cookie, user } = v.who.clone();
-    // One's room on it already: back to that.
+    // The visitor already has a room on it: back to that.
     if let Some(room) = app.rooms.owned(m, &guest) {
         return opened(app, &room.id, cookie.as_deref());
     }
@@ -105,13 +106,13 @@ pub(super) struct Admin {
     admin: bool,
 }
 
-/// A room's path: its id, and the delay its page is shown with, if any.
+/// The id in a room's path.
 #[derive(Deserialize)]
 pub(super) struct RoomAt {
     id: String,
 }
 
-/// Room `id`, still open: answered early that it has closed.
+/// Room `id`, if it is still open; else an early answer that it has closed.
 pub(super) fn found(v: &Visit, id: &str) -> Result<Arc<Room>, Early> {
     match v.app.rooms.get(id, v.sessions()?) {
         Some(room) => Ok(room),
@@ -119,7 +120,8 @@ pub(super) fn found(v: &Visit, id: &str) -> Result<Arc<Room>, Early> {
     }
 }
 
-/// `/r/<id>/`, also delayed or as overlay: the page. No cookie means a new guest each time.
+/// `/r/<id>/`, also delayed or as overlay: the page. Sets a new guest's cookie, without which the
+/// browser would be a new guest each time.
 pub(super) async fn show(v: Visit, Path(at): Path<RoomAt>) -> Answered {
     answer(move || {
         found(&v, &at.id)?;
@@ -142,7 +144,7 @@ pub(super) async fn events(v: Visit, Path(at): Path<RoomAt>, Query(q): Query<Str
         let Some(slot) = v.app.stream_slot(v.client) else { return Ok(too_many_streams()) };
         let site = who.user.as_ref().map(|u| u.name.as_str());
         let watching = room.join(&who.key, q.name.as_deref(), site, !q.overlay());
-        // By Steam id when signed in: whose room it was, when something is asked of it later.
+        // By Steam id when signed in, to tell later who was in the room.
         tracing::info!("room {} joined by {}", logged(&room.id), who.user.as_ref().map_or("a guest", |u| u.uid.as_str()));
         Ok(stream(&room.hub, v.gzip, &q, (slot, watching)))
     })

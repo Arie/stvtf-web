@@ -13,7 +13,7 @@ const SHOW_NUMBERS = optOn("numbers");
 // A capture area belongs to the point standing in it, or one at most this many units outside.
 const CAP_AREA_REACH = 256;
 
-// Points are squares like TF2's HUD, so they never read as players: the owner's colour, filled
+// Points are squares like TF2's HUD, so they are never mistaken for players: the owner's colour, filled
 // left to right in the capping team's colour while a capture is under way.
 /** @param {Objective} o @param {Snapshot} snap @param {number} tick */
 export function drawPoint(o, snap, tick) {

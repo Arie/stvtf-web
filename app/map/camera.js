@@ -29,10 +29,10 @@ const MIN_SPAN = OVERLAY ? 1600 : 2600,
   AIM_S = 0.3,
   // The margin, in markers.
   MARGIN_MARKERS = 1.5,
-  // A framing this much tighter than the one held is "a lot"; held, one only TIGHTER is let in after SETTLE_MS.
+  // A framing MUCH_TIGHTER than the one held replaces it at once; one only TIGHTER, after SETTLE_MS.
   MUCH_TIGHTER = 1.4,
   TIGHTER = 1.25,
-  // The action moved: by this much of the half view.
+  // The action has moved once the wanted centre is this share of half the view away.
   SHIFT = 0.5,
   // The longest step the camera's spring takes, in seconds (a frame after a pause).
   MAX_STEP_S = 0.1;
@@ -68,8 +68,8 @@ function framedPlayers(players, now) {
   return { settled, framed: alive };
 }
 
-// The framing round the framed players, or the full one when there are none. Along the rotated
-// axes, like the framing, so the box matches the panel.
+// The framing round the framed players, or the full one when there are none. Measured along the
+// view's rotated axes, so the box matches the panel.
 /** @param {LivePlayer[]} framed @param {Framing} full @param {At} at @returns {Framing} */
 function wantedFraming(framed, full, at) {
   if (!framed.length) return { ...full };
@@ -188,13 +188,14 @@ function glide(v, target, dt, { escaping, keep, at }) {
   Object.assign(v, viewCentre({ cx: fx, cy: fy }, v.scale));
 }
 
-// A room's admin's camera, replayed this far behind it so its samples (about every 50 ms) are in
-// before they are needed and the view moves between them smoothly. A gap longer than
-// MIRROR_STILL_MS was their camera standing still: it starts moving again from there.
+// The camera of a room's admin, replayed MIRROR_BEHIND_MS behind it so its samples (about every
+// 50 ms) are in before they are needed and the view moves between them smoothly. A gap longer than
+// MIRROR_STILL_MS was their camera standing still: it starts moving again from there. Samples older
+// than MIRROR_KEEP_MS are dropped.
 const MIRROR_BEHIND_MS = 120,
   MIRROR_STILL_MS = 250,
   MIRROR_KEEP_MS = 2000;
-// The share of the way a frame goes toward the first sample, which comes from anywhere.
+// The share of the way a frame goes toward the first sample, which can be far from the current view.
 const MIRROR_EASE = 0.25;
 
 /** @param {{ cx: number; cy: number; w: number; h: number; rot: number }} m */

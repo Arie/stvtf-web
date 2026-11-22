@@ -13,7 +13,8 @@ const FIT_PAGE = 0.95,
 /** @typedef {import("../../types/page").Geometry} Geometry */
 /** @typedef {{ x: number, y: number }} Point */
 
-// The HUD's player columns (shown on screens wider than this) and the scoreboard, in CSS pixels.
+// The room kept clear for the HUD's player columns (on screens wider than HUD_MIN_WIDTH) and for the
+// scoreboard, in CSS pixels.
 const HUD_MIN_WIDTH = 800,
   HUD_COLUMN = 268,
   SCOREBOARD_HEIGHT = 140;

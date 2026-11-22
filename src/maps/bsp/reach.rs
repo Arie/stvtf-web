@@ -81,7 +81,8 @@ const NEAR_GROUND: f32 = 256.0;
 /// Seeds are this high above their point, at the first free voxel of these offsets.
 const SEED_UP: f32 = 40.0;
 const SEED_TRIES: [isize; 4] = [0, 1, -1, 2];
-/// Floors are sampled this far apart, and kept with reached space this high above.
+/// Floors are sampled this far apart, and kept when space between these heights above them was
+/// reached.
 const FLOOR_SAMPLE_STEP: f64 = 48.0;
 const ABOVE_FLOOR: (f64, f64) = (8.0, 168.0);
 /// The most samples along x or y of a floor: a bigger floor's are further apart. Real floors
@@ -126,7 +127,7 @@ impl Bits {
         }
         bits & (u64::MAX >> (64 - n))
     }
-    /// Sets the bits of `v` (`n` of them, 1 to 64) from `i` on.
+    /// Sets the bits of `bits` (`n` of them, 1 to 64) from `i` on.
     fn or_word(&mut self, i: usize, n: usize, bits: u64) {
         let (word, shift) = (i / 64, i % 64);
         let bits = bits & (u64::MAX >> (64 - n));
@@ -237,7 +238,8 @@ impl Lumps {
 
     /// The brushes in the leaves under `head`, each once: brush entities (doors, `func_brush`)
     /// are other models, so a closed spawn door walls nobody in. Every node and leaf is visited
-    /// once, and the leaves may use the leaf brush list once over, as real maps do.
+    /// once, and the leaves together may use no more entries than the leaf brush list has, as on
+    /// real maps.
     fn world_brushes(&self, head: i32) -> Result<Vec<usize>> {
         let mut nodes_seen = vec![false; self.nodes.len() / NODE_SIZE];
         let mut leafs_seen = vec![false; self.leafs.len() / LEAF_SIZE];
@@ -291,8 +293,8 @@ impl Lumps {
 }
 
 impl Brush {
-    /// The brush's box, from its axial sides (every brush has them), within `grid`'s; None
-    /// when it is outside the grid.
+    /// The brush's box, from its axial sides (every brush has them), clipped to the grid's box;
+    /// None when it is outside the grid.
     fn bounds(&self, grid: &Grid) -> Option<(Vec3, Vec3)> {
         let mut lo = grid.origin.map(|v| v as f32);
         let mut hi = [0, 1, 2].map(|a| grid.corner(a, grid.dims[a]) as f32);
@@ -659,8 +661,8 @@ impl Reach {
 }
 
 /// Points of the floor `p` (`x, y, x, y, …`) to look above: its centroid (of its corners) and
-/// a grid `FLOOR_SAMPLE_STEP` apart from its lowest corner, those within `OUTLINE_SLACK` of
-/// the outline (just the centroid when none is).
+/// a grid `FLOOR_SAMPLE_STEP` apart from its lowest corner, those inside the outline or within
+/// `OUTLINE_SLACK` of it (just the centroid when none is).
 pub(super) fn floor_samples(p: &[f64]) -> Vec<[f64; 2]> {
     let outline = p.as_chunks::<2>().0;
     if outline.is_empty() {

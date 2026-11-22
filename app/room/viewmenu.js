@@ -8,7 +8,7 @@ import { env } from "../core/env.js";
 /** @type {Record<string, string>} */
 const SHORT = { free: "Free", auto: "Auto", follow: "Follow", admin: "Admin" };
 
-// Closes the menu, once it is there: its button went off under it (an admin no more).
+// Closes the menu, once it exists: for when its button is disabled under it (no longer an admin).
 export let closeViewMenu = () => {};
 
 /** @param {(mode: string) => void} chosen @returns {(mode: string) => void} sets the view shown */

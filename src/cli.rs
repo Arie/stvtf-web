@@ -160,7 +160,7 @@ impl Options {
     }
 }
 
-/// `/live`, without a trailing `/`.
+/// A base path like `/live`, without its trailing `/`.
 fn base_path(s: &str) -> Result<String> {
     let path = s.trim_end_matches('/');
     if !path.is_empty() && !path.starts_with('/') {

@@ -10,7 +10,7 @@ export const me = { id: 0, admin: false, cameras: false };
 // Everyone's names, by number.
 /** @type {Map<number, string>} */
 export const names = new Map();
-// Not reached (a restart, a line down), it is refused: no fault of the page's.
+// When the server is not reached (a restart, a lost connection), the answer is a 503, not an exception.
 /** @param {string} path @param {object} body */
 export const post = (path, body, base = HOME) =>
   fetch(new URL(path, base), {

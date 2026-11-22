@@ -15,14 +15,14 @@ use crate::sync::lock;
 use crate::voice::ids::{STEAM64_BASE, account_of};
 use crate::web::token::Keys;
 
-/// How long what a site said of a player stands: known there, and not.
+/// How long a site's answer about a player is kept: when it knows the player, and when not.
 const KNOWN_FOR: Duration = Duration::from_hours(1);
 const UNKNOWN_FOR: Duration = Duration::from_mins(10);
 const TIMEOUT: Duration = Duration::from_secs(20);
 /// The most players asked about at once, and kept.
 pub(crate) const MAX_PLAYERS: usize = 40;
 const MAX_KEPT: usize = 10_000;
-/// A side of this many is a Highlander team.
+/// A side of at least this many plays Highlander.
 const HIGHLANDER: usize = 8;
 
 /// A team a player is on in a league, and the format it plays (as the league names it).
@@ -41,7 +41,7 @@ pub(crate) struct Player {
     teams: Vec<Team>,
 }
 
-/// What a site says: its league, and those of the players asked about it knows.
+/// What a site says: its league, and the players it knows among those asked about.
 #[derive(Debug, Deserialize)]
 pub(crate) struct Said {
     league: Option<String>,
@@ -66,8 +66,8 @@ pub(crate) struct Asked {
     pub(crate) team: String,
 }
 
-/// A league's names for a match: its players' by `SteamID`, and each side's team if most of the
-/// side is on one.
+/// A league's names for a match: its players' by `SteamID`, and each side's team where one can be
+/// guessed.
 #[derive(Debug, PartialEq, Serialize)]
 pub(crate) struct League {
     #[serde(rename = "league")]
@@ -170,8 +170,9 @@ impl Leagues {
     }
 }
 
-/// The team most of a side's `players` are on, of a side of `size`: at least two of them, and of
-/// the format the side's size is, when two teams have as many.
+/// The team the most of a side's `players` are on, for a side of `size`. When two teams have as
+/// many, the one whose format fits the side's size. None unless at least two are on it (one, for
+/// a side of one).
 fn guess_team(players: &[&Player], size: usize) -> Option<String> {
     let highlander = size >= HIGHLANDER;
     let fits = |t: &Team| t.format.as_deref().is_some_and(|f| f.to_ascii_lowercase().contains("highlander") == highlander);
@@ -223,7 +224,7 @@ mod tests {
         assert_eq!(found[0].name, "ETF2L", "the one knowing most first");
         assert_eq!(found[0].players["[U:1:1]"], "One");
         assert_eq!(found[0].players.len(), 3);
-        // Both on two teams: the one of the format a side of two is. One player is no team.
+        // Both reds are on two teams: the 6v6 one fits a side of two. One player makes no team.
         assert_eq!(found[0].teams, BTreeMap::from([("red".to_string(), "Reds".to_string())]));
         assert_eq!((found[1].name.as_str(), found[1].players["[U:1:3]"].as_str()), ("RGL", "Tres"));
         assert!(found[1].teams.is_empty());

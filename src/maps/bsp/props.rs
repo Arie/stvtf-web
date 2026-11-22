@@ -27,10 +27,11 @@ const GAME_LUMP_VERSION: usize = 6;
 const GAME_LUMP_OFFSET: usize = 8;
 const GAME_LUMP_LENGTH: usize = 12;
 const COMPRESSED: u16 = 1;
-/// A model name in the dictionary.
+/// The size of a model name in the dictionary.
 const NAME_SIZE: usize = 128;
-/// `StaticPropLump_t`: where its origin, angles, model, and solidity are, and its size by version
-/// (games differ: TF2's version 10 is 72 bytes, so the size the lump holds is taken first).
+/// `StaticPropLump_t`: where its angles, model and solidity are (its origin comes first), and its
+/// size by version. Games differ (TF2's version 10 is 72 bytes), so the size worked out from the
+/// lump's length is tried first.
 const PROP_ANGLES: usize = 12;
 const PROP_TYPE: usize = 24;
 const PROP_SOLID: usize = 30;

@@ -19,7 +19,7 @@ import {
 /** @typedef {{ x: number, y: number, side: number }} IconBox The square an icon's art fills, in image pixels. */
 
 // The medigun beam like TF2's: two strands twisting around a soft glow in the team colour, with
-// sparkles drifting from the medic to the patient; thicker and brighter while the charge is out.
+// sparkles drifting from the medic to the patient; thicker and brighter while the charge is in use.
 /** @type {{ [team: string]: string }} */
 const BEAM_LIGHT = { red: "#ffc2b8", blue: "#c2e2ff" };
 /** @param {Player[]} players @param {Map<number, Player>} byId */
@@ -214,7 +214,7 @@ export function drawPlayers(players) {
   drawVoiceBadges(alive);
 }
 
-// The players on the teams alive, as dots to draw; the dead are marked where they fell (in the
+// The living players on the two teams, as dots to draw; the dead are marked where they fell (in the
 // overlay). The followed player comes last, so their dot and name are on top.
 /** @param {Player[]} players @returns {Dot[]} */
 function dots(players) {
@@ -255,8 +255,8 @@ function drawFallen(p) {
 /** @param {Dot} d */
 function drawPointer({ p, x, y, rad, col, cloaked }) {
   ctx.globalAlpha = cloaked ? 0.35 : 1;
-  // A pointer on the disc where they look; how wide they see is up to their client. demos.tf's
-  // dart (0.8 of the disc's radius long, 0.6 of that to each side, notched base) from the health ring.
+  // A pointer on the disc where they look; how wide they see is up to their client. The shape is demos.tf's
+  // dart (0.8 of the disc's radius long, 0.6 of that to each side, notched base), starting at the health ring.
   const a = screenAngle(p.yaw ?? 0),
     base = rad + 3,
     len = rad * 0.8,
@@ -324,7 +324,7 @@ function drawHealth(p, x, y, rad) {
 /** @param {Dot} d */
 function drawIcon({ p, x, y, rad, cloaked }) {
   ctx.globalAlpha = cloaked ? 0.35 : 1;
-  // The art's longer side, cropped of its padding, still on the disc.
+  // The size of the art's longer side (cropped of its padding), small enough to stay on the disc.
   const s = rad * ICON_SIZE * uberIconScale(p),
     img = iconSprite(p.class, s);
   if (img && uberShown(p)) {
