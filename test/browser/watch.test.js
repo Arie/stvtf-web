@@ -1008,10 +1008,9 @@ test("who talks shows on their HUD card and in the speakers list, and a click th
     const main = /** @type {HTMLScriptElement} */ ([...document.scripts].find(s => s.src.includes("main.js")));
     const voice = await import(main.src.replace("main.js", "core/voice.js"));
     // The cards are drawn anew now and then: one that is there.
-    /** @type {HTMLElement | null} */
-    let card = null;
-    while (!(card = document.querySelector("#hud-red .card"))) await new Promise(r => setTimeout(r, 20));
-    const id = Number(card.dataset.id);
+    const find = () => /** @type {HTMLElement | null} */ (document.querySelector("#hud-red .card"));
+    while (!find()) await new Promise(r => setTimeout(r, 20));
+    const id = Number(find()?.dataset.id);
     const { steamid } = window.viewState.players.get(id);
     window.talking = true;
     setInterval(() => {
