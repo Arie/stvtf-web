@@ -2,7 +2,7 @@
 # kamal-proxy, which routes by domain). serveme.tf hands browsers encrypted start links;
 # STVTF_TOKEN_KEY is the key both share. The image builds from the directory holding the
 # stvtf and stvtf-web checkouts.
-#   kamal deploy -d eu|na|au|sea
+#   bin/build && bin/deploy [REGION...]
 #
 # The image holds both checkouts, but Kamal names a version after this repository's commit
 # alone, so a change to stvtf only would reuse the tag and leave rollback guessing. The version
