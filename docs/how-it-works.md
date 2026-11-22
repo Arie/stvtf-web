@@ -91,6 +91,8 @@ acked, and alternating baselines.
 A headless SourceTV client: the netchannel, the signon, tick acks, recovery from loss. It decodes
 each frame with [tf-demo-parser](https://codeberg.org/demostf/parser) and writes JSON lines:
 snapshots at most 20 a second (in whole ticks, never more often than frames come) and every event.
+On a 66-tick server that is a snapshot every 4 ticks, 16.7 a second: every frame at
+`tv_snapshotrate 16`, every fourth at 66. The pages draw from these snapshots.
 One connection takes one slot, whoever watches. See stvtf's README, "Output".
 
 ## stv.tf: the browser
@@ -106,7 +108,9 @@ One connection takes one slot, whoever watches. See stvtf's README, "Output".
 ## stv.tf: TF2 clients in a room
 
 A room is also a SourceTV address. TF2 connects to it as to any SourceTV, and sees the room's moment:
-paused, seeking, at its speed. A relay serves it, playing a `.dem`:
+paused, seeking, at its speed. A relay serves it, playing a `.dem`. It sends every frame of the
+demo, so TF2 gets the match at the STV's full `tv_snapshotrate` (66 a second with a league
+config); the 20 a second limit is for the pages only. The demo is one of:
 
 - **demos.tf**: the demo's own file, kept for the next to play it (see
   [site](site.md#demostf-demos)).
