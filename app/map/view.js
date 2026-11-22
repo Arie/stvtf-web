@@ -2,9 +2,8 @@ import { $, OVERLAY, OPT, overlayUnit, canvas, uiScale, ctx, context2d, state, c
 import { env, asset } from "../core/env.js";
 import { renderGeometry } from "./geometry.js";
 
-// A fitted map fills this much of the panel (the overlay's more: it is small).
-const FIT_PAGE = 0.95,
-  FIT_OVERLAY = 0.96,
+// A fitted map fills this much of the panel.
+const FIT = 0.96,
   // rotate=auto turns the map a quarter only when that shows it this much larger.
   TURN_GAIN = 1.1,
   // An overview's near-black (brightness below this, of 255) is see-through, fading in to twice it.
@@ -125,7 +124,7 @@ function fitTo(min, max) {
     rh = w * s + h * c;
   // Keep the map clear of the HUD columns on both sides.
   const hud = shown("hud") && r.width > HUD_MIN_WIDTH ? 2 * HUD_COLUMN * uiScale() : 0;
-  v.scale = Math.min((r.width - hud) / rw, r.height / rh) * (OVERLAY ? FIT_OVERLAY : FIT_PAGE);
+  v.scale = Math.min((r.width - hud) / rw, r.height / rh) * FIT;
   state.fitted = true;
 }
 
@@ -201,7 +200,7 @@ function fitTurned(pts, rot) {
     v1 = Math.max(...vs) + pad;
   const uc = (u0 + u1) / 2,
     vc = (v0 + v1) / 2;
-  const scale = Math.min(w / (u1 - u0), h / (v1 - v0)) * FIT_OVERLAY;
+  const scale = Math.min(w / (u1 - u0), h / (v1 - v0)) * FIT;
   return { rot, cx: uc * c + vc * sn, cy: -uc * sn + vc * c, scale };
 }
 
