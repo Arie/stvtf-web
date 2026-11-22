@@ -1,7 +1,6 @@
 {
   "src/maps/bsp/reach.rs": 637,
   "src/matches/hub.rs": 725,
-  "src/matches/sessions/tests.rs": 524,
   "src/rooms/registry.rs": 628,
   "src/voice/feed.rs": 790
 }

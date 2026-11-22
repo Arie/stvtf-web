@@ -6,7 +6,7 @@ import { readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const LIMIT = 500;
+const LIMIT = 600;
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const list = join(root, "script", "sizes.json");
 

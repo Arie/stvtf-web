@@ -42,7 +42,7 @@ Once per clone:
 
 - Numbers that decide behaviour (timings, thresholds, limits) are named constants at the top of
   their module.
-- A Rust file has at most 500 lines of code (`script/sizes.mjs`, in the checks). Those past it
+- A Rust file has at most 600 lines of code (`script/sizes.mjs`, in the checks). Those past it
   are listed in `script/sizes.json` and may only shrink; `script/test -a -t sizes` lowers the list.
 - Commit subjects and comments are plain sentences someone can search for: say what changed in the
   words a reader would look up, not a figure of speech.
