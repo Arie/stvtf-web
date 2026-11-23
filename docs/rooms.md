@@ -115,7 +115,7 @@ speed with it.
   once, paused or not. Into the demo the next process records of the same map load (a deploy)
   they play on, with a full update.
 - A relay that cannot start (ports full, demo not there yet) is retried; one that stops is replaced.
-- It plays the match's `.dem` (stvtf's README, "Playing a demo"): a demos.tf demo's as
+- It plays the match's `.dem` (stvtf's docs/relay.md, "Playing a demo"): a demos.tf demo's as
   `demo-<number>.dem`, a live match's as `live-<match>-<load>-<tick>.dem`, one per server
   connection: the map's number and the tick of its first frame. Written only where rooms are
   relayed.

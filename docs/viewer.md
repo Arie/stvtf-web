@@ -40,7 +40,7 @@ newest data. A map change clears everything from the old map.
 `npc_damage`, `upgrade`). They are not kept in history.
 
 `?voice=1` (rooms' `/r/<id>/events` too) adds the players' voice: `voice` lines, each the speaker
-(`player`, `steamid`), its `rate` and its Opus `frames` in base64 (see stvtf's README). A page asks
+(`player`, `steamid`), its `rate` and its Opus `frames` in base64 (see stvtf's docs/output.md). A page asks
 for them once its viewer turns voice on. They are not kept in history.
 
 Without it a page is told only that someone talks: a `talking` line (`player`, `steamid`,

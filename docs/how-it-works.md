@@ -93,7 +93,7 @@ each frame with [tf-demo-parser](https://codeberg.org/demostf/parser) and writes
 snapshots at most 20 a second (in whole ticks, never more often than frames come) and every event.
 On a 66-tick server that is a snapshot every 4 ticks, 16.7 a second: every frame at
 `tv_snapshotrate 16`, every fourth at 66. The pages draw from these snapshots.
-One connection takes one slot, whoever watches. See stvtf's README, "Output".
+One connection takes one slot, whoever watches. See stvtf's docs/output.md.
 
 ## stv.tf: the browser
 
