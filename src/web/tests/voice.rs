@@ -211,6 +211,17 @@ fn voice_comes_in_only_with_the_matchs_invite() {
 }
 
 #[test]
+fn the_discord_page_says_how_and_adds_the_bot_where_there_is_one_to_add() {
+    let (mut app, _id) = voice_app();
+    assert!(get(&app, "/discord", "").starts_with("HTTP/1.1 404"), "no bot to add");
+    app.voice.bot = Some("https://discord.example/add?a=1&b=2".into());
+    let page = get(&app, "/discord", "");
+    assert!(page.starts_with("HTTP/1.1 200") && page.contains("X-Frame-Options: DENY"), "{page:.300}");
+    assert!(page.contains(r#"href="https://discord.example/add?a=1&#38;b=2""#), "{page}");
+    assert!(get(&app, "/mumble", "").contains(r#"href="discord""#));
+}
+
+#[test]
 fn behind_a_site_the_invite_is_for_who_started_the_match_and_for_streamers() {
     let (mut app, key, _dir) = site_app();
     app.voice.key = Some("k".into());

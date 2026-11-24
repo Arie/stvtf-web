@@ -67,8 +67,9 @@ From a room ("Sign in with serveme"): `/signin?return=PATH` → the site's
 rooms (admin rights follow them to any device) with the site's name, linking to their Steam
 profile. Streamers may make themselves admin in any room.
 
-## Mumble bots
+## Voice bot
 
-`/mumble` lists the certificates the voice bot signs in to Mumble servers by (name and SHA-1), for
+`/discord` says how the voice bot is brought into a Discord server and a match, with the link that
+adds it (`STVTF_VOICE_BOT`; not found without). `/mumble` says the same for Mumble, and lists the certificates the voice bot signs in to Mumble servers by (name and SHA-1), for
 a server's admins to know it by or register; `/mumble.json` is the same for a script (`name`,
 `sha1`, `sha256`): `app/mumble.json`, written from the certificates when those change; the page lists it.

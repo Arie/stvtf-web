@@ -107,7 +107,8 @@ Comms are set up in the speakers list, by whoever started the match and by the s
 (where nobody signs in, by anyone): "Comms" swaps the list for a wider view. With no channel
 brought in yet it asks Discord or Mumble. Discord: the `/stv join` command with the page's link
 and the match's invite to copy, for their own Discord or to pass on to a team, with the delay
-when it is not 90 s. Mumble: a server (its name, with a port if not 64738), its password and a
+when it is not 90 s. Each set-up links to the site's page that says how it works (`/discord`,
+`/mumble`). Mumble: a server (its name, with a port if not 64738), its password and a
 channel, and the bot joins at once. Once the bot is in a channel, those it is in show: how each
 goes, a way to add another (the other team's), for Mumble a way to move the bot (the same form,
 filled in; no password typed is the one given before) or take it out, and who is who: everyone in

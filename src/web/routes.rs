@@ -118,7 +118,8 @@ pub(super) fn routes(app: &App) -> (Routes, Routes) {
         .route("/r/{id}/camera", post(rooms::camera).layer(long))
         .route("/r/{id}/cameras", post(rooms::cameras).layer(long))
         .route("/cameras/{map}", post(cameras::change).layer(long));
-    let acting = Router::new().route("/", get(front)).route("/watch", post(watched)).route("/mumble", get(mumble));
+    let acting =
+        Router::new().route("/", get(front)).route("/watch", post(watched)).route("/mumble", get(mumble)).route("/discord", get(discord));
     let all = all
         .route("/matches", get(matches::list))
         .route("/mumble.json", get(mumble_json))
@@ -202,6 +203,10 @@ async fn watched(v: Visit, Form(form): Form<Watch>) -> Answered {
 
 async fn mumble(State(app): State<Shared>) -> Response {
     pages::bots(&app)
+}
+
+async fn discord(State(app): State<Shared>) -> Response {
+    pages::discord(&app)
 }
 
 async fn mumble_json() -> Response {

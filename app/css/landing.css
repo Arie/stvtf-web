@@ -1,5 +1,5 @@
-/* The landing page (a form to paste a connect string into, and a demo upload), and the Match ended and
-   Mumble bots pages. */
+/* The landing page (a form to paste a connect string into, and a demo upload), and the Match ended, Discord bot
+   and Mumble bots pages. */
 * {
   box-sizing: border-box;
 }
@@ -100,13 +100,13 @@ progress {
 form[hidden] {
   display: none;
 }
-#mumble table {
+.about table {
   width: 100%;
   margin: 0 0 16px;
   border-collapse: collapse;
 }
-#mumble th,
-#mumble td {
+.about th,
+.about td {
   padding: 6px 8px 6px 0;
   border-bottom: 1px solid var(--line);
   text-align: left;
@@ -118,8 +118,19 @@ form[hidden] {
   white-space: normal;
   user-select: all;
 }
-#mumble a {
+.about a:not(.signin) {
   color: var(--blue);
+}
+.about ol {
+  margin: 0 0 16px;
+  padding-left: 22px;
+  color: var(--dim);
+}
+#discord td {
+  white-space: normal;
+}
+#discord td:first-child {
+  white-space: nowrap;
 }
 .logo {
   display: block;

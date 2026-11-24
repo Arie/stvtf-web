@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>stv.tf · Discord bot</title>
+<base href="{{ base }}/">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="alternate icon" href="favicon.ico" sizes="any">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="stylesheet" href="app/{{ version }}/landing.css">
+</head>
+<body>
+<main id="discord" class="about">
+  <h1>Discord bot</h1>
+  <p>The stv.tf voice bot brings a team's voice channel into a live match: delayed so it
+  matches SourceTV, and stored in the demo.</p>
+  <p><a class="signin" href="{{ bot }}" target="_blank" rel="noopener">Add to Discord</a></p>
+  <h2>Once</h2>
+  <ol>
+    <li>Add the bot to your server. It can stay there.</li>
+    <li>Each player: <code>/stv link</code>, so their voice is matched to the right player in-game.</li>
+  </ol>
+  <h2>Each match</h2>
+  <ol>
+    <li>Start the match on stv.tf.</li>
+    <li>On its page: 🔊, Comms, Discord, Copy command.</li>
+    <li>Paste it in Discord, while in your voice channel.</li>
+  </ol>
+  <p>The command is for that match only, while it is live: comms cannot be added to a demo
+  afterwards.</p>
+  <p>The bot shows that it records. It leaves when the channel is empty or the match ends. One
+  voice channel per Discord server.</p>
+  <h2>Commands</h2>
+  <table>
+    <tr><td><code>/stv join</code></td><td>Joins your voice channel, with the link from the match's page</td></tr>
+    <tr><td><code>/stv delay</code></td><td>Changes the delay (the server's <code>tv_delay</code>, 90 by default)</td></tr>
+    <tr><td><code>/stv leave</code></td><td>Leaves</td></tr>
+    <tr><td><code>/stv link</code></td><td>Links your Steam account</td></tr>
+  </table>
+  <p>On Mumble: <a href="mumble">stv.tf/mumble</a>.</p>
+</main>
+</body>
+</html>

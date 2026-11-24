@@ -7,6 +7,7 @@
 // with comms watched here, for its players and for casters: only who is who, of its voices that
 // were no player's. See the viewer's Voice.
 import { $ } from "../core/core.js";
+import { env } from "../core/env.js";
 import { HOME } from "../room/home.js";
 import { copyText } from "../room/copy.js";
 import { addListExtra, renderList, setListView } from "./voicelist.js";
@@ -42,6 +43,10 @@ export function joinCommand(page, invite, delay) {
   link.searchParams.set("voice", invite);
   return `/stv join link:${link.href}${delay === USUAL_DELAY ? "" : ` delay:${delay}`}`;
 }
+
+// A link to the site's page that says how it works: `discord` or `mumble`.
+/** @param {string} page */
+const help = page => el("a", { href: new URL(page, env.base).href, target: "_blank", rel: "noopener" }, "Help");
 
 /** @typedef {import("./mumbleform.js").InMumble} InMumble */
 /** @type {{ invite: string; bot: string | null } | null} */
@@ -132,7 +137,7 @@ function discordSetup() {
   const parts = [
     top("home", "Discord"),
     el("div", { className: "vrow vinvite" }, copy),
-    el("div", { className: "vhint" }, "Paste in ", discord, ", while in voice"),
+    el("div", { className: "vhint" }, "Paste in ", discord, ", while in voice · ", help("discord")),
     delayRow(),
   ];
   parts.push(statusLine("Waiting for bot…"));
@@ -147,7 +152,8 @@ function mumbleSetup(was) {
   else if (was && failed(was.status)) parts.push(statusLine(was.status));
   // A server the bot is on already: its password is known.
   const known = Boolean(was) || comms.mumble.some(m => serverOf(typed.server)?.host === m.host);
-  return [...parts, ...mumbleFields(known), delayRow(), mumbleButtons(Boolean(was))];
+  const how = el("div", { className: "vhint" }, help("mumble"));
+  return [...parts, ...mumbleFields(known), delayRow(), mumbleButtons(Boolean(was)), how];
 }
 
 // The bot is in a channel, or a few: how each goes, a way to add another, and who is who.

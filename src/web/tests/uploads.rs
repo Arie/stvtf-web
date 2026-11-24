@@ -36,6 +36,7 @@ fn a_demo_uploaded_in_parts_plays_as_a_match_and_again_while_it_is_kept() {
     assert!(get(&app, "/", "").contains(r#"data-signed="1""#), "nobody signs in here: anyone");
     assert!(get(&app, "/upload", "").contains("Location: /\r\n"), "the form is on the front page");
     assert!(get(&app, "/mumble", "").contains("<td>stv.tf-2</td>"));
+    assert!(get(&app, "/discord", "").starts_with("HTTP/1.1 404"), "no bot to add here");
     let listed = get(&app, "/mumble.json", "");
     let listed: serde_json::Value = serde_json::from_str(listed.split("\r\n\r\n").nth(1).unwrap()).unwrap();
     assert!(

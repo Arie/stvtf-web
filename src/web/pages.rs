@@ -47,6 +47,15 @@ struct Bots<'a> {
     listed: &'static [Bot],
 }
 
+/// How the voice bot is brought into a Discord server and a match; `bot` is where it is added.
+#[derive(Template)]
+#[template(path = "discord.html")]
+struct Discord<'a> {
+    base: &'a str,
+    version: &'static str,
+    bot: &'a str,
+}
+
 #[derive(Deserialize)]
 struct Bot {
     name: String,
@@ -92,6 +101,12 @@ pub(super) fn bots(app: &App) -> Response {
     let bots =
         BOTS.get_or_init(|| super::assets::mumble_bots().and_then(|listed| serde_json::from_slice(&listed).ok()).unwrap_or_default());
     page(&Bots { base: &app.base, version: app_version(), listed: bots })
+}
+
+/// `/discord`: not found where no bot can be added (`STVTF_VOICE_BOT`).
+pub(super) fn discord(app: &App) -> Response {
+    let Some(bot) = app.voice.bot.as_deref() else { return StatusCode::NOT_FOUND.into_response() };
+    page(&Discord { base: &app.base, version: app_version(), bot })
 }
 
 pub(super) fn gone(app: &App, demos: &[Kept]) -> Response {
