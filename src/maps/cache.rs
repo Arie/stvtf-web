@@ -1,4 +1,4 @@
-//! Map geometry built from fastdl's BSPs and demos.tf's overviews, kept on disk.
+//! Map geometry built from fastdl's BSPs, and the maps' overviews, kept on disk.
 
 use std::collections::BTreeMap;
 use std::io::{Read, Write};
@@ -125,9 +125,14 @@ pub(crate) fn geometry_path(cache: &Path, name: &str) -> PathBuf {
     cache.join(format!("{name}.v10.json"))
 }
 
-/// demos.tf's map overviews, `boundaries.json` and `<map>.webp`, kept in the cache so viewers do
-/// not each load them from demos.tf's own server. The list is fetched again after a day; while
-/// demos.tf is down, what the cache has is served.
+/// The map overviews. `overviews.json` lists them all, by map: the rendered set the cache has
+/// (see `rendered_bounds`) and demos.tf's. `<map>.large.webp` is a rendered image, `<map>.webp`
+/// demos.tf's, and `boundaries.json` demos.tf's own list. demos.tf's are kept in the cache so
+/// viewers do not each load them from demos.tf's own server. Its list is fetched again after a
+/// day; while demos.tf is down, what the cache has is served.
+///
+/// The rendered ones have addresses of their own because browsers keep these files for a day: a
+/// page with yesterday's list must not get a new image under an old name, to place by old bounds.
 pub(crate) fn overview(cache: &Path, file: &str) -> Result<Vec<u8>> {
     overview_from(DEMOSTF, cache, file)
 }
@@ -136,7 +141,28 @@ pub(crate) fn overview(cache: &Path, file: &str) -> Result<Vec<u8>> {
 const MAP_WITHIN: Duration = Duration::from_mins(2);
 const OVERVIEW_WITHIN: Duration = Duration::from_secs(20);
 
-/// The map that overview image `file` is of, None for the list; an error for any other file.
+/// What an overview file is.
+enum Overview<'a> {
+    /// `overviews.json`.
+    List,
+    /// `<map>.large.webp`.
+    Rendered(&'a str),
+    /// `boundaries.json` and `<map>.webp`.
+    Demostf,
+}
+
+fn overview_file(file: &str) -> Result<Overview<'_>> {
+    match file {
+        "overviews.json" => Ok(Overview::List),
+        _ => match file.strip_suffix(".large.webp") {
+            Some(map) if is_name(map, b"_") => Ok(Overview::Rendered(map)),
+            Some(_) => bail!("cannot find that overview"),
+            None => overview_map(file).map(|_| Overview::Demostf),
+        },
+    }
+}
+
+/// The map that demos.tf's overview image `file` is of, None for its list; an error for any other file.
 fn overview_map(file: &str) -> Result<Option<&str>> {
     match file.strip_suffix(".webp") {
         _ if file == "boundaries.json" => Ok(None),
@@ -147,15 +173,88 @@ fn overview_map(file: &str) -> Result<Option<&str>> {
 
 /// `file` from the cache, if it is there and need not be fetched again.
 pub(crate) fn overview_kept(cache: &Path, file: &str) -> Option<Vec<u8>> {
+    match overview_file(file).ok()? {
+        Overview::List => demostf_kept(cache, "boundaries.json").map(|list| with_rendered(&list, &rendered_bounds(cache))),
+        Overview::Rendered(map) => rendered_image(cache, map),
+        Overview::Demostf => demostf_kept(cache, file),
+    }
+}
+
+fn overview_from(demostf: &str, cache: &Path, file: &str) -> Result<Vec<u8>> {
+    match overview_file(file)? {
+        Overview::List => {
+            let rendered = rendered_bounds(cache);
+            match demostf_from(demostf, cache, "boundaries.json") {
+                Ok(list) => Ok(with_rendered(&list, &rendered)),
+                // The rendered set needs nothing from demos.tf.
+                Err(_) if !rendered.is_empty() => Ok(with_rendered(b"{}", &rendered)),
+                Err(e) => Err(e),
+            }
+        }
+        Overview::Rendered(map) => rendered_image(cache, map).ok_or_else(|| anyhow::anyhow!("cannot find that overview")),
+        Overview::Demostf => demostf_from(demostf, cache, file),
+    }
+}
+
+/// The rendered overviews (maps.tf2.lol's bundles, unpacked into `rendered` in the cache:
+/// `large/<map>.webp` and `json/<map>.json`): each map that has both, with the world box its
+/// image covers, x and y of the lowest corner and then of the highest.
+fn rendered_bounds(cache: &Path) -> BTreeMap<String, [f64; 4]> {
+    #[derive(serde::Deserialize)]
+    struct Info {
+        world: World,
+    }
+    #[derive(serde::Deserialize)]
+    struct World {
+        min: [f64; 2],
+        max: [f64; 2],
+    }
+    let dir = cache.join("rendered");
+    let Ok(infos) = std::fs::read_dir(dir.join("json")) else { return BTreeMap::new() };
+    infos
+        .filter_map(|entry| {
+            let path = entry.ok()?.path();
+            let map = path.file_name()?.to_str()?.strip_suffix(".json")?;
+            if !is_name(map, b"_") || !dir.join(format!("large/{map}.webp")).is_file() {
+                return None;
+            }
+            let Info { world } = serde_json::from_slice(&std::fs::read(&path).ok()?).ok()?;
+            Some((map.to_string(), [world.min[0], world.min[1], world.max[0], world.max[1]]))
+        })
+        .collect()
+}
+
+/// A map's rendered overview, if the cache has it with its world box.
+fn rendered_image(cache: &Path, map: &str) -> Option<Vec<u8>> {
+    let dir = cache.join("rendered");
+    dir.join(format!("json/{map}.json")).is_file().then(|| std::fs::read(dir.join(format!("large/{map}.webp"))).ok())?
+}
+
+/// demos.tf's list of overviews with the rendered ones added, marked `rendered`, each instead of
+/// demos.tf's of the same name.
+fn with_rendered(demostf: &[u8], rendered: &BTreeMap<String, [f64; 4]>) -> Vec<u8> {
+    if rendered.is_empty() {
+        return demostf.to_vec();
+    }
+    let mut list: BTreeMap<String, serde_json::Value> = serde_json::from_slice(demostf).unwrap_or_default();
+    for (map, [x0, y0, x1, y1]) in rendered {
+        let entry = serde_json::json!({"boundary_min": {"x": x0, "y": y0}, "boundary_max": {"x": x1, "y": y1}, "rendered": true});
+        list.insert(map.clone(), entry);
+    }
+    serde_json::to_vec(&list).unwrap_or_else(|_| demostf.to_vec())
+}
+
+/// demos.tf's `file` from the cache, if it is there and need not be fetched again.
+fn demostf_kept(cache: &Path, file: &str) -> Option<Vec<u8>> {
     let image = overview_map(file).ok()?;
     let path = cache.join("demostf").join(file);
     let age = std::fs::metadata(&path).and_then(|m| m.modified()).ok()?.elapsed().unwrap_or_default();
     (image.is_some() || age < DAY).then(|| std::fs::read(&path).ok())?
 }
 
-fn overview_from(demostf: &str, cache: &Path, file: &str) -> Result<Vec<u8>> {
+fn demostf_from(demostf: &str, cache: &Path, file: &str) -> Result<Vec<u8>> {
     let image = overview_map(file)?;
-    if let Some(kept) = overview_kept(cache, file) {
+    if let Some(kept) = demostf_kept(cache, file) {
         return Ok(kept);
     }
     let remote = if image.is_some() { format!("images/{file}") } else { file.to_string() };
@@ -189,7 +288,7 @@ pub(crate) fn demostf_maps(cache: &Path) -> Vec<String> {
 
 #[expect(clippy::zero_sized_map_values, reason = "only the keys are read; the values are skipped unparsed")]
 fn demostf_maps_from(demostf: &str, cache: &Path) -> Vec<String> {
-    overview_from(demostf, cache, "boundaries.json")
+    demostf_from(demostf, cache, "boundaries.json")
         .ok()
         .and_then(|b| serde_json::from_slice::<BTreeMap<String, IgnoredAny>>(&b).ok())
         .map_or_default(|m| m.into_keys().collect())
@@ -283,6 +382,56 @@ mod tests {
     fn make_old(path: &Path) {
         let two_days_ago = std::time::SystemTime::now() - 2 * DAY;
         std::fs::File::options().write(true).open(path).unwrap().set_modified(two_days_ago).unwrap();
+    }
+
+    /// A cache with the rendered overview of `map`, its image `image` and its box -100..100 by -50..50.
+    fn with_rendered_map(cache: &Path, map: &str, image: &[u8]) {
+        for dir in ["rendered/large", "rendered/json"] {
+            std::fs::create_dir_all(cache.join(dir)).unwrap();
+        }
+        std::fs::write(cache.join(format!("rendered/large/{map}.webp")), image).unwrap();
+        let info =
+            br#"{"image": {"width": 100, "height": 50}, "world": {"min": [-100.0, -50.0], "max": [100.0, 50.0], "units_per_pixel": 2.0}}"#;
+        std::fs::write(cache.join(format!("rendered/json/{map}.json")), info).unwrap();
+    }
+
+    #[test]
+    fn a_rendered_overview_goes_before_demostfs() {
+        let cache = TempDir::new("rendered");
+        std::fs::create_dir(cache.join("demostf")).unwrap();
+        let demostf = br#"{"cp_both": {"old": 1}, "cp_old": {"old": 1}}"#;
+        std::fs::write(cache.join("demostf/boundaries.json"), demostf).unwrap();
+        std::fs::write(cache.join("demostf/cp_both.webp"), b"old").unwrap();
+        with_rendered_map(&cache, "cp_both", b"new");
+        with_rendered_map(&cache, "cp_new", b"new");
+        // An image without its box cannot be placed, so it is not listed or served.
+        std::fs::write(cache.join("rendered/large/cp_nobox.webp"), b"new").unwrap();
+
+        let list: serde_json::Value = serde_json::from_slice(&overview(&cache, "overviews.json").unwrap()).unwrap();
+        let rendered =
+            serde_json::json!({"boundary_min": {"x": -100.0, "y": -50.0}, "boundary_max": {"x": 100.0, "y": 50.0}, "rendered": true});
+        assert_eq!(list, serde_json::json!({"cp_both": rendered, "cp_new": rendered, "cp_old": {"old": 1}}));
+        assert_eq!(overview_kept(&cache, "overviews.json"), Some(overview(&cache, "overviews.json").unwrap()));
+        // A page with an older list still gets demos.tf's own, under their old names.
+        assert_eq!(overview(&cache, "boundaries.json").unwrap(), demostf);
+        for (file, want) in [("cp_both.large.webp", &b"new"[..]), ("cp_new.large.webp", b"new"), ("cp_both.webp", b"old")] {
+            assert_eq!(overview(&cache, file).unwrap(), want, "{file}");
+            assert_eq!(overview_kept(&cache, file).unwrap(), want, "{file}");
+        }
+        for missing in ["cp_nobox.large.webp", "cp_old.large.webp", "../cp_new.large.webp", ".large.webp"] {
+            assert!(overview_kept(&cache, missing).is_none(), "{missing}");
+            assert!(overview(&cache, missing).is_err(), "{missing}");
+        }
+    }
+
+    #[test]
+    fn rendered_overviews_are_listed_while_demostf_is_down() {
+        let cache = TempDir::new("renderedalone");
+        with_rendered_map(&cache, "cp_new", b"new");
+        let list = overview_from("http://127.0.0.1:1/", &cache, "overviews.json").unwrap();
+        let list: BTreeMap<String, serde_json::Value> = serde_json::from_slice(&list).unwrap();
+        assert_eq!(list.keys().collect::<Vec<_>>(), ["cp_new"]);
+        assert_eq!(overview_from("http://127.0.0.1:1/", &cache, "cp_new.large.webp").unwrap(), b"new");
     }
 
     #[test]

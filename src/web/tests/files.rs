@@ -286,8 +286,10 @@ fn cached_overviews_keep_and_maps_do_not() {
     let mut a = app(Matches::One(SharedHub::default()));
     a.cache = cache.to_path_buf();
 
-    let list = head_of(&a, "/overview/boundaries.json");
-    assert!(list.contains("Content-Type: application/json") && list.contains("max-age=86400"), "{list}");
+    for list in ["/overview/boundaries.json", "/overview/overviews.json"] {
+        let head = head_of(&a, list);
+        assert!(head.contains("Content-Type: application/json") && head.contains("max-age=86400"), "{head}");
+    }
     let image = head_of(&a, "/overview/cp_x.webp");
     assert!(image.contains("Content-Type: image/webp") && image.contains("max-age=86400"), "{image}");
     let map = head_of(&a, "/map/cp_x");

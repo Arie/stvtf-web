@@ -134,7 +134,7 @@ pub(super) fn embed_loader() -> Response {
     (headers, loader).into_response()
 }
 
-/// `/overview/<file>`: an overview or the maps' boundaries, cached, fetched on a miss.
+/// `/overview/<file>`: an overview or the list of them, cached, fetched on a miss.
 pub(super) fn cached_overview(app: &App, file: &str) -> Response {
     // One fetch at a time; what is cached waits for none.
     let kept = overview_kept(&app.cache, file).map(Ok);
@@ -144,7 +144,7 @@ pub(super) fn cached_overview(app: &App, file: &str) -> Response {
     });
     match fetched {
         Ok(body) => {
-            let ctype = if file == "boundaries.json" { JSON } else { WEBP };
+            let ctype = if matches!(file, "boundaries.json" | "overviews.json") { JSON } else { WEBP };
             ([(header::CONTENT_TYPE, ctype.to_string()), (header::CACHE_CONTROL, format!("max-age={}", CACHE_FOR.as_secs()))], body)
                 .into_response()
         }

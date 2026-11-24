@@ -120,10 +120,20 @@ npm run test:browser    # after cargo build and `npx playwright-core install --o
 
 ## Map backgrounds
 
-- **demos.tf overview**: the images and bounds the [demos.tf viewer](https://demos.tf/viewer)
-  uses (`maps.demos.tf`), looked up its way; about 50 competitive maps. Fetched once into
-  `--cache` (default `cache/`) and served from there. Misaligned bounds are corrected in
-  `app/map/view.js`.
+- **overview**: a picture of the map from above. Two sets, listed together at
+  `/overview/overviews.json`:
+  - **rendered**: [maps.tf2.lol](https://maps.tf2.lol/rendered/)'s, about 300 maps at up to 4096
+    pixels, see-through around the map. Not fetched: its `rendered-large` and `world-info`
+    bundles are unpacked into `rendered/` in `--cache` (`large/<map>.webp`, and `json/<map>.json`
+    with the world box the image covers). Served as `/overview/<map>.large.webp`.
+  - **demos.tf**: the images and bounds the [demos.tf viewer](https://demos.tf/viewer) uses
+    (`maps.demos.tf`), about 50 competitive maps. Fetched once into `--cache` (default `cache/`)
+    and served from there as `/overview/<map>.webp`. Misaligned bounds are corrected in
+    `app/map/view.js`.
+
+  A map without an overview of its own gets another version's (`overviewsFor` in
+  `app/map/view.js`): a rendered one first, then the nearest version, and only one that covers
+  the map's geometry. MGE maps only get their own.
 - **map geometry**: any map, from its BSP on `fastdl.serveme.tf/maps/`. Upward faces and walls in their
   texture's colour (its reflectivity in the map; a terrain blend's second texture by its name),
   with their material (grass, dirt, concrete, metal, wood, tile, water, lava, snow), displacements at real

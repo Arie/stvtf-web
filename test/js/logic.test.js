@@ -33,7 +33,7 @@ import { circleCount, onCircle } from "../../app/room/circles.js";
 import { lightAt, onLight } from "../../app/room/lights.js";
 import { noteCount, onNote } from "../../app/room/notes.js";
 import { env } from "../../app/core/env.js";
-import { demostfAlias, sameLayout, screenOffset, teamsTurn, toScreen } from "../../app/map/view.js";
+import { overviewsFor, sameLayout, screenOffset, teamsTurn, toScreen } from "../../app/map/view.js";
 
 test("players sort by class, then name whatever its case, then id", () => {
   const rows = [
@@ -59,10 +59,43 @@ test("the map's overview may be of another version of it", () => {
     ["cp_process_f13", "cp_process_f12"],
     ["koth_product_rcx", "koth_product"],
     ["cp_gullywash_final1", "cp_gullywash_final1"],
-    ["cp_gullywash_f9", "cp_gullywash_f6"],
-    ["cp_nope", null],
+    ["cp_gullywash_f9", "cp_gullywash_final1"],
+    ["cp_nope", undefined],
+    ["cp_processing_f12", undefined],
   ])
-    assert.equal(demostfAlias(map, known), want, map);
+    assert.equal(overviewsFor(map, known)[0], want, map);
+});
+
+test("of a map's other versions the nearest rendered overview comes first", () => {
+  const rendered = { rendered: true };
+  const known = {
+    koth_bagel_event: rendered,
+    koth_bagel_rc13: rendered,
+    koth_bagel_rc4: {},
+    cp_gullywash_f9: rendered,
+    cp_gullywash_final1: rendered,
+    cp_gullywash_f6: {},
+    cp_metalworks: rendered,
+    cp_metalworks_f7: rendered,
+    cp_metalworks_rc7: {},
+    pl_upward: rendered,
+    cp_granary: rendered,
+    cp_granary_pro_rc17a3: rendered,
+    cp_granary_pro_b10: {},
+    mge_league_v2: rendered,
+  };
+  for (const [map, want] of [
+    ["koth_bagel_rc12", ["koth_bagel_rc13", "koth_bagel_event", "koth_bagel_rc4"]],
+    ["koth_bagel_rc13", ["koth_bagel_rc13"]],
+    ["koth_bagel_rc4a", ["koth_bagel_rc13", "koth_bagel_event", "koth_bagel_rc4"]],
+    ["cp_gullywash_f8", ["cp_gullywash_f9", "cp_gullywash_final1", "cp_gullywash_f6"]],
+    ["cp_metalworks_f5", ["cp_metalworks_f7", "cp_metalworks", "cp_metalworks_rc7"]],
+    ["pl_upward_f12", ["pl_upward"]],
+    ["mge_league_v2", ["mge_league_v2"]],
+    ["mge_league_v3", []],
+    ["cp_granary_pro_rc16f", ["cp_granary_pro_rc17a3", "cp_granary", "cp_granary_pro_b10"]],
+  ])
+    assert.deepEqual(overviewsFor(map, known), want, map);
 });
 
 test("an overview is used only if it covers the map's layout", () => {

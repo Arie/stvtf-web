@@ -59,6 +59,16 @@ most played on serveme.tf). Other maps are built when first viewed, and only the
 fill the cache with all of fastdl. Maps build in parallel, each once; only the geometry is cached.
 `--no-warm` leaves it all to first viewers. See [development](development.md#map-backgrounds).
 
+The rendered overviews are not fetched. Unpack maps.tf2.lol's two bundles into the cache:
+
+```
+mkdir -p cache/rendered
+tar -xjf rendered-large.tar.bz2 -C cache/rendered   # large/<map>.webp
+tar -xjf world-info.tar.bz2 -C cache/rendered       # json/<map>.json
+```
+
+Without them, maps show demos.tf's overviews.
+
 `--backpack DIR` holds the item pictures, served at `/backpack/<name>` (default `backpack`,
 `/usr/share/stvtf/backpack` in the image).
 

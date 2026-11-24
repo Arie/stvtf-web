@@ -147,3 +147,13 @@ nobody asks about stops after 2 minutes.
 `Dockerfile` builds the server with the directory holding both repositories as context:
 `docker build -f stvtf-web/Dockerfile .` (`Dockerfile.dockerignore` keeps it to the two crates).
 Listens on 8080, caches maps in `/data`, answers `/up` for health checks.
+
+The rendered overviews go into each region's cache volume by hand, once and again when the
+bundles change (see [running](running.md#maps)): copy the two bundles to the host, then
+
+```
+docker run --rm -v stvtf-cache:/data -v "$PWD":/in alpine sh -c \
+  'mkdir -p /data/rendered && tar -xjf /in/rendered-large.tar.bz2 -C /data/rendered && tar -xjf /in/world-info.tar.bz2 -C /data/rendered'
+```
+
+No restart needed; browsers keep the list of overviews for a day.

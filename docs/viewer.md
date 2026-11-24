@@ -205,7 +205,7 @@ visit, without changing them.
 
 | `bg=`      |                                                    |
 | ---------- | -------------------------------------------------- |
-| `overview` | demos.tf overview (default)                        |
+| `overview` | the map's overview picture (default)               |
 | `geometry` | map geometry with textures, walls, shadows         |
 | `flat`     | geometry as a plain shape, three shades for height |
 | `outline`  | a line round the playable area                     |

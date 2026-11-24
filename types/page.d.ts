@@ -19,11 +19,12 @@ export type Geometry = {
   playable?: { origin: [number, number]; cell: number; w: number; h: number; bits: string };
 };
 
-/** demos.tf's overview image and the map box it covers. */
+/** A map's overview image and the map box it covers. */
 export type Overview = {
   /** The image, or a canvas made from it. */
   img: HTMLImageElement | HTMLCanvasElement;
-  b: { boundary_min: { x: number; y: number }; boundary_max: { x: number; y: number } };
+  /** `rendered`: of the rendered set, not demos.tf's. */
+  b: { boundary_min: { x: number; y: number }; boundary_max: { x: number; y: number }; rendered?: boolean };
 };
 
 /** The view: the world point at the canvas centre, pixels per unit and the rotation (radians). */

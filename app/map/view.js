@@ -26,28 +26,50 @@ const BOUNDS_FIXES = {
   pl_upward: { boundary_min: { x: -2761, y: -4412 }, boundary_max: { x: 2961, y: 2112 } },
   koth_ashville_rc1: { boundary_min: { x: -1491, y: -3903 }, boundary_max: { x: 1433, y: 3907 } },
 };
-/** @type {Promise<{ [map: string]: Overview["b"] }> | null} */
+/** @typedef {{ [map: string]: Overview["b"] }} Overviews */
+/** @type {Promise<Overviews> | null} */
 let boundaries = null;
-const demostfBoundaries = () =>
-  (boundaries ??= fetch(asset("overview/boundaries.json"))
+// Every overview there is, by map: the rendered ones (marked so) and demos.tf's.
+const overviews = () =>
+  (boundaries ??= fetch(asset("overview/overviews.json"))
     .then(r => r.json())
-    .then(j => ({ ...j, ...BOUNDS_FIXES }))
-    .catch(() => ({})));
-// demos.tf's own lookup: exact name, then names with version suffixes trimmed.
-/** @param {string} map @param {{ [map: string]: Overview["b"] }} known */
-export function demostfAlias(map, known) {
-  /** @param {string} m */
-  const trim = m => {
-    while (m.lastIndexOf("_") > m.indexOf("_")) m = m.slice(0, m.lastIndexOf("_"));
-    return m;
+    .then((/** @type {Overviews} */ known) => {
+      for (const [map, b] of Object.entries(BOUNDS_FIXES)) if (known[map] && !known[map].rendered) known[map] = b;
+      return known;
+    })
+    .catch(() => /** @type {Overviews} */ ({})));
+
+// A map's name without its version (cp_process_f12 → cp_process), and the version's stage and
+// number (f and 12).
+/** @param {string} map */
+function mapVersion(map) {
+  const base = map.split("_", 2).join("_"),
+    version = map.slice(base.length + 1);
+  return { base, stage: version.replace(/\d.*$/, ""), n: parseInt(version.replace(/^\D*/, ""), 10) || 0 };
+}
+
+// The overviews to show for a map, best first: its own, or else those of its other versions, a
+// rendered one before demos.tf's, the same stage (rc, f) before another, the nearest number
+// first, an event version last. koth_bagel_rc12 → koth_bagel_rc13, koth_bagel_event, koth_bagel_rc4.
+// An MGE map only its own: its versions are other arenas in other places.
+/** @param {string} map @param {Overviews} known @returns {string[]} */
+export function overviewsFor(map, known) {
+  if (known[map]) return [map];
+  if (map.startsWith("mge_")) return [];
+  const { base, stage, n } = mapVersion(map);
+  /** @param {string} k */
+  const far = k => {
+    const v = mapVersion(k);
+    return (
+      (known[k].rendered ? 0 : 1e9) +
+      (k.includes("_event") ? 1e6 : 0) +
+      (v.stage === stage ? 0 : 1e3) +
+      Math.abs(v.n - n)
+    );
   };
-  if (map.startsWith("cp_gullywash_f") && !map.startsWith("cp_gullywash_final")) return "cp_gullywash_f6";
-  if (known[map]) return map;
-  const t = trim(map);
-  if (known[t]) return t;
-  for (const k of Object.keys(known)) if (trim(k) === map) return k;
-  for (const k of Object.keys(known)) if (trim(k) === t) return k;
-  return null;
+  return Object.keys(known)
+    .filter(k => mapVersion(k).base === base)
+    .sort((a, b) => far(a) - far(b) || a.localeCompare(b));
 }
 
 // Whether an overview of another version of the map covers this version's own bounds (at least
@@ -75,19 +97,27 @@ export async function loadMap(map) {
   state.spawns = null;
   state.mapData = false;
   $("map").textContent = map;
-  const known = await demostfBoundaries();
-  const alias = demostfAlias(map, known);
+  const known = await overviews();
+  const wanted = overviewsFor(map, known);
   const geometry = fetch(asset(`map/${encodeURIComponent(map)}`)).then(r => r.json());
-  if (alias) {
-    const img = new Image();
-    img.onload = async () => {
-      if (alias !== map && !sameLayout(known[alias], await geometry.catch(() => null))) return;
-      if (state.map !== map) return;
-      state.overview = { img: OVERLAY ? withoutBlack(img) : flattened(img), b: known[alias] };
-      $("bgtoggle").hidden = false;
-      if (!state.fitted) fitTo(known[alias].boundary_min, known[alias].boundary_max);
-    };
-    img.src = asset(`overview/${alias}.webp`);
+  if (wanted.length) {
+    // Another version's is shown only if it lines up, which takes the map's geometry.
+    const lining =
+      wanted[0] === map ? map : geometry.catch(() => null).then(g => wanted.find(k => sameLayout(known[k], g)));
+    Promise.resolve(lining).then(name => {
+      if (!name || state.map !== map) return;
+      const b = known[name],
+        img = new Image();
+      img.onload = () => {
+        if (state.map !== map) return;
+        // demos.tf's has a black surround; a rendered one is see-through there already.
+        const clear = b.rendered ? img : withoutBlack(img);
+        state.overview = { img: OVERLAY ? clear : flattened(img), b };
+        $("bgtoggle").hidden = false;
+        if (!state.fitted) fitTo(b.boundary_min, b.boundary_max);
+      };
+      img.src = asset(`overview/${name}${b.rendered ? ".large" : ""}.webp`);
+    });
   }
   $("bgtoggle").hidden = true;
   try {
@@ -327,7 +357,7 @@ export function px(units, min) {
 }
 export const playerRad = () => (OVERLAY ? overlayUnit() : px(30, 11));
 
-// The overview images have an opaque black surround; on a rotated, transparent overlay that
+// demos.tf's overview images have an opaque black surround; on a rotated, transparent overlay that
 // would show as a tilted black box, so make the near-black pixels transparent.
 /** @param {HTMLImageElement} img */
 function withoutBlack(img) {

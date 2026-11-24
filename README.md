@@ -29,7 +29,9 @@ cargo build --release
 
 From [demos.tf](https://demos.tf) by Robin Appelman: [tf-demo-parser](https://codeberg.org/demostf/parser)
 (MIT or Apache-2.0), which stvtf decodes SourceTV data with, and the map overview images and
-their boundaries from `maps.demos.tf`, with demos.tf's way of matching a map name to them.
+their boundaries from `maps.demos.tf`.
+
+Rendered map overviews from [maps.tf2.lol](https://maps.tf2.lol), made with tf2-map-render.
 
 Class icons (`icons/`) are by lyreix of the TF2Stadium team, CC-BY-NC-SA-4.0 (`icons/LICENCE`),
 unmodified from the [demos.tf frontend](https://codeberg.org/demostf/frontend), except the
