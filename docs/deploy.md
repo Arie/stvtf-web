@@ -153,7 +153,7 @@ bundles change (see [running](running.md#maps)): copy the two bundles to the hos
 
 ```
 docker run --rm -v stvtf-cache:/data -v "$PWD":/in alpine sh -c \
-  'mkdir -p /data/rendered && tar -xjf /in/rendered-large.tar.bz2 -C /data/rendered && tar -xjf /in/world-info.tar.bz2 -C /data/rendered'
+  'mkdir -p /data/cache/rendered && cd /data/cache/rendered && tar -xjf /in/rendered-large.tar.bz2 && tar -xjf /in/world-info.tar.bz2 && rm -f large/*.jpg'
 ```
 
 No restart needed; browsers keep the list of overviews for a day.

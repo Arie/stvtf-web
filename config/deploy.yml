@@ -52,7 +52,7 @@ env:
 
 # The map cache (BSPs from fastdl, extracted geometry) survives deploys. The volume also holds
 # demo.jsonl.gz, the recorded match each region plays at /w/demo/ (`stvtf demo FILE.dem | gzip`,
-# copied in with `docker cp`), and the rendered map overviews in rendered/ (docs/deploy.md, Docker).
+# copied in with `docker cp`), and the rendered map overviews in cache/rendered/ (docs/deploy.md, Docker).
 volumes:
   - stvtf-cache:/data
 
