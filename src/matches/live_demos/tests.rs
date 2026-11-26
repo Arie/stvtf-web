@@ -245,7 +245,8 @@ fn a_map_with_comms_is_kept_for_downloading_and_one_without_is_not() {
     play(&demos, 100);
     demos.append_voice(&spoken(103));
     demos.append_voice(&spoken(108));
-    let live = Download { file: "0-100".into(), map: "cp_a".into(), bytes: std::fs::metadata(dir.join("live-m-0-100.dem")).unwrap().len() };
+    let meta = std::fs::metadata(dir.join("live-m-0-100.dem")).unwrap();
+    let live = Download { file: "0-100".into(), map: "cp_a".into(), bytes: meta.len(), seconds: 0, written: meta.modified().ok() };
     assert_eq!(downloads(&dir, "m"), std::slice::from_ref(&live), "while it is played, too");
     // The demo as TF2 plays it, the comms in it at their ticks.
     let Built { name, demo, .. } = build(&dir, "m", "0-100", &|_| None).unwrap();

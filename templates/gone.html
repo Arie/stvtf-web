@@ -10,13 +10,20 @@
 </head>
 <body>
 <main id="gone">
+  <a href="{{ base }}/"><img class="logo" src="favicon.svg" alt="stv.tf" width="56" height="56"></a>
   <h1>Match ended</h1>
-  <p>With comms:</p>
-  <ul class="mine">
+  <p>{% if !date.is_empty() %}{{ date }} · {% endif %}{{ demos.len() }} map{% if demos.len() != 1 %}s{% endif %} with comms</p>
+  <ul class="kept">
     {%- for demo in demos %}
-    <li><a href="{{ demo.watch }}"><b>▶</b> {{ demo.map }}</a> · <a href="{{ demo.href }}" download>{{ demo.mb }} MB ↓</a></li>
+    <li>
+      <a class="play" href="{{ demo.watch }}"><b>▶</b><span><strong>{{ demo.map }}</strong>{% if demo.min > 0 %}<small>{{ demo.min }} min</small>{% endif %}</span></a>
+      <a class="get" href="{{ demo.href }}" download>↓ {{ demo.mb }} MB</a>
+    </li>
     {%- endfor %}
   </ul>
+  {%- if !until.is_empty() %}
+  <p class="until">Kept until {{ until }}</p>
+  {%- endif %}
 </main>
 </body>
 </html>

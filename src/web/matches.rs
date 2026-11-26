@@ -322,7 +322,7 @@ pub(super) fn comms_demos(app: &App, sessions: &Sessions, id: &str) -> Vec<Kept>
         .map(|d| {
             let href = format!("{}/w/{id}/demos/{}.dem", app.base, d.file);
             let watch = format!("{}/w/{id}/watch/{}", app.base, d.file);
-            Kept { map: d.map, mb: d.bytes.div_ceil(1 << 20), href, watch }
+            Kept { map: d.map, mb: d.bytes.div_ceil(1 << 20), href, watch, min: (d.seconds + 30) / 60, written: d.written }
         })
         .collect()
 }

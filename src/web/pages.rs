@@ -1,6 +1,7 @@
 //! The pages: templates in `templates/`, filled in and escaped by askama.
 
 use std::sync::OnceLock;
+use std::time::SystemTime;
 
 use askama::Template;
 use axum::http::{StatusCode, header};
@@ -9,6 +10,7 @@ use serde::Deserialize;
 
 use super::app_version;
 use crate::app::App;
+use crate::rooms::registry::COMMS_DEMOS_KEPT;
 
 /// The viewer page of a match or room; preloads all modules (the import chain is 15 deep).
 #[derive(Template)]
@@ -62,13 +64,19 @@ struct Bot {
     sha1: String,
 }
 
-/// A match's comms demo: map, MB, download (`href`) and replay (`watch`) links.
+/// A match's comms demo: map, MB, download (`href`) and replay (`watch`) links. For the page of
+/// a match that is gone, also how many minutes it plays (0 when its header does not say) and
+/// when it was last written.
 #[derive(serde::Serialize)]
 pub(super) struct Kept {
     pub(super) map: String,
     pub(super) mb: u64,
     pub(super) href: String,
     pub(super) watch: String,
+    #[serde(skip)]
+    pub(super) min: u32,
+    #[serde(skip)]
+    pub(super) written: Option<SystemTime>,
 }
 
 /// A match that is gone, with its demos to download.
@@ -78,6 +86,9 @@ struct Gone<'a> {
     base: &'a str,
     version: &'static str,
     demos: &'a [Kept],
+    /// The day it was played and the day its demos go, as [`day`] says them: empty when unknown.
+    date: String,
+    until: String,
 }
 
 /// A page: no-cache, so a reload gets a new build (it names the build's files).
@@ -110,7 +121,17 @@ pub(super) fn discord(app: &App) -> Response {
 }
 
 pub(super) fn gone(app: &App, demos: &[Kept]) -> Response {
-    page(&Gone { base: &app.base, version: app_version(), demos })
+    // The first of its demos to go is the first written.
+    let first = demos.iter().filter_map(|d| d.written).min();
+    let (date, until) = (first.map_or_default(day), first.map_or_default(|at| day(at + COMMS_DEMOS_KEPT)));
+    page(&Gone { base: &app.base, version: app_version(), demos, date, until })
+}
+
+/// A day as a page says it, in UTC: `24 Nov`.
+fn day(at: SystemTime) -> String {
+    let at = cookie::time::OffsetDateTime::from(at);
+    let month = at.month().to_string();
+    format!("{} {}", at.day(), &month[..3])
 }
 
 /// `status`, with `page` as its body.

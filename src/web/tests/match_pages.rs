@@ -345,6 +345,15 @@ fn a_matchs_demos_with_comms_are_listed_and_downloaded_the_match_gone_too() {
     // The match's page, gone, says what there is to download.
     let gone = get(&app, &format!("/w/{id}/"), "");
     assert!(gone.starts_with("HTTP/1.1 404") && gone.contains(&format!("/w/{id}/demos/100.dem")), "{gone}");
+    // And when it was played, how much of it there is, and until when.
+    let day = |at: std::time::SystemTime| {
+        let at = cookie::time::OffsetDateTime::from(at);
+        format!("{} {}", at.day(), &at.month().to_string()[..3])
+    };
+    let written = std::fs::metadata(dir.join(format!("kept-{id}-100.dem"))).unwrap().modified().unwrap();
+    let month = Duration::from_hours(30 * 24);
+    assert!(gone.contains(&format!("<p>{} · 1 map with comms</p>", day(written))), "{gone}");
+    assert!(gone.contains(&format!("Kept until {}</p>", day(written + month))), "{gone}");
 }
 
 #[test]

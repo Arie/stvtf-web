@@ -160,3 +160,68 @@ h2 {
   color: var(--dim);
   font-weight: 600;
 }
+/* A match that ended: a row for each map kept with its comms. The row plays it; the button beside it
+   downloads it. */
+.kept {
+  margin: 0 0 12px;
+  padding: 0;
+  border-top: 1px solid var(--line);
+  list-style: none;
+}
+.kept li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
+}
+.kept a {
+  color: var(--text);
+  text-decoration: none;
+}
+.kept .play {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.kept b {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  padding-left: 2px;
+  border-radius: 50%;
+  background: var(--blue);
+  color: #fff;
+  font-size: 11px;
+}
+.kept span {
+  display: grid;
+  min-width: 0;
+}
+.kept strong {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.kept small,
+.until {
+  color: var(--dim);
+  font-size: 13px;
+}
+.kept .get {
+  flex: none;
+  padding: 5px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--dim);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.kept .play:hover strong,
+.kept .get:hover {
+  color: #fff;
+}

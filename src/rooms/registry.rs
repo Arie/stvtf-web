@@ -31,7 +31,7 @@ const LIVE_DEMO_KEPT: Duration = Duration::from_hours(3);
 /// Demos kept with their comms, to download, to watch, and for their teams to say whose voice
 /// is whose: for 30 days, and at most 25 GB of them unless `STVTF_COMMS_GB` says otherwise (the
 /// oldest go first).
-const COMMS_DEMOS_KEPT: Duration = Duration::from_hours(30 * 24);
+pub(crate) const COMMS_DEMOS_KEPT: Duration = Duration::from_hours(30 * 24);
 const COMMS_DEMOS_BUDGET: u64 = 25 << 30;
 
 /// The most there is kept of demos with comms: `STVTF_COMMS_GB` where a region's disk is small.

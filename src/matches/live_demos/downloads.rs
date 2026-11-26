@@ -2,6 +2,7 @@
 
 use std::fs::File;
 use std::path::Path;
+use std::time::SystemTime;
 
 use serde::Serialize;
 
@@ -17,6 +18,11 @@ pub(crate) struct Download {
     pub(crate) file: String,
     pub(crate) map: String,
     pub(crate) bytes: u64,
+    /// How long it plays, by its header: 0 while it is still written.
+    pub(crate) seconds: u32,
+    /// When it was last written.
+    #[serde(skip)]
+    pub(crate) written: Option<SystemTime>,
 }
 
 impl Download {
@@ -26,11 +32,16 @@ impl Download {
     }
 }
 
-/// The map a demo's header names.
-pub(super) fn map_of(demo: &Path) -> Option<String> {
+/// A demo's header.
+fn header_of(demo: &Path) -> Option<stvtf::demo::Header> {
     let mut header = vec![0u8; stvtf::demo::HEADER_LEN];
     std::io::Read::read_exact(&mut File::open(demo).ok()?, &mut header).ok()?;
-    Some(stvtf::demo::Header::parse(&header).ok()?.map)
+    stvtf::demo::Header::parse(&header).ok()
+}
+
+/// The map a demo's header names.
+pub(super) fn map_of(demo: &Path) -> Option<String> {
+    Some(header_of(demo)?.map)
 }
 
 /// The load and first tick a demo's `file` (what follows the match in its name) says.
@@ -51,7 +62,10 @@ pub(crate) fn downloads(dir: &Path, id: &str) -> Vec<Download> {
             let rest = [LIVE_PREFIX, KEPT_PREFIX].iter().find_map(|p| name.strip_prefix(p))?;
             let file = rest.strip_prefix(id)?.strip_prefix('-')?.strip_suffix(".dem")?;
             let path = with_comms(dir, id, file)?;
-            let download = Download { file: file.to_string(), map: map_of(&path)?, bytes: e.metadata().ok()?.len() };
+            let (header, meta) = (header_of(&path)?, e.metadata().ok()?);
+            // A length that is no number, or none, is 0.
+            let seconds = header.seconds.max(0.0) as u32;
+            let download = Download { file: file.to_string(), map: header.map, bytes: meta.len(), seconds, written: meta.modified().ok() };
             Some((load_tick(file)?, download))
         })
         .collect();
