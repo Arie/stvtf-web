@@ -76,7 +76,8 @@ paused or not. 401 without the key, 403 without the match's invite, 404 with no 
 match, 409 before the stream has a tick, 503 as the server stops (the next one takes it).
 
 A post that waited says how long, `"late": <seconds>`: that much comes off its delay, so it is
-held to the tick of when it was said.
+held to the tick of when it was said. It also counts as said then, so a post
+that waited still continues its speaker's speech.
 
 What is held goes on to the next process, which plays it at its tick: see
 [deploy](deploy.md#voice-from-discord).

@@ -18,7 +18,8 @@ use serde::{Deserialize, Serialize};
 
 /// How long a frame of voice is.
 pub(crate) const FRAME: Duration = Duration::from_millis(20);
-/// A speaker silent this long starts a new utterance.
+/// A speaker silent this long, from the end of their last sound to when they speak again, starts
+/// a new utterance.
 pub(crate) const GAP: Duration = Duration::from_millis(200);
 /// The most a frame goes out before its own due tick.
 const AHEAD: Duration = Duration::from_millis(500);
@@ -104,8 +105,10 @@ impl Held {
 #[derive(Default)]
 struct Speaker {
     frames: VecDeque<Frame>,
-    /// When their last frame came in.
+    /// When what they last said was said.
     heard: Option<Instant>,
+    /// When their speech so far ends: when it was said plus its frames.
+    ends: Option<Instant>,
     /// The utterance going out: when its first frame went, and how many have.
     running: Option<(Instant, u32)>,
 }
@@ -218,7 +221,7 @@ impl VoiceHold {
         self.speakers.values().map(|s| s.frames.len()).sum()
     }
 
-    /// Takes what a speaker said just now, to come out when the stream is `delay` seconds of game
+    /// Takes what a speaker said at `now`, to come out when the stream is `delay` seconds of game
     /// further on: how far behind its game their source says the stream is.
     pub(crate) fn take_in(&mut self, said: Said, delay: f64, now: Instant) -> Took {
         let Some(tick) = self.tick else { return Took::NoStream };
@@ -233,8 +236,10 @@ impl VoiceHold {
         let first = self.count + 1;
         self.count += said.frames.len() as u64;
         let s = self.speakers.entry(said.who).or_default();
-        let mut starts = s.heard.is_none_or(|h| now.duration_since(h) > GAP);
+        let mut starts = s.ends.is_none_or(|e| now.saturating_duration_since(e) > GAP);
         s.heard = Some(now);
+        let ends = now + FRAME * said.frames.len() as u32;
+        s.ends = Some(s.ends.map_or(ends, |e| e.max(ends)));
         for (n, opus) in (first..).zip(said.frames) {
             s.frames.push_back(Frame { n, due, opus, starts, came: Some(now) });
             starts = false;
@@ -415,12 +420,29 @@ mod tests {
     fn a_new_utterance_anchors_anew() {
         let t0 = Instant::now();
         let mut h = hold(t0);
+        // Silent for more than the gap after the first one's frame ends.
         h.take_in(said("a", 0..1), 90.0, t0);
-        h.due(Some(1040), t0 + GAP + FRAME);
-        assert_eq!(h.take_in(said("a", 1..2), 90.0, t0 + GAP + FRAME), Took::Held { due: 7040 });
+        h.due(Some(1040), t0 + GAP + 2 * FRAME);
+        assert_eq!(h.take_in(said("a", 1..2), 90.0, t0 + GAP + 2 * FRAME), Took::Held { due: 7040 });
         assert_eq!(count(&h.due(Some(7000), t0 + 90 * SEC)), 1);
         assert_eq!(h.due(Some(7039), t0 + 100 * SEC).len(), 0, "the second waits for its own tick");
         assert_eq!(count(&h.due(Some(7040), t0 + 100 * SEC)), 1);
+    }
+
+    #[test]
+    fn the_gap_is_measured_from_the_end_of_a_speakers_sound() {
+        let t0 = Instant::now();
+        let ms = Duration::from_millis;
+        let mut h = hold(t0);
+        // 600 ms of sound, then a short post said during it: the sound still ends at 600 ms.
+        h.take_in(said("a", 0..30), 90.0, t0);
+        h.take_in(said("a", 30..31), 90.0, t0 + ms(20));
+        // Said 150 ms after that end, with the stream further on: it runs on, by the clock.
+        h.due(Some(1050), t0 + ms(750));
+        h.take_in(said("a", 31..36), 90.0, t0 + ms(750));
+        let mut out = count(&h.due(Some(7000), t0 + 90 * SEC));
+        out += count(&h.due(Some(7020), t0 + 91 * SEC));
+        assert_eq!(out, 36, "none waits for tick 7050");
     }
 
     #[test]

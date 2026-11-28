@@ -301,6 +301,25 @@ fn someone_matched_by_hand_is_heard_as_that_player_from_then_on() {
 }
 
 #[test]
+fn speech_that_ran_on_is_one_utterance_though_a_post_of_it_waited_on_its_way() {
+    let (hub, feed, t0) = (SharedHub::default(), VoiceFeed::default(), Instant::now());
+    let ms = Duration::from_millis;
+    at(&hub, 1000);
+    let page = subscribe_to(&hub, false, true);
+    // Ten frames said in a row. The second post waited 250 ms and says so: it came 350 ms
+    // after the first.
+    feed.take_in(&hub, &STEAMID.into(), frames(5), Some(3.0), t0);
+    at(&hub, 1023);
+    feed.take_in_late(&hub, &STEAMID.into(), frames(5), Some(3.0), 0.25, t0 + ms(350));
+    // The stream reaches the first post's tick and stays there: all ten go out by the clock.
+    at(&hub, 1200);
+    feed.step(&hub, t0 + ms(3000));
+    feed.step(&hub, t0 + ms(3200));
+    let out: usize = voices(&page).iter().map(|v| v["frames"].as_array().map_or(0, Vec::len)).sum();
+    assert_eq!(out, 10);
+}
+
+#[test]
 fn each_post_says_its_own_delay_else_it_is_the_usual() {
     let (hub, feed, now) = (SharedHub::default(), VoiceFeed::default(), Instant::now());
     at(&hub, 1000);

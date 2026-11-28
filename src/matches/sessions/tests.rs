@@ -523,7 +523,7 @@ fn held_files(dir: &TempDir) -> Vec<String> {
 }
 
 fn say(m: &Arc<Session>) -> Option<crate::voice::hold::Took> {
-    m.take_in_voice(&"[U:1:5]".into(), vec!["aA==".to_string()], None)
+    m.take_in_voice(&"[U:1:5]".into(), vec!["aA==".to_string()], None, 0.0)
 }
 
 #[test]

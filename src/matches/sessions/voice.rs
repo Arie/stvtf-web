@@ -125,13 +125,13 @@ impl Sessions {
 const TEND_EVERY: Duration = Duration::from_millis(60);
 
 impl Session {
-    /// `who` said `frames` (base64 Opus) just now, in a source `delay` seconds behind
-    /// the game (see `VoiceFeed::take_in`). None for a match not watched live.
-    pub fn take_in_voice(self: &Arc<Self>, who: &Speaker, frames: Vec<String>, delay: Option<f64>) -> Option<Took> {
+    /// `who` said `frames` (base64 Opus) `late` seconds ago, in a source `delay` seconds behind
+    /// the game (see `VoiceFeed::take_in_late`). None for a match not watched live.
+    pub fn take_in_voice(self: &Arc<Self>, who: &Speaker, frames: Vec<String>, delay: Option<f64>, late: f64) -> Option<Took> {
         if !self.is_live() {
             return None;
         }
-        let took = self.comms.feed.take_in(&self.hub, who, frames, delay, Instant::now());
+        let took = self.comms.feed.take_in_late(&self.hub, who, frames, delay, late, Instant::now());
         self.keep_spoken();
         if matches!(took, Took::Held { .. } | Took::PauseTalk) {
             self.tend();

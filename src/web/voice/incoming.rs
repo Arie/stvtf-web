@@ -11,7 +11,7 @@ use serde::Deserialize;
 
 use crate::app::App;
 use crate::matches::sessions::Session;
-use crate::voice::feed::{MAX_DELAY, Speaker, delay_left};
+use crate::voice::feed::{MAX_DELAY, Speaker};
 use crate::voice::hold::Took;
 use crate::voice::ids::is_voice_id;
 
@@ -87,7 +87,7 @@ pub(in crate::web) fn post_voice(app: &App, m: &Arc<Session>, bearer: Option<&st
         name: said.name.map(|n| n.chars().filter(|c| !c.is_control()).take(MAX_NAME).collect()),
         channel: said.channel.filter(|c| is_voice_id(c)),
     };
-    match m.take_in_voice(&who, said.frames, Some(delay_left(said.delay, said.late))) {
+    match m.take_in_voice(&who, said.frames, said.delay, said.late) {
         None => (StatusCode::NOT_FOUND, "not a live match").into_response(),
         Some(Took::Held { due }) => format!("held until tick {due}").into_response(),
         Some(Took::PauseTalk) => (StatusCode::OK, "pause talk").into_response(),

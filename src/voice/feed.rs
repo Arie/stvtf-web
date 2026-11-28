@@ -271,10 +271,24 @@ const MAX_SPOKEN: usize = 4096;
 pub(crate) struct VoiceFeed(Mutex<State>);
 
 impl VoiceFeed {
-    /// `who` said `frames` just now, in a source whose stream is `delay` seconds behind its game
-    /// (the usual, unless given). With no delay it is commentary on the stream itself: straight
-    /// out, paused or not.
+    /// What `who` said just now: [`Self::take_in_late`], none of it late.
+    #[cfg(test)]
     pub(crate) fn take_in(&self, hub: &SharedHub, who: &Speaker, frames: Vec<String>, delay: Option<f64>, now: Instant) -> Took {
+        self.take_in_late(hub, who, frames, delay, 0.0, now)
+    }
+
+    /// `who` said `frames` `late` seconds ago, in a source `delay` seconds behind its game (the
+    /// usual, unless given). `late` comes off the delay. No delay: commentary, sent straight out.
+    pub(crate) fn take_in_late(
+        &self,
+        hub: &SharedHub,
+        who: &Speaker,
+        frames: Vec<String>,
+        delay: Option<f64>,
+        late: f64,
+        now: Instant,
+    ) -> Took {
+        let delay = delay_left(delay, late);
         let key = who.key();
         {
             let mut st = lock(&self.0);
@@ -286,7 +300,6 @@ impl VoiceFeed {
             }
         }
         self.guess(hub);
-        let delay = delay.unwrap_or(DEFAULT_DELAY);
         if delay < NO_DELAY {
             let Some(tick) = lock(hub).voice_clock().tick else { return Took::NoStream };
             let line = self.line(hub, Said { who: key, frames }, tick, false);
@@ -298,7 +311,9 @@ impl VoiceFeed {
         let mut st = lock(&self.0);
         st.said = Some(now);
         let delay = delay.clamp(0.0, MAX_DELAY);
-        st.hold.get_or_insert_with(|| VoiceHold::new(interval)).take_in(Said { who: key, frames }, delay, now)
+        // Counted as said when it was said: a post that waited still continues its speaker's utterance.
+        let said = Duration::try_from_secs_f64(late).ok().and_then(|late| now.checked_sub(late)).unwrap_or(now);
+        st.hold.get_or_insert_with(|| VoiceHold::new(interval)).take_in(Said { who: key, frames }, delay, said)
     }
 
     /// Those in the channel are these now (the bot says so, before anyone speaks): each by who
