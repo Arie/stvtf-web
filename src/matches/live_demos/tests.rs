@@ -5,7 +5,7 @@ use std::time::{Duration, SystemTime};
 
 use stvtf::demo::Files;
 
-use super::comms::{Built, By, Spoken, WhoNow, build, comms_key, pick, picks_file, slots_in, voice_of, voices_in};
+use super::comms::{Built, By, SILENCE, Spoken, WhoNow, build, close_up, comms_key, pick, picks_file, slots_in, voice_of, voices_in};
 use super::downloads::{Download, downloads};
 use super::store::LiveDemos;
 use super::sweep::sweep_kept;
@@ -259,7 +259,8 @@ fn a_map_with_comms_is_kept_for_downloading_and_one_without_is_not() {
             ticks.push(tick);
         }
     }
-    assert_eq!(ticks, [0, 3, 4, 8, 10]);
+    // The first at its tick; the second, said 55 ms after that one ends, right behind it.
+    assert_eq!(ticks, [0, 3, 4, 4, 10]);
     // The next load: this one's stays as it is, so a relay on it is not moved to another file.
     play(&demos, 110);
     demos.note_line(&server("cp_b"));
@@ -279,6 +280,38 @@ fn a_map_with_comms_is_kept_for_downloading_and_one_without_is_not() {
             && build(&dir, "other", "0-100", &|_| None).is_err()
             && build(&dir, "m", "../x", &|_| None).is_err()
     );
+}
+
+/// What a speaker said at `tick`: `frames` frames, the last of them Discord's silence if `stops`.
+fn talk(tick: u32, frames: usize, stops: bool) -> Spoken {
+    let mut frames = vec!["aA==".to_string(); frames];
+    if stops {
+        frames.push(SILENCE.into());
+    }
+    Spoken { tick, by: By::Player { slot: 3, account: 5 }, frames }
+}
+
+#[test]
+fn speech_recorded_late_in_steps_is_put_back_to_back() {
+    let ticks = |said: &[Spoken]| said.iter().map(|s| s.tick).collect::<Vec<_>>();
+    // Three frames are 60 ms, four ticks: the second lot was recorded 60 ms late, the third on time
+    // after that, so both go back to where the sound before them ends.
+    let mut said = vec![talk(1000, 3, false), talk(1008, 3, false), talk(1012, 3, false)];
+    close_up(&mut said, 0.015);
+    assert_eq!(ticks(&said), [1000, 1004, 1008]);
+    // One recorded before the sound ahead of it ends follows it too.
+    let mut said = vec![talk(1000, 6, false), talk(1004, 3, false)];
+    close_up(&mut said, 0.015);
+    assert_eq!(ticks(&said), [1000, 1008]);
+    // A pause stays: after the silence a speaker who stops sends, and any over 300 ms.
+    let mut said = vec![talk(1000, 2, true), talk(1012, 3, false), talk(1040, 3, false)];
+    close_up(&mut said, 0.015);
+    assert_eq!(ticks(&said), [1000, 1012, 1040]);
+    // Each speaker on their own.
+    let other = |tick| Spoken { by: By::Voice { who: "discord:7".into(), name: None }, ..talk(tick, 3, false) };
+    let mut said = vec![talk(1000, 3, false), other(1002), talk(1008, 3, false), other(1010)];
+    close_up(&mut said, 0.015);
+    assert_eq!(ticks(&said), [1000, 1002, 1004, 1006]);
 }
 
 #[test]

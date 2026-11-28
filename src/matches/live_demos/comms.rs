@@ -9,7 +9,7 @@ use anyhow::{Context, Result, bail};
 use base64::Engine;
 use serde::{Deserialize, Serialize};
 
-use super::downloads::{load_tick, map_of};
+use super::downloads::{header_of, load_tick};
 use super::sweep::KEPT_PREFIX;
 use crate::app::is_name;
 use crate::matches::sessions::LIVE_PREFIX;
@@ -120,7 +120,39 @@ pub(crate) fn comms_key(dir: &Path, id: &str, file: &str, who: WhoNow) -> Option
     said.dedup();
     let picks = picks(dir, id, file);
     let whom: Vec<String> = said.iter().filter_map(|w| Some(format!("{w}={}", whose(&picks, who, w)?))).collect();
-    Some(format!("{id}-{file}-{}-{}-{}", len(&path), len(&voice_of(&path)), whom.join(",")))
+    // `closed`: a new key for demos built with `close_up`.
+    Some(format!("{id}-{file}-{}-{}-{}-closed", len(&path), len(&voice_of(&path)), whom.join(",")))
+}
+
+/// The Opus frame Discord sends as a speaker stops (base64).
+pub(super) const SILENCE: &str = "+P/+";
+/// A frame of voice, in seconds.
+const FRAME: f64 = 0.02;
+/// The longest hole in someone's speech that is closed: a longer one is a pause of theirs.
+const HOLE: f64 = 0.3;
+
+/// Puts each speaker's records back to back: they are stamped with the stream's tick as they
+/// went out, which lags the sound in small steps. A record that starts before, or within [`HOLE`]
+/// after, the end of that speaker's last one moves to that end, unless they stopped there
+/// (Discord's silence frame). Ticks are `interval` seconds.
+pub(super) fn close_up(said: &mut [Spoken], interval: f64) {
+    // Each speaker's sound so far: when it ends, and whether they stopped there.
+    let mut ends: HashMap<String, (f64, bool)> = HashMap::new();
+    for s in said {
+        let key = match &s.by {
+            By::Player { account, .. } => format!("player:{account}"),
+            By::Voice { who, .. } => who.clone(),
+        };
+        let mut at = f64::from(s.tick) * interval;
+        if let Some((end, stopped)) = ends.get(&key).copied()
+            && (at <= end || (!stopped && at - end <= HOLE))
+        {
+            at = end;
+            s.tick = (at / interval).round() as u32;
+        }
+        let stopped = s.frames.last().is_some_and(|f| f == SILENCE);
+        ends.insert(key, (at + s.frames.len() as f64 * FRAME, stopped));
+    }
 }
 
 /// Samples a second of the voice kept.
@@ -173,11 +205,15 @@ pub(crate) fn voices_in(dir: &Path, id: &str, file: &str) -> Vec<(String, String
 pub(crate) fn build(dir: &Path, id: &str, file: &str, who: WhoNow) -> Result<Built> {
     let path = with_comms(dir, id, file).context("no such demo")?;
     let first = i64::from(load_tick(file).context("no such demo")?.1);
-    let map = map_of(&path).context("not a demo")?;
+    let header = header_of(&path).context("not a demo")?;
+    let map = header.map;
     if !is_name(&map, b"_-") {
         bail!("a map of that name");
     }
-    let said = spoken_in(&path)?;
+    // A demo still being written has no length in its header: TF2's 15 ms tick.
+    let interval = if header.ticks > 0 && header.seconds > 0.0 { f64::from(header.seconds) / f64::from(header.ticks) } else { 0.015 };
+    let mut said = spoken_in(&path)?;
+    close_up(&mut said, interval);
     let picks = picks(dir, id, file);
     // Whose each voice is now, asked once; the players' slots only if any is someone's.
     let mut whom: HashMap<String, Option<u32>> = HashMap::new();

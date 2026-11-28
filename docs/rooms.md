@@ -130,6 +130,8 @@ speed with it.
     played with its comms as a demo of its own (as a [demos.tf demo](site.md#demostf-demos) is,
     at `/w/comms/<id>/`, where a room can be opened on it). That page also says the day it was
     played, how long each map is and the day they go.
+    Built, each speaker's speech is put back to back, which closes the small gaps in the
+    recording. Pauses stay: after Discord's silence frame, or over 300 ms.
   - Swept every 5 minutes.
 - Demos of an older TF2 build (other class tables) cannot be played to a client; the sidebar
   says so, as it says any reason the relay cannot play.

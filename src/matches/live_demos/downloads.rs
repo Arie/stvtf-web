@@ -33,7 +33,7 @@ impl Download {
 }
 
 /// A demo's header.
-fn header_of(demo: &Path) -> Option<stvtf::demo::Header> {
+pub(super) fn header_of(demo: &Path) -> Option<stvtf::demo::Header> {
     let mut header = vec![0u8; stvtf::demo::HEADER_LEN];
     std::io::Read::read_exact(&mut File::open(demo).ok()?, &mut header).ok()?;
     stvtf::demo::Header::parse(&header).ok()
