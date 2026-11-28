@@ -220,9 +220,9 @@
     animation: none;
   }
 }
-#voicetoggle:disabled {
+/* No voice in this browser: a click says so. */
+#voicetoggle.none {
   opacity: 0.5;
-  cursor: default;
 }
 #voicelist {
   position: absolute;

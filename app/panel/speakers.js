@@ -27,7 +27,13 @@ export function initVoice() {
     list = $("voicelist");
   const why = voice.voiceUnsupported();
   if (why) {
-    Object.assign(button, { disabled: true, title: why });
+    // A click says why: a phone shows no tooltip.
+    button.title = why;
+    button.classList.add("none");
+    button.onclick = () => {
+      list.textContent = why;
+      list.hidden = !list.hidden;
+    };
     return;
   }
   const show = () => {

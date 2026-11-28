@@ -89,8 +89,8 @@ const savePrefs = () => write(PREFS_KEY, JSON.stringify(prefs));
 // Why this page cannot play voice, if it cannot.
 export function voiceUnsupported() {
   if (OVERLAY) return "Not on the overlay";
-  if (typeof AudioDecoder === "undefined")
-    return "This browser cannot play voice here (it needs WebCodecs, on a secure page)";
+  // It needs WebCodecs, on a secure page: Firefox on Android has none.
+  if (typeof AudioDecoder === "undefined") return "No voice in this browser";
   return null;
 }
 

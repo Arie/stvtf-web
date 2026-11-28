@@ -61,7 +61,8 @@ muted player's dot has the speaker crossed out. A click
 on the card's mark mutes or unmutes them (a muted team's player is then let through). Paused, sought or at
 another speed than 1×, voice is silent; paused, those who were talking stay shown so, as loud as
 they were and their waveforms still, until it plays on or jumps. It needs WebCodecs, so a secure page (https, or
-localhost); the overlay has none.
+localhost); the overlay has none. Where it cannot play (Firefox on Android has no WebCodecs),
+the button says so when clicked.
 
 Voice from outside the match (a team's Discord, through the voice bot): `POST /w/<id>/voice` with
 `Authorization: Bearer <STVTF_VOICE_KEY>` and `{"invite": "<the match's>", "steamid": "[U:1:N]",

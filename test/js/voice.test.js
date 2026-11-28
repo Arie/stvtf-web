@@ -10,11 +10,23 @@ import {
   voiceUnsupported,
   volumeOf,
 } from "../../app/core/voice.js";
+import { initVoice } from "../../app/panel/speakers.js";
 
 test("without WebCodecs voice says why and stays off", () => {
-  assert.match(voiceUnsupported() ?? "", /WebCodecs/);
+  assert.equal(voiceUnsupported(), "No voice in this browser");
   setVoice(true);
   assert.equal(voiceOn(), false);
+});
+
+test("without WebCodecs the voice button says why when clicked", () => {
+  const button = document.getElementById("voicetoggle"),
+    list = document.getElementById("voicelist");
+  list.hidden = true;
+  initVoice();
+  button.onclick();
+  assert.deepEqual([list.hidden, list.textContent], [false, "No voice in this browser"]);
+  button.onclick();
+  assert.equal(list.hidden, true);
 });
 
 test("a speaker's mute and volume are kept by SteamID", () => {
